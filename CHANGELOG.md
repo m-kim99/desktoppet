@@ -51,6 +51,12 @@ Patch notes go here — newest on top.
   live, modelscope, brotli, qrcode), without breaking core functionality. Bot support trimmed to
   Discord / Slack / Telegram.
 
+### Fixed
+- **Tall dialogs could not be closed**: long dialogs (e.g. the "add behavior" dialog) grew past
+  the viewport and their absolutely-positioned close (X) button scrolled out of view. Dialogs are
+  now capped at 90vh with a scrollable body and pinned header/footer, so the X and footer buttons
+  stay reachable. Applies to all non-fullscreen dialogs.
+
 ### Security
 - CORS `allow_credentials=False` (was wildcard origins + credentials).
 - SSRF: `sanitize_proxy_url` / `is_private_ip` now reject private/loopback/link-local/cloud-metadata

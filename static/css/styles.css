@@ -10783,6 +10783,26 @@ code {
   line-height: 1.6;
 }
 
+/* Keep tall dialogs within the viewport so the close (X) button and footer stay
+   reachable. Without this, a long dialog (e.g. the "add behavior" dialog) grows
+   past the screen and its absolutely-positioned close button scrolls out of view,
+   making the dialog impossible to close. Header + footer stay pinned; body scrolls. */
+.el-dialog:not(.is-fullscreen) {
+  display: flex !important;
+  flex-direction: column !important;
+  max-height: 90vh !important;
+  margin: 5vh auto !important;
+}
+.el-dialog:not(.is-fullscreen) .el-dialog__body {
+  overflow-y: auto !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+}
+.el-dialog:not(.is-fullscreen) .el-dialog__header,
+.el-dialog:not(.is-fullscreen) .el-dialog__footer {
+  flex: 0 0 auto !important;
+}
+
 /* 5. 底部操作栏 (Footer) */
 .el-dialog__footer {
   padding: 16px 28px 24px !important;
