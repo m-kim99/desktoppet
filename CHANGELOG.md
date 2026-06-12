@@ -6,6 +6,14 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **GLB pet models** (non-VRM): the model picker now lists `.glb`/`.gltf` files from the model
+  folder. Added two custom Blender characters — **Chick** and **Puppy** (extracted from
+  `chick_and_puppy_cute.blend` into separate models). A lightweight loader (`loadGlbPet`) scales,
+  grounds, and centers the model and skips the VRM pipeline. Since these have no humanoid rig or
+  morphs, lip-sync/expressions are unavailable, but the speech bubble and wandering work.
+  - **Procedural "waddle"** (`updateGlbPet`): no skeleton needed — the separate foot nodes swing
+    in alternation, plus a body bob, side-to-side lean, and (puppy) tail wag, driven during idle
+    wandering. Idle shows a gentle breathing bob.
 - **Global memory** (`memorySettings.globalMemory`): a manual, always-injected note that is
   added as a system message on every request, regardless of the selected character or whether
   memory is on. Injected in both `generate_stream_response` and `generate_complete_response`,
@@ -25,6 +33,8 @@ Patch notes go here — newest on top.
   ~0.1x cost. Only the litellm path is touched; OpenAI and other providers are unaffected.
 
 ### Changed
+- **Scene lighting softened**: directional light intensity lowered (Math.PI → 2.0) and ambient
+  fill raised (0.1 → 0.55) to reduce harsh contrast. Affects all models (VRM + GLB).
 - **Context management** switched from rule-based selective pruning to a pure **sliding window**
   (keep all system messages + the most recent `max_rounds` rounds). The previous method is kept
   commented out for reference. Default `max_rounds=0` (no limit) is unchanged.

@@ -282,7 +282,7 @@ controls.update();
 const scene = new THREE.Scene();
 
 // light
-const light = new THREE.DirectionalLight( 0xffffff, Math.PI );
+const light = new THREE.DirectionalLight( 0xffffff, 2.0 );  // lowered from Math.PI to reduce contrast
 light.position.set( 1, 3, 2 ).normalize();
 light.castShadow = true;                       // Key
 light.shadow.mapSize.set( 2048, 2048 );        // Precision
@@ -424,11 +424,13 @@ const lookAtTarget = new THREE.Object3D();
 camera.add( lookAtTarget );
 
 // Add ambient light to soften the overall look
-const ambientLight = new THREE.AmbientLight( 0xffffff, 0.1 );
+const ambientLight = new THREE.AmbientLight( 0xffffff, 0.55 );  // raised from 0.1 to soften contrast (fill light)
 scene.add( ambientLight );
 
 // gltf and vrm
 let currentVrm = undefined;
+let glbPet = null;                          // Non-VRM .glb "pet" model (no humanoid rig / morphs)
+const glbLoader = new GLTFLoader();         // Plain loader for .glb pets (no VRM plugin)
 let currentVrmWrapper = new THREE.Group(); // New: a group used to wrap the VRM
 scene.add(currentVrmWrapper);              // New: add it to the scene from the start
 const loader = new GLTFLoader();
@@ -1751,8 +1753,88 @@ async function startLipSyncForChunk(data) {
     });
 }
 
+// ===== Plain .glb pet support (non-VRM): procedural foot/body "waddle", no rig/morphs =====
+function disposeGlbPet() {
+    if (glbPet && glbPet.wrap) {
+        try { currentVrmWrapper.remove(glbPet.wrap); } catch (e) {}
+        glbPet.wrap.traverse(o => { if (o.geometry && o.geometry.dispose) o.geometry.dispose(); });
+    }
+    glbPet = null;
+}
+
+async function loadGlbPet(url) {
+    // Clear any existing VRM/GLB so only one pet is active
+    if (currentVrm) { try { currentVrmWrapper.remove(currentVrm.scene); } catch (e) {} currentVrm = undefined; }
+    disposeGlbPet();
+
+    const gltf = await glbLoader.loadAsync(url);
+    const root = gltf.scene;
+
+    // Normalize: scale to a sensible height, center on XZ, feet on the ground (y=0)
+    let box = new THREE.Box3().setFromObject(root);
+    const size = new THREE.Vector3(); box.getSize(size);
+    const targetH = 0.65;   // half of the previous 1.3
+    const s = size.y > 1e-4 ? targetH / size.y : 1;
+    root.scale.setScalar(s);
+    box = new THREE.Box3().setFromObject(root);
+    const c = new THREE.Vector3(); box.getCenter(c);
+    root.position.x -= c.x;
+    root.position.z -= c.z;
+    root.position.y -= box.min.y;
+
+    root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+
+    // Wrapper carries the procedural bob/waddle so it never fights the model's own transforms
+    const wrap = new THREE.Group();
+    wrap.add(root);
+    wrap.rotation.y = Math.PI;   // face the camera/light (model's front is -Z by default)
+    currentVrmWrapper.add(wrap);
+
+    const findAll = (re) => { const a = []; root.traverse(o => { if (re.test(o.name)) a.push(o); }); return a; };
+    const findOne = (re) => { let r = null; root.traverse(o => { if (!r && re.test(o.name)) r = o; }); return r; };
+    const feet = findAll(/foot|leg/i);
+    feet.forEach(f => { f.userData._restRotX = f.rotation.x; });
+    const tail = findOne(/tail/i);
+    const ears = findAll(/ear/i);
+    ears.forEach(e => { e.userData._restRotX = e.rotation.x; });
+
+    glbPet = { wrap, root, feet, tail, ears, walking: false, walkAmt: 0, t: 0 };
+    console.log('[GlbPet] loaded', url, '| feet:', feet.map(f => f.name));
+    if (typeof hideModelSwitchingIndicator === 'function') { try { hideModelSwitchingIndicator(); } catch (e) {} }
+}
+
+function updateGlbPet(delta) {
+    if (!glbPet) return;
+    glbPet.t += delta;
+    // Ease the walk intensity toward its target (1 while wandering, 0 while idle)
+    const target = glbPet.walking ? 1 : 0;
+    glbPet.walkAmt += (target - glbPet.walkAmt) * Math.min(1, delta * 6);
+    const w = glbPet.walkAmt;
+    const t = glbPet.t;
+
+    // Body: gentle idle breathing bob + stronger hop while walking + side-to-side waddle lean
+    const bob = Math.sin(t * 2.0) * 0.008 + Math.abs(Math.sin(t * 8.0)) * 0.05 * w;
+    glbPet.wrap.position.y = bob;
+    glbPet.wrap.rotation.z = Math.sin(t * 8.0) * 0.10 * w;          // waddle
+
+    // Feet: alternate forward/back swing (no bones needed — they're separate nodes)
+    const swing = Math.sin(t * 8.0) * 0.7 * w;
+    glbPet.feet.forEach((f, i) => {
+        const phase = (i % 2 === 0) ? 1 : -1;
+        f.rotation.x = (f.userData._restRotX || 0) + swing * phase;
+    });
+
+    // Puppy tail wag (always a little, more while walking); ears bounce while walking
+    if (glbPet.tail) glbPet.tail.rotation.y = Math.sin(t * 6.0) * (0.15 + 0.25 * w);
+    glbPet.ears.forEach((e, i) => { e.rotation.x = (e.userData._restRotX || 0) + Math.sin(t * 8.0 + i) * 0.12 * w; });
+}
+
 let VRMname = await getVRMname();
 showModelSwitchingIndicator(VRMname);
+const __isGlbPet = /\.(glb|gltf)(\?|#|$)/i.test(vrmPath);
+if (__isGlbPet) {
+    loadGlbPet(vrmPath).catch(e => console.error('[GlbPet] load failed', e));
+} else
 loader.load(
 
     // URL of the VRM you want to load
@@ -2171,6 +2253,8 @@ function animate() {
     const deltaTime = clock.getDelta();
     updatePointerLockMovement(deltaTime);
     const shouldSkipModelUpdate = isModelHiddenByHover && isAutoHideEnabled;
+
+    if (glbPet && !shouldSkipModelUpdate) updateGlbPet(deltaTime);
 
     if (currentVrm && !shouldSkipModelUpdate) {
         // 1. Mixer update
@@ -4077,7 +4161,9 @@ if (!isRenderMode && window.electronAPI && window.electronAPI.registerVrmInputSh
                 if (walkUrl && idleAnimationManager) {
                     try { idleAnimationManager.playOneShotAnimation(walkUrl); } catch (e) {}
                 }
+                if (glbPet) glbPet.walking = true;   // procedural foot/waddle while the window slides
                 try { await window.electronAPI.vrmWander({ range, duration }); } catch (e) {}
+                if (glbPet) glbPet.walking = false;
                 vrmLastSpeakTs = Date.now(); // count as activity so talk/wander won't fire immediately after
                 wandering = false;
             }
@@ -4798,10 +4884,17 @@ async function switchToModel(index,isRefresh = false) {
             currentVrmWrapper.remove(currentVrm.scene); // Remove from the wrapper
             currentVrm = undefined;
         }
-        
+        disposeGlbPet();
+
         // Load the new model
         const modelPath = selectedModel.path;
-        
+
+        // Non-VRM .glb pet: use the lightweight loader and skip the VRM path
+        if (/\.(glb|gltf)(\?|#|$)/i.test(modelPath)) {
+            await loadGlbPet(modelPath).catch(e => console.error('[GlbPet] switch load failed', e));
+            return;
+        }
+
         loader.load(
             modelPath,
             (gltf) => {

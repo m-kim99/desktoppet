@@ -10030,22 +10030,27 @@ async def get_default_vrm_models(request: Request):
                 "models": []
             })
         
-        # Scan all .vrm files in the default VRM directory
-        vrm_files = glob.glob(os.path.join(DEFAULT_VRM_DIR, "*.vrm"))
-        
+        # Scan all .vrm and .glb/.gltf files in the default VRM directory
+        # (.glb/.gltf are non-VRM "pet" models with limited features)
+        vrm_files = glob.glob(os.path.join(DEFAULT_VRM_DIR, "*.vrm")) \
+                  + glob.glob(os.path.join(DEFAULT_VRM_DIR, "*.glb")) \
+                  + glob.glob(os.path.join(DEFAULT_VRM_DIR, "*.gltf"))
+
         for vrm_file in vrm_files:
             file_name = os.path.basename(vrm_file)
             # Use the filename (without extension) as the display name
             display_name = os.path.splitext(file_name)[0]
-            
+            ext = os.path.splitext(file_name)[1].lower().lstrip('.')
+
             # Build the file-access URL
             file_url = f"{fastapi_base_url}vrm/{file_name}"
-            
+
             models.append({
                 "id": os.path.splitext(file_name)[0].lower(),  # Use the filename as the ID
                 "name": display_name,
                 "path": file_url,
-                "type": "default"
+                "type": "default",
+                "format": "glb" if ext in ("glb", "gltf") else "vrm"
             })
         
         # Sort by name
