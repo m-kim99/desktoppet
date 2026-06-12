@@ -6,6 +6,12 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **Summon friend**: a button in the desktop pet's control panel (below the text-input button)
+  spawns a second character beside the current one, loading the next model in the list as the
+  friend (e.g. Chick → Puppy). New windows are staggered so they sit side by side instead of
+  stacking. The friend window carries its model via `?model=...&friend=1`. Summoned friends are
+  stationary, have no control panel (but the whole window is draggable), and don't grab the
+  text-input hotkey. (GLB pet display size also reduced.)
 - **GLB pet models** (non-VRM): the model picker now lists `.glb`/`.gltf` files from the model
   folder. Added two custom Blender characters — **Chick** and **Puppy** (extracted from
   `chick_and_puppy_cute.blend` into separate models). A lightweight loader (`loadGlbPet`) scales,

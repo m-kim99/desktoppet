@@ -1001,7 +1001,13 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
       const windowWidth = windowConfig.width || 540;
       const windowHeight = windowConfig.height || 960;
 
-      const x = windowConfig.x !== undefined ? windowConfig.x : width - windowWidth - 40;
+      // Stagger additional pets to the left so a summoned "friend" appears beside the
+      // existing character(s) instead of stacking on top. (Pet windows are mostly
+      // transparent with the model centered, so a ~half-width shift reads as side-by-side.)
+      const aliveCount = vrmWindows.filter(w => w && !w.isDestroyed()).length;
+      const staggerX = aliveCount * Math.round(windowWidth * 0.5);
+      const defaultX = Math.max(0, width - windowWidth - 40 - staggerX);
+      const x = windowConfig.x !== undefined ? windowConfig.x : defaultX;
       // Fix: avoid a negative y coordinate when the screen height is less than the window height
       let defaultY;
       if (height >= windowHeight) {
@@ -1037,7 +1043,13 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
       });
 
       // Load the page
-      await vrmWindow.loadURL(`http://${HOST}:${PORT}/vrm.html`);
+      // A summoned "friend" carries its model id via query so the window loads a
+      // different character (and marks itself as a non-main pet).
+      let vrmUrl = `http://${HOST}:${PORT}/vrm.html`;
+      if (windowConfig.modelId) {
+        vrmUrl += `?model=${encodeURIComponent(windowConfig.modelId)}&friend=1`;
+      }
+      await vrmWindow.loadURL(vrmUrl);
       // Default settings (no passthrough, interactive)
       vrmWindow.setIgnoreMouseEvents(false);
       vrmWindow.setAlwaysOnTop(true);
@@ -1112,6 +1124,14 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
 
     // VRM-pet autonomous wandering: move the requesting window to a random nearby spot within the current screen's work area
     const wanderingWindows = new Set();
+    // Summon a "friend": open another pet window loading the given model id (placed beside
+    // the existing pet via the stagger logic in createVrmWindow).
+    ipcMain.handle('summon-vrm-friend', async (_, opts = {}) => {
+      if (!opts || !opts.modelId) return { ok: false };
+      await createVrmWindow({ modelId: opts.modelId, width: opts.width, height: opts.height });
+      return { ok: true };
+    });
+
     ipcMain.handle('vrm-wander', async (event, opts = {}) => {
       const win = BrowserWindow.fromWebContents(event.sender);
       if (!win || win.isDestroyed() || wanderingWindows.has(win)) return { moved: false };

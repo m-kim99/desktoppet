@@ -668,6 +668,7 @@ window.lang_koKR = {
         'showPetHotkeyPlaceholder': "예: F14",
         'hidePetHotkeyPlaceholder': "예: F15",
         'petHotkeyHint': "이 전역 단축키로 데스크톱에 캐릭터를 소환하거나 숨길 수 있으며, 메인 앱 창이 숨겨져 있어도 작동합니다. 기본값은 F14(소환)/F15(숨김)입니다. 맥북엔 F13~F15 물리 키가 없어 충돌이 없습니다. 변경하면 즉시 적용됩니다.",
+        'summonFriend': '친구 소환',
         'idleTalkEnabled': '능동 멘트(혼잣말)',
         'idleTalkInterval': '멘트 간격(초)',
         'idleTalkLines': '멘트 목록',

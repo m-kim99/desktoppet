@@ -109,6 +109,9 @@ async function fetchVRMConfig() {
         };
     }
 }
+// A summoned "friend" window carries its model id via ?model=... — it loads that model
+// instead of the configured one and is treated as a non-main pet (no wander/idle-talk).
+const friendModelId = new URLSearchParams(window.location.search).get('model');
 const modelConfig = await fetchVRMConfig();
 
 // ==========================================
@@ -155,10 +158,10 @@ function initMotionMap(config) {
 initMotionMap(modelConfig);
 // ==========================================
 
-const windowName = modelConfig.name;
+const windowName = friendModelId ? ('friend_' + friendModelId) : modelConfig.name;
 async function getVRMpath() {
     const vrmConfig = await fetchVRMConfig();
-    const modelId = vrmConfig.selectedModelId;
+    const modelId = friendModelId || vrmConfig.selectedModelId;
     const defaultModel = vrmConfig.defaultModels.find(model => model.id === modelId) || vrmConfig.userModels.find(model => model.id === modelId);
     if (defaultModel) {
         // Replace the protocol and host in defaultModel.path
@@ -183,7 +186,7 @@ async function getVRMpath() {
 
 async function getVRMname() {
     const vrmConfig = await fetchVRMConfig();
-    const modelId = vrmConfig.selectedModelId;
+    const modelId = friendModelId || vrmConfig.selectedModelId;
     const defaultModel = vrmConfig.defaultModels.find(model => model.id === modelId) || vrmConfig.userModels.find(model => model.id === modelId);
     if (defaultModel) {
         return defaultModel.name;
@@ -1773,7 +1776,7 @@ async function loadGlbPet(url) {
     // Normalize: scale to a sensible height, center on XZ, feet on the ground (y=0)
     let box = new THREE.Box3().setFromObject(root);
     const size = new THREE.Vector3(); box.getSize(size);
-    const targetH = 0.65;   // half of the previous 1.3
+    const targetH = 0.455;  // 0.65 reduced by a further 30%
     const s = size.y > 1e-4 ? targetH / size.y : 1;
     root.scale.setScalar(s);
     box = new THREE.Box3().setFromObject(root);
@@ -3846,6 +3849,48 @@ function addcontrolPanel() {
             showTooltip(textControlBtn, activeTitle);
         });
 
+        // Summon-friend button (main pet only): opens another pet beside this one,
+        // loading the next model in the list as the "friend" (e.g. chick -> puppy).
+        let summonFriendBtn = null;
+        if (windowName === 'default' && window.electronAPI && typeof window.electronAPI.summonFriend === 'function') {
+            summonFriendBtn = document.createElement('div');
+            summonFriendBtn.id = 'summon-friend-handle';
+            summonFriendBtn.innerHTML = '<i class="fas fa-user-plus"></i>';
+            summonFriendBtn.style.cssText = `
+                width: ${btn_width}px; height: ${btn_height}px; background: rgba(255,255,255,0.95);
+                border: 2px solid rgba(0,0,0,0.1); border-radius: 50%; color: #333333; cursor: pointer;
+                -webkit-app-region: no-drag; display: flex; align-items: center; justify-content: center;
+                font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform 0.2s;
+                user-select: none; pointer-events: auto; backdrop-filter: blur(10px);
+            `;
+            summonFriendBtn.addEventListener('mouseenter', () => {
+                summonFriendBtn.style.background = 'rgba(255,255,255,1)';
+                summonFriendBtn.style.transform = 'scale(1.1)';
+                summonFriendBtn.style.boxShadow = '0 6px 16px rgba(0,0,0,0.2)';
+            });
+            summonFriendBtn.addEventListener('mouseleave', () => {
+                summonFriendBtn.style.background = 'rgba(255,255,255,0.95)';
+                summonFriendBtn.style.transform = 'scale(1)';
+                summonFriendBtn.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+            });
+            (async () => {
+                const title = await t('summonFriend') || '친구 소환';
+                summonFriendBtn.title = title;
+                addHoverEffect(summonFriendBtn, title);
+            })();
+            bindTapEvent(summonFriendBtn, async () => {
+                try {
+                    const [cfg, res] = await Promise.all([fetchVRMConfig(), fetch('/get_default_vrm_models')]);
+                    const models = ((await res.json()).models) || [];
+                    if (models.length === 0) return;
+                    const curId = friendModelId || cfg.selectedModelId;
+                    const idx = models.findIndex(m => m.id === curId);
+                    const friend = models[(idx + 1 + models.length) % models.length] || models[0];
+                    await window.electronAPI.summonFriend({ modelId: friend.id });
+                } catch (e) { console.error('[SummonFriend] failed', e); }
+            });
+        }
+
         // ==========================================
         // ======= Assemble all panels and buttons ===================
         // ==========================================
@@ -3858,7 +3903,8 @@ function addcontrolPanel() {
         controlPanel.appendChild(nextModelButton);     // Next model
         controlPanel.appendChild(subtitleButton);          // Subtitle toggle
         controlPanel.appendChild(voiceControlBtn);        // Voice control
-        controlPanel.appendChild(textControlBtn); 
+        controlPanel.appendChild(textControlBtn);
+        if (summonFriendBtn) controlPanel.appendChild(summonFriendBtn);   // Summon friend (below text input)
         controlPanel.appendChild(moreButton);          // More button
         controlPanel.appendChild(refreshButton);       // Refresh
         controlPanel.appendChild(closeButton);         // Close
@@ -4073,11 +4119,17 @@ function addcontrolPanel() {
     }, 1000);
 }
 
-addcontrolPanel();
+if (windowName === 'default') {
+    addcontrolPanel();
+} else {
+    // Summoned "friend": hide the control buttons for now, but keep the whole window
+    // draggable so it can still be repositioned.
+    document.body.style.webkitAppRegion = 'drag';
+}
 
 // ===== VRM text input: global-shortcut toggle (default F13, configurable in settings) =====
-// Only registered in desktop-pet (non-OBS-render) mode; pressing the shortcut toggles the bottom input box.
-if (!isRenderMode && window.electronAPI && window.electronAPI.registerVrmInputShortcut) {
+// Only registered for the main pet (non-OBS-render); pressing the shortcut toggles the bottom input box.
+if (windowName === 'default' && !isRenderMode && window.electronAPI && window.electronAPI.registerVrmInputShortcut) {
     const vrmInputHotkey = (modelConfig && modelConfig.textInputHotkey) || 'F13';
     window.electronAPI.registerVrmInputShortcut(vrmInputHotkey)
         .then((ok) => { if (!ok) console.warn(`[VRM] text-input hotkey ${vrmInputHotkey} failed to register`); })

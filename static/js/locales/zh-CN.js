@@ -671,6 +671,7 @@ window.lang_zhCN = {
         'showPetHotkeyPlaceholder': "例如：F14",
         'hidePetHotkeyPlaceholder': "例如：F15",
         'petHotkeyHint': "使用这些全局快捷键可在桌面上召唤或隐藏角色，即使主程序窗口处于隐藏状态也有效。默认 F14（召唤）/F15（隐藏）。MacBook 没有 F13–F15 物理键，不会冲突。修改后立即生效。",
+        'summonFriend': '召唤伙伴',
         'idleTalkEnabled': '闲置自语',
         'idleTalkInterval': '发言间隔（秒）',
         'idleTalkLines': '发言列表',

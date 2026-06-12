@@ -668,6 +668,7 @@ window.lang_enUS = {
         'showPetHotkeyPlaceholder': "e.g. F14",
         'hidePetHotkeyPlaceholder': "e.g. F15",
         'petHotkeyHint': "These global hotkeys summon or hide the character on the desktop, and work even when the main app window is hidden. Defaults are F14 (show) / F15 (hide). MacBooks have no physical F13–F15 keys, so there are no conflicts. Changes take effect immediately.",
+        'summonFriend': 'Summon Friend',
         'idleTalkEnabled': 'Idle Remarks',
         'idleTalkInterval': 'Remark Interval (sec)',
         'idleTalkLines': 'Remark List',
