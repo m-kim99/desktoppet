@@ -4160,6 +4160,39 @@ if (windowName === 'default') {
     window.addEventListener('pointerdown', _revealFriendUI);
 }
 
+// ===== Drag to move the window; right-drag to rotate (standard desktop-pet behavior) =====
+// For both the main pet and summoned friends: LEFT-drag on the model MOVES the whole pet across
+// the desktop (window + character together), driven via IPC (getVrmWindowPos/setVrmWindowPos),
+// which moves freely in every direction. ROTATION stays available on the RIGHT button (right-drag),
+// so both gestures coexist. (Clicks on the control panel / close button still hit those elements,
+// not the canvas, so they keep working.)
+if (!isRenderMode && window.electronAPI && window.electronAPI.setVrmWindowPos) {
+    const _moveCanvas = renderer.domElement;
+    _moveCanvas.style.cursor = 'grab';
+    // Left button = move the window (handled below); right button = rotate (OrbitControls).
+    try {
+        controls.enableRotate = true;
+        controls.enablePan = false;
+        controls.mouseButtons.LEFT = null;
+        controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
+        _moveCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    } catch (e) {}
+    let _wm = false, _wmX = 0, _wmY = 0, _wmSx = 0, _wmSy = 0;
+    _moveCanvas.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        _wmSx = e.screenX; _wmSy = e.screenY; _moveCanvas.style.cursor = 'grabbing';
+        try { _moveCanvas.setPointerCapture(e.pointerId); } catch (err) {}
+        window.electronAPI.getVrmWindowPos().then((p) => { _wmX = p[0]; _wmY = p[1]; _wm = true; }).catch(() => {});
+    });
+    _moveCanvas.addEventListener('pointermove', (e) => {
+        if (!_wm) return;
+        window.electronAPI.setVrmWindowPos(_wmX + (e.screenX - _wmSx), _wmY + (e.screenY - _wmSy));
+    });
+    const _endWindowMove = (e) => { _wm = false; _moveCanvas.style.cursor = 'grab'; try { _moveCanvas.releasePointerCapture(e.pointerId); } catch (err) {} };
+    _moveCanvas.addEventListener('pointerup', _endWindowMove);
+    _moveCanvas.addEventListener('pointercancel', _endWindowMove);
+}
+
 // ===== VRM text input: global-shortcut toggle (default F13, configurable in settings) =====
 // Only registered for the main pet (non-OBS-render); pressing the shortcut toggles the bottom input box.
 if (windowName === 'default' && !isRenderMode && window.electronAPI && window.electronAPI.registerVrmInputShortcut) {

@@ -997,9 +997,12 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
     async function createVrmWindow(windowConfig = {}) {
       const { width, height } = screen.getPrimaryDisplay().workAreaSize;
 
-      // Use the passed-in config or the defaults
-      const windowWidth = windowConfig.width || 540;
-      const windowHeight = windowConfig.height || 960;
+      // Keep pet windows tight around the character to minimize the transparent area that blocks
+      // clicks to the apps behind. The character's on-screen size is normalized to window height
+      // (see loadGlbPet), so a smaller window mostly trims empty margin rather than shrinking the
+      // character. Width is trimmed conservatively (a quadruped friend is wider than it is tall).
+      const windowWidth = Math.min(windowConfig.width || 540, 500);
+      const windowHeight = Math.min(windowConfig.height || 960, 520);
 
       // Stagger additional pets to the left so a summoned "friend" appears beside the
       // existing character(s) instead of stacking on top. (Pet windows are mostly
