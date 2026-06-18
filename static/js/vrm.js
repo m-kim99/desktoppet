@@ -2918,6 +2918,9 @@ function addcontrolPanel() {
         right: 10px;
         display: flex;
         flex-direction: column;
+        flex-wrap: wrap;
+        align-content: flex-start;
+        max-height: calc(100vh - 20px);
         gap: 8px;
         z-index: 9999;
         opacity: 0;
@@ -4137,7 +4140,7 @@ if (windowName === 'default') {
     const fClose = document.createElement('div');
     fClose.innerHTML = '<i class="fas fa-times"></i>';
     fClose.style.cssText = `
-        position: fixed; top: 70%; left: 50%; transform: translateX(-50%); width: 28px; height: 28px;
+        position: fixed; top: 8px; right: 8px; width: 26px; height: 26px;
         border-radius: 50%; background: rgba(255,255,255,0.92); border: 1px solid rgba(0,0,0,0.1);
         color: #333; display: flex; align-items: center; justify-content: center; cursor: pointer;
         font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 999999; user-select: none;

@@ -43,13 +43,14 @@ Patch notes go here — newest on top.
   the character moves the whole window across the desktop (window + character together, the standard
   desktop-pet behavior), and a **right-drag** rotates the character (rotation moved off the left
   button so the two coexist; the canvas right-click context menu is suppressed).
-- **Pet windows shrunk to reduce the transparent area that blocks clicks**: capped to 500×520 (from
-  540×960). Because the character's on-screen size is normalized to window height, the smaller window
-  mostly trims empty margin rather than the character. Width is trimmed conservatively (a quadruped
-  friend can be wider than it is tall).
+- **Pet windows shrunk to reduce the transparent area that blocks clicks**: capped to 280×240 (from
+  540×960), roughly the character's on-screen footprint plus margin. Because the character's
+  on-screen size is normalized to window height, the smaller window mostly trims empty margin rather
+  than the character. To fit the short window, the main pet's control panel now wraps into columns
+  (`flex-wrap`), and the friend's close (X) button moved to the top-right corner.
 - **Summoned friends now behave like the main pet**: they wander on their own (previously
   stationary), and use the same drag interaction. The friend has no full control panel — just a
-  close (X) button that appears below the feet on hover.
+  close (X) button that appears on hover (top-right corner).
 - **Scene lighting softened**: directional light intensity lowered (Math.PI → 2.0) and ambient
   fill raised (0.1 → 0.55) to reduce harsh contrast. Affects all models (VRM + GLB).
 - **Context management** switched from rule-based selective pruning to a pure **sliding window**
