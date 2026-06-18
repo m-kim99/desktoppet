@@ -139,6 +139,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   unregisterVrmHideShortcut: () => ipcRenderer.invoke('unregister-vrm-hide-shortcut'),
   vrmWander: (opts) => ipcRenderer.invoke('vrm-wander', opts),
   summonFriend: (opts) => ipcRenderer.invoke('summon-vrm-friend', opts),
+  getVrmWindowPos: () => ipcRenderer.invoke('vrm-window-pos'),
+  setVrmWindowPos: (x, y) => ipcRenderer.invoke('vrm-window-move', { x, y }),
   readDirectory: (dirPath) => ipcRenderer.invoke('read-directory', dirPath),
   deleteWorkspaceFile: (filePath) => ipcRenderer.invoke('delete-workspace-file', filePath),
   uploadToWorkspace: (targetDirPath, sourceFilePaths) => ipcRenderer.invoke('upload-to-workspace', { targetDirPath, sourceFilePaths }),

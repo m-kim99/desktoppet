@@ -1038,6 +1038,9 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
           devTools: isDev,
           webAudio: true,
           autoplayPolicy: 'no-user-gesture-required',
+          // Keep the render loop running while the (transparent) window is dragged/occluded,
+          // otherwise macOS shows a stale, clipped frame during drag.
+          backgroundThrottling: false,
           preload: path.join(__dirname, 'static/js/preload.js')
         }
       });
@@ -1128,8 +1131,27 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
     // the existing pet via the stagger logic in createVrmWindow).
     ipcMain.handle('summon-vrm-friend', async (_, opts = {}) => {
       if (!opts || !opts.modelId) return { ok: false };
-      await createVrmWindow({ modelId: opts.modelId, width: opts.width, height: opts.height });
+      // A friend window defaults to 540x960. On macOS a visible window's top is clamped to the
+      // menu bar (workArea.y), so a window taller than the work area rests pinned at the top with
+      // no room above it -> dragging it UP does nothing. Cap the friend's default height so it fits
+      // inside the work area with margin; createVrmWindow then rests it at workArea-bottom, below the
+      // menu bar, leaving headroom to drag upward. An explicit height from the caller is respected.
+      const { height: workHeight } = screen.getPrimaryDisplay().workAreaSize;
+      const friendHeight = opts.height || Math.min(960, workHeight - 160);
+      await createVrmWindow({ modelId: opts.modelId, width: opts.width, height: friendHeight });
       return { ok: true };
+    });
+
+    // JS mouse-follow window drag (used by friend windows). setPosition has no macOS
+    // "title bar can't go above the menu bar" limit, so dragging works in every direction.
+    ipcMain.handle('vrm-window-pos', (e) => {
+      const win = BrowserWindow.fromWebContents(e.sender);
+      return win && !win.isDestroyed() ? win.getPosition() : [0, 0];
+    });
+    ipcMain.handle('vrm-window-move', (e, { x, y } = {}) => {
+      const win = BrowserWindow.fromWebContents(e.sender);
+      if (win && !win.isDestroyed()) { try { win.setPosition(Math.round(x), Math.round(y)); } catch (er) {} }
+      return true;
     });
 
     ipcMain.handle('vrm-wander', async (event, opts = {}) => {

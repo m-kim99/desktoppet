@@ -39,6 +39,9 @@ Patch notes go here — newest on top.
   ~0.1x cost. Only the litellm path is touched; OpenAI and other providers are unaffected.
 
 ### Changed
+- **Summoned friends now behave like the main pet**: they wander on their own (previously
+  stationary), and mouse-drag on the model rotates it (OrbitControls, same as the main pet). The
+  friend has no full control panel — just a close (X) button that appears below the feet on hover.
 - **Scene lighting softened**: directional light intensity lowered (Math.PI → 2.0) and ambient
   fill raised (0.1 → 0.55) to reduce harsh contrast. Affects all models (VRM + GLB).
 - **Context management** switched from rule-based selective pruning to a pure **sliding window**
@@ -58,6 +61,15 @@ Patch notes go here — newest on top.
   Discord / Slack / Telegram.
 
 ### Fixed
+- **Summoned friend could not be dragged upward** (could go left/right/down only). Root cause: the
+  friend used the default 540×960 window, taller than the macOS work area, so it was pinned with
+  its top at the menu bar (macOS clamps any visible window's top to `workArea.y`) — no room to move
+  up. Friend windows are now capped to fit the work area with margin, leaving headroom.
+- **Pet got clipped while being dragged**: macOS throttled the renderer during an OS window drag,
+  freezing the transparent canvas mid-frame. Set `backgroundThrottling: false` on pet windows.
+- **Main vs friend characters rendered at different on-screen sizes**: the same model looks bigger
+  in a taller window (fixed camera FOV). GLB pet scale is now normalized to the window height, so
+  the main pet and a shorter friend window show the character at the same on-screen size.
 - **Tall dialogs could not be closed**: long dialogs (e.g. the "add behavior" dialog) grew past
   the viewport and their absolutely-positioned close (X) button scrolled out of view. Dialogs are
   now capped at 90vh with a scrollable body and pinned header/footer, so the X and footer buttons

@@ -1776,14 +1776,20 @@ async function loadGlbPet(url) {
     // Normalize: scale to a sensible height, center on XZ, feet on the ground (y=0)
     let box = new THREE.Box3().setFromObject(root);
     const size = new THREE.Vector3(); box.getSize(size);
-    const targetH = 0.455;  // 0.65 reduced by a further 30%
+    // On-screen size scales with the window's pixel height (fixed camera FOV), so the same model
+    // looks bigger in a taller window. Normalize against a reference height so the main pet and a
+    // shorter friend window render the character at the SAME on-screen size.
+    const baseTargetH = 0.455;     // look at the reference height
+    const REF_WIN_H = 726;         // friend window height — match everyone to this on-screen size
+    const winH = window.innerHeight || REF_WIN_H;
+    const targetH = baseTargetH * REF_WIN_H / winH;
     const s = size.y > 1e-4 ? targetH / size.y : 1;
     root.scale.setScalar(s);
     box = new THREE.Box3().setFromObject(root);
     const c = new THREE.Vector3(); box.getCenter(c);
     root.position.x -= c.x;
     root.position.z -= c.z;
-    root.position.y -= box.min.y;
+    root.position.y -= box.min.y;   // ground the feet at y=0 (reverted)
 
     root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
 
@@ -4122,9 +4128,36 @@ function addcontrolPanel() {
 if (windowName === 'default') {
     addcontrolPanel();
 } else {
-    // Summoned "friend": hide the control buttons for now, but keep the whole window
-    // draggable so it can still be repositioned.
-    document.body.style.webkitAppRegion = 'drag';
+    // Summoned "friend": mirror the main pet's interaction — mouse-drag on the model ROTATES it
+    // (OrbitControls stays enabled, exactly like the main window). No control panel; only a close
+    // button is shown on hover. (The friend repositions itself by wandering.)
+    renderer.domElement.style.cursor = 'grab';   // hint the model can be dragged (to rotate)
+
+    // --- close button: below the character's feet (camera looks at the feet ~vertical center) ---
+    const fClose = document.createElement('div');
+    fClose.innerHTML = '<i class="fas fa-times"></i>';
+    fClose.style.cssText = `
+        position: fixed; top: 70%; left: 50%; transform: translateX(-50%); width: 28px; height: 28px;
+        border-radius: 50%; background: rgba(255,255,255,0.92); border: 1px solid rgba(0,0,0,0.1);
+        color: #333; display: flex; align-items: center; justify-content: center; cursor: pointer;
+        font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 999999; user-select: none;
+        opacity: 0; pointer-events: none; transition: opacity 0.2s;
+    `;
+    try { t('closeWindow').then(v => { if (v) fClose.title = v; }).catch(() => {}); } catch (e) {}
+    fClose.addEventListener('pointerdown', (e) => e.stopPropagation());
+    fClose.addEventListener('click', (e) => { e.stopPropagation(); window.close(); });
+    document.body.appendChild(fClose);
+
+    // Reveal the close button only while the mouse is over the friend; hide after a short idle.
+    let _fHideTimer = null;
+    const _revealFriendUI = () => {
+        fClose.style.opacity = '1';
+        fClose.style.pointerEvents = 'auto';
+        if (_fHideTimer) clearTimeout(_fHideTimer);
+        _fHideTimer = setTimeout(() => { fClose.style.opacity = '0'; fClose.style.pointerEvents = 'none'; }, 2000);
+    };
+    window.addEventListener('mousemove', _revealFriendUI);
+    window.addEventListener('pointerdown', _revealFriendUI);
 }
 
 // ===== VRM text input: global-shortcut toggle (default F13, configurable in settings) =====
@@ -4187,7 +4220,11 @@ if (windowName === 'default' && !isRenderMode && window.electronAPI && window.el
     try {
         const cfg = modelConfig || {};
         if (!cfg.wanderEnabled) return;
-        if (typeof windowName !== 'undefined' && windowName !== 'default') return; // only the main pet window
+        // Allow the main pet AND summoned friends to wander (each window moves itself,
+        // clamped to the screen). Exclude OBS-render / voice-only windows.
+        const canWander = (typeof windowName === 'undefined') || windowName === 'default'
+            || (typeof windowName === 'string' && windowName.startsWith('friend_'));
+        if (!canWander) return;
         if (!(window.electronAPI && window.electronAPI.vrmWander)) return;          // Electron only
         const baseMs = Math.max(10, Number(cfg.wanderInterval) || 90) * 1000;
         const range = Math.max(20, Number(cfg.wanderRange) || 250);
