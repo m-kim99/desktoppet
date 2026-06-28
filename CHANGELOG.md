@@ -13,6 +13,11 @@ Patch notes go here — newest on top.
   eyes shut, slow deep breathing, head drooped with a gentle doze-bob, lazy tail, and a floating
   💤 above the head. It's a state, not a one-shot: the pet wakes when clicked or when it starts
   walking.
+- **GLB pet think motion**: "생각 (Think)" tilts the head side to side (pondering) with the chick
+  scratching its head with a wing / the puppy lifting a paw to its chin, plus a 💭 thought bubble.
+  Applies animation principles — anticipation (a still beat first), follow-through (settle with an
+  `outBack` overshoot), and overlapping action (ears/tail lag behind the head). Added reusable
+  easing helpers (`Ease.inOutSine/inOutQuad/outBack`).
 - **GLB pet happy motion**: "기쁨 (Happy)" in the motion menu plays an excited reaction — the chick
   flaps both wings fast with bouncy hops, the puppy spins a full turn while hopping and wagging its
   tail hard (~1.8s one-shot, then back to idle).

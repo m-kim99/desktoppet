@@ -1841,6 +1841,20 @@ async function loadGlbPet(url) {
     }
     const setZzz = (on) => { zzzEl.style.opacity = on ? '0.9' : '0'; };
 
+    // "💭" thought bubble shown above the head while the think motion plays.
+    let thinkEl = document.getElementById('glb-think');
+    if (!thinkEl) {
+        thinkEl = document.createElement('div');
+        thinkEl.id = 'glb-think';
+        thinkEl.textContent = '💭';
+        thinkEl.style.cssText = 'position:fixed; left:60%; top:18%; font-size:44px; opacity:0; pointer-events:none; z-index:9998; transition:opacity 0.3s; animation:glbThinkBob 1.6s ease-in-out infinite;';
+        document.body.appendChild(thinkEl);
+        const tstyle = document.createElement('style');
+        tstyle.textContent = '@keyframes glbThinkBob{0%,100%{transform:translateY(0) scale(1);}50%{transform:translateY(-6px) scale(1.06);}}';
+        document.head.appendChild(tstyle);
+    }
+    const setThink = (on) => { thinkEl.style.opacity = on ? '0.95' : '0'; };
+
     // Classify feet/wings by ON-SCREEN side. The wrap's 180° Y flip mirrors the model's left/right,
     // so we sort by world X (after a matrix update) to find the screen-left vs screen-right limbs —
     // the wave plants the screen-left foot and waves the screen-right wing/foot.
@@ -1850,7 +1864,7 @@ async function loadGlbPet(url) {
     const footWave  = feet.length ? feet.slice().sort((a, b) => _wx(b) - _wx(a))[0] : null;   // screen-right
     const wingWave  = wings.length ? wings.slice().sort((a, b) => _wx(b) - _wx(a))[0] : null;  // screen-right
 
-    glbPet = { wrap, root, feet, tail, ears, wings, eyes, footPlant, footWave, wingWave, idle, setZzz, sleeping: false, autoSleeping: false, walking: false, walkAmt: 0, t: 0 };
+    glbPet = { wrap, root, feet, tail, ears, wings, eyes, footPlant, footWave, wingWave, idle, setZzz, setThink, sleeping: false, autoSleeping: false, walking: false, walkAmt: 0, t: 0 };
     glbPet.action = { id: 'wave', t: 0 };   // greet when the character appears / is summoned
     console.log('[GlbPet] loaded', url, '| feet:', feet.map(f => f.name), '| wings:', wings.length, '| eyes:', eyes.length);
     if (typeof hideModelSwitchingIndicator === 'function') { try { hideModelSwitchingIndicator(); } catch (e) {} }
@@ -1875,14 +1889,16 @@ function updateGlbPet(delta) {
         if (glbPet.tail) glbPet.tail.rotation.y = Math.sin(t * 1.5) * 0.08;   // slow lazy tail
         glbPet.eyes.forEach(ey => { ey.scale.y = ey.userData._restScaleY * 0.1; });   // closed
         if (glbPet.setZzz) glbPet.setZzz(true);
+        if (glbPet.setThink) glbPet.setThink(false);
         return;
     }
     if (glbPet.setZzz) glbPet.setZzz(false);
+    if (glbPet.setThink) glbPet.setThink(false);
 
     // One-shot motions (from the motion menu / on summon). Plays for its duration, then clears and
     // falls through to idle. Each frame starts from rest so leftover idle pose doesn't bleed in.
     if (glbPet.action) {
-        const DUR = { wave: 2.4, happy: 1.8 };
+        const DUR = { wave: 2.4, happy: 1.8, think: 2.8 };
         const dur = DUR[glbPet.action.id] || 2.0;
         glbPet.action.t += delta;
         const p = glbPet.action.t / dur;
@@ -1927,6 +1943,31 @@ function updateGlbPet(delta) {
                     glbPet.wrap.rotation.y = Math.PI + p * Math.PI * 2;   // one full happy spin
                     if (glbPet.tail) glbPet.tail.rotation.y = Math.sin(t * 18.0) * (0.3 + 0.3 * e);
                 }
+            }
+            if (glbPet.action.id === 'think') {
+                // Pondering, with the animation principles (B):
+                //  - anticipation: a brief still beat before the head tilts,
+                //  - head tilt 갸우뚱: ease to one side, hold, swing to the other,
+                //  - follow-through: settle back with a small overshoot (outBack),
+                //  - overlapping action: ears/tail lag behind the head (inertia).
+                const a = glbPet.action;
+                let tilt;
+                if (p < 0.12)      tilt = 0;                                                        // anticipation
+                else if (p < 0.55) tilt = Ease.inOutSine((p - 0.12) / 0.43) * 0.28;                 // tilt & hold
+                else if (p < 0.85) tilt = 0.28 - Ease.inOutSine((p - 0.55) / 0.30) * 0.50;          // swing the other way
+                else               tilt = -0.22 + Ease.outBack((p - 0.85) / 0.15) * 0.22;           // settle w/ overshoot
+                const pres = Ease.inOutSine(Math.min(1, p * 1.2));                                   // overall presence
+                glbPet.wrap.rotation.z = tilt;
+                glbPet.wrap.rotation.x = 0.04 * pres;                                                // slight curious lean
+                // Overlapping action: ears/tail chase the tilt with a delay (lag).
+                a.lag = (a.lag ?? 0) + (tilt - (a.lag ?? 0)) * Math.min(1, delta * 6);
+                glbPet.ears.forEach(eo => { eo.rotation.x = (eo.userData._restRotX || 0) + a.lag * 0.6; });
+                if (glbPet.tail) glbPet.tail.rotation.y = a.lag * 0.8;
+                // Gesture: chick scratches its head with the screen-right wing; puppy lifts a paw to its chin.
+                const scratch = (p > 0.15 && p < 0.8) ? Math.sin(p * Math.PI * 12) * 0.14 : 0;
+                if (glbPet.wingWave)      glbPet.wingWave.rotation.z = (glbPet.wingWave.userData._restRotZ || 0) - (pres * 0.5 + scratch);
+                else if (glbPet.footWave) glbPet.footWave.rotation.x = (glbPet.footWave.userData._restRotX || 0) - (pres * 0.7 + scratch);
+                if (glbPet.setThink) glbPet.setThink(true);
             }
             return;
         }
@@ -1991,9 +2032,17 @@ function updateGlbPet(delta) {
 // On-demand GLB pet motions listed in the control panel's motion dropdown. Walk and Idle are the
 // pet's default states and are intentionally NOT listed here. This list is data-driven: as each
 // motion is implemented (Happy, Wave, Think, ...), add an entry here and it shows up in the menu.
+// Easing helpers (A) for snappier, more characterful motion: smooth in/out, overshoot, bounce.
+const Ease = {
+    inOutSine: (x) => -(Math.cos(Math.PI * x) - 1) / 2,
+    inOutQuad: (x) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2),
+    outBack:   (x) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); },
+};
+
 const GLB_MOTIONS = [
     { id: 'wave',  label: '인사 (Wave)' },
     { id: 'happy', label: '기쁨 (Happy)' },
+    { id: 'think', label: '생각 (Think)' },
     { id: 'sleep', label: '수면 (Sleep)' },
 ];
 // Play a motion. 'sleep' is a state (stays until the pet is clicked or starts walking); others are
