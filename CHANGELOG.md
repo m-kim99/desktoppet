@@ -89,6 +89,11 @@ Patch notes go here — newest on top.
   Discord / Slack / Telegram.
 
 ### Fixed
+- **Tray & native context menus showed Chinese**: the menu labels in `main.js` only had `zh-CN`
+  and `en-US` locales, so when the renderer reported `ko-KR` the lookup failed and the menus fell
+  back to the initial Chinese (the `zh-CN` default). Added a `ko-KR` locale block (tray "창 보이기/
+  종료" plus the right-click menu: 잘라내기/복사/붙여넣기/이미지 저장/…) and set the default
+  language to `ko-KR`.
 - **Summoned friend could not be dragged upward** (could go left/right/down only). Root cause: the
   friend used the default 540×960 window, taller than the macOS work area, so it was pinned with
   its top at the menu bar (macOS clamps any visible window's top to `workArea.y`) — no room to move

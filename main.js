@@ -264,6 +264,25 @@ const locales = {
     copyLinkText: 'Copy link text',
     selectAll: 'Select All',
     inspect: 'Inspect'
+  },
+  'ko-KR': {
+    show: '창 보이기',
+    exit: '종료',
+    cut: '잘라내기',
+    copy: '복사',
+    paste: '붙여넣기',
+    copyImage: '이미지 복사',
+    copyImageLink: '이미지 링크 복사',
+    saveImageAs: '이미지 다른 이름으로 저장...',
+    supportedFiles: '지원되는 파일',
+    allFiles: '모든 파일',
+    supportedimages: '지원되는 이미지',
+    // New item
+    openNewTab: '새 탭에서 열기',
+    copyLink: '링크 주소 복사',
+    copyLinkText: '링크 텍스트 복사',
+    selectAll: '전체 선택',
+    inspect: '검사'
   }
 };
 const ALLOWED_EXTENSIONS = [
@@ -282,7 +301,7 @@ const ALLOWED_EXTENSIONS = [
   ];
 const ALLOWED_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'];
 const ALLOWED_VIDEO_EXTENSIONS =['mp4', 'webm', 'ogg', 'mov', 'avi'];
-let currentLanguage = 'zh-CN';
+let currentLanguage = 'ko-KR';
 
 // Build the menu items
 let menu;
