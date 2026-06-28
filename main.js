@@ -17,6 +17,7 @@ let workspaceWatcher = null; // Declare the global watcher variable
 let vmcUdpPort = null;          // osc.UDPPort instance
 let vmcReceiverActive = false;  // Whether receiving is running
 let vrmWindows = [];
+let summonVrmPetRef = null;            // tray-menu bridge to the pet-summon fn (assigned during app setup)
 let lastVrmConfig = { width: 540, height: 960 }; // The most recent size, reused when summoning the pet via a global shortcut
 let shotOverlay = null
 let isMac = process.platform === 'darwin';
@@ -229,6 +230,7 @@ const isDev = process.env.NODE_ENV === 'development'
 const locales = {
   'zh-CN': {
     show: '显示窗口',
+    summonPet: '召唤桌面伙伴',
     exit: '退出',
     cut: '剪切',
     copy: '复制',
@@ -248,6 +250,7 @@ const locales = {
   },
   'en-US': {
     show: 'Show Window',
+    summonPet: 'Summon Desktop Pet',
     exit: 'Exit',
     cut: 'Cut',
     copy: 'Copy',
@@ -267,6 +270,7 @@ const locales = {
   },
   'ko-KR': {
     show: '창 보이기',
+    summonPet: '데스크탑 펫 소환',
     exit: '종료',
     cut: '잘라내기',
     copy: '복사',
@@ -1108,6 +1112,7 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
         await createVrmWindow(lastVrmConfig);
       }
     }
+    summonVrmPetRef = summonVrmPet;   // expose to the tray menu (top-level scope)
 
     // Global shortcut: hide the pet (hide rather than close, for quick re-summoning)
     function hideVrmPet() {
@@ -1177,59 +1182,135 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
       return true;
     });
 
-    // Hug: slide two pet windows together so the characters embrace, then part again. The renderer
-    // plays each pet's "hug" half (lean + wings/paws + hearts); this just choreographs the windows.
-    let hugBusy = false;
+    // ---- Two-pet "duo" motions (Hug, Play): main choreographs both pet windows; each renderer plays
+    // its half. Shared helpers below; only one duo motion runs at a time (duoBusy). ----
+    let duoBusy = false;
     const winCenter = (b) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
-    ipcMain.handle('vrm-hug', async (e) => {
-      const me = BrowserWindow.fromWebContents(e.sender);
-      if (!me || me.isDestroyed()) return { ok: false };
+    const easeInOut = (x) => -(Math.cos(Math.PI * x) - 1) / 2;
+    const findDuoPartner = (me) => {                               // nearest other visible pet window
       const others = vrmWindows.filter(w => w && !w.isDestroyed() && w !== me && w.isVisible());
-      if (others.length === 0) {                                   // alone → renderer plays a solo air-hug
-        try { me.webContents.send('vrm-hug-play', { role: 'solo', dir: 1 }); } catch (er) {}
-        return { ok: true, solo: true };
-      }
-      if (hugBusy) return { ok: false, busy: true };
-      hugBusy = true;
-      const mc = winCenter(me.getBounds());                        // pick the nearest other pet as the partner
-      const partner = others.slice().sort((a, b) => {
+      if (!others.length) return null;
+      const mc = winCenter(me.getBounds());
+      return others.slice().sort((a, b) => {
         const ca = winCenter(a.getBounds()), cb = winCenter(b.getBounds());
         return Math.hypot(ca.x - mc.x, ca.y - mc.y) - Math.hypot(cb.x - mc.x, cb.y - mc.y);
       })[0];
+    };
+    // Tween a window's top-left from `from`→`to` over `dur` ms (size held). `arc`>0 bows the path into a
+    // parabola (for the tossed ball) and uses linear horizontal timing.
+    const tweenBounds = (win, from, to, dur, arc = 0) => new Promise(res => {
+      if (!win || win.isDestroyed()) return res();
+      const t0 = Date.now();
+      const iv = setInterval(() => {
+        const t = Math.min(1, (Date.now() - t0) / dur), k = arc ? t : easeInOut(t);
+        const x = Math.round(from.x + (to.x - from.x) * k);
+        const y = Math.round(from.y + (to.y - from.y) * k - arc * Math.sin(Math.PI * t));
+        if (win && !win.isDestroyed()) { try { win.setBounds({ x, y, width: from.width, height: from.height }); } catch (er) {} }
+        if (t >= 1) { clearInterval(iv); res(); }
+      }, 16);
+    });
+    // Place two windows in a side-by-side formation `gap` px apart (pet-center to pet-center), grounds
+    // aligned, clamped on-screen. Returns { dir, A0, B0, targetA, targetB }.
+    const duoFormation = (me, partner, gap) => {
       const A0 = me.getBounds(), B0 = partner.getBounds();
       const wa = screen.getDisplayMatching(A0).workArea;
       const meLeft = (A0.x + A0.width / 2) <= (B0.x + B0.width / 2);
-      const dir = meLeft ? 1 : -1;
       const midX = (A0.x + A0.width / 2 + B0.x + B0.width / 2) / 2;
-      const sep = A0.width * 0.42;                                 // final gap between the two pet centers (tunable)
-      const bottom = Math.max(A0.y + A0.height, B0.y + B0.height); // align their "ground"
+      const bottom = Math.max(A0.y + A0.height, B0.y + B0.height);
       const clampX = (x, w) => Math.max(wa.x, Math.min(x, wa.x + wa.width - w));
       const clampY = (y, h) => Math.max(wa.y, Math.min(y, wa.y + wa.height - h));
-      const leftCx = midX - sep / 2, rightCx = midX + sep / 2;
+      const leftCx = midX - gap / 2, rightCx = midX + gap / 2;
       const targetA = { x: clampX(Math.round((meLeft ? leftCx : rightCx) - A0.width / 2), A0.width), y: clampY(bottom - A0.height, A0.height), width: A0.width, height: A0.height };
       const targetB = { x: clampX(Math.round((meLeft ? rightCx : leftCx) - B0.width / 2), B0.width), y: clampY(bottom - B0.height, B0.height), width: B0.width, height: B0.height };
+      return { dir: meLeft ? 1 : -1, A0, B0, targetA, targetB };
+    };
+
+    // Hug: bring two windows together for an embrace, then part.
+    ipcMain.handle('vrm-hug', async (e) => {
+      const me = BrowserWindow.fromWebContents(e.sender);
+      if (!me || me.isDestroyed()) return { ok: false };
+      const partner = findDuoPartner(me);
+      if (!partner) {                                              // alone → renderer plays a solo air-hug
+        try { me.webContents.send('vrm-hug-play', { role: 'solo', dir: 1 }); } catch (er) {}
+        return { ok: true, solo: true };
+      }
+      if (duoBusy) return { ok: false, busy: true };
+      duoBusy = true;
+      const { dir, A0, B0, targetA, targetB } = duoFormation(me, partner, me.getBounds().width * 0.42); // overlap (tunable)
       wanderingWindows.add(me); wanderingWindows.add(partner);     // don't let wander fight the hug
-      const ease = (x) => -(Math.cos(Math.PI * x) - 1) / 2;
-      const lerp = (a, b, t) => Math.round(a + (b - a) * t);
-      const stepTo = (win, from, to, k) => { if (win && !win.isDestroyed()) { try { win.setBounds({ x: lerp(from.x, to.x, k), y: lerp(from.y, to.y, k), width: from.width, height: from.height }); } catch (er) {} } };
-      const tween = (dur, fA, tA, fB, tB) => new Promise(res => {
-        const t0 = Date.now();
-        const iv = setInterval(() => {
-          const t = Math.min(1, (Date.now() - t0) / dur), k = ease(t);
-          stepTo(me, fA, tA, k); stepTo(partner, fB, tB, k);
-          if (t >= 1) { clearInterval(iv); res(); }
-        }, 16);
-      });
       try {
         try { me.webContents.send('vrm-hug-play', { role: 'initiator', dir }); } catch (er) {}
         try { partner.webContents.send('vrm-hug-play', { role: 'partner', dir: -dir }); } catch (er) {}
-        await tween(550, A0, targetA, B0, targetB);                // approach
+        await Promise.all([tweenBounds(me, A0, targetA, 550), tweenBounds(partner, B0, targetB, 550)]);  // approach
         await new Promise(r => setTimeout(r, 1850));               // hold the embrace
-        await tween(500, targetA, A0, targetB, B0);                // part again
+        await Promise.all([tweenBounds(me, targetA, A0, 500), tweenBounds(partner, targetB, B0, 500)]);  // part
       } finally {
         if (me && !me.isDestroyed()) { try { me.setBounds(A0); } catch (er) {} }
         if (partner && !partner.isDestroyed()) { try { partner.setBounds(B0); } catch (er) {} }
-        wanderingWindows.delete(me); wanderingWindows.delete(partner); hugBusy = false;
+        wanderingWindows.delete(me); wanderingWindows.delete(partner); duoBusy = false;
+      }
+      return { ok: true };
+    });
+
+    // Play (catch): set the windows a catch-distance apart, toss a ball (its own tiny window) back and
+    // forth a few times — main cues each pet to throw/catch in sync with the ball — then part.
+    let ballWin = null;
+    ipcMain.handle('vrm-play', async (e) => {
+      const me = BrowserWindow.fromWebContents(e.sender);
+      if (!me || me.isDestroyed()) return { ok: false };
+      const partner = findDuoPartner(me);
+      if (!partner) {                                              // alone → brief "wanna play" bounce
+        try { me.webContents.send('vrm-play-start', { role: 'solo', dir: 1 }); } catch (er) {}
+        setTimeout(() => { try { if (me && !me.isDestroyed()) me.webContents.send('vrm-play-cue', { cue: 'end' }); } catch (er) {} }, 1600);
+        return { ok: true, solo: true };
+      }
+      if (duoBusy) return { ok: false, busy: true };
+      duoBusy = true;
+      const { dir, A0, B0, targetA, targetB } = duoFormation(me, partner, me.getBounds().width * 1.15);  // catch distance (tunable)
+      wanderingWindows.add(me); wanderingWindows.add(partner);
+      const BALL = 56;
+      const catchPoint = (b) => ({ x: b.x + b.width / 2, y: b.y + b.height * 0.42 });   // ~head/hands height (tunable)
+      const cleanup = () => {
+        try { if (ballWin && !ballWin.isDestroyed()) ballWin.destroy(); } catch (er) {}
+        ballWin = null;
+        if (me && !me.isDestroyed()) { try { me.setBounds(A0); } catch (er) {} try { me.webContents.send('vrm-play-cue', { cue: 'end' }); } catch (er) {} }
+        if (partner && !partner.isDestroyed()) { try { partner.setBounds(B0); } catch (er) {} try { partner.webContents.send('vrm-play-cue', { cue: 'end' }); } catch (er) {} }
+        wanderingWindows.delete(me); wanderingWindows.delete(partner); duoBusy = false;
+      };
+      try {
+        me.webContents.send('vrm-play-start', { role: 'initiator', dir });
+        partner.webContents.send('vrm-play-start', { role: 'partner', dir: -dir });
+        await Promise.all([tweenBounds(me, A0, targetA, 500), tweenBounds(partner, B0, targetB, 500)]);
+        const startCP = catchPoint(me.getBounds());
+        ballWin = new BrowserWindow({ width: BALL, height: BALL, x: Math.round(startCP.x - BALL / 2), y: Math.round(startCP.y - BALL / 2), transparent: true, backgroundColor: 'rgba(0, 0, 0, 0)', frame: false, roundedCorners: false, alwaysOnTop: true, skipTaskbar: true, hasShadow: false, focusable: false, resizable: false, show: false, webPreferences: { contextIsolation: true } });
+        try { ballWin.setIgnoreMouseEvents(true); } catch (er) {}
+        try { ballWin.setAlwaysOnTop(true, 'screen-saver'); } catch (er) {}   // float above the pet windows
+        // Ball drawn in CSS (radial-gradient sphere) rather than an emoji — no font/charset dependency,
+        // so it can't render as mojibake. Spinning the gradient highlight reads as a rolling ball.
+        const ballHtml = '<html><head><meta charset="utf-8"></head><body style="margin:0;background:transparent;overflow:hidden"><div style="width:100vw;height:100vh;display:flex;align-items:center;justify-content:center"><div style="width:42px;height:42px;border-radius:50%;background:radial-gradient(circle at 33% 28%, #f2ff8a, #c2e600 58%, #84b300);box-shadow:inset -3px -4px 7px rgba(0,0,0,.28), 0 2px 4px rgba(0,0,0,.25);animation:spin .6s linear infinite"></div></div><style>@keyframes spin{to{transform:rotate(360deg)}}</style></body></html>';
+        await ballWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(ballHtml));
+        if (ballWin && !ballWin.isDestroyed()) ballWin.showInactive();
+        const N = 4, FLIGHT = 560, ARC = 90;
+        let thrower = me, catcher = partner;
+        for (let i = 0; i < N; i++) {
+          if (!ballWin || ballWin.isDestroyed() || thrower.isDestroyed() || catcher.isDestroyed()) break;
+          const from = catchPoint(thrower.getBounds()), to = catchPoint(catcher.getBounds());
+          try { thrower.webContents.send('vrm-play-cue', { cue: 'throw' }); } catch (er) {}
+          await new Promise(r => setTimeout(r, 170));              // windup before the ball releases
+          const ballFrom = { x: from.x - BALL / 2, y: from.y - BALL / 2, width: BALL, height: BALL };
+          const ballTo = { x: to.x - BALL / 2, y: to.y - BALL / 2, width: BALL, height: BALL };
+          const flight = tweenBounds(ballWin, ballFrom, ballTo, FLIGHT, ARC);
+          setTimeout(() => { try { if (catcher && !catcher.isDestroyed()) catcher.webContents.send('vrm-play-cue', { cue: 'catch' }); } catch (er) {} }, FLIGHT - 230);
+          await flight;
+          await new Promise(r => setTimeout(r, 120));              // hold the catch a beat
+          const tmp = thrower; thrower = catcher; catcher = tmp;   // after the swap, `thrower` holds the ball
+        }
+        if (ballWin && !ballWin.isDestroyed()) { try { ballWin.destroy(); } catch (er) {} ballWin = null; }
+        try { if (thrower && !thrower.isDestroyed()) thrower.webContents.send('vrm-play-cue', { cue: 'finish' }); } catch (er) {}  // last catcher celebrates
+        await new Promise(r => setTimeout(r, 350));
+        await Promise.all([tweenBounds(me, me.getBounds(), A0, 480), tweenBounds(partner, partner.getBounds(), B0, 480)]);
+      } finally {
+        cleanup();
       }
       return { ok: true };
     });
@@ -2200,6 +2281,10 @@ function updateTrayMenu() {
           mainWindow.focus()
         }
       }
+    },
+    {
+      label: locales[currentLanguage].summonPet || '데스크탑 펫 소환',
+      click: () => { if (summonVrmPetRef) summonVrmPetRef(); }
     },
     { type: 'separator' },
     {

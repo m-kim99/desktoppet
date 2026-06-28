@@ -1936,7 +1936,7 @@ function updateGlbPet(delta) {
     // One-shot motions (from the motion menu / on summon). Plays for its duration, then clears and
     // falls through to idle. Each frame starts from rest so leftover idle pose doesn't bleed in.
     if (glbPet.action) {
-        const DUR = { wave: 2.4, happy: 1.8, think: 2.8, dance: 4.5, cheer: 3.5, celebrate: 2.6, eat: 3.2, hug: 3.0 };
+        const DUR = { wave: 2.4, happy: 1.8, think: 2.8, dance: 4.5, cheer: 3.5, celebrate: 2.6, eat: 3.2, hug: 3.0, play: 6.0 };
         const dur = DUR[glbPet.action.id] || 2.0;
         glbPet.action.t += delta;
         const p = glbPet.action.t / dur;
@@ -2158,6 +2158,43 @@ function updateGlbPet(delta) {
                     a.noteT = 0.45;
                 }
             }
+            if (glbPet.action.id === 'play') {
+                // Catch: a ball (its own window, driven by main) arcs between the two pets. Main cues this
+                // pet to 'throw'/'catch'/'finish' via vrm-play-cue; between cues it bobs ready, angled
+                // toward the partner (`dir` = partner side). Gesture numbers are visual-tunable.
+                const a = glbPet.action;
+                const dir = a.dir || 1;
+                a.cueT = (a.cueT ?? 0) + delta;
+                const ct = a.cueT;
+                let roll = 0, pitch = 0, reach = 0, lift = 0;
+                if (a.cue === 'throw') {
+                    const k = Math.min(1, ct / 0.45);
+                    const s = k < 0.35 ? -(k / 0.35) : (k - 0.35) / 0.65;     // windup(-1) -> release(+1)
+                    roll = 0.22 * s; pitch = 0.10 * Math.max(0, s); reach = 0.6 * s;
+                } else if (a.cue === 'catch') {
+                    const k = Math.min(1, ct / 0.45);
+                    reach = Math.sin(k * Math.PI) * 0.8;                       // reach out then recoil
+                    roll = 0.12 * (k < 0.5 ? k / 0.5 : 1 - (k - 0.5) / 0.5);
+                    lift = 0.02 * reach;
+                } else if (a.cue === 'finish') {
+                    const hop = Math.abs(Math.sin(ct * 11)) * Math.max(0, 1 - ct / 0.7);
+                    lift = 0.05 * hop; reach = 0.4 * hop;
+                } else {                                                       // ready: bob, angled at partner
+                    const bob = Math.sin(glbPet.t * 7) * 0.5 + 0.5;
+                    lift = 0.012 * bob; roll = 0.06; reach = 0.10;
+                }
+                glbPet.wrap.rotation.z = dir * roll;
+                glbPet.wrap.rotation.x = pitch;
+                glbPet.wrap.position.y = lift;
+                if (glbPet.wings.length) {
+                    glbPet.wings.forEach((wg, i) => { const side = (i % 2 === 0) ? 1 : -1; wg.rotation.z = (wg.userData._restRotZ || 0) - side * Math.abs(reach) - dir * reach * 0.3; });
+                } else {
+                    glbPet.feet.forEach(f => { f.rotation.x = (f.userData._restRotX || 0) - Math.max(0, reach) * 0.6; });
+                    if (glbPet.tail) glbPet.tail.rotation.y = Math.sin(glbPet.t * 14) * 0.28;   // excited wag throughout
+                }
+                glbPet.ears.forEach(eo => { eo.rotation.x = (eo.userData._restRotX || 0) + Math.max(0, reach) * 0.25; });
+                glbPet.eyes.forEach(ey => { ey.scale.y = ey.userData._restScaleY; });
+            }
             return;
         }
         glbPet.action = null;   // done → fall through to idle
@@ -2271,6 +2308,7 @@ const GLB_MOTIONS = [
     { id: 'cheer',     label: '응원 (Cheer)' },
     { id: 'celebrate', label: '축하 (Celebrate)' },
     { id: 'hug',       label: '포옹 (Hug)' },
+    { id: 'play',      label: '놀이 (Play)' },
     { id: 'think',     label: '생각 (Think)' },
     { id: 'eat',       label: '먹기 (Eat)' },
     { id: 'sleep',     label: '수면 (Sleep)' },
@@ -2291,6 +2329,15 @@ function playGlbMotion(id) {
         }
         return;
     }
+    if (id === 'play') {
+        // Play (catch) is also a two-pet motion choreographed by main (ball window + synced cues).
+        if (window.electronAPI && window.electronAPI.vrmPlay) {
+            window.electronAPI.vrmPlay().catch(() => { glbPet.action = { id: 'play', t: 0, role: 'solo', dir: 1, cue: 'ready', cueT: 0 }; });
+        } else {
+            glbPet.action = { id: 'play', t: 0, role: 'solo', dir: 1, cue: 'ready', cueT: 0 };
+        }
+        return;
+    }
     glbPet.action = { id, t: 0 };
 }
 
@@ -2300,6 +2347,23 @@ if (window.electronAPI && window.electronAPI.onVrmHugPlay) {
         if (!glbPet) return;
         glbPet.sleeping = false; glbPet.autoSleeping = false;
         glbPet.action = { id: 'hug', t: 0, role: role || 'solo', dir: dir || 1 };
+    });
+}
+
+// Play (catch): main starts both pets, then cues each to throw/catch/finish in sync with the ball.
+if (window.electronAPI && window.electronAPI.onVrmPlayStart) {
+    window.electronAPI.onVrmPlayStart(({ role, dir } = {}) => {
+        if (!glbPet) return;
+        glbPet.sleeping = false; glbPet.autoSleeping = false;
+        glbPet.action = { id: 'play', t: 0, role: role || 'solo', dir: dir || 1, cue: 'ready', cueT: 0 };
+    });
+}
+if (window.electronAPI && window.electronAPI.onVrmPlayCue) {
+    window.electronAPI.onVrmPlayCue((data = {}) => {
+        if (!glbPet || !glbPet.action || glbPet.action.id !== 'play') return;
+        if (data.cue === 'end') { glbPet.action = null; return; }
+        glbPet.action.cue = data.cue || 'ready';
+        glbPet.action.cueT = 0;
     });
 }
 

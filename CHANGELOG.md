@@ -6,6 +6,16 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **GLB pet play motion (two pets)**: "놀이 (Play)" is a coordinated game of catch — the main process
+  sets the two pet windows a catch-distance apart and tosses a ball (its own transparent window, a
+  CSS-drawn sphere so it can't render as an emoji/charset artifact) back and forth ~4× in an arc, cueing
+  each pet to throw/catch in sync (`vrm-play` / `vrm-play-start` / `vrm-play-cue`). The chick throws and
+  catches with its wings, the puppy with its paws + a tail wag; the last catcher does a happy hop. Plays
+  a solo bounce when alone. Generalizes the two-pet layer into shared `findDuoPartner` / `tweenBounds` /
+  `duoFormation` helpers (Hug refactored onto them) for Heart to reuse.
+- **Tray "summon desktop pet" item**: the menu-bar tray dropdown now has a "데스크탑 펫 소환" entry
+  (between Show Window and Quit) that re-shows the pet if it is hidden or creates it if there is none
+  (localized for ko/en/zh).
 - **GLB pet hug motion (two pets)**: "포옹 (Hug)" is the first coordinated two-pet motion. Picking it
   asks the main process (new `vrm-hug` IPC) to slide the two pet windows together (approach → hold →
   part, via `setBounds` tweens), then signal both renderers (`vrm-hug-play`) to play their hug half in
