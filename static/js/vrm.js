@@ -1936,7 +1936,7 @@ function updateGlbPet(delta) {
     // One-shot motions (from the motion menu / on summon). Plays for its duration, then clears and
     // falls through to idle. Each frame starts from rest so leftover idle pose doesn't bleed in.
     if (glbPet.action) {
-        const DUR = { wave: 2.4, happy: 1.8, think: 2.8, dance: 4.5, cheer: 3.5, celebrate: 2.6, eat: 3.2 };
+        const DUR = { wave: 2.4, happy: 1.8, think: 2.8, dance: 4.5, cheer: 3.5, celebrate: 2.6, eat: 3.2, hug: 3.0 };
         const dur = DUR[glbPet.action.id] || 2.0;
         glbPet.action.t += delta;
         const p = glbPet.action.t / dur;
@@ -2127,6 +2127,37 @@ function updateGlbPet(delta) {
                     a.noteT = 0.42;
                 }
             }
+            if (glbPet.action.id === 'hug') {
+                // Two pets lean into each other (main slides the windows together). Phases: reach (0–.2),
+                // embrace hold (.2–.8), release with an outBack bounce-apart (.8–1). `dir` (+1 = partner to
+                // screen-right) leans this pet toward the partner; chick wraps wings, puppy reaches on paws
+                // + wags; hearts rise between them. Plays solo gracefully if there is no partner.
+                const a = glbPet.action;
+                const dir = a.dir || 1;
+                let embrace;
+                if (p < 0.2)      embrace = Ease.inOutSine(p / 0.2);
+                else if (p < 0.8) embrace = 1;
+                else              embrace = 1 - Ease.outBack(Math.min(1, (p - 0.8) / 0.2));
+                glbPet.wrap.rotation.z = dir * 0.18 * embrace;     // lean toward the partner (sign tunable)
+                glbPet.wrap.rotation.x = 0.10 * embrace;           // slight nuzzle forward
+                glbPet.wrap.position.y = 0.012 * embrace;          // rise a touch into the embrace
+                if (glbPet.wings.length) {
+                    glbPet.wings.forEach((wg, i) => {              // 🐤 bring both wings forward to wrap
+                        const side = (i % 2 === 0) ? 1 : -1;
+                        wg.rotation.z = (wg.userData._restRotZ || 0) - side * 0.80 * embrace;
+                    });
+                } else {
+                    glbPet.feet.forEach(f => { f.rotation.x = (f.userData._restRotX || 0) - 0.35 * embrace; });  // 🐶 reach in on paws
+                    if (glbPet.tail) glbPet.tail.rotation.y = Math.sin(glbPet.t * 16) * 0.35 * embrace;          // happy wag
+                }
+                glbPet.ears.forEach(eo => { eo.rotation.x = (eo.userData._restRotX || 0) + 0.30 * embrace; });
+                glbPet.eyes.forEach(ey => { ey.scale.y = ey.userData._restScaleY * (1 - 0.50 * embrace); });     // content
+                a.noteT = (a.noteT ?? 0) - delta;
+                if (a.noteT <= 0 && embrace > 0.4) {
+                    spawnFloatEmoji(['💕','💗','❤️'][Math.floor(Math.random() * 3)], { left: 50 + dir * (6 + Math.random() * 10), top: 20 + Math.random() * 8, size: 20 + Math.random() * 10, dx: dir * 10 + (Math.random() - 0.5) * 16, duration: 1300 });
+                    a.noteT = 0.45;
+                }
+            }
             return;
         }
         glbPet.action = null;   // done → fall through to idle
@@ -2239,6 +2270,7 @@ const GLB_MOTIONS = [
     { id: 'dance',     label: '춤 (Dance)' },
     { id: 'cheer',     label: '응원 (Cheer)' },
     { id: 'celebrate', label: '축하 (Celebrate)' },
+    { id: 'hug',       label: '포옹 (Hug)' },
     { id: 'think',     label: '생각 (Think)' },
     { id: 'eat',       label: '먹기 (Eat)' },
     { id: 'sleep',     label: '수면 (Sleep)' },
@@ -2249,7 +2281,26 @@ function playGlbMotion(id) {
     if (!glbPet) return;
     if (id === 'sleep') { glbPet.sleeping = true; return; }
     glbPet.sleeping = false; glbPet.autoSleeping = false;   // any other motion wakes the pet
+    if (id === 'hug') {
+        // Hug is a two-pet motion: ask main to choreograph the windows; it echoes 'vrm-hug-play'
+        // back to start the per-pet half here (and on the partner). Falls back to a solo air-hug.
+        if (window.electronAPI && window.electronAPI.vrmHug) {
+            window.electronAPI.vrmHug().catch(() => { glbPet.action = { id: 'hug', t: 0, role: 'solo', dir: 1 }; });
+        } else {
+            glbPet.action = { id: 'hug', t: 0, role: 'solo', dir: 1 };
+        }
+        return;
+    }
     glbPet.action = { id, t: 0 };
+}
+
+// Main signals both windows to start their hug halves in sync (or just this one for a solo air-hug).
+if (window.electronAPI && window.electronAPI.onVrmHugPlay) {
+    window.electronAPI.onVrmHugPlay(({ role, dir } = {}) => {
+        if (!glbPet) return;
+        glbPet.sleeping = false; glbPet.autoSleeping = false;
+        glbPet.action = { id: 'hug', t: 0, role: role || 'solo', dir: dir || 1 };
+    });
 }
 
 let VRMname = await getVRMname();
@@ -4838,7 +4889,7 @@ if (windowName === 'default' && !isRenderMode && window.electronAPI && window.el
             const inputBox = document.getElementById('text-input-container');
             const inputOpen = !!inputBox && inputBox.style.opacity === '1';
             // Only wander when idle: not already moving, input box closed, no recent speech, not asleep.
-            if (!wandering && !inputOpen && !(glbPet && glbPet.sleeping) && Date.now() - vrmLastSpeakTs >= baseMs) {
+            if (!wandering && !inputOpen && !(glbPet && glbPet.sleeping) && !(glbPet && glbPet.action) && Date.now() - vrmLastSpeakTs >= baseMs) {
                 wandering = true;
                 const walkUrl = findWalkMotion();
                 if (walkUrl && idleAnimationManager) {

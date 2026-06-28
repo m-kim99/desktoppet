@@ -1176,6 +1176,63 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
       if (win && !win.isDestroyed()) { try { win.setPosition(Math.round(x), Math.round(y)); } catch (er) {} }
       return true;
     });
+
+    // Hug: slide two pet windows together so the characters embrace, then part again. The renderer
+    // plays each pet's "hug" half (lean + wings/paws + hearts); this just choreographs the windows.
+    let hugBusy = false;
+    const winCenter = (b) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+    ipcMain.handle('vrm-hug', async (e) => {
+      const me = BrowserWindow.fromWebContents(e.sender);
+      if (!me || me.isDestroyed()) return { ok: false };
+      const others = vrmWindows.filter(w => w && !w.isDestroyed() && w !== me && w.isVisible());
+      if (others.length === 0) {                                   // alone → renderer plays a solo air-hug
+        try { me.webContents.send('vrm-hug-play', { role: 'solo', dir: 1 }); } catch (er) {}
+        return { ok: true, solo: true };
+      }
+      if (hugBusy) return { ok: false, busy: true };
+      hugBusy = true;
+      const mc = winCenter(me.getBounds());                        // pick the nearest other pet as the partner
+      const partner = others.slice().sort((a, b) => {
+        const ca = winCenter(a.getBounds()), cb = winCenter(b.getBounds());
+        return Math.hypot(ca.x - mc.x, ca.y - mc.y) - Math.hypot(cb.x - mc.x, cb.y - mc.y);
+      })[0];
+      const A0 = me.getBounds(), B0 = partner.getBounds();
+      const wa = screen.getDisplayMatching(A0).workArea;
+      const meLeft = (A0.x + A0.width / 2) <= (B0.x + B0.width / 2);
+      const dir = meLeft ? 1 : -1;
+      const midX = (A0.x + A0.width / 2 + B0.x + B0.width / 2) / 2;
+      const sep = A0.width * 0.42;                                 // final gap between the two pet centers (tunable)
+      const bottom = Math.max(A0.y + A0.height, B0.y + B0.height); // align their "ground"
+      const clampX = (x, w) => Math.max(wa.x, Math.min(x, wa.x + wa.width - w));
+      const clampY = (y, h) => Math.max(wa.y, Math.min(y, wa.y + wa.height - h));
+      const leftCx = midX - sep / 2, rightCx = midX + sep / 2;
+      const targetA = { x: clampX(Math.round((meLeft ? leftCx : rightCx) - A0.width / 2), A0.width), y: clampY(bottom - A0.height, A0.height), width: A0.width, height: A0.height };
+      const targetB = { x: clampX(Math.round((meLeft ? rightCx : leftCx) - B0.width / 2), B0.width), y: clampY(bottom - B0.height, B0.height), width: B0.width, height: B0.height };
+      wanderingWindows.add(me); wanderingWindows.add(partner);     // don't let wander fight the hug
+      const ease = (x) => -(Math.cos(Math.PI * x) - 1) / 2;
+      const lerp = (a, b, t) => Math.round(a + (b - a) * t);
+      const stepTo = (win, from, to, k) => { if (win && !win.isDestroyed()) { try { win.setBounds({ x: lerp(from.x, to.x, k), y: lerp(from.y, to.y, k), width: from.width, height: from.height }); } catch (er) {} } };
+      const tween = (dur, fA, tA, fB, tB) => new Promise(res => {
+        const t0 = Date.now();
+        const iv = setInterval(() => {
+          const t = Math.min(1, (Date.now() - t0) / dur), k = ease(t);
+          stepTo(me, fA, tA, k); stepTo(partner, fB, tB, k);
+          if (t >= 1) { clearInterval(iv); res(); }
+        }, 16);
+      });
+      try {
+        try { me.webContents.send('vrm-hug-play', { role: 'initiator', dir }); } catch (er) {}
+        try { partner.webContents.send('vrm-hug-play', { role: 'partner', dir: -dir }); } catch (er) {}
+        await tween(550, A0, targetA, B0, targetB);                // approach
+        await new Promise(r => setTimeout(r, 1850));               // hold the embrace
+        await tween(500, targetA, A0, targetB, B0);                // part again
+      } finally {
+        if (me && !me.isDestroyed()) { try { me.setBounds(A0); } catch (er) {} }
+        if (partner && !partner.isDestroyed()) { try { partner.setBounds(B0); } catch (er) {} }
+        wanderingWindows.delete(me); wanderingWindows.delete(partner); hugBusy = false;
+      }
+      return { ok: true };
+    });
     // Seconds since the last system-wide user input (used by the pet to auto-sleep when you're away).
     ipcMain.handle('get-system-idle-time', () => {
       try { return require('electron').powerMonitor.getSystemIdleTime(); } catch (e) { return 0; }

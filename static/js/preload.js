@@ -141,6 +141,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   summonFriend: (opts) => ipcRenderer.invoke('summon-vrm-friend', opts),
   getVrmWindowPos: () => ipcRenderer.invoke('vrm-window-pos'),
   setVrmWindowPos: (x, y) => ipcRenderer.invoke('vrm-window-move', { x, y }),
+  vrmHug: () => ipcRenderer.invoke('vrm-hug'),
+  onVrmHugPlay: (cb) => ipcRenderer.on('vrm-hug-play', (_, data) => cb(data)),
   getSystemIdleTime: () => ipcRenderer.invoke('get-system-idle-time'),
   readDirectory: (dirPath) => ipcRenderer.invoke('read-directory', dirPath),
   deleteWorkspaceFile: (filePath) => ipcRenderer.invoke('delete-workspace-file', filePath),

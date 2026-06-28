@@ -6,6 +6,13 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **GLB pet hug motion (two pets)**: "포옹 (Hug)" is the first coordinated two-pet motion. Picking it
+  asks the main process (new `vrm-hug` IPC) to slide the two pet windows together (approach → hold →
+  part, via `setBounds` tweens), then signal both renderers (`vrm-hug-play`) to play their hug half in
+  sync — the chick wraps its wings, the puppy reaches in on its paws and wags, both lean toward each
+  other with 💕 hearts rising between them. Wander is blocked during the hug; plays a solo air-hug if
+  there is no partner. Builds a reusable two-pet coordination layer (window pairing + synced IPC +
+  role-based half-animation) that Play/Heart will reuse.
 - **GLB pet eat motion**: "먹기 (Eat)" plays a ~3.2s head-down feeding loop (lean in → eat cycles → look
   up satisfied with an `outBack` pop). The chick does quick sharp ground pecks (head taps, beak opens,
   wings flick) over scattered grain; the puppy buries its head in a bowl with fast nibbles, tongue laps,
