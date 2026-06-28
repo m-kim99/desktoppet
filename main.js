@@ -1157,6 +1157,10 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
       if (win && !win.isDestroyed()) { try { win.setPosition(Math.round(x), Math.round(y)); } catch (er) {} }
       return true;
     });
+    // Seconds since the last system-wide user input (used by the pet to auto-sleep when you're away).
+    ipcMain.handle('get-system-idle-time', () => {
+      try { return require('electron').powerMonitor.getSystemIdleTime(); } catch (e) { return 0; }
+    });
 
     ipcMain.handle('vrm-wander', async (event, opts = {}) => {
       const win = BrowserWindow.fromWebContents(event.sender);

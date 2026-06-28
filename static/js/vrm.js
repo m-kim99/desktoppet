@@ -1833,7 +1833,7 @@ async function loadGlbPet(url) {
         zzzEl = document.createElement('div');
         zzzEl.id = 'glb-zzz';
         zzzEl.textContent = '💤';
-        zzzEl.style.cssText = 'position:fixed; left:58%; top:22%; font-size:22px; opacity:0; pointer-events:none; z-index:9998; transition:opacity 0.5s; animation:glbZzzFloat 2.4s ease-in-out infinite;';
+        zzzEl.style.cssText = 'position:fixed; left:58%; top:22%; font-size:44px; opacity:0; pointer-events:none; z-index:9998; transition:opacity 0.5s; animation:glbZzzFloat 2.4s ease-in-out infinite;';
         document.body.appendChild(zzzEl);
         const zstyle = document.createElement('style');
         zstyle.textContent = '@keyframes glbZzzFloat{0%{transform:translateY(0) scale(0.9);}50%{transform:translateY(-10px) scale(1.05);}100%{transform:translateY(-20px) scale(0.9);}}';
@@ -1841,7 +1841,7 @@ async function loadGlbPet(url) {
     }
     const setZzz = (on) => { zzzEl.style.opacity = on ? '0.9' : '0'; };
 
-    glbPet = { wrap, root, feet, tail, ears, wings, eyes, idle, setZzz, sleeping: false, walking: false, walkAmt: 0, t: 0 };
+    glbPet = { wrap, root, feet, tail, ears, wings, eyes, idle, setZzz, sleeping: false, autoSleeping: false, walking: false, walkAmt: 0, t: 0 };
     console.log('[GlbPet] loaded', url, '| feet:', feet.map(f => f.name), '| wings:', wings.length, '| eyes:', eyes.length);
     if (typeof hideModelSwitchingIndicator === 'function') { try { hideModelSwitchingIndicator(); } catch (e) {} }
 }
@@ -4342,7 +4342,7 @@ if (!isRenderMode && window.electronAPI && window.electronAPI.setVrmWindowPos) {
     let _wm = false, _wmX = 0, _wmY = 0, _wmSx = 0, _wmSy = 0;
     _moveCanvas.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return;
-        if (glbPet) glbPet.sleeping = false;   // clicking the pet wakes it up
+        if (glbPet) { glbPet.sleeping = false; glbPet.autoSleeping = false; }   // clicking the pet wakes it up
         _wmSx = e.screenX; _wmSy = e.screenY; _moveCanvas.style.cursor = 'grabbing';
         try { _moveCanvas.setPointerCapture(e.pointerId); } catch (err) {}
         window.electronAPI.getVrmWindowPos().then((p) => { _wmX = p[0]; _wmY = p[1]; _wm = true; }).catch(() => {});
@@ -4412,6 +4412,36 @@ if (windowName === 'default' && !isRenderMode && window.electronAPI && window.el
 })();
 
 // ===== Idle wander: the pet window drifts to a nearby spot when idle (with walk motion) =====
+// ===== Auto-sleep: doze off when the user is away (10 min idle), sooner at night (23:00–07:00) =====
+// Uses the system-wide idle time (powerMonitor) so the pet sleeps when YOU step away, not merely
+// when the pet isn't clicked. Auto-sleep is undone when activity resumes; a manual sleep (from the
+// motion menu) is left alone — it only ends on a click.
+(function setupAutoSleep() {
+    if (!(window.electronAPI && typeof window.electronAPI.getSystemIdleTime === 'function')) return;
+    const DAY_IDLE = 600;     // 10 min of no input
+    const NIGHT_IDLE = 120;   // 2 min at night
+    // Instant wake: the moment any input reaches the pet window, drop an auto-sleep without waiting
+    // for the next poll. (Manual sleeps are left alone.)
+    const wakeNow = () => { if (glbPet && glbPet.autoSleeping) { glbPet.sleeping = false; glbPet.autoSleeping = false; } };
+    window.addEventListener('mousemove', wakeNow, { passive: true });
+    window.addEventListener('pointerdown', wakeNow, { passive: true });
+    window.addEventListener('keydown', wakeNow);
+    // Poll system-wide idle on a short interval so returning from another app also wakes quickly.
+    setInterval(async () => {
+        if (!glbPet) return;
+        let idle = 0;
+        try { idle = await window.electronAPI.getSystemIdleTime(); } catch (e) { return; }
+        const hour = new Date().getHours();
+        const night = (hour >= 23 || hour < 7);
+        const shouldSleep = idle >= (night ? NIGHT_IDLE : DAY_IDLE);
+        if (shouldSleep && !glbPet.sleeping) {
+            glbPet.sleeping = true; glbPet.autoSleeping = true;
+        } else if (!shouldSleep && glbPet.sleeping && glbPet.autoSleeping) {
+            glbPet.sleeping = false; glbPet.autoSleeping = false;   // user came back → wake (manual sleeps stay)
+        }
+    }, 2000);
+})();
+
 (function setupWander() {
     try {
         const cfg = modelConfig || {};
@@ -4439,8 +4469,8 @@ if (windowName === 'default' && !isRenderMode && window.electronAPI && window.el
         async function wanderOnce() {
             const inputBox = document.getElementById('text-input-container');
             const inputOpen = !!inputBox && inputBox.style.opacity === '1';
-            // Only wander when idle: not already moving, input box closed, no recent speech.
-            if (!wandering && !inputOpen && Date.now() - vrmLastSpeakTs >= baseMs) {
+            // Only wander when idle: not already moving, input box closed, no recent speech, not asleep.
+            if (!wandering && !inputOpen && !(glbPet && glbPet.sleeping) && Date.now() - vrmLastSpeakTs >= baseMs) {
                 wandering = true;
                 const walkUrl = findWalkMotion();
                 if (walkUrl && idleAnimationManager) {

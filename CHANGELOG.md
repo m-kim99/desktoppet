@@ -13,6 +13,11 @@ Patch notes go here — newest on top.
   eyes shut, slow deep breathing, head drooped with a gentle doze-bob, lazy tail, and a floating
   💤 above the head. It's a state, not a one-shot: the pet wakes when clicked or when it starts
   walking.
+- **Auto-sleep**: the pet dozes off on its own after 10 min of no system-wide input (away), or
+  after just 2 min at night (23:00–07:00), using Electron `powerMonitor.getSystemIdleTime`. It
+  wakes instantly when input reaches the pet window, and within ~2s when you return from another
+  app. A manual sleep (from the menu) is left alone — it only ends on a click. The pet won't wander
+  while asleep.
 - **GLB pet idle motion**: when not walking, chick/puppy now feel alive — subtle breathing bob and
   a slow sway (continuous), plus occasional eye blinks, a gentle head bow/nod, and chick wing
   flutter / puppy ear twitch. Each "occasional" action fires on its own randomized timer with a
