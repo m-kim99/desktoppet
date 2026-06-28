@@ -1855,6 +1855,23 @@ async function loadGlbPet(url) {
     }
     const setThink = (on) => { thinkEl.style.opacity = on ? '0.95' : '0'; };
 
+    // "파이팅!" cheer text shown while the cheer motion plays (no bubble; color randomized each play).
+    let cheerEl = document.getElementById('glb-cheer');
+    if (!cheerEl) {
+        cheerEl = document.createElement('div');
+        cheerEl.id = 'glb-cheer';
+        cheerEl.textContent = '파이팅!';
+        cheerEl.style.cssText = 'position:fixed; left:50%; top:13%; transform:translateX(-50%); font-size:18px; font-weight:700; color:#ff5a5f; text-shadow:0 2px 5px rgba(0,0,0,0.55), 0 0 2px rgba(0,0,0,0.5); opacity:0; pointer-events:none; z-index:9998; transition:opacity 0.2s; white-space:nowrap;';
+        document.body.appendChild(cheerEl);
+    }
+    // Pick a fresh random color on each hidden→shown transition, i.e. each time the cheer motion plays.
+    const setCheer = (on) => {
+        if (on && cheerEl.style.opacity !== '1') {
+            cheerEl.style.color = `hsl(${Math.floor(Math.random() * 360)}, 85%, 58%)`;
+        }
+        cheerEl.style.opacity = on ? '1' : '0';
+    };
+
     // Classify feet/wings by ON-SCREEN side. The wrap's 180° Y flip mirrors the model's left/right,
     // so we sort by world X (after a matrix update) to find the screen-left vs screen-right limbs —
     // the wave plants the screen-left foot and waves the screen-right wing/foot.
@@ -1864,7 +1881,7 @@ async function loadGlbPet(url) {
     const footWave  = feet.length ? feet.slice().sort((a, b) => _wx(b) - _wx(a))[0] : null;   // screen-right
     const wingWave  = wings.length ? wings.slice().sort((a, b) => _wx(b) - _wx(a))[0] : null;  // screen-right
 
-    glbPet = { wrap, root, feet, tail, ears, wings, eyes, footPlant, footWave, wingWave, idle, setZzz, setThink, sleeping: false, autoSleeping: false, walking: false, walkAmt: 0, t: 0 };
+    glbPet = { wrap, root, feet, tail, ears, wings, eyes, footPlant, footWave, wingWave, idle, setZzz, setThink, setCheer, sleeping: false, autoSleeping: false, walking: false, walkAmt: 0, t: 0 };
     glbPet.action = { id: 'wave', t: 0 };   // greet when the character appears / is summoned
     console.log('[GlbPet] loaded', url, '| feet:', feet.map(f => f.name), '| wings:', wings.length, '| eyes:', eyes.length);
     if (typeof hideModelSwitchingIndicator === 'function') { try { hideModelSwitchingIndicator(); } catch (e) {} }
@@ -1890,15 +1907,17 @@ function updateGlbPet(delta) {
         glbPet.eyes.forEach(ey => { ey.scale.y = ey.userData._restScaleY * 0.1; });   // closed
         if (glbPet.setZzz) glbPet.setZzz(true);
         if (glbPet.setThink) glbPet.setThink(false);
+        if (glbPet.setCheer) glbPet.setCheer(false);
         return;
     }
     if (glbPet.setZzz) glbPet.setZzz(false);
     if (glbPet.setThink) glbPet.setThink(false);
+    if (glbPet.setCheer) glbPet.setCheer(false);
 
     // One-shot motions (from the motion menu / on summon). Plays for its duration, then clears and
     // falls through to idle. Each frame starts from rest so leftover idle pose doesn't bleed in.
     if (glbPet.action) {
-        const DUR = { wave: 2.4, happy: 1.8, think: 2.8, dance: 4.5 };
+        const DUR = { wave: 2.4, happy: 1.8, think: 2.8, dance: 4.5, cheer: 3.5, celebrate: 2.6 };
         const dur = DUR[glbPet.action.id] || 2.0;
         glbPet.action.t += delta;
         const p = glbPet.action.t / dur;
@@ -1908,6 +1927,7 @@ function updateGlbPet(delta) {
             glbPet.ears.forEach(e => { e.rotation.x = e.userData._restRotX || 0; });
             glbPet.wings.forEach(wg => { wg.rotation.z = wg.userData._restRotZ || 0; });
             glbPet.eyes.forEach(ey => { ey.scale.y = ey.userData._restScaleY; });
+            glbPet.wrap.position.y = 0;
             glbPet.wrap.rotation.x = 0;
             glbPet.wrap.rotation.z = 0;
             if (glbPet.tail) glbPet.tail.rotation.y = 0;
@@ -1995,6 +2015,59 @@ function updateGlbPet(delta) {
                     a.noteT = 0.34;
                 }
             }
+            if (glbPet.action.id === 'cheer') {
+                // Rooting for you: rhythmic up-pumps + bouncy beat, leaning toward the viewer; bubble.
+                const a = glbPet.action;
+                const env = Math.min(1, p * 5) * Math.min(1, (1 - p) * 5);
+                const pump = Math.pow(Math.max(0, Math.sin(glbPet.t * Math.PI * 3)), 0.7);
+                glbPet.wrap.position.y = pump * 0.05 * env;
+                glbPet.wrap.rotation.x = -0.06 * env;
+                glbPet.wrap.rotation.z = Math.sin(glbPet.t * Math.PI * 6) * 0.04 * env;
+                if (glbPet.wings.length) {
+                    glbPet.wings.forEach((wg, i) => {
+                        const side = (i % 2 === 0) ? 1 : -1;
+                        wg.rotation.z = (wg.userData._restRotZ || 0) - side * (0.4 + pump * 0.7) * env;
+                    });
+                } else {
+                    glbPet.feet.forEach((f, i) => {
+                        const ph = (i % 2 === 0) ? pump : (1 - pump);
+                        f.rotation.x = (f.userData._restRotX || 0) - ph * 0.7 * env;
+                    });
+                    if (glbPet.tail) glbPet.tail.rotation.y = Math.sin(glbPet.t * 12) * 0.3 * env;
+                }
+                glbPet.ears.forEach((eo) => { eo.rotation.x = (eo.userData._restRotX || 0) + pump * 0.2 * env; });
+                a.noteT = (a.noteT ?? 0) - delta;
+                if (a.noteT <= 0 && env > 0.3) {
+                    spawnFloatEmoji(Math.random() < 0.5 ? '✊' : '💪', { left: 42 + Math.random() * 26, top: 26 + Math.random() * 6, size: 24 + Math.random() * 8, dx: (Math.random() - 0.5) * 30 });
+                    a.noteT = 0.5;
+                }
+                if (glbPet.setCheer) glbPet.setCheer(true);
+            }
+            if (glbPet.action.id === 'celebrate') {
+                // One big burst: anticipation crouch -> leap + full spin -> settle; confetti at the peak.
+                const a = glbPet.action;
+                let y;
+                if (p < 0.15) {
+                    y = -0.03 * Ease.inOutSine(p / 0.15);
+                } else if (p < 0.65) {
+                    const k = (p - 0.15) / 0.50;
+                    y = -0.03 * (1 - k) + Math.sin(k * Math.PI) * 0.14;
+                } else {
+                    const k = (p - 0.65) / 0.35;
+                    y = Math.sin(k * Math.PI) * -0.015 * (1 - k);
+                }
+                glbPet.wrap.position.y = y;
+                glbPet.wrap.rotation.y = Math.PI + Ease.inOutSine(Math.min(1, p / 0.7)) * Math.PI * 2;
+                const spread = Math.sin(Math.min(1, Math.max(0, (p - 0.15) / 0.5)) * Math.PI);
+                if (glbPet.wings.length) {
+                    glbPet.wings.forEach((wg, i) => {
+                        const side = (i % 2 === 0) ? 1 : -1;
+                        wg.rotation.z = (wg.userData._restRotZ || 0) - side * spread * 0.9;
+                    });
+                }
+                if (glbPet.tail) glbPet.tail.rotation.y = Math.sin(glbPet.t * 16) * 0.3;
+                if (!a.burst && p >= 0.4) { a.burst = true; spawnBurstEmoji(['🎉','🎊','✨','🎈'], 16, { cx: 50, cy: 30 }); }
+            }
             return;
         }
         glbPet.action = null;   // done → fall through to idle
@@ -2079,12 +2152,36 @@ function spawnFloatEmoji(ch, { left = 50, top = 28, size = 28, dx = 0, duration 
     ], { duration, easing: 'ease-out' }).onfinish = () => el.remove();
 }
 
+// Burst many emoji particles at once: they fly outward then fall (gravity) and fade. For confetti /
+// celebration "pops" — visually distinct from the steady upward float of spawnFloatEmoji.
+function spawnBurstEmoji(chars, count = 14, { cx = 50, cy = 32 } = {}) {
+    for (let i = 0; i < count; i++) {
+        const el = document.createElement('div');
+        el.textContent = chars[Math.floor(Math.random() * chars.length)];
+        const size = 18 + Math.random() * 16;
+        el.style.cssText = `position:fixed; left:${cx}%; top:${cy}%; font-size:${size}px; opacity:1; pointer-events:none; z-index:9998; will-change:transform,opacity;`;
+        document.body.appendChild(el);
+        const ang = Math.random() * Math.PI * 2;
+        const dist = 40 + Math.random() * 90;
+        const dx = Math.cos(ang) * dist;
+        const upY = -Math.abs(Math.sin(ang)) * dist * 0.5 - 20;     // initial outward/up
+        const fallY = 120 + Math.random() * 90;                      // then fall past start
+        el.animate([
+            { transform: 'translate(0,0) rotate(0deg)', opacity: 1, offset: 0 },
+            { transform: `translate(${dx * 0.6}px, ${upY}px) rotate(${(Math.random() - 0.5) * 220}deg)`, opacity: 1, offset: 0.35 },
+            { transform: `translate(${dx}px, ${fallY}px) rotate(${(Math.random() - 0.5) * 400}deg)`, opacity: 0, offset: 1 },
+        ], { duration: 1100 + Math.random() * 800, easing: 'cubic-bezier(.2,.6,.3,1)' }).onfinish = () => el.remove();
+    }
+}
+
 const GLB_MOTIONS = [
-    { id: 'wave',  label: '인사 (Wave)' },
-    { id: 'happy', label: '기쁨 (Happy)' },
-    { id: 'dance', label: '춤 (Dance)' },
-    { id: 'think', label: '생각 (Think)' },
-    { id: 'sleep', label: '수면 (Sleep)' },
+    { id: 'wave',      label: '인사 (Wave)' },
+    { id: 'happy',     label: '기쁨 (Happy)' },
+    { id: 'dance',     label: '춤 (Dance)' },
+    { id: 'cheer',     label: '응원 (Cheer)' },
+    { id: 'celebrate', label: '축하 (Celebrate)' },
+    { id: 'think',     label: '생각 (Think)' },
+    { id: 'sleep',     label: '수면 (Sleep)' },
 ];
 // Play a motion. 'sleep' is a state (stays until the pet is clicked or starts walking); others are
 // timed one-shots that updateGlbPet drives via glbPet.action.

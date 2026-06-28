@@ -6,6 +6,12 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **GLB pet celebrate motion**: "축하 (Celebrate)" does one big burst — an anticipation crouch, a leap
+  with a full spin, then a settle, with a confetti burst at the peak (new `spawnFloatEmojiBurst()`
+  particle helper: many emoji fly out, fall under gravity, and fade).
+- **GLB pet cheer motion**: "응원 (Cheer)" roots for you with rhythmic up-pumps, a bouncy beat and a
+  forward lean while throwing ✊💪 emoji, and shows a "파이팅!" shout above the head. The shout has no
+  bubble and picks a fresh random color each time the motion plays.
 - **GLB pet motion menu**: a control-panel button (main pet, `fa-person-running`) opens a dropdown
   of on-demand motions to play. The list is data-driven from `GLB_MOTIONS` and `playGlbMotion(id)`
   is the play hook; Walk and Idle are default states and are intentionally excluded.
