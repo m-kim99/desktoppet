@@ -13,6 +13,12 @@ Patch notes go here — newest on top.
   eyes shut, slow deep breathing, head drooped with a gentle doze-bob, lazy tail, and a floating
   💤 above the head. It's a state, not a one-shot: the pet wakes when clicked or when it starts
   walking.
+- **GLB pet happy motion**: "기쁨 (Happy)" in the motion menu plays an excited reaction — the chick
+  flaps both wings fast with bouncy hops, the puppy spins a full turn while hopping and wagging its
+  tail hard (~1.8s one-shot, then back to idle).
+- **Motion button on summoned friends**: friends now get the motion dropdown too (below the close
+  button, revealed on hover), so you can play motions on a friend — previously they had only a close
+  button.
 - **GLB pet wave (greeting) motion**: the pet waves hello when it appears / is summoned, and from
   the motion menu ("인사"). It's the first timed one-shot (driven by `glbPet.action`, ~2.4s, then
   back to idle): plants the screen-left foot, leans, and waves the screen-right limb — the chick

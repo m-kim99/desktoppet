@@ -1882,7 +1882,7 @@ function updateGlbPet(delta) {
     // One-shot motions (from the motion menu / on summon). Plays for its duration, then clears and
     // falls through to idle. Each frame starts from rest so leftover idle pose doesn't bleed in.
     if (glbPet.action) {
-        const DUR = { wave: 2.4 };
+        const DUR = { wave: 2.4, happy: 1.8 };
         const dur = DUR[glbPet.action.id] || 2.0;
         glbPet.action.t += delta;
         const p = glbPet.action.t / dur;
@@ -1892,6 +1892,7 @@ function updateGlbPet(delta) {
             glbPet.ears.forEach(e => { e.rotation.x = e.userData._restRotX || 0; });
             glbPet.wings.forEach(wg => { wg.rotation.z = wg.userData._restRotZ || 0; });
             glbPet.eyes.forEach(ey => { ey.scale.y = ey.userData._restScaleY; });
+            glbPet.wrap.rotation.x = 0;
             glbPet.wrap.rotation.z = 0;
             if (glbPet.tail) glbPet.tail.rotation.y = 0;
 
@@ -1911,9 +1912,26 @@ function updateGlbPet(delta) {
                     if (glbPet.tail) glbPet.tail.rotation.y = Math.sin(t * 12.0) * (0.2 + 0.3 * raise);
                 }
             }
+            if (glbPet.action.id === 'happy') {
+                // Excited: energetic hops + a little wiggle. Chick flaps both wings fast; puppy spins
+                // a full turn and wags its tail hard.
+                const e = Math.sin(p * Math.PI);                                              // ease in/out
+                glbPet.wrap.position.y = Math.abs(Math.sin(p * Math.PI * 6)) * 0.05 * (0.4 + 0.6 * e);   // ~3 hops
+                glbPet.wrap.rotation.z = Math.sin(p * Math.PI * 8) * 0.06 * e;                            // wiggle
+                if (glbPet.wings.length) {
+                    glbPet.wings.forEach((wg, i) => {
+                        const side = (i % 2 === 0) ? 1 : -1;
+                        wg.rotation.z = (wg.userData._restRotZ || 0) - side * (0.3 + Math.abs(Math.sin(p * Math.PI * 16)) * 0.6 * e);
+                    });
+                } else {
+                    glbPet.wrap.rotation.y = Math.PI + p * Math.PI * 2;   // one full happy spin
+                    if (glbPet.tail) glbPet.tail.rotation.y = Math.sin(t * 18.0) * (0.3 + 0.3 * e);
+                }
+            }
             return;
         }
         glbPet.action = null;   // done → fall through to idle
+        glbPet.wrap.rotation.y = Math.PI;   // undo any spin (happy)
     }
 
     // Ease the walk intensity toward its target (1 while wandering, 0 while idle)
@@ -1975,8 +1993,8 @@ function updateGlbPet(delta) {
 // motion is implemented (Happy, Wave, Think, ...), add an entry here and it shows up in the menu.
 const GLB_MOTIONS = [
     { id: 'wave',  label: '인사 (Wave)' },
+    { id: 'happy', label: '기쁨 (Happy)' },
     { id: 'sleep', label: '수면 (Sleep)' },
-    // { id: 'happy', label: '기쁨 (Happy)' },
 ];
 // Play a motion. 'sleep' is a state (stays until the pet is clicked or starts walking); others are
 // timed one-shots that updateGlbPet drives via glbPet.action.
@@ -4359,13 +4377,66 @@ if (windowName === 'default') {
     fClose.addEventListener('click', (e) => { e.stopPropagation(); window.close(); });
     document.body.appendChild(fClose);
 
-    // Reveal the close button only while the mouse is over the friend; hide after a short idle.
+    // --- motion button: play a motion on this friend (the only control besides close) ---
+    const fMotion = document.createElement('div');
+    fMotion.innerHTML = '<i class="fas fa-person-running"></i>';
+    fMotion.title = '모션';
+    fMotion.style.cssText = `
+        position: fixed; top: 40px; right: 8px; width: 26px; height: 26px;
+        border-radius: 50%; background: rgba(255,255,255,0.92); border: 1px solid rgba(0,0,0,0.1);
+        color: #333; display: flex; align-items: center; justify-content: center; cursor: pointer;
+        font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 999999; user-select: none;
+        opacity: 0; pointer-events: none; transition: opacity 0.2s;
+    `;
+    const fMenu = document.createElement('div');
+    fMenu.style.cssText = `
+        position: fixed; top: 72px; right: 8px; display: none; flex-direction: column; gap: 4px;
+        padding: 6px; min-width: 110px; background: rgba(255,255,255,0.97);
+        border: 1px solid rgba(0,0,0,0.1); border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,0.2);
+        z-index: 1000000; user-select: none;
+    `;
+    let fMenuOpen = false;
+    const fCloseMenu = () => { fMenu.style.display = 'none'; fMenuOpen = false; };
+    const fRenderMenu = () => {
+        fMenu.innerHTML = '';
+        if (!GLB_MOTIONS.length) {
+            const empty = document.createElement('div');
+            empty.textContent = '곧 추가됩니다';
+            empty.style.cssText = 'padding:6px 8px; font-size:12px; color:#999; text-align:center; white-space:nowrap;';
+            fMenu.appendChild(empty);
+            return;
+        }
+        GLB_MOTIONS.forEach(m => {
+            const item = document.createElement('div');
+            item.textContent = m.label;
+            item.style.cssText = 'padding:6px 10px; font-size:13px; color:#333; cursor:pointer; border-radius:6px; white-space:nowrap;';
+            item.addEventListener('mouseenter', () => item.style.background = 'rgba(0,0,0,0.06)');
+            item.addEventListener('mouseleave', () => item.style.background = 'transparent');
+            item.addEventListener('pointerdown', (e) => e.stopPropagation());
+            item.addEventListener('click', (e) => { e.stopPropagation(); playGlbMotion(m.id); fCloseMenu(); });
+            fMenu.appendChild(item);
+        });
+    };
+    fMotion.addEventListener('pointerdown', (e) => e.stopPropagation());
+    fMotion.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (fMenuOpen) { fCloseMenu(); }
+        else { fRenderMenu(); fMenu.style.display = 'flex'; fMenuOpen = true; }
+    });
+    document.body.appendChild(fMotion);
+    document.body.appendChild(fMenu);
+    document.addEventListener('pointerdown', (e) => { if (fMenuOpen && !fMotion.contains(e.target) && !fMenu.contains(e.target)) fCloseMenu(); });
+
+    // Reveal the motion + close buttons only while the mouse is over the friend; hide after a short
+    // idle (but keep them up while the motion menu is open).
     let _fHideTimer = null;
     const _revealFriendUI = () => {
-        fClose.style.opacity = '1';
-        fClose.style.pointerEvents = 'auto';
+        for (const el of [fClose, fMotion]) { el.style.opacity = '1'; el.style.pointerEvents = 'auto'; }
         if (_fHideTimer) clearTimeout(_fHideTimer);
-        _fHideTimer = setTimeout(() => { fClose.style.opacity = '0'; fClose.style.pointerEvents = 'none'; }, 2000);
+        _fHideTimer = setTimeout(() => {
+            if (fMenuOpen) return;
+            for (const el of [fClose, fMotion]) { el.style.opacity = '0'; el.style.pointerEvents = 'none'; }
+        }, 2000);
     };
     window.addEventListener('mousemove', _revealFriendUI);
     window.addEventListener('pointerdown', _revealFriendUI);
