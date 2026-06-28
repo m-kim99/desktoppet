@@ -1905,7 +1905,7 @@ function updateGlbPet(delta) {
                 // footPlant stays at rest (planted). Chick waves ONLY its wing; puppy (no wings)
                 // waves its foot instead, plus a happy tail wag.
                 if (glbPet.wingWave) {
-                    glbPet.wingWave.rotation.z = (glbPet.wingWave.userData._restRotZ || 0) + (raise * 1.0 + wv * 0.5);
+                    glbPet.wingWave.rotation.z = (glbPet.wingWave.userData._restRotZ || 0) - (raise * 1.0 + wv * 0.5);   // wave the wing forward (was tilting back)
                 } else {
                     if (glbPet.footWave) glbPet.footWave.rotation.x = (glbPet.footWave.userData._restRotX || 0) - (raise * 0.9 + wv * 0.5);
                     if (glbPet.tail) glbPet.tail.rotation.y = Math.sin(t * 12.0) * (0.2 + 0.3 * raise);
