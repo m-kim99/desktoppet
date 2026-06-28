@@ -1817,6 +1817,10 @@ async function loadGlbPet(url) {
     wings.forEach(wg => { wg.userData._restRotZ = wg.rotation.z; });
     const eyes = findAll(/eye|highlight/i);         // eyes + highlights (squash to blink)
     eyes.forEach(ey => { ey.userData._restScaleY = ey.scale.y; });
+    const beak = findOne(/beak/i);                  // chick beak (opens while pecking)
+    if (beak) beak.userData._restRotX = beak.rotation.x;
+    const tongue = findOne(/tongue/i);              // puppy tongue (laps while eating)
+    if (tongue) tongue.userData._restRotX = tongue.rotation.x;
 
     // Idle behaviors fire on randomized timers so "occasional" reads as natural, not metronomic.
     // Each has a countdown to the next occurrence (*Nx) and a remaining-duration of the current
@@ -1872,6 +1876,17 @@ async function loadGlbPet(url) {
         cheerEl.style.opacity = on ? '1' : '0';
     };
 
+    // Food prop on the ground while the eat motion plays — 🌾 grain for the chick, 🥣 bowl for the puppy.
+    let eatEl = document.getElementById('glb-eat');
+    if (!eatEl) {
+        eatEl = document.createElement('div');
+        eatEl.id = 'glb-eat';
+        eatEl.style.cssText = 'position:fixed; left:50%; top:70%; transform:translateX(-50%); font-size:40px; opacity:0; pointer-events:none; z-index:9998; transition:opacity 0.25s;';
+        document.body.appendChild(eatEl);
+    }
+    eatEl.textContent = wings.length ? '🌾' : '🥣';
+    const setEat = (on) => { eatEl.style.opacity = on ? '1' : '0'; };
+
     // Classify feet/wings by ON-SCREEN side. The wrap's 180° Y flip mirrors the model's left/right,
     // so we sort by world X (after a matrix update) to find the screen-left vs screen-right limbs —
     // the wave plants the screen-left foot and waves the screen-right wing/foot.
@@ -1881,9 +1896,9 @@ async function loadGlbPet(url) {
     const footWave  = feet.length ? feet.slice().sort((a, b) => _wx(b) - _wx(a))[0] : null;   // screen-right
     const wingWave  = wings.length ? wings.slice().sort((a, b) => _wx(b) - _wx(a))[0] : null;  // screen-right
 
-    glbPet = { wrap, root, feet, tail, ears, wings, eyes, footPlant, footWave, wingWave, idle, setZzz, setThink, setCheer, sleeping: false, autoSleeping: false, walking: false, walkAmt: 0, t: 0 };
+    glbPet = { wrap, root, feet, tail, ears, wings, eyes, beak, tongue, footPlant, footWave, wingWave, idle, setZzz, setThink, setCheer, setEat, sleeping: false, autoSleeping: false, walking: false, walkAmt: 0, t: 0 };
     glbPet.action = { id: 'wave', t: 0 };   // greet when the character appears / is summoned
-    console.log('[GlbPet] loaded', url, '| feet:', feet.map(f => f.name), '| wings:', wings.length, '| eyes:', eyes.length);
+    console.log('[GlbPet] loaded', url, '| feet:', feet.map(f => f.name), '| wings:', wings.length, '| eyes:', eyes.length, '| beak:', !!beak, '| tongue:', !!tongue);
     if (typeof hideModelSwitchingIndicator === 'function') { try { hideModelSwitchingIndicator(); } catch (e) {} }
 }
 
@@ -1905,19 +1920,23 @@ function updateGlbPet(delta) {
         glbPet.wings.forEach(wg => { wg.rotation.z = wg.userData._restRotZ || 0; });
         if (glbPet.tail) glbPet.tail.rotation.y = Math.sin(t * 1.5) * 0.08;   // slow lazy tail
         glbPet.eyes.forEach(ey => { ey.scale.y = ey.userData._restScaleY * 0.1; });   // closed
+        if (glbPet.beak) glbPet.beak.rotation.x = glbPet.beak.userData._restRotX || 0;
+        if (glbPet.tongue) glbPet.tongue.rotation.x = glbPet.tongue.userData._restRotX || 0;
         if (glbPet.setZzz) glbPet.setZzz(true);
         if (glbPet.setThink) glbPet.setThink(false);
         if (glbPet.setCheer) glbPet.setCheer(false);
+        if (glbPet.setEat) glbPet.setEat(false);
         return;
     }
     if (glbPet.setZzz) glbPet.setZzz(false);
     if (glbPet.setThink) glbPet.setThink(false);
     if (glbPet.setCheer) glbPet.setCheer(false);
+    if (glbPet.setEat) glbPet.setEat(false);
 
     // One-shot motions (from the motion menu / on summon). Plays for its duration, then clears and
     // falls through to idle. Each frame starts from rest so leftover idle pose doesn't bleed in.
     if (glbPet.action) {
-        const DUR = { wave: 2.4, happy: 1.8, think: 2.8, dance: 4.5, cheer: 3.5, celebrate: 2.6 };
+        const DUR = { wave: 2.4, happy: 1.8, think: 2.8, dance: 4.5, cheer: 3.5, celebrate: 2.6, eat: 3.2 };
         const dur = DUR[glbPet.action.id] || 2.0;
         glbPet.action.t += delta;
         const p = glbPet.action.t / dur;
@@ -1931,6 +1950,8 @@ function updateGlbPet(delta) {
             glbPet.wrap.rotation.x = 0;
             glbPet.wrap.rotation.z = 0;
             if (glbPet.tail) glbPet.tail.rotation.y = 0;
+            if (glbPet.beak) glbPet.beak.rotation.x = glbPet.beak.userData._restRotX || 0;
+            if (glbPet.tongue) glbPet.tongue.rotation.x = glbPet.tongue.userData._restRotX || 0;
 
             if (glbPet.action.id === 'wave') {
                 // Plant the screen-left foot, lean right, and wave the screen-right wing + foot.
@@ -2068,6 +2089,44 @@ function updateGlbPet(delta) {
                 if (glbPet.tail) glbPet.tail.rotation.y = Math.sin(glbPet.t * 16) * 0.3;
                 if (!a.burst && p >= 0.4) { a.burst = true; spawnBurstEmoji(['🎉','🎊','✨','🎈'], 16, { cx: 50, cy: 30 }); }
             }
+            if (glbPet.action.id === 'eat') {
+                // Head-down feeding. Phases: A(0–.15) lean in, B(.15–.82) eat cycles, C(.82–1) look up
+                // satisfied (outBack pop). Chick = sharp ground pecks + beak; puppy = deep bowl nibbles,
+                // tongue laps, tail wags, ears flop. Drives the ground food prop + crumb/✨ particles.
+                const a = glbPet.action;
+                const eating = p >= 0.15 && p < 0.82;
+                let down;                                       // head-lowered amount: 0 rest → 1 buried
+                if (p < 0.15)    down = Ease.inOutSine(p / 0.15);
+                else if (eating) down = 1;
+                else             down = 1 - Ease.outBack(Math.min(1, (p - 0.82) / 0.18));   // pop back up
+                if (glbPet.wings.length) {
+                    // 🐤 chick: quick sharp pecks — head taps down hard, beak opens on contact, wings flick.
+                    const peck = eating ? Math.pow(Math.max(0, Math.sin(glbPet.t * Math.PI * 5)), 0.5) : 0;
+                    glbPet.wrap.rotation.x = 0.20 * down + peck * 0.42;
+                    glbPet.wrap.position.y = -peck * 0.012;
+                    if (glbPet.beak) glbPet.beak.rotation.x = (glbPet.beak.userData._restRotX || 0) - peck * 0.25;
+                    glbPet.wings.forEach((wg, i) => {
+                        const side = (i % 2 === 0) ? 1 : -1;
+                        wg.rotation.z = (wg.userData._restRotZ || 0) - side * (peck * 0.20 + down * 0.10);
+                    });
+                    glbPet.ears.forEach(eo => { eo.rotation.x = (eo.userData._restRotX || 0) + peck * 0.10; });
+                } else {
+                    // 🐶 puppy: head buried in the bowl, fast little nibbles, tongue laps, tail wags, ears flop.
+                    const chew = eating ? Math.sin(glbPet.t * Math.PI * 7) * 0.5 + 0.5 : 0;
+                    glbPet.wrap.rotation.x = 0.30 * down + chew * 0.05 * down;
+                    if (glbPet.tongue) glbPet.tongue.rotation.x = (glbPet.tongue.userData._restRotX || 0) - (Math.sin(glbPet.t * 16) * 0.5 + 0.5) * 0.30 * (eating ? 1 : 0);
+                    if (glbPet.tail) glbPet.tail.rotation.y = Math.sin(glbPet.t * 18) * 0.40 * down;
+                    glbPet.ears.forEach(eo => { eo.rotation.x = (eo.userData._restRotX || 0) + down * 0.45; });
+                }
+                glbPet.eyes.forEach(ey => { ey.scale.y = ey.userData._restScaleY * (1 - 0.45 * down); });   // content half-closed
+                if (glbPet.setEat) glbPet.setEat(true);
+                a.noteT = (a.noteT ?? 0) - delta;
+                if (a.noteT <= 0 && eating) {
+                    if (glbPet.wings.length) spawnFloatEmoji(Math.random() < 0.5 ? '🌾' : '✨', { left: 45 + Math.random() * 10, top: 60 + Math.random() * 6, size: 15 + Math.random() * 8, dx: (Math.random() - 0.5) * 24, duration: 1000 });
+                    else spawnFloatEmoji(Math.random() < 0.25 ? '❤️' : '✨', { left: 45 + Math.random() * 10, top: 56 + Math.random() * 6, size: 18 + Math.random() * 8, dx: (Math.random() - 0.5) * 24, duration: 1100 });
+                    a.noteT = 0.42;
+                }
+            }
             return;
         }
         glbPet.action = null;   // done → fall through to idle
@@ -2181,6 +2240,7 @@ const GLB_MOTIONS = [
     { id: 'cheer',     label: '응원 (Cheer)' },
     { id: 'celebrate', label: '축하 (Celebrate)' },
     { id: 'think',     label: '생각 (Think)' },
+    { id: 'eat',       label: '먹기 (Eat)' },
     { id: 'sleep',     label: '수면 (Sleep)' },
 ];
 // Play a motion. 'sleep' is a state (stays until the pet is clicked or starts walking); others are

@@ -6,7 +6,12 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
-- **GLB pet celebrate motion**: "축하 (Celebrate)" does one big burst — an anticipation crouch, a leap
+- **GLB pet eat motion**: "먹기 (Eat)" plays a ~3.2s head-down feeding loop (lean in → eat cycles → look
+  up satisfied with an `outBack` pop). The chick does quick sharp ground pecks (head taps, beak opens,
+  wings flick) over scattered grain; the puppy buries its head in a bowl with fast nibbles, tongue laps,
+  a happy tail wag and ears flopped forward. A ground food prop (🌾 grain / 🥣 bowl, `setEat` toggle) and
+  crumb/✨/❤️ particles sell it. Captures the `beak`/`tongue` nodes for the first time.
+- **GLB pet celebrate motion**: "축하 (Celebrate)" does one big burst — an anticipation crouch, a leap — an anticipation crouch, a leap
   with a full spin, then a settle, with a confetti burst at the peak (new `spawnFloatEmojiBurst()`
   particle helper: many emoji fly out, fall under gravity, and fade).
 - **GLB pet cheer motion**: "응원 (Cheer)" roots for you with rhythmic up-pumps, a bouncy beat and a
