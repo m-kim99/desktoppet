@@ -285,8 +285,8 @@ controls.update();
 const scene = new THREE.Scene();
 
 // light
-const light = new THREE.DirectionalLight( 0xffffff, 2.0 );  // lowered from Math.PI to reduce contrast
-light.position.set( 1, 3, 2 ).normalize();
+const light = new THREE.DirectionalLight( 0xffffff, 1.4 );  // key light (was 2.0; 0.6 moved to the fill light below to widen coverage at the same total brightness)
+light.position.set( 1, 2.5, 2 ).normalize();   // broad top-front key light; y nudged slightly down (was 3) to lift the under-eye/mouth shadow
 light.castShadow = true;                       // Key
 light.shadow.mapSize.set( 2048, 2048 );        // Precision
 
@@ -299,6 +299,13 @@ light.shadow.camera.bottom = -camSize;
 light.shadow.camera.near   = 0.1;
 light.shadow.camera.far    = 20;
 scene.add( light );
+
+// Fill light: ~30% of the key, from the opposite side (left-front, slightly lower) so the lit area
+// is ~30% broader (both sides + lower face covered) while the total directional intensity stays 2.0
+// (1.4 key + 0.6 fill) — wider coverage, same brightness. No shadow; only the key casts shadows.
+const fillLight = new THREE.DirectionalLight( 0xffffff, 0.6 );
+fillLight.position.set( -1, 1.8, 2.5 ).normalize();
+scene.add( fillLight );
 
 const transformControl = new TransformControls( camera, renderer.domElement );
 transformControl.addEventListener('change', () => {
@@ -1806,9 +1813,22 @@ async function loadGlbPet(url) {
     const tail = findOne(/tail/i);
     const ears = findAll(/ear/i);
     ears.forEach(e => { e.userData._restRotX = e.rotation.x; });
+    const wings = findAll(/wing/i);                 // chick wings (flutter while idle)
+    wings.forEach(wg => { wg.userData._restRotZ = wg.rotation.z; });
+    const eyes = findAll(/eye|highlight/i);         // eyes + highlights (squash to blink)
+    eyes.forEach(ey => { ey.userData._restScaleY = ey.scale.y; });
 
-    glbPet = { wrap, root, feet, tail, ears, walking: false, walkAmt: 0, t: 0 };
-    console.log('[GlbPet] loaded', url, '| feet:', feet.map(f => f.name));
+    // Idle behaviors fire on randomized timers so "occasional" reads as natural, not metronomic.
+    // Each has a countdown to the next occurrence (*Nx) and a remaining-duration of the current
+    // pulse (*Ph, 0 = inactive).
+    const idle = {
+        blinkNx: 1.5 + Math.random() * 3, blinkPh: 0,
+        nodNx:   3.0 + Math.random() * 5, nodPh:   0,
+        flutNx:  2.5 + Math.random() * 4, flutPh:  0,
+    };
+
+    glbPet = { wrap, root, feet, tail, ears, wings, eyes, idle, walking: false, walkAmt: 0, t: 0 };
+    console.log('[GlbPet] loaded', url, '| feet:', feet.map(f => f.name), '| wings:', wings.length, '| eyes:', eyes.length);
     if (typeof hideModelSwitchingIndicator === 'function') { try { hideModelSwitchingIndicator(); } catch (e) {} }
 }
 
@@ -1819,23 +1839,55 @@ function updateGlbPet(delta) {
     const target = glbPet.walking ? 1 : 0;
     glbPet.walkAmt += (target - glbPet.walkAmt) * Math.min(1, delta * 6);
     const w = glbPet.walkAmt;
+    const idle = 1 - w;        // idle-only motions fade out as the walk fades in
     const t = glbPet.t;
+    const ix = glbPet.idle;
 
-    // Body: gentle idle breathing bob + stronger hop while walking + side-to-side waddle lean
-    const bob = Math.sin(t * 2.0) * 0.008 + Math.abs(Math.sin(t * 8.0)) * 0.05 * w;
-    glbPet.wrap.position.y = bob;
-    glbPet.wrap.rotation.z = Math.sin(t * 8.0) * 0.10 * w;          // waddle
+    // Occasional eased pulse on a randomized timer -> returns a smooth 0->1->0 envelope while active,
+    // 0 otherwise. Keeps "sometimes blink / nod / flutter" from looking metronomic.
+    const pulse = (key, minGap, maxGap, dur) => {
+        if (ix[key + 'Ph'] > 0) {
+            ix[key + 'Ph'] -= delta;
+            if (ix[key + 'Ph'] <= 0) { ix[key + 'Ph'] = 0; ix[key + 'Nx'] = minGap + Math.random() * (maxGap - minGap); }
+        } else {
+            ix[key + 'Nx'] -= delta;
+            if (ix[key + 'Nx'] <= 0) ix[key + 'Ph'] = dur;
+        }
+        if (ix[key + 'Ph'] <= 0) return 0;
+        return Math.sin((1 - ix[key + 'Ph'] / dur) * Math.PI);   // ease in/out, peak mid-pulse
+    };
+    const blink   = pulse('blink', 2.5, 6.0, 0.14);          // eyes (runs even while walking)
+    const nod     = pulse('nod',   5.0, 11.0, 0.7) * idle;   // gentle head bow
+    const flutter = pulse('flut',  4.0, 9.0, 0.5) * idle;    // chick wing flutter / puppy ear twitch
 
-    // Feet: alternate forward/back swing (no bones needed — they're separate nodes)
+    // Body: idle breathing bob + walk hop; idle gentle sway + walk waddle; occasional nod
+    glbPet.wrap.position.y = Math.sin(t * 2.0) * 0.010 * idle + Math.abs(Math.sin(t * 8.0)) * 0.05 * w;
+    glbPet.wrap.rotation.z = Math.sin(t * 8.0) * 0.10 * w + Math.sin(t * 0.8) * 0.02 * idle;
+    glbPet.wrap.rotation.x = nod * 0.16;
+
+    // Feet: alternate forward/back swing while walking (at rest when idle)
     const swing = Math.sin(t * 8.0) * 0.7 * w;
     glbPet.feet.forEach((f, i) => {
-        const phase = (i % 2 === 0) ? 1 : -1;
-        f.rotation.x = (f.userData._restRotX || 0) + swing * phase;
+        f.rotation.x = (f.userData._restRotX || 0) + swing * ((i % 2 === 0) ? 1 : -1);
     });
 
-    // Puppy tail wag (always a little, more while walking); ears bounce while walking
+    // Puppy tail wag (a little always, more while walking)
     if (glbPet.tail) glbPet.tail.rotation.y = Math.sin(t * 6.0) * (0.15 + 0.25 * w);
-    glbPet.ears.forEach((e, i) => { e.rotation.x = (e.userData._restRotX || 0) + Math.sin(t * 8.0 + i) * 0.12 * w; });
+
+    // Ears: walk bounce + occasional idle twitch
+    glbPet.ears.forEach((e, i) => {
+        e.rotation.x = (e.userData._restRotX || 0) + Math.sin(t * 8.0 + i) * 0.12 * w + flutter * 0.30;
+    });
+
+    // Chick wings: occasional flutter — fast flaps enveloped by the pulse (mirrored L/R)
+    glbPet.wings.forEach((wg, i) => {
+        wg.rotation.z = (wg.userData._restRotZ || 0) + flutter * Math.sin(t * 40.0) * 0.35 * ((i % 2 === 0) ? 1 : -1);
+    });
+
+    // Eyes: occasional blink — squash vertically toward (almost) closed at the peak
+    glbPet.eyes.forEach((ey) => {
+        ey.scale.y = ey.userData._restScaleY * (1 - 0.9 * blink);
+    });
 }
 
 let VRMname = await getVRMname();

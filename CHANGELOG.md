@@ -6,6 +6,11 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **GLB pet idle motion**: when not walking, chick/puppy now feel alive — subtle breathing bob and
+  a slow sway (continuous), plus occasional eye blinks, a gentle head bow/nod, and chick wing
+  flutter / puppy ear twitch. Each "occasional" action fires on its own randomized timer with a
+  smooth ease-in/out pulse (not metronomic). Idle motions cross-fade out as the walk fades in;
+  blinking continues while walking. All procedural on the separate GLB nodes (no rig).
 - **Summon friend**: a button in the desktop pet's control panel (below the text-input button)
   spawns a second character beside the current one, loading the next model in the list as the
   friend (e.g. Chick → Puppy). New windows are staggered so they sit side by side instead of
@@ -51,8 +56,10 @@ Patch notes go here — newest on top.
 - **Summoned friends now behave like the main pet**: they wander on their own (previously
   stationary), and use the same drag interaction. The friend has no full control panel — just a
   close (X) button that appears on hover (top-right corner).
-- **Scene lighting softened**: directional light intensity lowered (Math.PI → 2.0) and ambient
-  fill raised (0.1 → 0.55) to reduce harsh contrast. Affects all models (VRM + GLB).
+- **Scene lighting softened & widened**: directional key light intensity lowered (Math.PI → 2.0,
+  then split to 1.4 key + 0.6 opposite-side fill light for ~30% broader coverage at the same total
+  brightness), key direction nudged slightly lower (y 3 → 2.5), and ambient fill raised (0.1 →
+  0.55) to reduce harsh contrast. Affects all models (VRM + GLB).
 - **Context management** switched from rule-based selective pruning to a pure **sliding window**
   (keep all system messages + the most recent `max_rounds` rounds). The previous method is kept
   commented out for reference. Default `max_rounds=0` (no limit) is unchanged.
