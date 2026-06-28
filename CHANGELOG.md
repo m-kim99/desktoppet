@@ -13,6 +13,11 @@ Patch notes go here — newest on top.
   eyes shut, slow deep breathing, head drooped with a gentle doze-bob, lazy tail, and a floating
   💤 above the head. It's a state, not a one-shot: the pet wakes when clicked or when it starts
   walking.
+- **GLB pet dance motion**: "춤 (Dance)" does a beat-synced groove — on-beat bounce, side-to-side
+  sway with a twist, limbs moving to the rhythm, and floating 🎵🎶 music notes (eases in/out at the
+  start/end). Added a reusable `spawnFloatEmoji()` particle helper for future effect motions.
+- **Motion dropdown scrolls**: the motion menu (main pet and friends) now shows ~3 items and scrolls
+  for the rest (`max-height` + `overflow-y`), so the growing list stays compact.
 - **GLB pet think motion**: "생각 (Think)" tilts the head side to side (pondering) with the chick
   scratching its head with a wing / the puppy lifting a paw to its chin, plus a 💭 thought bubble.
   Applies animation principles — anticipation (a still beat first), follow-through (settle with an

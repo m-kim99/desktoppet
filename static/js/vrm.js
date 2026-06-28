@@ -1898,7 +1898,7 @@ function updateGlbPet(delta) {
     // One-shot motions (from the motion menu / on summon). Plays for its duration, then clears and
     // falls through to idle. Each frame starts from rest so leftover idle pose doesn't bleed in.
     if (glbPet.action) {
-        const DUR = { wave: 2.4, happy: 1.8, think: 2.8 };
+        const DUR = { wave: 2.4, happy: 1.8, think: 2.8, dance: 4.5 };
         const dur = DUR[glbPet.action.id] || 2.0;
         glbPet.action.t += delta;
         const p = glbPet.action.t / dur;
@@ -1968,6 +1968,32 @@ function updateGlbPet(delta) {
                 if (glbPet.wingWave)      glbPet.wingWave.rotation.z = (glbPet.wingWave.userData._restRotZ || 0) - (pres * 0.5 + scratch);
                 else if (glbPet.footWave) glbPet.footWave.rotation.x = (glbPet.footWave.userData._restRotX || 0) - (pres * 0.7 + scratch);
                 if (glbPet.setThink) glbPet.setThink(true);
+            }
+            if (glbPet.action.id === 'dance') {
+                // Rhythmic groove: beat-synced bounce, side-to-side sway with a twist, limbs on the
+                // beat, and floating music notes. Eases in/out at the start and end (B).
+                const a = glbPet.action;
+                const env = Math.min(1, p * 4) * Math.min(1, (1 - p) * 4);   // ramp up first 25%, down last 25%
+                const beat = glbPet.t * Math.PI * 4;                         // ~2 beats / sec
+                const bounce = Math.pow(Math.abs(Math.sin(beat)), 0.6);      // punchy on-beat hop
+                const sway = Math.sin(glbPet.t * Math.PI * 2);               // weight shift (half the beat)
+                glbPet.wrap.position.y = bounce * 0.05 * env;
+                glbPet.wrap.rotation.x = bounce * 0.04 * env;                // head bob
+                glbPet.wrap.rotation.z = sway * 0.18 * env;                  // sway
+                glbPet.wrap.rotation.y = Math.PI + sway * 0.25 * env;        // twist with the sway
+                if (glbPet.wings.length) {
+                    glbPet.wings.forEach((wg, i) => {
+                        const side = (i % 2 === 0) ? 1 : -1;
+                        wg.rotation.z = (wg.userData._restRotZ || 0) - side * (0.3 + bounce * 0.4) * env;
+                    });
+                }
+                glbPet.ears.forEach((eo, i) => { eo.rotation.x = (eo.userData._restRotX || 0) + Math.sin(beat + i) * 0.2 * env; });
+                if (glbPet.tail) glbPet.tail.rotation.y = Math.sin(beat) * (0.2 + 0.2 * env);
+                a.noteT = (a.noteT ?? 0) - delta;
+                if (a.noteT <= 0 && env > 0.25) {
+                    spawnFloatEmoji(Math.random() < 0.5 ? '🎵' : '🎶', { left: 44 + Math.random() * 22, top: 20 + Math.random() * 10, size: 22 + Math.random() * 12, dx: (Math.random() - 0.5) * 44 });
+                    a.noteT = 0.34;
+                }
             }
             return;
         }
@@ -2039,9 +2065,24 @@ const Ease = {
     outBack:   (x) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); },
 };
 
+// Spawn a transient floating emoji particle (music notes, hearts, …) that drifts up and fades, then
+// self-removes. Reusable across motions (uses the Web Animations API).
+function spawnFloatEmoji(ch, { left = 50, top = 28, size = 28, dx = 0, duration = 1400 } = {}) {
+    const el = document.createElement('div');
+    el.textContent = ch;
+    el.style.cssText = `position:fixed; left:${left}%; top:${top}%; font-size:${size}px; opacity:0; pointer-events:none; z-index:9998; will-change:transform,opacity;`;
+    document.body.appendChild(el);
+    el.animate([
+        { transform: 'translate(0,0) rotate(-10deg)', opacity: 0 },
+        { opacity: 0.95, offset: 0.25 },
+        { transform: `translate(${dx}px,-48px) rotate(10deg)`, opacity: 0 },
+    ], { duration, easing: 'ease-out' }).onfinish = () => el.remove();
+}
+
 const GLB_MOTIONS = [
     { id: 'wave',  label: '인사 (Wave)' },
     { id: 'happy', label: '기쁨 (Happy)' },
+    { id: 'dance', label: '춤 (Dance)' },
     { id: 'think', label: '생각 (Think)' },
     { id: 'sleep', label: '수면 (Sleep)' },
 ];
@@ -4140,6 +4181,7 @@ function addcontrolPanel() {
         motionMenu.style.cssText = `
             position: absolute; right: 100%; top: 0; margin-right: 8px;
             display: none; flex-direction: column; gap: 4px; padding: 6px; min-width: 120px;
+            max-height: 104px; overflow-y: auto;
             background: rgba(255,255,255,0.97); border: 1px solid rgba(0,0,0,0.1); border-radius: 10px;
             box-shadow: 0 6px 18px rgba(0,0,0,0.2); z-index: 10000; -webkit-app-region: no-drag;
             backdrop-filter: blur(10px);
@@ -4159,7 +4201,7 @@ function addcontrolPanel() {
             GLB_MOTIONS.forEach(m => {
                 const item = document.createElement('div');
                 item.textContent = m.label;
-                item.style.cssText = 'padding:6px 10px; font-size:13px; color:#333; cursor:pointer; border-radius:6px; white-space:nowrap; user-select:none;';
+                item.style.cssText = 'flex-shrink:0; padding:6px 10px; font-size:13px; color:#333; cursor:pointer; border-radius:6px; white-space:nowrap; user-select:none;';
                 item.addEventListener('mouseenter', () => item.style.background = 'rgba(0,0,0,0.06)');
                 item.addEventListener('mouseleave', () => item.style.background = 'transparent');
                 item.addEventListener('click', (e) => { e.stopPropagation(); playGlbMotion(m.id); closeMotionMenu(); });
@@ -4440,7 +4482,7 @@ if (windowName === 'default') {
     const fMenu = document.createElement('div');
     fMenu.style.cssText = `
         position: fixed; top: 72px; right: 8px; display: none; flex-direction: column; gap: 4px;
-        padding: 6px; min-width: 110px; background: rgba(255,255,255,0.97);
+        padding: 6px; min-width: 110px; max-height: 104px; overflow-y: auto; background: rgba(255,255,255,0.97);
         border: 1px solid rgba(0,0,0,0.1); border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,0.2);
         z-index: 1000000; user-select: none;
     `;
@@ -4458,7 +4500,7 @@ if (windowName === 'default') {
         GLB_MOTIONS.forEach(m => {
             const item = document.createElement('div');
             item.textContent = m.label;
-            item.style.cssText = 'padding:6px 10px; font-size:13px; color:#333; cursor:pointer; border-radius:6px; white-space:nowrap;';
+            item.style.cssText = 'flex-shrink:0; padding:6px 10px; font-size:13px; color:#333; cursor:pointer; border-radius:6px; white-space:nowrap;';
             item.addEventListener('mouseenter', () => item.style.background = 'rgba(0,0,0,0.06)');
             item.addEventListener('mouseleave', () => item.style.background = 'transparent');
             item.addEventListener('pointerdown', (e) => e.stopPropagation());
