@@ -13,6 +13,11 @@ Patch notes go here — newest on top.
   eyes shut, slow deep breathing, head drooped with a gentle doze-bob, lazy tail, and a floating
   💤 above the head. It's a state, not a one-shot: the pet wakes when clicked or when it starts
   walking.
+- **GLB pet wave (greeting) motion**: the pet waves hello when it appears / is summoned, and from
+  the motion menu ("인사"). It's the first timed one-shot (driven by `glbPet.action`, ~2.4s, then
+  back to idle): plants the screen-left foot, leans, and waves the screen-right limb — the chick
+  flaps a wing, the puppy waves a paw and wags its tail. (Left/right are picked by on-screen world
+  position so the wrap's 180° flip doesn't mirror them.)
 - **Auto-sleep**: the pet dozes off on its own after 10 min of no system-wide input (away), or
   after just 2 min at night (23:00–07:00), using Electron `powerMonitor.getSystemIdleTime`. It
   wakes instantly when input reaches the pet window, and within ~2s when you return from another

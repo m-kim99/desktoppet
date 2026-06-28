@@ -1841,7 +1841,17 @@ async function loadGlbPet(url) {
     }
     const setZzz = (on) => { zzzEl.style.opacity = on ? '0.9' : '0'; };
 
-    glbPet = { wrap, root, feet, tail, ears, wings, eyes, idle, setZzz, sleeping: false, autoSleeping: false, walking: false, walkAmt: 0, t: 0 };
+    // Classify feet/wings by ON-SCREEN side. The wrap's 180° Y flip mirrors the model's left/right,
+    // so we sort by world X (after a matrix update) to find the screen-left vs screen-right limbs —
+    // the wave plants the screen-left foot and waves the screen-right wing/foot.
+    currentVrmWrapper.updateWorldMatrix(true, true);
+    const _wx = (o) => { const v = new THREE.Vector3(); o.getWorldPosition(v); return v.x; };
+    const footPlant = feet.length ? feet.slice().sort((a, b) => _wx(a) - _wx(b))[0] : null;   // screen-left
+    const footWave  = feet.length ? feet.slice().sort((a, b) => _wx(b) - _wx(a))[0] : null;   // screen-right
+    const wingWave  = wings.length ? wings.slice().sort((a, b) => _wx(b) - _wx(a))[0] : null;  // screen-right
+
+    glbPet = { wrap, root, feet, tail, ears, wings, eyes, footPlant, footWave, wingWave, idle, setZzz, sleeping: false, autoSleeping: false, walking: false, walkAmt: 0, t: 0 };
+    glbPet.action = { id: 'wave', t: 0 };   // greet when the character appears / is summoned
     console.log('[GlbPet] loaded', url, '| feet:', feet.map(f => f.name), '| wings:', wings.length, '| eyes:', eyes.length);
     if (typeof hideModelSwitchingIndicator === 'function') { try { hideModelSwitchingIndicator(); } catch (e) {} }
 }
@@ -1868,6 +1878,43 @@ function updateGlbPet(delta) {
         return;
     }
     if (glbPet.setZzz) glbPet.setZzz(false);
+
+    // One-shot motions (from the motion menu / on summon). Plays for its duration, then clears and
+    // falls through to idle. Each frame starts from rest so leftover idle pose doesn't bleed in.
+    if (glbPet.action) {
+        const DUR = { wave: 2.4 };
+        const dur = DUR[glbPet.action.id] || 2.0;
+        glbPet.action.t += delta;
+        const p = glbPet.action.t / dur;
+        if (p < 1) {
+            // rest baseline
+            glbPet.feet.forEach(f => { f.rotation.x = f.userData._restRotX || 0; });
+            glbPet.ears.forEach(e => { e.rotation.x = e.userData._restRotX || 0; });
+            glbPet.wings.forEach(wg => { wg.rotation.z = wg.userData._restRotZ || 0; });
+            glbPet.eyes.forEach(ey => { ey.scale.y = ey.userData._restScaleY; });
+            glbPet.wrap.rotation.z = 0;
+            if (glbPet.tail) glbPet.tail.rotation.y = 0;
+
+            if (glbPet.action.id === 'wave') {
+                // Plant the screen-left foot, lean right, and wave the screen-right wing + foot.
+                const raise = Math.sin(p * Math.PI);                 // rise → hold → lower
+                const wv = Math.sin(p * Math.PI * 14) * raise;       // ~7 waves (2× faster shake)
+                glbPet.wrap.position.y = Math.abs(Math.sin(p * Math.PI * 4)) * 0.03;   // happy bounce
+                glbPet.wrap.rotation.x = raise * 0.07;                                  // slight bow
+                glbPet.wrap.rotation.z = raise * -0.20;    // lean right
+                // footPlant stays at rest (planted). Chick waves ONLY its wing; puppy (no wings)
+                // waves its foot instead, plus a happy tail wag.
+                if (glbPet.wingWave) {
+                    glbPet.wingWave.rotation.z = (glbPet.wingWave.userData._restRotZ || 0) + (raise * 1.0 + wv * 0.5);
+                } else {
+                    if (glbPet.footWave) glbPet.footWave.rotation.x = (glbPet.footWave.userData._restRotX || 0) - (raise * 0.9 + wv * 0.5);
+                    if (glbPet.tail) glbPet.tail.rotation.y = Math.sin(t * 12.0) * (0.2 + 0.3 * raise);
+                }
+            }
+            return;
+        }
+        glbPet.action = null;   // done → fall through to idle
+    }
 
     // Ease the walk intensity toward its target (1 while wandering, 0 while idle)
     const target = glbPet.walking ? 1 : 0;
@@ -1927,14 +1974,16 @@ function updateGlbPet(delta) {
 // pet's default states and are intentionally NOT listed here. This list is data-driven: as each
 // motion is implemented (Happy, Wave, Think, ...), add an entry here and it shows up in the menu.
 const GLB_MOTIONS = [
+    { id: 'wave',  label: '인사 (Wave)' },
     { id: 'sleep', label: '수면 (Sleep)' },
     // { id: 'happy', label: '기쁨 (Happy)' },
 ];
 // Play a motion. 'sleep' is a state (stays until the pet is clicked or starts walking); others are
-// timed one-shots that updateGlbPet drives via glbPet.action (added as those motions are built).
+// timed one-shots that updateGlbPet drives via glbPet.action.
 function playGlbMotion(id) {
     if (!glbPet) return;
     if (id === 'sleep') { glbPet.sleeping = true; return; }
+    glbPet.sleeping = false; glbPet.autoSleeping = false;   // any other motion wakes the pet
     glbPet.action = { id, t: 0 };
 }
 
