@@ -1890,6 +1890,18 @@ function updateGlbPet(delta) {
     });
 }
 
+// On-demand GLB pet motions listed in the control panel's motion dropdown. Walk and Idle are the
+// pet's default states and are intentionally NOT listed here. This list is data-driven: as each
+// motion is implemented (Happy, Wave, Think, ...), add an entry here and it shows up in the menu.
+const GLB_MOTIONS = [
+    // { id: 'happy', label: '기쁨 (Happy)' },
+];
+// Trigger a one-shot motion. updateGlbPet will consume glbPet.action once motions are implemented.
+function playGlbMotion(id) {
+    if (!glbPet) return;
+    glbPet.action = { id, t: 0 };
+}
+
 let VRMname = await getVRMname();
 showModelSwitchingIndicator(VRMname);
 const __isGlbPet = /\.(glb|gltf)(\?|#|$)/i.test(vrmPath);
@@ -3952,10 +3964,67 @@ function addcontrolPanel() {
             });
         }
 
+        // Motion button (main pet): click to open a dropdown of on-demand motions and play one.
+        // Walk/Idle are default states and are intentionally not in the list. The menu is built from
+        // GLB_MOTIONS, so new motions appear automatically as they're added.
+        const motionButton = document.createElement('div');
+        motionButton.id = 'motion-handle';
+        motionButton.innerHTML = '<i class="fas fa-person-running"></i>';
+        motionButton.style.cssText = `
+            position: relative;
+            width: ${btn_width}px; height: ${btn_height}px; background: rgba(255,255,255,0.95);
+            border: 2px solid rgba(0,0,0,0.1); border-radius: 50%; color: #333333; cursor: pointer;
+            -webkit-app-region: no-drag; display: flex; align-items: center; justify-content: center;
+            font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform 0.2s;
+            user-select: none; pointer-events: auto; backdrop-filter: blur(10px);
+        `;
+        motionButton.addEventListener('mouseenter', () => { motionButton.style.background = 'rgba(255,255,255,1)'; motionButton.style.transform = 'scale(1.1)'; motionButton.style.boxShadow = '0 6px 16px rgba(0,0,0,0.2)'; });
+        motionButton.addEventListener('mouseleave', () => { motionButton.style.background = 'rgba(255,255,255,0.95)'; motionButton.style.transform = 'scale(1)'; motionButton.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)'; });
+        (async () => { const title = await t('playMotion') || '모션'; motionButton.title = title; addHoverEffect(motionButton, title); })();
+
+        // Dropdown menu, opens to the left so it stays on-screen in the narrow pet window.
+        const motionMenu = document.createElement('div');
+        motionMenu.id = 'motion-menu';
+        motionMenu.style.cssText = `
+            position: absolute; right: 100%; top: 0; margin-right: 8px;
+            display: none; flex-direction: column; gap: 4px; padding: 6px; min-width: 120px;
+            background: rgba(255,255,255,0.97); border: 1px solid rgba(0,0,0,0.1); border-radius: 10px;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.2); z-index: 10000; -webkit-app-region: no-drag;
+            backdrop-filter: blur(10px);
+        `;
+        motionButton.appendChild(motionMenu);
+        let motionMenuOpen = false;
+        const closeMotionMenu = () => { motionMenu.style.display = 'none'; motionMenuOpen = false; };
+        const renderMotionMenu = () => {
+            motionMenu.innerHTML = '';
+            if (!GLB_MOTIONS.length) {
+                const empty = document.createElement('div');
+                empty.textContent = '곧 추가됩니다';
+                empty.style.cssText = 'padding:6px 8px; font-size:12px; color:#999; text-align:center; user-select:none; white-space:nowrap;';
+                motionMenu.appendChild(empty);
+                return;
+            }
+            GLB_MOTIONS.forEach(m => {
+                const item = document.createElement('div');
+                item.textContent = m.label;
+                item.style.cssText = 'padding:6px 10px; font-size:13px; color:#333; cursor:pointer; border-radius:6px; white-space:nowrap; user-select:none;';
+                item.addEventListener('mouseenter', () => item.style.background = 'rgba(0,0,0,0.06)');
+                item.addEventListener('mouseleave', () => item.style.background = 'transparent');
+                item.addEventListener('click', (e) => { e.stopPropagation(); playGlbMotion(m.id); closeMotionMenu(); });
+                motionMenu.appendChild(item);
+            });
+        };
+        bindTapEvent(motionButton, () => {
+            if (motionMenuOpen) { closeMotionMenu(); }
+            else { renderMotionMenu(); motionMenu.style.display = 'flex'; motionMenuOpen = true; }
+        });
+        // Close the menu when clicking anywhere outside the button.
+        document.addEventListener('pointerdown', (e) => { if (motionMenuOpen && !motionButton.contains(e.target)) closeMotionMenu(); });
+
         // ==========================================
         // ======= Assemble all panels and buttons ===================
         // ==========================================
-        
+
         // 1. Assemble the main panel (in order)
         controlPanel.appendChild(dragButton);          // Drag
         controlPanel.appendChild(lockButton);          // Lock passthrough
@@ -3966,6 +4035,7 @@ function addcontrolPanel() {
         controlPanel.appendChild(voiceControlBtn);        // Voice control
         controlPanel.appendChild(textControlBtn);
         if (summonFriendBtn) controlPanel.appendChild(summonFriendBtn);   // Summon friend (below text input)
+        controlPanel.appendChild(motionButton);        // Motion dropdown
         controlPanel.appendChild(moreButton);          // More button
         controlPanel.appendChild(refreshButton);       // Refresh
         controlPanel.appendChild(closeButton);         // Close
@@ -3992,6 +4062,7 @@ function addcontrolPanel() {
             nextModelButton, 
             voiceControlBtn,
             textControlBtn,
+            motionButton,        // Motion dropdown button
             moreButton,          // Make the 'more' button subject to lock control
             refreshButton, 
             closeButton,

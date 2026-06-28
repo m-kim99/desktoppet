@@ -6,6 +6,10 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **GLB pet motion menu**: a control-panel button (main pet, `fa-person-running`) opens a dropdown
+  of on-demand motions to play. The list is data-driven from `GLB_MOTIONS` and `playGlbMotion(id)`
+  is the play hook; Walk and Idle are default states and are intentionally excluded. Currently a
+  scaffold (empty list shows "곧 추가됩니다") — motions appear here as they're implemented.
 - **GLB pet idle motion**: when not walking, chick/puppy now feel alive — subtle breathing bob and
   a slow sway (continuous), plus occasional eye blinks, a gentle head bow/nod, and chick wing
   flutter / puppy ear twitch. Each "occasional" action fires on its own randomized timer with a
