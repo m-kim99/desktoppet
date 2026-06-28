@@ -1827,7 +1827,21 @@ async function loadGlbPet(url) {
         flutNx:  2.5 + Math.random() * 4, flutPh:  0,
     };
 
-    glbPet = { wrap, root, feet, tail, ears, wings, eyes, idle, walking: false, walkAmt: 0, t: 0 };
+    // "💤" overlay shown above the head while sleeping (a floating CSS animation, hidden otherwise).
+    let zzzEl = document.getElementById('glb-zzz');
+    if (!zzzEl) {
+        zzzEl = document.createElement('div');
+        zzzEl.id = 'glb-zzz';
+        zzzEl.textContent = '💤';
+        zzzEl.style.cssText = 'position:fixed; left:58%; top:22%; font-size:22px; opacity:0; pointer-events:none; z-index:9998; transition:opacity 0.5s; animation:glbZzzFloat 2.4s ease-in-out infinite;';
+        document.body.appendChild(zzzEl);
+        const zstyle = document.createElement('style');
+        zstyle.textContent = '@keyframes glbZzzFloat{0%{transform:translateY(0) scale(0.9);}50%{transform:translateY(-10px) scale(1.05);}100%{transform:translateY(-20px) scale(0.9);}}';
+        document.head.appendChild(zstyle);
+    }
+    const setZzz = (on) => { zzzEl.style.opacity = on ? '0.9' : '0'; };
+
+    glbPet = { wrap, root, feet, tail, ears, wings, eyes, idle, setZzz, sleeping: false, walking: false, walkAmt: 0, t: 0 };
     console.log('[GlbPet] loaded', url, '| feet:', feet.map(f => f.name), '| wings:', wings.length, '| eyes:', eyes.length);
     if (typeof hideModelSwitchingIndicator === 'function') { try { hideModelSwitchingIndicator(); } catch (e) {} }
 }
@@ -1835,12 +1849,31 @@ async function loadGlbPet(url) {
 function updateGlbPet(delta) {
     if (!glbPet) return;
     glbPet.t += delta;
+    const t = glbPet.t;
+
+    // Sleep is a state that overrides idle/walk: eyes shut, slow deep breathing, head drooped with a
+    // gentle doze-bob, lazy tail. Exits when the pet is clicked (canvas handler) or starts walking.
+    if (glbPet.walking) glbPet.sleeping = false;
+    if (glbPet.sleeping) {
+        glbPet.walkAmt += (0 - glbPet.walkAmt) * Math.min(1, delta * 6);
+        glbPet.wrap.position.y = Math.sin(t * 1.0) * 0.02 - 0.02;        // slow deep breaths, settled lower
+        glbPet.wrap.rotation.z = Math.sin(t * 0.7) * 0.03;              // slow sway
+        glbPet.wrap.rotation.x = 0.13 + Math.sin(t * 0.5) * 0.04;       // head drooped + gentle doze-bob
+        glbPet.feet.forEach(f => { f.rotation.x = f.userData._restRotX || 0; });
+        glbPet.ears.forEach(e => { e.rotation.x = e.userData._restRotX || 0; });
+        glbPet.wings.forEach(wg => { wg.rotation.z = wg.userData._restRotZ || 0; });
+        if (glbPet.tail) glbPet.tail.rotation.y = Math.sin(t * 1.5) * 0.08;   // slow lazy tail
+        glbPet.eyes.forEach(ey => { ey.scale.y = ey.userData._restScaleY * 0.1; });   // closed
+        if (glbPet.setZzz) glbPet.setZzz(true);
+        return;
+    }
+    if (glbPet.setZzz) glbPet.setZzz(false);
+
     // Ease the walk intensity toward its target (1 while wandering, 0 while idle)
     const target = glbPet.walking ? 1 : 0;
     glbPet.walkAmt += (target - glbPet.walkAmt) * Math.min(1, delta * 6);
     const w = glbPet.walkAmt;
     const idle = 1 - w;        // idle-only motions fade out as the walk fades in
-    const t = glbPet.t;
     const ix = glbPet.idle;
 
     // Occasional eased pulse on a randomized timer -> returns a smooth 0->1->0 envelope while active,
@@ -1894,11 +1927,14 @@ function updateGlbPet(delta) {
 // pet's default states and are intentionally NOT listed here. This list is data-driven: as each
 // motion is implemented (Happy, Wave, Think, ...), add an entry here and it shows up in the menu.
 const GLB_MOTIONS = [
+    { id: 'sleep', label: '수면 (Sleep)' },
     // { id: 'happy', label: '기쁨 (Happy)' },
 ];
-// Trigger a one-shot motion. updateGlbPet will consume glbPet.action once motions are implemented.
+// Play a motion. 'sleep' is a state (stays until the pet is clicked or starts walking); others are
+// timed one-shots that updateGlbPet drives via glbPet.action (added as those motions are built).
 function playGlbMotion(id) {
     if (!glbPet) return;
+    if (id === 'sleep') { glbPet.sleeping = true; return; }
     glbPet.action = { id, t: 0 };
 }
 
@@ -4306,6 +4342,7 @@ if (!isRenderMode && window.electronAPI && window.electronAPI.setVrmWindowPos) {
     let _wm = false, _wmX = 0, _wmY = 0, _wmSx = 0, _wmSy = 0;
     _moveCanvas.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return;
+        if (glbPet) glbPet.sleeping = false;   // clicking the pet wakes it up
         _wmSx = e.screenX; _wmSy = e.screenY; _moveCanvas.style.cursor = 'grabbing';
         try { _moveCanvas.setPointerCapture(e.pointerId); } catch (err) {}
         window.electronAPI.getVrmWindowPos().then((p) => { _wmX = p[0]; _wmY = p[1]; _wm = true; }).catch(() => {});
