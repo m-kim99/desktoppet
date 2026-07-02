@@ -6,6 +6,13 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **Pet world stage (무대)**: the world window now shows a floating grass island (grass disc + tapered
+  dirt base) with primitive props — two trees, a house, a food bowl and a fence — driven by a data
+  list (type/position/collider radius) so a low-poly asset kit can replace the builders later. An
+  orbit camera (drag to circle, wheel to zoom, capped above the horizon) replaces the fixed view, and
+  the `world.groundHeightAt(x,z)` / `world.isBlocked(x,z)` interface is in place — pets will only
+  sense the ground through it, which is the swap point for heightmap (3rd-person) or voxel (sandbox)
+  phases.
 - **Pet world window (월드) skeleton**: the tray menu gains a "월드 열기" item (ko/en/zh) that opens a
   single normal, resizable window (re-opening focuses it) rendering the new `world.html`/`world.js`
   three.js scene — sky, hemisphere + shadow-casting sun light and the render loop. The diorama stage,
