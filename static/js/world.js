@@ -4,6 +4,7 @@
 // flat/open ground, so later phases can swap in a heightmap (3rd-person) or voxels (sandbox).
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createGlbPetEntity, updateGlbPetEntity } from './glb-pet-entity.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -159,6 +160,87 @@ const world = {
     },
 };
 
+// ---- Pets: both GLB pets live in this one scene (separate instances from the desktop windows) ----
+// Each entity sits inside a "mover" group that carries its world position + travel heading. The
+// entity's own wrap stays motion-local (the shared motions treat wrap.rotation.y = π as "face
+// forward"), so everything from the pet windows plays unchanged on top of the mover.
+const PETS = [
+    { name: 'chick', url: '/vrm/Chick.glb', height: 0.4, speed: 0.35, spawn: { x: -0.7, z: -0.3 } },
+    { name: 'puppy', url: '/vrm/Puppy.glb', height: 0.5, speed: 0.45, spawn: { x:  0.7, z:  0.2 } },
+];
+const pets = [];   // filled as each model loads: { name, speed, pet, mover, ai }
+
+for (const def of PETS) {
+    const mover = new THREE.Group();
+    mover.position.set(def.spawn.x, world.groundHeightAt(def.spawn.x, def.spawn.z), def.spawn.z);
+    scene.add(mover);
+    createGlbPetEntity(def.url, { targetHeight: def.height, parent: mover }).then(pet => {
+        mover.rotation.y = Math.random() * Math.PI * 2;      // face somewhere, after limb classification
+        pet.action = { id: 'wave', t: 0 };                    // greet on moving in
+        pets.push({ name: def.name, speed: def.speed, pet, mover, ai: makeWanderAI() });
+    }).catch(e => console.error('[World] pet load failed', def.url, e));
+}
+
+// Sims-style wander loop: idle a while → pick a reachable spot → turn, then waddle over → idle.
+// The AI only steers the mover and toggles pet.walking (the entity's own waddle animation reacts).
+// Deliberately a swappable controller: the 3rd-person phase replaces this with keyboard input and a
+// later phase can hand the choice of "what to do next" to the LLM, without touching entity/world code.
+function makeWanderAI() {
+    return { state: 'idle', wait: 1.5 + Math.random() * 3, target: null };
+}
+
+function pickTarget(from) {
+    // A handful of random mid-range hops so pets meander; give up quietly if boxed in.
+    for (let i = 0; i < 12; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const dist = 0.7 + Math.random() * 1.6;
+        const x = from.x + Math.cos(ang) * dist;
+        const z = from.z + Math.sin(ang) * dist;
+        if (!world.isBlocked(x, z)) return { x, z };
+    }
+    return null;
+}
+
+function updateWander(p, delta) {
+    const { ai, mover, pet } = p;
+    if (pet.sleeping || pet.action) { pet.walking = false; return; }   // motions/sleep own the pet
+    if (ai.state === 'idle') {
+        pet.walking = false;
+        ai.wait -= delta;
+        if (ai.wait <= 0) {
+            const target = pickTarget(mover.position);
+            if (target) { ai.target = target; ai.state = 'walk'; }
+            else ai.wait = 1 + Math.random() * 2;
+        }
+        return;
+    }
+    const dx = ai.target.x - mover.position.x;
+    const dz = ai.target.z - mover.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < 0.08) {
+        ai.state = 'idle'; ai.wait = 2 + Math.random() * 4; pet.walking = false;
+        return;
+    }
+    // Turn toward the target along the shortest arc; only stride once roughly facing it,
+    // so departures read as "turn, then walk" instead of strafing.
+    const desired = Math.atan2(dx, dz);                      // rotation.y=0 faces +Z; forward = (sin, cos)
+    let diff = desired - mover.rotation.y;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    mover.rotation.y += THREE.MathUtils.clamp(diff, -delta * 3.5, delta * 3.5);
+    pet.walking = true;
+    if (Math.abs(diff) < 0.5) {
+        const step = Math.min(p.speed * delta, dist);
+        const nx = mover.position.x + Math.sin(mover.rotation.y) * step;
+        const nz = mover.position.z + Math.cos(mover.rotation.y) * step;
+        if (world.isBlocked(nx, nz)) {                        // grazed a prop en route — re-plan
+            ai.state = 'idle'; ai.wait = 0.5 + Math.random(); pet.walking = false;
+            return;
+        }
+        mover.position.set(nx, world.groundHeightAt(nx, nz), nz);
+    }
+}
+
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -167,7 +249,11 @@ window.addEventListener('resize', () => {
 
 const clock = new THREE.Clock();
 function animate() {
-    clock.getDelta();   // keep the clock warm; entities consume the delta from step 4 on
+    const delta = Math.min(clock.getDelta(), 0.1);   // clamp huge deltas after the window was hidden
+    for (const p of pets) {
+        updateWander(p, delta);
+        updateGlbPetEntity(p.pet, delta);
+    }
     controls.update();
     renderer.render(scene, camera);
 }

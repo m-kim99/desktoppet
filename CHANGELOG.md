@@ -6,6 +6,13 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **Pets move into the world + wander AI (입주/배회)**: the chick (0.4u) and puppy (0.5u) now load into
+  the world scene as two independent entities of the shared module, greet with a wave, then live on a
+  Sims-style loop — idle a few seconds, pick a reachable spot (`world.isBlocked` circle-collider +
+  rim checks), turn along the shortest arc, waddle over with the existing walk animation, repeat.
+  Each pet rides in a "mover" group carrying world position/heading while its wrap stays
+  motion-local, so all 12 shared motions play unchanged on top; the wander controller is
+  deliberately swappable (keyboard control in the 3rd-person phase, LLM planning later).
 - **Pet world stage (무대)**: the world window now shows a floating grass island (grass disc + tapered
   dirt base) with primitive props — two trees, a house, a food bowl and a fence — driven by a data
   list (type/position/collider radius) so a low-poly asset kit can replace the builders later. An
