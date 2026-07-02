@@ -6,6 +6,16 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **World motions + click interactions (모션 이식)**: clicking a pet in the world opens the same
+  data-driven motion menu as the pet windows (clicking a sleeping pet wakes it; short unmoved press =
+  click, otherwise it's an orbit drag). All 12 shared motions play per-entity; the emoji/💤💭/파이팅/
+  food FX re-anchor to each pet's projected screen position and scale with its on-screen size
+  (pet-window percentages are mapped so left:50/top:70 = "at the feet"). Hug and Play are
+  re-choreographed in-scene with no window IPC: the two pets walk to meeting/catch spots via the
+  shared steering (arrive-anyway guards prevent deadlocks), face each other, then play their synced
+  halves — the catch ball is a real 3D sphere arcing between their "hands" 4 tosses with
+  throw/catch/finish cues, and wander resumes afterward. Arriving pets sometimes do a happy/think
+  flourish; duo directors are serialized by a `duoBusy` guard and menu input is ignored mid-choreography.
 - **Pets move into the world + wander AI (입주/배회)**: the chick (0.4u) and puppy (0.5u) now load into
   the world scene as two independent entities of the shared module, greet with a wave, then live on a
   Sims-style loop — idle a few seconds, pick a reachable spot (`world.isBlocked` circle-collider +

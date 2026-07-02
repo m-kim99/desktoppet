@@ -4,7 +4,7 @@
 // flat/open ground, so later phases can swap in a heightmap (3rd-person) or voxels (sandbox).
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createGlbPetEntity, updateGlbPetEntity } from './glb-pet-entity.js';
+import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS } from './glb-pet-entity.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -177,7 +177,9 @@ for (const def of PETS) {
     createGlbPetEntity(def.url, { targetHeight: def.height, parent: mover }).then(pet => {
         mover.rotation.y = Math.random() * Math.PI * 2;      // face somewhere, after limb classification
         pet.action = { id: 'wave', t: 0 };                    // greet on moving in
-        pets.push({ name: def.name, speed: def.speed, pet, mover, ai: makeWanderAI() });
+        const entry = { name: def.name, speed: def.speed, height: def.height, pet, mover, ai: makeWanderAI() };
+        wireWorldFx(entry);
+        pets.push(entry);
     }).catch(e => console.error('[World] pet load failed', def.url, e));
 }
 
@@ -201,8 +203,46 @@ function pickTarget(from) {
     return null;
 }
 
+// Shared steering used by wandering and duo approaches: shortest-arc turn toward the target and
+// stride only once roughly facing it, so departures read as "turn, then walk" instead of strafing.
+// rotation.y=0 faces +Z; forward = (sin, cos). Returns 'arrived' | 'blocked' | 'moving'.
+function steerToward(p, target, delta) {
+    const { mover, pet } = p;
+    const dx = target.x - mover.position.x;
+    const dz = target.z - mover.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < 0.08) { pet.walking = false; return 'arrived'; }
+    const desired = Math.atan2(dx, dz);
+    let diff = desired - mover.rotation.y;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    mover.rotation.y += THREE.MathUtils.clamp(diff, -delta * 3.5, delta * 3.5);
+    pet.walking = true;
+    if (Math.abs(diff) < 0.5) {
+        const step = Math.min(p.speed * delta, dist);
+        const nx = mover.position.x + Math.sin(mover.rotation.y) * step;
+        const nz = mover.position.z + Math.cos(mover.rotation.y) * step;
+        if (world.isBlocked(nx, nz)) { pet.walking = false; return 'blocked'; }
+        mover.position.set(nx, world.groundHeightAt(nx, nz), nz);
+    }
+    return 'moving';
+}
+
 function updateWander(p, delta) {
     const { ai, mover, pet } = p;
+    if (ai.state === 'busy') { pet.walking = false; return; }        // a duo director owns the pet
+    if (ai.state === 'goto') {
+        // Duo approach: keeps walking even while a one-shot lingers, and gives up gracefully
+        // (arrive-anyway) when blocked or stalled so the duo director can never deadlock.
+        ai.stall = (ai.stall || 0) + delta;
+        const res = steerToward(p, ai.target, delta);
+        if (res === 'arrived' || res === 'blocked' || ai.stall > 6) {
+            ai.state = 'busy';
+            const done = ai.onArrive; ai.onArrive = null;
+            if (done) done();
+        }
+        return;
+    }
     if (pet.sleeping || pet.action) { pet.walking = false; return; }   // motions/sleep own the pet
     if (ai.state === 'idle') {
         pet.walking = false;
@@ -214,30 +254,277 @@ function updateWander(p, delta) {
         }
         return;
     }
-    const dx = ai.target.x - mover.position.x;
-    const dz = ai.target.z - mover.position.z;
-    const dist = Math.hypot(dx, dz);
-    if (dist < 0.08) {
-        ai.state = 'idle'; ai.wait = 2 + Math.random() * 4; pet.walking = false;
-        return;
+    const res = steerToward(p, ai.target, delta);
+    if (res === 'arrived') {
+        ai.state = 'idle'; ai.wait = 2 + Math.random() * 4;
+        if (Math.random() < 0.22) pet.action = { id: Math.random() < 0.5 ? 'happy' : 'think', t: 0 };  // arrival flourish
+    } else if (res === 'blocked') {
+        ai.state = 'idle'; ai.wait = 0.5 + Math.random();              // grazed a prop en route — re-plan
     }
-    // Turn toward the target along the shortest arc; only stride once roughly facing it,
-    // so departures read as "turn, then walk" instead of strafing.
-    const desired = Math.atan2(dx, dz);                      // rotation.y=0 faces +Z; forward = (sin, cos)
-    let diff = desired - mover.rotation.y;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    mover.rotation.y += THREE.MathUtils.clamp(diff, -delta * 3.5, delta * 3.5);
-    pet.walking = true;
-    if (Math.abs(diff) < 0.5) {
-        const step = Math.min(p.speed * delta, dist);
-        const nx = mover.position.x + Math.sin(mover.rotation.y) * step;
-        const nz = mover.position.z + Math.cos(mover.rotation.y) * step;
-        if (world.isBlocked(nx, nz)) {                        // grazed a prop en route — re-plan
-            ai.state = 'idle'; ai.wait = 0.5 + Math.random(); pet.walking = false;
+}
+
+// ---- World FX: the shared motions emit emoji/overlays through per-entity hooks; here they anchor
+// to the pet's projected screen position instead of the pet-window's fixed percentages. Mapping:
+// the pet-window coords treat left:50 / top:70 as "at the feet" and sizes were tuned against a
+// ~152px-tall character, so offsets and font sizes scale with the pet's projected height in px.
+// Particles are fire-and-forget at their spawn point; persistent overlays re-anchor every frame.
+const PET_WIN_CHAR_H = 152;
+const _proj = new THREE.Vector3();
+function petScreenAnchor(p) {
+    _proj.copy(p.mover.position).project(camera);
+    const fx = (_proj.x * 0.5 + 0.5) * window.innerWidth;
+    const fy = (-_proj.y * 0.5 + 0.5) * window.innerHeight;
+    _proj.copy(p.mover.position); _proj.y += p.height; _proj.project(camera);
+    const hy = (-_proj.y * 0.5 + 0.5) * window.innerHeight;
+    return { x: fx, y: fy, h: Math.max(24, fy - hy) };   // foot px + projected pet height px
+}
+function fxPoint(p, leftPct, topPct) {
+    const a = petScreenAnchor(p);
+    return { x: a.x + ((leftPct - 50) / 100) * a.h * 2, y: a.y + ((topPct - 70) / 100) * a.h * 2, h: a.h };
+}
+function fxScale(h, size, min = 9, max = 64) {
+    return Math.round(THREE.MathUtils.clamp(size * (h / PET_WIN_CHAR_H), min, max));
+}
+
+function wireWorldFx(p) {
+    const mk = (id, text, cssExtra = '') => {
+        const el = document.createElement('div');
+        el.id = `world-fx-${id}-${p.name}`;
+        el.textContent = text;
+        el.style.cssText = `position:fixed; left:0; top:0; transform:translate(-50%,-50%); opacity:0; pointer-events:none; z-index:60; transition:opacity 0.3s; will-change:transform; ${cssExtra}`;
+        document.body.appendChild(el);
+        return el;
+    };
+    const zzzEl   = mk('zzz', '💤');
+    const thinkEl = mk('think', '💭');
+    const cheerEl = mk('cheer', '파이팅!', 'font-weight:700; text-shadow:0 2px 5px rgba(0,0,0,0.55), 0 0 2px rgba(0,0,0,0.5); white-space:nowrap;');
+    const eatEl   = mk('eat', p.pet.wings.length ? '🌾' : '🥣');
+    const overlays = [
+        { el: zzzEl,   left: 58, top: 14, size: 44 },
+        { el: thinkEl, left: 62, top: 10, size: 44 },
+        { el: cheerEl, left: 50, top: 4,  size: 18 },
+        { el: eatEl,   left: 50, top: 72, size: 40 },
+    ];
+    p.pet.setZzz   = (on) => { zzzEl.style.opacity   = on ? '0.9' : '0'; };
+    p.pet.setThink = (on) => { thinkEl.style.opacity = on ? '0.95' : '0'; };
+    p.pet.setCheer = (on) => {
+        if (on && cheerEl.style.opacity !== '1') {
+            cheerEl.style.color = `hsl(${Math.floor(Math.random() * 360)}, 85%, 58%)`;
+        }
+        cheerEl.style.opacity = on ? '1' : '0';
+    };
+    p.pet.setEat = (on) => { eatEl.style.opacity = on ? '1' : '0'; };
+    p.pet.spawnEmoji = (ch, { left = 50, top = 28, size = 28, dx = 0, duration = 1400 } = {}) => {
+        const pt = fxPoint(p, left, top);
+        const el = document.createElement('div');
+        el.textContent = ch;
+        el.style.cssText = `position:fixed; left:${Math.round(pt.x)}px; top:${Math.round(pt.y)}px; font-size:${fxScale(pt.h, size)}px; opacity:0; pointer-events:none; z-index:60; will-change:transform,opacity;`;
+        document.body.appendChild(el);
+        el.animate([
+            { transform: 'translate(-50%,-50%) rotate(-10deg)', opacity: 0 },
+            { opacity: 0.95, offset: 0.25 },
+            { transform: `translate(calc(-50% + ${dx}px), calc(-50% - 48px)) rotate(10deg)`, opacity: 0 },
+        ], { duration, easing: 'ease-out' }).onfinish = () => el.remove();
+    };
+    p.pet.burstEmoji = (chars, count = 14, { cx = 50, cy = 32 } = {}) => {
+        const pt = fxPoint(p, cx, cy);
+        const k = pt.h / PET_WIN_CHAR_H;                     // scale the whole burst with the pet
+        for (let i = 0; i < count; i++) {
+            const el = document.createElement('div');
+            el.textContent = chars[Math.floor(Math.random() * chars.length)];
+            el.style.cssText = `position:fixed; left:${Math.round(pt.x)}px; top:${Math.round(pt.y)}px; font-size:${fxScale(pt.h, 18 + Math.random() * 16)}px; opacity:1; pointer-events:none; z-index:60; will-change:transform,opacity;`;
+            document.body.appendChild(el);
+            const ang = Math.random() * Math.PI * 2;
+            const dist = (40 + Math.random() * 90) * k;
+            const ex = Math.cos(ang) * dist;
+            const upY = -Math.abs(Math.sin(ang)) * dist * 0.5 - 20 * k;
+            const fallY = (120 + Math.random() * 90) * k;
+            el.animate([
+                { transform: 'translate(-50%,-50%) rotate(0deg)', opacity: 1, offset: 0 },
+                { transform: `translate(calc(-50% + ${ex * 0.6}px), calc(-50% + ${upY}px)) rotate(${(Math.random() - 0.5) * 220}deg)`, opacity: 1, offset: 0.35 },
+                { transform: `translate(calc(-50% + ${ex}px), calc(-50% + ${fallY}px)) rotate(${(Math.random() - 0.5) * 400}deg)`, opacity: 0, offset: 1 },
+            ], { duration: 1100 + Math.random() * 800, easing: 'cubic-bezier(.2,.6,.3,1)' }).onfinish = () => el.remove();
+        }
+    };
+    p.fxUpdate = () => {
+        for (const o of overlays) {
+            if ((o.el.style.opacity || '0') === '0') continue;
+            const pt = fxPoint(p, o.left, o.top);
+            o.el.style.left = `${Math.round(pt.x)}px`;
+            o.el.style.top = `${Math.round(pt.y)}px`;
+            o.el.style.fontSize = `${fxScale(pt.h, o.size)}px`;
+        }
+    };
+}
+
+// ---- Click a pet → the same motion menu the pet windows use (data-driven from GLB_MOTIONS) ----
+const motionMenu = document.createElement('div');
+motionMenu.id = 'world-motion-menu';
+motionMenu.style.cssText = 'position:fixed; display:none; z-index:100; background:rgba(30,32,40,0.92); border-radius:10px; padding:6px; box-shadow:0 6px 24px rgba(0,0,0,0.35); max-height:230px; overflow-y:auto; min-width:150px; font-family:sans-serif;';
+document.body.appendChild(motionMenu);
+let menuPet = null;
+for (const m of GLB_MOTIONS) {
+    const item = document.createElement('div');
+    item.textContent = m.label;
+    item.style.cssText = 'padding:7px 12px; font-size:13px; color:#fff; border-radius:7px; cursor:pointer; white-space:nowrap;';
+    item.onmouseenter = () => { item.style.background = 'rgba(255,255,255,0.14)'; };
+    item.onmouseleave = () => { item.style.background = 'transparent'; };
+    item.onclick = () => { const p = menuPet; hideMenu(); if (p) playWorldMotion(p, m.id); };
+    motionMenu.appendChild(item);
+}
+function showMenu(x, y, p) {
+    menuPet = p;
+    motionMenu.style.display = 'block';
+    motionMenu.style.left = `${Math.min(x, window.innerWidth - 170)}px`;
+    motionMenu.style.top = `${Math.min(y, window.innerHeight - 240)}px`;
+}
+function hideMenu() { motionMenu.style.display = 'none'; menuPet = null; }
+
+// Click = short, unmoved pointer press (otherwise it was an orbit drag). Clicking a sleeping pet
+// wakes it (like the pet window); clicking an awake pet opens the motion menu.
+const raycaster = new THREE.Raycaster();
+const pointerNdc = new THREE.Vector2();
+let pressAt = null;
+renderer.domElement.addEventListener('pointerdown', (e) => {
+    pressAt = { x: e.clientX, y: e.clientY, t: performance.now() };
+});
+renderer.domElement.addEventListener('pointerup', (e) => {
+    hideMenu();
+    if (!pressAt) return;
+    const moved = Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y);
+    const held = performance.now() - pressAt.t;
+    pressAt = null;
+    if (moved > 6 || held > 400) return;
+    pointerNdc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+    raycaster.setFromCamera(pointerNdc, camera);
+    for (const p of pets) {
+        if (raycaster.intersectObject(p.mover, true).length) {
+            if (p.pet.sleeping) { p.pet.sleeping = false; p.pet.autoSleeping = false; return; }
+            showMenu(e.clientX, e.clientY, p);
             return;
         }
-        mover.position.set(nx, world.groundHeightAt(nx, nz), nz);
+    }
+});
+
+// ---- Motions. Solo ones set the entity action exactly like the pet windows; hug/play are
+// re-choreographed in-scene — no window IPC: the two entities walk to each other / toss a real
+// 3D ball. `duoBusy` keeps the two directors from fighting; AIs are parked in 'goto'/'busy'. ----
+const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+let duoBusy = false;
+
+function releaseAI(p, wait = 1.5) {
+    p.ai.state = 'idle'; p.ai.wait = wait + Math.random(); p.ai.target = null; p.ai.onArrive = null;
+}
+function gotoAsync(p, x, z) {
+    return new Promise((resolve) => {
+        p.pet.sleeping = false;
+        p.ai.state = 'goto'; p.ai.target = { x, z }; p.ai.stall = 0; p.ai.onArrive = resolve;
+    });
+}
+// Points GAP apart across the midpoint of the two pets, on the line through them.
+function duoSpots(a, b, gap) {
+    const A = a.mover.position, B = b.mover.position;
+    let ux = B.x - A.x, uz = B.z - A.z;
+    const len = Math.hypot(ux, uz) || 1; ux /= len; uz /= len;
+    const mx = (A.x + B.x) / 2, mz = (A.z + B.z) / 2;
+    return [
+        { x: mx - ux * gap / 2, z: mz - uz * gap / 2 },
+        { x: mx + ux * gap / 2, z: mz + uz * gap / 2 },
+    ];
+}
+function faceEachOther(a, b) {
+    const A = a.mover.position, B = b.mover.position;
+    a.mover.rotation.y = Math.atan2(B.x - A.x, B.z - A.z);
+    b.mover.rotation.y = Math.atan2(A.x - B.x, A.z - B.z);
+}
+
+function playWorldMotion(p, id) {
+    if (p.ai.state === 'goto' || p.ai.state === 'busy') return;   // mid-duo choreography — ignore
+    if (id === 'sleep') { p.pet.sleeping = true; releaseAI(p, 4); return; }
+    p.pet.sleeping = false; p.pet.autoSleeping = false;
+    if (id === 'hug')  { worldHug(p);  return; }
+    if (id === 'play') { worldPlay(p); return; }
+    p.pet.action = { id, t: 0 };
+}
+
+async function worldHug(initiator) {
+    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping);
+    if (!partner || duoBusy) { initiator.pet.action = { id: 'hug', t: 0, role: 'solo', dir: 1 }; return; }
+    duoBusy = true;
+    try {
+        const [ta, tb] = duoSpots(initiator, partner, 0.55);
+        if (world.isBlocked(ta.x, ta.z) || world.isBlocked(tb.x, tb.z)) {
+            initiator.pet.action = { id: 'hug', t: 0, role: 'solo', dir: 1 };   // no room here — air-hug
+            return;
+        }
+        await Promise.all([gotoAsync(initiator, ta.x, ta.z), gotoAsync(partner, tb.x, tb.z)]);
+        faceEachOther(initiator, partner);
+        // Facing each other, the halves' sideways leans (dir/-dir) tilt both heads the same world
+        // direction so they read as one embrace instead of a collision.
+        initiator.pet.action = { id: 'hug', t: 0, role: 'initiator', dir: 1 };
+        partner.pet.action   = { id: 'hug', t: 0, role: 'partner',   dir: -1 };
+        await sleepMs(3100);                                   // hug DUR is 3.0s
+    } finally {
+        duoBusy = false; releaseAI(initiator); releaseAI(partner);
+    }
+}
+
+// The catch ball is a real scene object arcing between the pets' "hands".
+const ballMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.07, 16, 12),
+    new THREE.MeshLambertMaterial({ color: 0xff7043 })
+);
+ballMesh.castShadow = true;
+ballMesh.visible = false;
+scene.add(ballMesh);
+let ballFlight = null;   // { from, to, t, dur, arc, resolve } — advanced in animate()
+
+function tossBall(from, to, dur = 0.56, arc = 0.5) {
+    return new Promise((resolve) => { ballMesh.visible = true; ballFlight = { from, to, t: 0, dur, arc, resolve }; });
+}
+function handPos(p) {
+    return new THREE.Vector3(
+        Math.sin(p.mover.rotation.y) * 0.16,
+        p.height * 0.55,
+        Math.cos(p.mover.rotation.y) * 0.16
+    ).add(p.mover.position);
+}
+
+async function worldPlay(initiator) {
+    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping);
+    if (!partner || duoBusy) {
+        initiator.pet.action = { id: 'play', t: 0, role: 'solo', dir: 1, cue: 'ready', cueT: 0 };
+        setTimeout(() => { if (initiator.pet.action && initiator.pet.action.id === 'play') initiator.pet.action = null; }, 1600);
+        return;
+    }
+    duoBusy = true;
+    try {
+        const [ta, tb] = duoSpots(initiator, partner, 1.6);
+        if (world.isBlocked(ta.x, ta.z) || world.isBlocked(tb.x, tb.z)) return;
+        await Promise.all([gotoAsync(initiator, ta.x, ta.z), gotoAsync(partner, tb.x, tb.z)]);
+        faceEachOther(initiator, partner);
+        initiator.pet.action = { id: 'play', t: 0, role: 'initiator', dir: 1, cue: 'ready', cueT: 0 };
+        partner.pet.action   = { id: 'play', t: 0, role: 'partner',  dir: -1, cue: 'ready', cueT: 0 };
+        await sleepMs(350);
+        let thrower = initiator, catcher = partner;
+        for (let i = 0; i < 4; i++) {
+            if (thrower.pet.action && thrower.pet.action.id === 'play') { thrower.pet.action.cue = 'throw'; thrower.pet.action.cueT = 0; }
+            await sleepMs(180);                                // windup before the release
+            const flight = tossBall(handPos(thrower), handPos(catcher));
+            const c = catcher;
+            setTimeout(() => { if (c.pet.action && c.pet.action.id === 'play') { c.pet.action.cue = 'catch'; c.pet.action.cueT = 0; } }, 330);
+            await flight;
+            [thrower, catcher] = [catcher, thrower];
+            await sleepMs(260);
+        }
+        ballMesh.visible = false;
+        const last = thrower;                                  // after the final swap this is the last catcher
+        if (last.pet.action && last.pet.action.id === 'play') { last.pet.action.cue = 'finish'; last.pet.action.cueT = 0; }
+        await sleepMs(900);
+        initiator.pet.action = null; partner.pet.action = null;
+    } finally {
+        ballMesh.visible = false; ballFlight = null;
+        duoBusy = false; releaseAI(initiator); releaseAI(partner);
     }
 }
 
@@ -253,6 +540,14 @@ function animate() {
     for (const p of pets) {
         updateWander(p, delta);
         updateGlbPetEntity(p.pet, delta);
+        if (p.fxUpdate) p.fxUpdate();
+    }
+    if (ballFlight) {
+        ballFlight.t += delta;
+        const k = Math.min(1, ballFlight.t / ballFlight.dur);
+        ballMesh.position.lerpVectors(ballFlight.from, ballFlight.to, k);
+        ballMesh.position.y += Math.sin(k * Math.PI) * ballFlight.arc;
+        if (k >= 1) { const done = ballFlight.resolve; ballFlight = null; done(); }
     }
     controls.update();
     renderer.render(scene, camera);
