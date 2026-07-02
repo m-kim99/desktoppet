@@ -18,6 +18,7 @@ let vmcUdpPort = null;          // osc.UDPPort instance
 let vmcReceiverActive = false;  // Whether receiving is running
 let vrmWindows = [];
 let summonVrmPetRef = null;            // tray-menu bridge to the pet-summon fn (assigned during app setup)
+let openWorldRef = null;               // tray-menu bridge to the pet-world window fn (assigned during app setup)
 let lastVrmConfig = { width: 540, height: 960 }; // The most recent size, reused when summoning the pet via a global shortcut
 let shotOverlay = null
 let isMac = process.platform === 'darwin';
@@ -231,6 +232,7 @@ const locales = {
   'zh-CN': {
     show: '显示窗口',
     summonPet: '召唤桌面伙伴',
+    openWorld: '打开宠物世界',
     exit: '退出',
     cut: '剪切',
     copy: '复制',
@@ -251,6 +253,7 @@ const locales = {
   'en-US': {
     show: 'Show Window',
     summonPet: 'Summon Desktop Pet',
+    openWorld: 'Open Pet World',
     exit: 'Exit',
     cut: 'Cut',
     copy: 'Copy',
@@ -271,6 +274,7 @@ const locales = {
   'ko-KR': {
     show: '창 보이기',
     summonPet: '데스크탑 펫 소환',
+    openWorld: '월드 열기',
     exit: '종료',
     cut: '잘라내기',
     copy: '복사',
@@ -1113,6 +1117,33 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
       }
     }
     summonVrmPetRef = summonVrmPet;   // expose to the tray menu (top-level scope)
+
+    // Pet world (월드): one normal, resizable window with the diorama scene the pets live in.
+    // Single instance — opening it again focuses the existing window. Background throttling stays
+    // on (Electron default) so the render loop pauses while the window is hidden/minimized.
+    let worldWindow = null;
+    async function openWorldWindow() {
+      if (worldWindow && !worldWindow.isDestroyed()) {
+        try { if (worldWindow.isMinimized()) worldWindow.restore(); worldWindow.show(); worldWindow.focus(); } catch (e) {}
+        return;
+      }
+      const { width: workW, height: workH } = screen.getPrimaryDisplay().workAreaSize;
+      worldWindow = new BrowserWindow({
+        width: Math.min(960, workW - 80),
+        height: Math.min(640, workH - 80),
+        title: '펫 월드',
+        webPreferences: {
+          contextIsolation: true,
+          sandbox: false,
+          webgl: true,
+          devTools: isDev,
+          preload: path.join(__dirname, 'static/js/preload.js')
+        }
+      });
+      worldWindow.on('closed', () => { worldWindow = null; });
+      await worldWindow.loadURL(`http://${HOST}:${PORT}/world.html`);
+    }
+    openWorldRef = openWorldWindow;
 
     // Global shortcut: hide the pet (hide rather than close, for quick re-summoning)
     function hideVrmPet() {
@@ -2285,6 +2316,10 @@ function updateTrayMenu() {
     {
       label: locales[currentLanguage].summonPet || '데스크탑 펫 소환',
       click: () => { if (summonVrmPetRef) summonVrmPetRef(); }
+    },
+    {
+      label: locales[currentLanguage].openWorld || '월드 열기',
+      click: () => { if (openWorldRef) openWorldRef(); }
     },
     { type: 'separator' },
     {

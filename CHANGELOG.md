@@ -5,6 +5,14 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Added
+- **Pet world window (월드) skeleton**: the tray menu gains a "월드 열기" item (ko/en/zh) that opens a
+  single normal, resizable window (re-opening focuses it) rendering the new `world.html`/`world.js`
+  three.js scene — sky, hemisphere + shadow-casting sun light and the render loop. The diorama stage,
+  pets, wandering and interactions land in the following world-mode steps. Desktop pet windows are
+  untouched and can run alongside. Render loop pauses automatically while the window is hidden
+  (Electron background throttling stays on).
+
 ### Changed
 - **GLB pet code extracted into a shared entity module**: the pet loader, node discovery and all 12
   procedural motions moved from `vrm.js` into `static/js/glb-pet-entity.js` as per-entity functions
