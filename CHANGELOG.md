@@ -5,6 +5,15 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Changed
+- **GLB pet code extracted into a shared entity module**: the pet loader, node discovery and all 12
+  procedural motions moved from `vrm.js` into `static/js/glb-pet-entity.js` as per-entity functions
+  (`createGlbPetEntity(url, {targetHeight, parent})` / `updateGlbPetEntity(pet, delta)` /
+  `disposeGlbPetEntity`, plus the exported `GLB_MOTIONS` list and emoji particle helpers), so the
+  upcoming world mode can run two pets in one scene. Model scale is now a `targetHeight` parameter
+  (the pet window still derives it from the window height) and the 💤💭/파이팅/food overlays are
+  per-entity hooks the window wires up. Step 1 of the world-mode plan — no pet-window behavior change.
+
 ### Added
 - **GLB pet play motion (two pets)**: "놀이 (Play)" is a coordinated game of catch — the main process
   sets the two pet windows a catch-distance apart and tosses a ball (its own transparent window, a
