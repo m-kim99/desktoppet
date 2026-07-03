@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS } from './glb-pet-entity.js';
+import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory } from './glb-pet-entity.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -629,9 +629,28 @@ for (const m of GLB_MOTIONS) {
     item.onclick = () => { const p = menuPet; hideMenu(); if (p) playWorldMotion(p, m.id); };
     motionMenu.appendChild(item);
 }
+// 코디 items below the motions (divider above the first); labels refresh per open in showMenu.
+const accessoryItems = [];
+for (let i = 0; i < GLB_ACCESSORIES.length; i++) {
+    const a = GLB_ACCESSORIES[i];
+    const item = document.createElement('div');
+    item.style.cssText = 'padding:7px 12px; font-size:13px; color:#ffd7e0; border-radius:7px; cursor:pointer; white-space:nowrap;' + (i === 0 ? 'border-top:1px solid rgba(255,255,255,0.12); margin-top:4px;' : '');
+    item.onmouseenter = () => { item.style.background = 'rgba(255,255,255,0.14)'; };
+    item.onmouseleave = () => { item.style.background = 'transparent'; };
+    item.onclick = () => {
+        const p = menuPet;
+        hideMenu();
+        if (p) setGlbPetAccessory(p.pet, (p.pet.accessory && p.pet.accessory.id === a.id) ? null : a.id);
+    };
+    motionMenu.appendChild(item);
+    accessoryItems.push({ el: item, acc: a });
+}
 function showMenu(x, y, p) {
     menuPet = p;
     controlItem.textContent = (p === possessed) ? '🎮 조종 해제 (Esc)' : '🎮 조종하기';
+    for (const { el, acc } of accessoryItems) {
+        el.textContent = (p.pet.accessory && p.pet.accessory.id === acc.id) ? `${acc.label} 벗기` : acc.label;
+    }
     motionMenu.style.display = 'block';
     motionMenu.style.left = `${Math.min(x, window.innerWidth - 170)}px`;
     motionMenu.style.top = `${Math.min(y, window.innerHeight - 240)}px`;

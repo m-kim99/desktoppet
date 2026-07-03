@@ -10,7 +10,7 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { createVRMAnimationClip, VRMAnimationLoaderPlugin } from '@pixiv/three-vrm-animation';
 import { SplatMesh } from '@sparkjsdev/spark';
-import { createGlbPetEntity, updateGlbPetEntity, disposeGlbPetEntity, GLB_MOTIONS } from './glb-pet-entity.js';
+import { createGlbPetEntity, updateGlbPetEntity, disposeGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory } from './glb-pet-entity.js';
 let isVRM1 = true;
 let currentMixer = null;
 let idleAction = null;
@@ -4009,6 +4009,17 @@ function addcontrolPanel() {
                 item.addEventListener('click', (e) => { e.stopPropagation(); playGlbMotion(m.id); closeMotionMenu(); });
                 motionMenu.appendChild(item);
             });
+            // 코디 items after the motions (divider above the first): click toggles wear/remove.
+            GLB_ACCESSORIES.forEach((a, i) => {
+                const worn = !!(glbPet && glbPet.accessory && glbPet.accessory.id === a.id);
+                const item = document.createElement('div');
+                item.textContent = worn ? `${a.label} 벗기` : a.label;
+                item.style.cssText = 'flex-shrink:0; padding:6px 10px; font-size:13px; color:#333; cursor:pointer; border-radius:6px; white-space:nowrap; user-select:none;' + (i === 0 ? 'border-top:1px solid rgba(0,0,0,0.08); margin-top:4px;' : '');
+                item.addEventListener('mouseenter', () => item.style.background = 'rgba(0,0,0,0.06)');
+                item.addEventListener('mouseleave', () => item.style.background = 'transparent');
+                item.addEventListener('click', (e) => { e.stopPropagation(); if (glbPet) setGlbPetAccessory(glbPet, worn ? null : a.id); closeMotionMenu(); });
+                motionMenu.appendChild(item);
+            });
         };
         bindTapEvent(motionButton, () => {
             if (motionMenuOpen) { closeMotionMenu(); }
@@ -4307,6 +4318,18 @@ if (windowName === 'default') {
             item.addEventListener('mouseleave', () => item.style.background = 'transparent');
             item.addEventListener('pointerdown', (e) => e.stopPropagation());
             item.addEventListener('click', (e) => { e.stopPropagation(); playGlbMotion(m.id); fCloseMenu(); });
+            fMenu.appendChild(item);
+        });
+        // 코디 items after the motions (divider above the first): click toggles wear/remove.
+        GLB_ACCESSORIES.forEach((a, i) => {
+            const worn = !!(glbPet && glbPet.accessory && glbPet.accessory.id === a.id);
+            const item = document.createElement('div');
+            item.textContent = worn ? `${a.label} 벗기` : a.label;
+            item.style.cssText = 'flex-shrink:0; padding:6px 10px; font-size:13px; color:#333; cursor:pointer; border-radius:6px; white-space:nowrap;' + (i === 0 ? 'border-top:1px solid rgba(0,0,0,0.08); margin-top:4px;' : '');
+            item.addEventListener('mouseenter', () => item.style.background = 'rgba(0,0,0,0.06)');
+            item.addEventListener('mouseleave', () => item.style.background = 'transparent');
+            item.addEventListener('pointerdown', (e) => e.stopPropagation());
+            item.addEventListener('click', (e) => { e.stopPropagation(); if (glbPet) setGlbPetAccessory(glbPet, worn ? null : a.id); fCloseMenu(); });
             fMenu.appendChild(item);
         });
     };

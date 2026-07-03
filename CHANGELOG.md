@@ -6,6 +6,13 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **코디 accessory system + santa hat**: pets can now wear outfit items. The shared entity module
+  gains a `GLB_ACCESSORIES` registry + `setGlbPetAccessory(pet, id)` — items are built procedurally
+  (no external assets), anchored to the normalized head-top via the new `pet.dims`, and parented to
+  the motion wrap so every motion (nod, spin, sleep droop…) carries them. First item: 🎅 산타모자
+  (white torus brim, red cone with a floppy tilted tip, pompom riding the tip). Wear/remove toggles
+  live in all three pet menus — main pet, friend, and the world click menu (labels flip to "벗기"
+  while worn). New items = one builder + one list entry.
 - **World visual upgrade (퍼피레드 감성)**: the diorama got a pastel virtual-world glow-up.
   *Sky* — a gradient dome (zenith blue → warm pink horizon, painted on an inside-out sphere) with
   four puffy multi-lobe clouds drifting slowly around the island. *Terrain* — the flat disc became a

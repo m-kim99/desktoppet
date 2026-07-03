@@ -68,6 +68,57 @@ export function spawnBurstEmoji(chars, count = 14, { cx = 50, cy = 32 } = {}) {
     }
 }
 
+// ---- 코디 accessories: procedural wearable items (no external assets, same philosophy as the
+// motions). Each builder takes a base radius and returns a group whose origin is the point that
+// touches the head top; setGlbPetAccessory anchors it there. New items = builder + list entry. ----
+export const GLB_ACCESSORIES = [
+    { id: 'santa-hat', label: '🎅 산타모자' },
+];
+
+// Classic floppy santa hat: white brim ring, red cone tilted at the tip, white pompom at the point.
+function makeSantaHat(brimR) {
+    const g = new THREE.Group();
+    const red = new THREE.MeshStandardMaterial({ color: 0xd6382e, roughness: 0.65 });
+    const white = new THREE.MeshStandardMaterial({ color: 0xf7f3ee, roughness: 0.95 });
+    const brim = new THREE.Mesh(new THREE.TorusGeometry(brimR, brimR * 0.24, 12, 28), white);
+    brim.rotation.x = Math.PI / 2;
+    g.add(brim);
+    const coneH = brimR * 1.8;
+    const coneGeo = new THREE.ConeGeometry(brimR * 0.95, coneH, 24);
+    coneGeo.translate(0, coneH / 2, 0);                    // origin at the base so the tilt pivots there
+    const cone = new THREE.Mesh(coneGeo, red);
+    const flop = -0.30;                                    // tip flops sideways
+    cone.rotation.z = flop;
+    g.add(cone);
+    const pom = new THREE.Mesh(new THREE.SphereGeometry(brimR * 0.30, 14, 12), white);
+    pom.position.set(-Math.sin(flop) * coneH, Math.cos(flop) * coneH, 0);   // ride the tilted tip
+    g.add(pom);
+    g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    return g;
+}
+
+const ACCESSORY_BUILDERS = { 'santa-hat': makeSantaHat };
+
+// Wear a 코디 item (id) or take the current one off (id = null/undefined). The item is parented to
+// `wrap`, so every motion (nod, spin, sleep droop, …) carries it naturally.
+export function setGlbPetAccessory(pet, id) {
+    if (!pet) return;
+    if (pet.accessory) {
+        try { pet.wrap.remove(pet.accessory.group); } catch (e) {}
+        pet.accessory.group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+        pet.accessory = null;
+    }
+    if (!id) return;
+    const build = ACCESSORY_BUILDERS[id];
+    if (!build) return;
+    const headR = Math.min(pet.dims.x, pet.dims.z) * 0.5;
+    const group = build(headR * 0.62);                     // brim a bit narrower than the head (tunable)
+    group.position.y = pet.dims.y * 0.97;                  // sit on the head top, slightly sunk in
+    group.rotation.z = 0.12;                               // jaunty resting tilt
+    pet.wrap.add(group);
+    pet.accessory = { id, group };
+}
+
 // Load a .glb pet and return an entity object ready for updateGlbPetEntity. `targetHeight` is the
 // desired model height in scene units (the pet window derives it from the window height so all
 // windows show the same on-screen size; the world passes a fixed world-unit height). `parent`, when
@@ -86,6 +137,7 @@ export async function createGlbPetEntity(url, { targetHeight = 0.455, parent = n
     root.position.x -= c.x;
     root.position.z -= c.z;
     root.position.y -= box.min.y;   // ground the feet at y=0 (reverted)
+    const dims = new THREE.Vector3(); box.getSize(dims);   // normalized size (accessory anchoring)
 
     root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
 
@@ -131,9 +183,9 @@ export async function createGlbPetEntity(url, { targetHeight = 0.455, parent = n
 
     // FX hooks: setZzz/…/setEat stay null until the host wires them (pet window = fixed DOM overlays,
     // world = 3D-anchored); the emoji spawners default to the DOM implementations above.
-    const pet = { wrap, root, feet, tail, ears, wings, eyes, beak, tongue, footPlant, footWave, wingWave, idle,
+    const pet = { wrap, root, dims, feet, tail, ears, wings, eyes, beak, tongue, footPlant, footWave, wingWave, idle,
         setZzz: null, setThink: null, setCheer: null, setEat: null,
-        spawnEmoji: spawnFloatEmoji, burstEmoji: spawnBurstEmoji,
+        spawnEmoji: spawnFloatEmoji, burstEmoji: spawnBurstEmoji, accessory: null,
         sleeping: false, autoSleeping: false, walking: false, walkAmt: 0, t: 0 };
     console.log('[GlbPet] loaded', url, '| feet:', feet.map(f => f.name), '| wings:', wings.length, '| eyes:', eyes.length, '| beak:', !!beak, '| tongue:', !!tongue);
     return pet;
