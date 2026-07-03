@@ -6,6 +6,12 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **Meal times at the bowl (밥때)**: at 8시·12시·18시 the pets trot over to the food bowl, take
+  their own spot each (chick on one side, puppy on the other), turn to face the bowl and eat two
+  helpings with the shared Eat motion before wandering off. Each serving window lasts 45 minutes
+  and every pet eats once per serving (tracked per day); meals are skipped while possessed,
+  sleeping, in bed or mid-choreography, and the duo partner filter now also excludes busy/goto pets
+  so nobody gets pulled into a hug mid-bite. Preview with `?hour=12`.
 - **Night auto-sleep + sunbed & hammock (자동취침·잠자리)**: two new furniture props join the island —
   a mint sunbed with a reclined backrest, towel and pillow, and a hammock with leaning posts and a
   sagging, edge-curled cloth. At 밤 10시 (22:00) the pets head to bed on their own — the chick takes

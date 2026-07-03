@@ -995,7 +995,8 @@ function playWorldMotion(p, id) {
 }
 
 async function worldHug(initiator) {
-    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed);
+    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed
+        && q.ai.state !== 'goto' && q.ai.state !== 'busy');
     if (!partner || duoBusy) { initiator.pet.action = { id: 'hug', t: 0, role: 'solo', dir: 1 }; return; }
     duoBusy = true;
     try {
@@ -1038,7 +1039,8 @@ function handPos(p) {
 }
 
 async function worldPlay(initiator) {
-    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed);
+    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed
+        && q.ai.state !== 'goto' && q.ai.state !== 'busy');
     if (!partner || duoBusy) {
         initiator.pet.action = { id: 'play', t: 0, role: 'solo', dir: 1, cue: 'ready', cueT: 0 };
         setTimeout(() => { if (initiator.pet.action && initiator.pet.action.id === 'play') initiator.pet.action = null; }, 1600);
@@ -1514,6 +1516,43 @@ function updateAutoSleep() {
     }
 }
 
+// ---- 밥때 (meal times): at 8시·12시·18시 the pets trot to the food bowl, take a spot each, face
+// the bowl and have a couple of helpings with the shared Eat motion, then wander off. A serving
+// lasts 45 minutes and each pet eats once per serving; meals are skipped while possessed,
+// sleeping, in bed or mid-choreography (the duo partner filter also skips busy/goto pets, so
+// nobody gets dragged into a hug mid-bite).
+const MEAL_TIMES = [8, 12, 18];
+const MEAL_WINDOW = 0.75;
+const bowlProp = PROPS.find((p) => p.type === 'bowl');
+const EAT_SPOTS = {
+    chick: { x: bowlProp.x + 0.36, z: bowlProp.z - 0.26 },
+    puppy: { x: bowlProp.x - 0.38, z: bowlProp.z + 0.24 },
+};
+async function haveMeal(p) {
+    await gotoAsync(p, p.eatSpot.x, p.eatSpot.z);
+    p.mover.rotation.y = Math.atan2(bowlProp.x - p.mover.position.x, bowlProp.z - p.mover.position.z);
+    for (let i = 0; i < 2; i++) {
+        if (p.bed || p.pet.sleeping || p.ai.state !== 'busy') break;   // interrupted — abandon the meal
+        p.pet.action = { id: 'eat', t: 0 };
+        await sleepMs(3350);
+    }
+    if (p.ai.state === 'busy') releaseAI(p);
+}
+function updateMeals() {
+    const h = currentHour();
+    const meal = MEAL_TIMES.find((m) => h >= m && h < m + MEAL_WINDOW);
+    if (meal === undefined) return;
+    const key = `${Math.floor(Date.now() / 86400000)}-${meal}`;    // one serving per meal per day
+    for (const p of pets) {
+        if (p.mealDone === key) continue;
+        if (p === possessed || p.bed || p.pet.sleeping || p.pet.action) continue;
+        if (p.ai.state !== 'idle' && p.ai.state !== 'walk') continue;
+        p.eatSpot = EAT_SPOTS[p.name] || EAT_SPOTS.chick;
+        p.mealDone = key;
+        haveMeal(p);
+    }
+}
+
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -1531,6 +1570,7 @@ function animate() {
     updatePlayer(delta);
     updateBeds(delta);
     updateAutoSleep();
+    updateMeals();
     updateSelectRing();
     updateChatBubble();
     cloudSpin.rotation.y += delta * 0.012;   // lazy cloud drift
