@@ -230,6 +230,7 @@ function steerToward(p, target, delta) {
 
 function updateWander(p, delta) {
     const { ai, mover, pet } = p;
+    if (ai.state === 'player') return;                               // the keyboard controller owns it
     if (ai.state === 'busy') { pet.walking = false; return; }        // a duo director owns the pet
     if (ai.state === 'goto') {
         // Duo approach: keeps walking even while a one-shot lingers, and gives up gracefully
@@ -363,6 +364,19 @@ motionMenu.id = 'world-motion-menu';
 motionMenu.style.cssText = 'position:fixed; display:none; z-index:100; background:rgba(30,32,40,0.92); border-radius:10px; padding:6px; box-shadow:0 6px 24px rgba(0,0,0,0.35); max-height:230px; overflow-y:auto; min-width:150px; font-family:sans-serif;';
 document.body.appendChild(motionMenu);
 let menuPet = null;
+// 🎮 control entry pinned above the motions: possess this pet (or release it) for keyboard control.
+const controlItem = document.createElement('div');
+controlItem.style.cssText = 'padding:7px 12px; font-size:13px; color:#ffd54f; border-radius:7px; cursor:pointer; white-space:nowrap; border-bottom:1px solid rgba(255,255,255,0.12); margin-bottom:4px;';
+controlItem.onmouseenter = () => { controlItem.style.background = 'rgba(255,255,255,0.14)'; };
+controlItem.onmouseleave = () => { controlItem.style.background = 'transparent'; };
+controlItem.onclick = () => {
+    const p = menuPet;
+    hideMenu();
+    if (!p) return;
+    if (p === possessed) releasePossession();
+    else possessPet(p);
+};
+motionMenu.appendChild(controlItem);
 for (const m of GLB_MOTIONS) {
     const item = document.createElement('div');
     item.textContent = m.label;
@@ -374,6 +388,7 @@ for (const m of GLB_MOTIONS) {
 }
 function showMenu(x, y, p) {
     menuPet = p;
+    controlItem.textContent = (p === possessed) ? '🎮 조종 해제 (Esc)' : '🎮 조종하기';
     motionMenu.style.display = 'block';
     motionMenu.style.left = `${Math.min(x, window.innerWidth - 170)}px`;
     motionMenu.style.top = `${Math.min(y, window.innerHeight - 240)}px`;
@@ -442,13 +457,16 @@ function playWorldMotion(p, id) {
     if (p.ai.state === 'goto' || p.ai.state === 'busy') return;   // mid-duo choreography — ignore
     if (id === 'sleep') { p.pet.sleeping = true; releaseAI(p, 4); return; }
     p.pet.sleeping = false; p.pet.autoSleeping = false;
-    if (id === 'hug')  { worldHug(p);  return; }
-    if (id === 'play') { worldPlay(p); return; }
+    if (id === 'hug' || id === 'play') {
+        if (p === possessed) releasePossession();          // hand the pet back to its AI for the duo
+        (id === 'hug' ? worldHug : worldPlay)(p);
+        return;
+    }
     p.pet.action = { id, t: 0 };
 }
 
 async function worldHug(initiator) {
-    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping);
+    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed);
     if (!partner || duoBusy) { initiator.pet.action = { id: 'hug', t: 0, role: 'solo', dir: 1 }; return; }
     duoBusy = true;
     try {
@@ -491,7 +509,7 @@ function handPos(p) {
 }
 
 async function worldPlay(initiator) {
-    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping);
+    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed);
     if (!partner || duoBusy) {
         initiator.pet.action = { id: 'play', t: 0, role: 'solo', dir: 1, cue: 'ready', cueT: 0 };
         setTimeout(() => { if (initiator.pet.action && initiator.pet.action.id === 'play') initiator.pet.action = null; }, 1600);
@@ -744,6 +762,194 @@ function onVrmWsMessage(event) {
     } catch (e) { /* non-JSON command — ignore */ }
 }
 
+// ---- Camera buttons (줌·이동·각도): tap = one clean step, hold = glide. The orbit camera stays
+// the source of truth — these move camera/target directly; controls.update() keeps drags working. ----
+const UP = new THREE.Vector3(0, 1, 0);
+function camZoom(factor) {
+    const off = camera.position.clone().sub(controls.target);
+    off.setLength(THREE.MathUtils.clamp(off.length() * factor, controls.minDistance, controls.maxDistance));
+    camera.position.copy(controls.target).add(off);
+}
+function camOrbit(dTheta, dPhi) {
+    const off = camera.position.clone().sub(controls.target);
+    const sph = new THREE.Spherical().setFromVector3(off);
+    sph.theta += dTheta;
+    sph.phi = THREE.MathUtils.clamp(sph.phi + dPhi, 0.22, controls.maxPolarAngle);
+    off.setFromSpherical(sph);
+    camera.position.copy(controls.target).add(off);
+}
+function camPan(dxRight, dzFwd) {
+    const fwd = new THREE.Vector3();
+    camera.getWorldDirection(fwd); fwd.y = 0;
+    if (fwd.lengthSq() < 1e-6) return;
+    fwd.normalize();
+    const right = new THREE.Vector3().crossVectors(fwd, UP);
+    const move = right.multiplyScalar(dxRight).add(fwd.multiplyScalar(dzFwd));
+    controls.target.add(move);
+    camera.position.add(move);
+    // Keep the view anchored to the island: clamp the target inside the rim, camera follows along.
+    const r = Math.hypot(controls.target.x, controls.target.z);
+    if (r > ISLAND_R) {
+        const k = 1 - ISLAND_R / r;
+        const cx = controls.target.x * k, cz = controls.target.z * k;
+        controls.target.x -= cx; controls.target.z -= cz;
+        camera.position.x -= cx; camera.position.z -= cz;
+    }
+}
+
+let heldCamAction = null;
+const camPanel = document.createElement('div');
+camPanel.id = 'world-cam-panel';
+camPanel.style.cssText = 'position:fixed; right:14px; bottom:14px; display:flex; flex-direction:column; gap:4px; z-index:90; user-select:none; -webkit-user-select:none;';
+document.body.appendChild(camPanel);
+function camRow() {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; gap:4px; justify-content:center;';
+    camPanel.appendChild(row);
+    return row;
+}
+function camBtn(row, symbol, title, tapFn, holdFn) {
+    const b = document.createElement('div');
+    b.textContent = symbol;
+    b.title = title;
+    b.style.cssText = 'width:34px; height:34px; display:flex; align-items:center; justify-content:center; background:rgba(30,32,40,0.85); color:#fff; font-size:15px; border-radius:9px; cursor:pointer; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
+    b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        tapFn();                    // tap = one step…
+        heldCamAction = holdFn;     // …and holding glides on from there
+        try { b.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    const stop = () => { heldCamAction = null; };
+    b.addEventListener('pointerup', stop);
+    b.addEventListener('pointercancel', stop);
+    row.appendChild(b);
+}
+{
+    const rZoom = camRow();
+    camBtn(rZoom, '＋', '줌인',   () => camZoom(0.88), (dt) => camZoom(Math.pow(0.45, dt)));
+    camBtn(rZoom, '－', '줌아웃', () => camZoom(1.14), (dt) => camZoom(Math.pow(2.2, dt)));
+    const rPanU = camRow();
+    camBtn(rPanU, '▲', '앞으로 이동', () => camPan(0, 0.3), (dt) => camPan(0, 1.7 * dt));
+    const rPan = camRow();
+    camBtn(rPan, '◀', '왼쪽으로 이동',   () => camPan(-0.3, 0), (dt) => camPan(-1.7 * dt, 0));
+    camBtn(rPan, '▼', '뒤로 이동',       () => camPan(0, -0.3), (dt) => camPan(0, -1.7 * dt));
+    camBtn(rPan, '▶', '오른쪽으로 이동', () => camPan(0.3, 0),  (dt) => camPan(1.7 * dt, 0));
+    const rRot = camRow();
+    camBtn(rRot, '⟲', '왼쪽으로 회전',   () => camOrbit(0.28, 0),  (dt) => camOrbit(1.5 * dt, 0));
+    camBtn(rRot, '∧', '높은 각도로',     () => camOrbit(0, -0.18), (dt) => camOrbit(0, -1.0 * dt));
+    camBtn(rRot, '∨', '낮은 각도로',     () => camOrbit(0, 0.18),  (dt) => camOrbit(0, 1.0 * dt));
+    camBtn(rRot, '⟳', '오른쪽으로 회전', () => camOrbit(-0.28, 0), (dt) => camOrbit(-1.5 * dt, 0));
+}
+
+// ---- Player control (조종): pick 🎮 in a pet's menu, then the arrow keys move it relative to the
+// camera (↑ pushes it away from you) and Space hops. The AI parks in a dedicated 'player' state and
+// Esc / the menu releases it. The jump lives on the mover's Y, so the shared motions' bob stacks
+// cleanly on top; ground height always comes from the world interface.
+let possessed = null;
+const heldKeys = new Set();
+let jumpVy = 0;
+let airborne = false;
+
+const selectRing = new THREE.Mesh(
+    new THREE.RingGeometry(0.26, 0.34, 32),
+    new THREE.MeshBasicMaterial({ color: 0xffd54f, transparent: true, opacity: 0.85, side: THREE.DoubleSide })
+);
+selectRing.rotation.x = -Math.PI / 2;
+selectRing.visible = false;
+scene.add(selectRing);
+
+const controlHint = document.createElement('div');
+controlHint.style.cssText = 'position:fixed; left:14px; bottom:14px; display:none; z-index:90; background:rgba(30,32,40,0.85); color:#fff; font-size:12px; font-family:sans-serif; padding:8px 12px; border-radius:10px; box-shadow:0 3px 10px rgba(0,0,0,0.3); pointer-events:none;';
+document.body.appendChild(controlHint);
+
+function possessPet(p) {
+    if (p.ai.state === 'goto' || p.ai.state === 'busy') return;   // mid-duo — let it finish first
+    releasePossession();
+    possessed = p;
+    p.pet.sleeping = false; p.pet.autoSleeping = false;
+    p.ai.state = 'player';
+    p.pet.walking = false;
+    selectRing.visible = true;
+    controlHint.textContent = `🎮 ${p.name === 'chick' ? '병아리' : '강아지'} 조종 중 — 방향키 이동 · Space 점프 · Esc 해제`;
+    controlHint.style.display = 'block';
+}
+function releasePossession() {
+    if (!possessed) return;
+    const p = possessed;
+    possessed = null;
+    airborne = false; jumpVy = 0;
+    p.mover.position.y = world.groundHeightAt(p.mover.position.x, p.mover.position.z);
+    if (p.ai.state === 'player') releaseAI(p);
+    heldKeys.clear();
+    selectRing.visible = false;
+    controlHint.style.display = 'none';
+}
+
+const ARROW_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+window.addEventListener('keydown', (e) => {
+    if (e.target && e.target.tagName === 'INPUT') return;        // typing in the chat bar
+    if (e.key === 'Escape') { releasePossession(); hideMenu(); return; }
+    if (!possessed) return;
+    if (ARROW_KEYS.includes(e.key)) { heldKeys.add(e.key); e.preventDefault(); }
+    else if (e.code === 'Space') {
+        e.preventDefault();
+        if (!airborne) { airborne = true; jumpVy = 2.5; }
+    }
+});
+window.addEventListener('keyup', (e) => { heldKeys.delete(e.key); });
+window.addEventListener('blur', () => heldKeys.clear());
+
+function updatePlayer(delta) {
+    if (!possessed) return;
+    const p = possessed;
+    if (p.ai.state !== 'player') { releasePossession(); return; }   // something reclaimed it — let go
+    let ix = 0, iz = 0;
+    if (heldKeys.has('ArrowUp')) iz += 1;
+    if (heldKeys.has('ArrowDown')) iz -= 1;
+    if (heldKeys.has('ArrowLeft')) ix -= 1;
+    if (heldKeys.has('ArrowRight')) ix += 1;
+    if (ix !== 0 || iz !== 0) {
+        const fwd = new THREE.Vector3();
+        camera.getWorldDirection(fwd); fwd.y = 0;
+        if (fwd.lengthSq() > 1e-6) {
+            fwd.normalize();
+            const right = new THREE.Vector3().crossVectors(fwd, UP);
+            const dir = right.multiplyScalar(ix).add(fwd.multiplyScalar(iz)).normalize();
+            const desired = Math.atan2(dir.x, dir.z);
+            let diff = desired - p.mover.rotation.y;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            p.mover.rotation.y += THREE.MathUtils.clamp(diff, -delta * 7, delta * 7);
+            const step = p.speed * 1.5 * delta;                    // player pace: brisker than wandering
+            const nx = p.mover.position.x + dir.x * step;
+            const nz = p.mover.position.z + dir.z * step;
+            if (!world.isBlocked(nx, nz)) { p.mover.position.x = nx; p.mover.position.z = nz; }
+            p.pet.walking = true;
+        }
+    } else {
+        p.pet.walking = false;
+    }
+    const groundY = world.groundHeightAt(p.mover.position.x, p.mover.position.z);
+    if (airborne) {
+        jumpVy -= 7.0 * delta;
+        p.mover.position.y += jumpVy * delta;
+        if (p.mover.position.y <= groundY && jumpVy < 0) {
+            p.mover.position.y = groundY; airborne = false; jumpVy = 0;
+        }
+    } else {
+        p.mover.position.y = groundY;
+    }
+}
+
+function updateSelectRing() {
+    if (!possessed) return;
+    selectRing.position.set(
+        possessed.mover.position.x,
+        world.groundHeightAt(possessed.mover.position.x, possessed.mover.position.z) + 0.012,
+        possessed.mover.position.z
+    );
+}
+
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -758,6 +964,9 @@ function animate() {
         updateGlbPetEntity(p.pet, delta);
         if (p.fxUpdate) p.fxUpdate();
     }
+    if (heldCamAction) heldCamAction(delta);
+    updatePlayer(delta);
+    updateSelectRing();
     updateChatBubble();
     if (ballFlight) {
         ballFlight.t += delta;

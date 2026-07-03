@@ -6,6 +6,17 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **World camera buttons + pet keyboard control (카메라 조작·조종)**: a bottom-right button panel
+  drives the camera — zoom in/out, a pan D-pad (island-clamped so the view can't drift off into the
+  sky), and rotate/tilt angle buttons; tapping steps once, holding glides continuously. A pet's
+  click-menu gains a pinned "🎮 조종하기" entry: the chosen pet parks its AI in a dedicated `player`
+  state (excluded from duo partnering; mid-duo pets can't be grabbed), shows a golden select ring
+  and a bottom-left hint, and is driven with the arrow keys (camera-relative, ↑ = away from you,
+  brisker than wander pace, prop/rim collisions respected) plus Space to hop (simple gravity on the
+  mover's Y so motion bobs stack cleanly). Esc or the menu releases it back to wandering; picking
+  hug/play while possessed hands the pet back to its AI first. Typing in the chat bar never moves
+  the pet. This is the first piece of the ③→② third-person track: the keyboard controller simply
+  replaces the wander controller, exactly as the architecture planned.
 - **World chat (채팅 이식)**: a bottom chat bar in the world window talks through the same backend as
   the pet windows — `/ws` (`set_user_input` → `trigger_send_message`) drives the main-UI agent, and
   the reply's `/ws/vrm` TTS chunks are re-sequenced and played in order with their text shown in a
