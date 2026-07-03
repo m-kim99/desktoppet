@@ -6,6 +6,16 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **Night auto-sleep + sunbed & hammock (자동취침·잠자리)**: two new furniture props join the island —
+  a mint sunbed with a reclined backrest, towel and pillow, and a hammock with leaning posts and a
+  sagging, edge-curled cloth. At 밤 10시 (22:00) the pets head to bed on their own — the chick takes
+  the hammock (it rocks gently while she sleeps), the puppy the sunbed — walking to an approach
+  point, hopping on with a little arc, tipping onto their backs (the lean lives on the mover so the
+  shared sleep animation keeps breathing on top) and dozing until 6시, when they hop off with the
+  sunrise. Waking them at night (click, chat, motion) makes them dismount; they drowsily climb back
+  in ~90 seconds later. While driving a pet (🎮), walking near a free bed shows a "Ctrl 눕기" hint —
+  pressing Ctrl sends it to climb in and lie down (possession hands back to the AI as it walks).
+  Beds are blocking props, excluded from duo partnering, and `?hour=23` previews bedtime instantly.
 - **Rippling ocean around the island (바다)**: the floating island now sits over an animated sea. A
   polar-grid ocean mesh (geometric ring spacing — dense where you look, sparse toward the horizon)
   runs four layered directional sine waves on its vertices every frame with recomputed normals, so

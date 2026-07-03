@@ -306,7 +306,10 @@ const PROPS = [
     { type: 'bowl',  x: -1.0, z:  1.6, rotY: 0.0,  r: 0.28 },
     { type: 'fence', x: -2.5, z:  0.6, rotY: 1.05, r: 0.5 },
     { type: 'pond',  x:  0.2, z: -2.2, rotY: 0.0,  r: 0.72 },
+    { type: 'sunbed',  x:  2.35, z:  0.0,  rotY: -1.2, r: 0.42 },
+    { type: 'hammock', x: -1.55, z: -1.95, rotY: 0.5,  r: 0.55 },
 ];
+const BEDS = [];   // filled during prop placement: where pets sleep at night / lie via Ctrl
 const M = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
 
 function makeTree(p) {
@@ -430,13 +433,84 @@ function makePond() {
     return g;
 }
 
-const PROP_BUILDERS = { tree: makeTree, house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond };
+function makeSunbed() {
+    const g = new THREE.Group();
+    const frame = M(0xf5f2ea);
+    for (const [lx, lz] of [[-0.15, -0.22], [0.15, -0.22], [-0.15, 0.22], [0.15, 0.22]]) {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.024, 0.12, 8), frame);
+        leg.position.set(lx, 0.06, lz);
+        g.add(leg);
+    }
+    const deck = new THREE.Mesh(new RoundedBoxGeometry(0.36, 0.05, 0.6, 3, 0.02), M(0x9fd8c9));
+    deck.position.y = 0.145;
+    g.add(deck);
+    const back = new THREE.Mesh(new RoundedBoxGeometry(0.36, 0.05, 0.3, 3, 0.02), M(0x9fd8c9));
+    back.position.set(0, 0.225, -0.345);
+    back.rotation.x = -0.85;                      // reclined backrest (pets tip onto it)
+    g.add(back);
+    const towel = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.012, 0.2), M(0xff8fb3));
+    towel.position.set(0, 0.176, 0.1);
+    g.add(towel);
+    const pillow = new THREE.Mesh(new RoundedBoxGeometry(0.24, 0.06, 0.12, 3, 0.025), M(0xffffff));
+    pillow.position.set(0, 0.28, -0.33);
+    pillow.rotation.x = -0.85;
+    g.add(pillow);
+    return g;
+}
+
+function makeHammock() {
+    const g = new THREE.Group();
+    const wood = M(0xa9825f);
+    for (const side of [-1, 1]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.52, 10), wood);
+        post.position.set(side * 0.52, 0.26, 0);
+        post.rotation.z = -side * 0.12;           // lean slightly outward
+        g.add(post);
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), wood);
+        cap.position.set(side * 0.55, 0.52, 0);
+        g.add(cap);
+    }
+    // Sagging cloth: a plane bent down along its length with the edges curling up across the width.
+    const cloth = new THREE.PlaneGeometry(1.04, 0.34, 16, 4);
+    const cp = cloth.attributes.position;
+    for (let i = 0; i < cp.count; i++) {
+        const x = cp.getX(i), y = cp.getY(i);
+        cp.setZ(i, -0.13 * Math.cos((x / 0.52) * (Math.PI / 2)) + 0.05 * Math.pow(Math.abs(y) / 0.17, 2));
+    }
+    cloth.computeVertexNormals();
+    const clothMesh = new THREE.Mesh(cloth, new THREE.MeshLambertMaterial({ color: 0xf2c063, side: THREE.DoubleSide }));
+    clothMesh.rotation.x = -Math.PI / 2;
+    clothMesh.position.y = 0.5;
+    g.add(clothMesh);
+    return g;
+}
+
+const PROP_BUILDERS = { tree: makeTree, house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock };
 for (const p of PROPS) {
     const obj = PROP_BUILDERS[p.type](p);
     obj.position.set(p.x, terrainHeight(p.x, p.z), p.z);
     obj.rotation.y = p.rotY || 0;
     obj.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     stage.add(obj);
+    // Beds register a lying spot (on the furniture, with a lean-back tilt + heading) and an
+    // approach point just outside their collider that the pet walks to before climbing on.
+    if (p.type === 'sunbed' || p.type === 'hammock') {
+        const sy = Math.sin(p.rotY || 0), cy = Math.cos(p.rotY || 0);
+        const baseY = terrainHeight(p.x, p.z);
+        if (p.type === 'sunbed') {
+            BEDS.push({
+                id: 'sunbed', occupant: null, sway: 0,
+                lie: { x: p.x + sy * 0.05, z: p.z + cy * 0.05, y: baseY + 0.18, rotY: p.rotY || 0, tilt: -1.05 },
+                approach: { x: p.x + sy * 0.75, z: p.z + cy * 0.75 },
+            });
+        } else {
+            BEDS.push({
+                id: 'hammock', occupant: null, sway: 1,
+                lie: { x: p.x, z: p.z, y: baseY + 0.4, rotY: (p.rotY || 0) + Math.PI / 2, tilt: -1.25 },
+                approach: { x: p.x + sy * 0.7, z: p.z + cy * 0.7 },
+            });
+        }
+    }
 }
 
 // ---- World interface: the ONLY way pets sense the ground/space (keeps them portable) ----
@@ -921,7 +995,7 @@ function playWorldMotion(p, id) {
 }
 
 async function worldHug(initiator) {
-    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed);
+    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed);
     if (!partner || duoBusy) { initiator.pet.action = { id: 'hug', t: 0, role: 'solo', dir: 1 }; return; }
     duoBusy = true;
     try {
@@ -964,7 +1038,7 @@ function handPos(p) {
 }
 
 async function worldPlay(initiator) {
-    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed);
+    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed);
     if (!partner || duoBusy) {
         initiator.pet.action = { id: 'play', t: 0, role: 'solo', dir: 1, cue: 'ready', cueT: 0 };
         setTimeout(() => { if (initiator.pet.action && initiator.pet.action.id === 'play') initiator.pet.action = null; }, 1600);
@@ -1275,6 +1349,13 @@ window.addEventListener('keydown', (e) => {
         e.preventDefault();
         if (!airborne) { airborne = true; jumpVy = 2.5; }
     }
+    else if (e.key === 'Control') {
+        // Tuck-in interaction: near a free bed, Ctrl sends the pet to climb on and lie down.
+        // Possession auto-releases as its AI leaves the 'player' state for the approach walk.
+        e.preventDefault();
+        const bed = !possessed.bed && nearestFreeBed(possessed, 0.95);
+        if (bed) mountBed(possessed, bed);
+    }
 });
 window.addEventListener('keyup', (e) => { heldKeys.delete(e.key); });
 window.addEventListener('blur', () => heldKeys.clear());
@@ -1319,6 +1400,10 @@ function updatePlayer(delta) {
     } else {
         p.mover.position.y = groundY;
     }
+    // Offer the tuck-in hint while standing near a free bed.
+    const bedNear = !p.bed && nearestFreeBed(p, 0.95);
+    const hint = `🎮 ${p.name === 'chick' ? '병아리' : '강아지'} 조종 중 — 방향키 이동 · Space 점프${bedNear ? ' · Ctrl 눕기' : ''} · Esc 해제`;
+    if (controlHint.textContent !== hint) controlHint.textContent = hint;
 }
 
 function updateSelectRing() {
@@ -1328,6 +1413,105 @@ function updateSelectRing() {
         world.groundHeightAt(possessed.mover.position.x, possessed.mover.position.z) + 0.012,
         possessed.mover.position.z
     );
+}
+
+// ---- 잠자리 & auto-sleep: at 22시 the pets head to bed (chick→hammock, puppy→sunbed), climb on,
+// tip onto their backs and doze until 6시. Waking them (click/chat/motion) makes them hop off —
+// during sleep hours they drowsily try again ~90s later. Beds are blocking props, so pets walk to
+// an approach point and are then tweened onto the lying spot; the lean-back lives on the mover
+// (rotation.x) so the shared sleep animation keeps breathing on top. The hammock rocks gently.
+const BED_PREF = { chick: 'hammock', puppy: 'sunbed' };
+function freeBedFor(p) {
+    return BEDS.find((b) => b.id === BED_PREF[p.name] && !b.occupant) || BEDS.find((b) => !b.occupant) || null;
+}
+function nearestFreeBed(p, maxDist) {
+    let best = null, bestD = maxDist;
+    for (const b of BEDS) {
+        if (b.occupant) continue;
+        const d = Math.hypot(p.mover.position.x - b.lie.x, p.mover.position.z - b.lie.z);
+        if (d < bestD) { bestD = d; best = b; }
+    }
+    return best;
+}
+async function mountBed(p, bed) {
+    if (p.bed || bed.occupant) return;
+    bed.occupant = p; p.bed = bed; p.bedPhase = 'approach';
+    await gotoAsync(p, bed.approach.x, bed.approach.z);
+    if (p.bed !== bed) return;
+    p.bedPhase = 'mount'; p.bedT = 0;
+    p.bedFrom = { x: p.mover.position.x, y: p.mover.position.y, z: p.mover.position.z, rotY: p.mover.rotation.y };
+}
+function dismountBed(p) {
+    if (!p.bed) return;
+    p.bedPhase = 'dismount'; p.bedT = 0;
+    p.bedFrom = { x: p.mover.position.x, y: p.mover.position.y, z: p.mover.position.z, tilt: p.mover.rotation.x };
+}
+function updateBeds(delta) {
+    for (const p of pets) {
+        if (!p.bed) continue;
+        const bed = p.bed, lie = bed.lie;
+        if (p.bedPhase === 'mount') {
+            p.bedT += delta;
+            const k = Math.min(1, p.bedT / 0.7);
+            const e = k * k * (3 - 2 * k);
+            p.mover.position.x = THREE.MathUtils.lerp(p.bedFrom.x, lie.x, e);
+            p.mover.position.z = THREE.MathUtils.lerp(p.bedFrom.z, lie.z, e);
+            p.mover.position.y = THREE.MathUtils.lerp(p.bedFrom.y, lie.y, e) + Math.sin(k * Math.PI) * 0.14;
+            let dr = lie.rotY - p.bedFrom.rotY;
+            while (dr > Math.PI) dr -= Math.PI * 2;
+            while (dr < -Math.PI) dr += Math.PI * 2;
+            p.mover.rotation.y = p.bedFrom.rotY + dr * e;
+            p.mover.rotation.x = lie.tilt * e;
+            if (k >= 1) { p.bedPhase = 'lying'; p.bedT = 0; p.pet.sleeping = true; p.ai.state = 'busy'; }
+        } else if (p.bedPhase === 'lying') {
+            p.bedT += delta;
+            if (bed.sway) p.mover.rotation.z = Math.sin(p.bedT * 1.1) * 0.07;
+            if (!p.pet.sleeping) dismountBed(p);                 // woken by anything → hop off
+        } else if (p.bedPhase === 'dismount') {
+            p.bedT += delta;
+            const k = Math.min(1, p.bedT / 0.55);
+            const e = k * k * (3 - 2 * k);
+            const gx = bed.approach.x, gz = bed.approach.z;
+            const gy = world.groundHeightAt(gx, gz);
+            p.mover.position.x = THREE.MathUtils.lerp(p.bedFrom.x, gx, e);
+            p.mover.position.z = THREE.MathUtils.lerp(p.bedFrom.z, gz, e);
+            p.mover.position.y = THREE.MathUtils.lerp(p.bedFrom.y, gy, e) + Math.sin(k * Math.PI) * 0.12;
+            p.mover.rotation.x = p.bedFrom.tilt * (1 - e);
+            p.mover.rotation.z *= (1 - e);
+            if (k >= 1) {
+                p.mover.rotation.x = 0; p.mover.rotation.z = 0;
+                bed.occupant = null; p.bed = null; p.bedPhase = null;
+                releaseAI(p);
+            }
+        }
+    }
+}
+
+const SLEEP_START = 22, SLEEP_END = 6;   // 밤 10시 취침, 해 뜨는 6시 기상
+function isSleepTime(h) { return h >= SLEEP_START || h < SLEEP_END; }
+function updateAutoSleep() {
+    const h = currentHour();
+    const now = Date.now();
+    const sleepy = isSleepTime(h);
+    for (const p of pets) {
+        // Note wake transitions so a night-time click doesn't get instantly re-tucked.
+        if (p.wasSleeping && !p.pet.sleeping) p.nextAutoSleepAt = now + 90000;
+        p.wasSleeping = p.pet.sleeping;
+        if (!sleepy && p.pet.sleeping && p.autoSlept) {          // 6시 — morning wake (beds dismount above)
+            p.pet.sleeping = false;
+            p.autoSlept = false;
+            continue;
+        }
+        if (p.bed) continue;
+        if (!sleepy) continue;
+        if (p === possessed || p.pet.sleeping || p.pet.action) continue;
+        if (p.ai.state !== 'idle' && p.ai.state !== 'walk') continue;
+        if (now < (p.nextAutoSleepAt || 0)) continue;
+        const bed = freeBedFor(p);
+        p.autoSlept = true;
+        if (bed) mountBed(p, bed);
+        else p.pet.sleeping = true;                              // both beds taken — nap on the grass
+    }
 }
 
 window.addEventListener('resize', () => {
@@ -1345,6 +1529,8 @@ function animate() {
         if (p.fxUpdate) p.fxUpdate();
     }
     updatePlayer(delta);
+    updateBeds(delta);
+    updateAutoSleep();
     updateSelectRing();
     updateChatBubble();
     cloudSpin.rotation.y += delta * 0.012;   // lazy cloud drift
