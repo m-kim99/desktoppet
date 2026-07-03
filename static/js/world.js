@@ -49,8 +49,9 @@ controls.enableZoom = false;
 let zoomTargetDist = camera.position.distanceTo(controls.target);
 renderer.domElement.addEventListener('wheel', (e) => {
     e.preventDefault();
+    const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 120 : 1);   // lines/pages → px
     zoomTargetDist = THREE.MathUtils.clamp(
-        zoomTargetDist * Math.pow(1.0015, e.deltaY),
+        zoomTargetDist * Math.pow(1.0015, dy),
         controls.minDistance, controls.maxDistance
     );
 }, { passive: false });
@@ -774,98 +775,9 @@ function onVrmWsMessage(event) {
     } catch (e) { /* non-JSON command — ignore */ }
 }
 
-// ---- Camera buttons (줌·이동·각도): tap = one clean step, hold = glide. The orbit camera stays
-// the source of truth — these move camera/target directly; controls.update() keeps drags working. ----
+// Camera-relative basis for the keyboard pet controller. (Camera moves are all mouse-driven now:
+// drag = orbit, right-drag/two-finger = pan, wheel = the smoothed zoom above.)
 const UP = new THREE.Vector3(0, 1, 0);
-function camZoom(factor) {
-    // Buttons steer the same smoothed target the wheel uses; animate() glides the camera there.
-    zoomTargetDist = THREE.MathUtils.clamp(zoomTargetDist * factor, controls.minDistance, controls.maxDistance);
-}
-function camOrbit(dTheta, dPhi) {
-    const off = camera.position.clone().sub(controls.target);
-    const sph = new THREE.Spherical().setFromVector3(off);
-    sph.theta += dTheta;
-    sph.phi = THREE.MathUtils.clamp(sph.phi + dPhi, 0.22, controls.maxPolarAngle);
-    off.setFromSpherical(sph);
-    camera.position.copy(controls.target).add(off);
-}
-function camPan(dxRight, dzFwd) {
-    const fwd = new THREE.Vector3();
-    camera.getWorldDirection(fwd); fwd.y = 0;
-    if (fwd.lengthSq() < 1e-6) return;
-    fwd.normalize();
-    const right = new THREE.Vector3().crossVectors(fwd, UP);
-    const move = right.multiplyScalar(dxRight).add(fwd.multiplyScalar(dzFwd));
-    controls.target.add(move);
-    camera.position.add(move);
-    // Keep the view anchored to the island: clamp the target inside the rim, camera follows along.
-    const r = Math.hypot(controls.target.x, controls.target.z);
-    if (r > ISLAND_R) {
-        const k = 1 - ISLAND_R / r;
-        const cx = controls.target.x * k, cz = controls.target.z * k;
-        controls.target.x -= cx; controls.target.z -= cz;
-        camera.position.x -= cx; camera.position.z -= cz;
-    }
-}
-
-let heldCamAction = null;
-// The whole control cluster folds behind a single 📷 toggle in the bottom-right corner.
-const camDock = document.createElement('div');
-camDock.id = 'world-cam-dock';
-camDock.style.cssText = 'position:fixed; right:14px; bottom:14px; display:flex; flex-direction:column; align-items:flex-end; gap:6px; z-index:90; user-select:none; -webkit-user-select:none;';
-document.body.appendChild(camDock);
-const camPanel = document.createElement('div');
-camPanel.id = 'world-cam-panel';
-camPanel.style.cssText = 'display:none; flex-direction:column; gap:4px; background:rgba(20,22,28,0.55); padding:6px; border-radius:12px;';
-camDock.appendChild(camPanel);
-const camToggle = document.createElement('div');
-camToggle.textContent = '📷';
-camToggle.title = '카메라 조작';
-camToggle.style.cssText = 'width:38px; height:38px; display:flex; align-items:center; justify-content:center; background:rgba(30,32,40,0.85); font-size:18px; border-radius:11px; cursor:pointer; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
-camToggle.onclick = () => {
-    const open = camPanel.style.display !== 'none';
-    camPanel.style.display = open ? 'none' : 'flex';
-    camToggle.style.background = open ? 'rgba(30,32,40,0.85)' : 'rgba(91,141,239,0.9)';
-};
-camDock.appendChild(camToggle);
-function camRow() {
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex; gap:4px; justify-content:center;';
-    camPanel.appendChild(row);
-    return row;
-}
-function camBtn(row, symbol, title, tapFn, holdFn) {
-    const b = document.createElement('div');
-    b.textContent = symbol;
-    b.title = title;
-    b.style.cssText = 'width:34px; height:34px; display:flex; align-items:center; justify-content:center; background:rgba(30,32,40,0.85); color:#fff; font-size:15px; border-radius:9px; cursor:pointer; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
-    b.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        tapFn();                    // tap = one step…
-        heldCamAction = holdFn;     // …and holding glides on from there
-        try { b.setPointerCapture(e.pointerId); } catch (err) {}
-    });
-    const stop = () => { heldCamAction = null; };
-    b.addEventListener('pointerup', stop);
-    b.addEventListener('pointercancel', stop);
-    row.appendChild(b);
-}
-{
-    const rZoom = camRow();
-    camBtn(rZoom, '＋', '줌인',   () => camZoom(0.88), (dt) => camZoom(Math.pow(0.45, dt)));
-    camBtn(rZoom, '－', '줌아웃', () => camZoom(1.14), (dt) => camZoom(Math.pow(2.2, dt)));
-    const rPanU = camRow();
-    camBtn(rPanU, '▲', '앞으로 이동', () => camPan(0, 0.3), (dt) => camPan(0, 1.7 * dt));
-    const rPan = camRow();
-    camBtn(rPan, '◀', '왼쪽으로 이동',   () => camPan(-0.3, 0), (dt) => camPan(-1.7 * dt, 0));
-    camBtn(rPan, '▼', '뒤로 이동',       () => camPan(0, -0.3), (dt) => camPan(0, -1.7 * dt));
-    camBtn(rPan, '▶', '오른쪽으로 이동', () => camPan(0.3, 0),  (dt) => camPan(1.7 * dt, 0));
-    const rRot = camRow();
-    camBtn(rRot, '⟲', '왼쪽으로 회전',   () => camOrbit(0.28, 0),  (dt) => camOrbit(1.5 * dt, 0));
-    camBtn(rRot, '∧', '높은 각도로',     () => camOrbit(0, -0.18), (dt) => camOrbit(0, -1.0 * dt));
-    camBtn(rRot, '∨', '낮은 각도로',     () => camOrbit(0, 0.18),  (dt) => camOrbit(0, 1.0 * dt));
-    camBtn(rRot, '⟳', '오른쪽으로 회전', () => camOrbit(-0.28, 0), (dt) => camOrbit(-1.5 * dt, 0));
-}
 
 // ---- Player control (조종): pick 🎮 in a pet's menu, then the arrow keys move it relative to the
 // camera (↑ pushes it away from you) and Space hops. The AI parks in a dedicated 'player' state and
@@ -990,7 +902,6 @@ function animate() {
         updateGlbPetEntity(p.pet, delta);
         if (p.fxUpdate) p.fxUpdate();
     }
-    if (heldCamAction) heldCamAction(delta);
     updatePlayer(delta);
     updateSelectRing();
     updateChatBubble();

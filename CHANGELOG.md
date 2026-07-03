@@ -6,6 +6,10 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **Camera buttons removed — mouse-only camera**: with drag-orbit damped and wheel zoom smoothed,
+  the 📷 toggle and its button panel became redundant and are gone. Camera is now fully mouse-driven:
+  drag = orbit, right-drag/two-finger = pan, wheel = smooth glide zoom (wheel deltas are normalized
+  across devices — pixel/line/page modes — so trackpads and notched mice feel the same).
 - **Camera panel folded into a 📷 toggle + silky zoom**: the camera buttons now live behind a single
   📷 button in the bottom-right (click to expand/collapse; the toggle glows blue while open). Mouse
   wheel zoom no longer uses OrbitControls' per-tick dolly steps — the wheel (and the ＋/－ buttons)
