@@ -6,6 +6,14 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **World day/night cycle (밤낮)**: the world now follows the real clock — the sun rises at 6시 and
+  sets at 18시, when the moon takes over the same east→west arc until morning; both slide along the
+  sky as time passes (refreshed ~2×/min). The sky gradient blends between day pastels, a deep navy
+  starfield night (240 stars fade in after dark), and a golden dawn/dusk glow that peaks exactly at
+  6시/18시; fog and background follow the horizon color. The one shadow light plays the warm sun by
+  day and a cool blue moon by night (hemisphere fill, cloud tint and cloud glow follow too), so
+  shadows sweep across the island through the day. Preview any hour by opening
+  `world.html?hour=21.5` in a browser.
 - **코디 accessory system + santa hat**: pets can now wear outfit items. The shared entity module
   gains a `GLB_ACCESSORIES` registry + `setGlbPetAccessory(pet, id)` — items are built procedurally
   (no external assets), anchored to the normalized head-top via the new `pet.dims`, and parented to

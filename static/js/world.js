@@ -17,31 +17,52 @@ renderer.toneMappingExposure = 1.12;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-// Sky: a vertical pastel gradient painted onto a big inside-out dome (fog is disabled on it so the
-// gradient stays crisp), plus a few puffy clouds drifting slowly around the island.
+// Sky: a vertical gradient painted onto a big inside-out dome (fog is disabled on it so the
+// gradient stays crisp), repainted through the day/night cycle below — plus drifting clouds, a
+// sun, a moon, and a bed of stars that fades in after dark.
 scene.background = new THREE.Color(0xdff1fd);
 scene.fog = new THREE.Fog(0xdff1fd, 14, 34);
+const skyCv = document.createElement('canvas');
+skyCv.width = 1; skyCv.height = 256;
+const skyCtx = skyCv.getContext('2d');
+const skyTex = new THREE.CanvasTexture(skyCv);
 {
-    const cv = document.createElement('canvas');
-    cv.width = 1; cv.height = 256;
-    const ctx = cv.getContext('2d');
-    const grad = ctx.createLinearGradient(0, 0, 0, 256);
-    grad.addColorStop(0.0, '#4f9fe0');     // zenith blue
-    grad.addColorStop(0.45, '#a5d5f5');
-    grad.addColorStop(0.8, '#e4f4ff');
-    grad.addColorStop(1.0, '#ffeef2');     // warm pink haze at the horizon
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 1, 256);
     const sky = new THREE.Mesh(
         new THREE.SphereGeometry(42, 32, 24),
-        new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), side: THREE.BackSide, fog: false, depthWrite: false })
+        new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false })
     );
     scene.add(sky);
 }
+// Sun & moon share one east→west arc (rise 6시 / set 18시 — the moon takes the night shift); both
+// ignore fog so they glow through the haze. Stars sit on the upper dome, opacity driven at night.
+const sunMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.95, 20, 16),
+    new THREE.MeshBasicMaterial({ color: 0xffd75e, fog: false })
+);
+scene.add(sunMesh);
+const moonMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.75, 20, 16),
+    new THREE.MeshBasicMaterial({ color: 0xf2eede, fog: false })
+);
+scene.add(moonMesh);
+let starMat = null;
+{
+    const pts = [];
+    for (let i = 0; i < 240; i++) {
+        const v = new THREE.Vector3().randomDirection();
+        v.y = Math.abs(v.y) * 0.9 + 0.08;       // upper hemisphere only
+        v.normalize().multiplyScalar(39);
+        pts.push(v.x, v.y, v.z);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.28, transparent: true, opacity: 0, fog: false, depthWrite: false });
+    scene.add(new THREE.Points(g, starMat));
+}
 const cloudSpin = new THREE.Group();     // rotated a hair every frame → clouds drift
 scene.add(cloudSpin);
+const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xaecbe8, emissiveIntensity: 0.35 });
 {
-    const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xaecbe8, emissiveIntensity: 0.35 });
     const defs = [
         { a: 0.3, r: 11,   y: 4.6, s: 1.0 },
         { a: 1.9, r: 13,   y: 5.6, s: 1.35 },
@@ -81,6 +102,84 @@ sunLight.shadow.radius = 5;              // PCFSoft blur — soft cartoon-edged 
 sunLight.shadow.bias = -0.0002;
 sunLight.shadow.normalBias = 0.03;       // rolling terrain: keep self-shadow acne away
 scene.add(sunLight);
+
+// ---- Day/night cycle (밤낮): driven by the real clock — 해 6시 뜨고 18시 지고, 달이 밤 교대.
+// Refreshes at most every 30s: repaints the sky gradient, slides sun/moon along their arc, re-aims
+// the shadow light (sun by day, moon by night) and dresses clouds/stars/fog for the hour.
+// Preview any time of day with world.html?hour=21.5 in a browser.
+const HOUR_OVERRIDE = parseFloat(new URLSearchParams(window.location.search).get('hour'));
+const SKY_STOPS = [0, 0.45, 0.8, 1];
+const SKY_DAY   = ['#4f9fe0', '#a5d5f5', '#e4f4ff', '#ffeef2'].map((c) => new THREE.Color(c));
+const SKY_NIGHT = ['#0a1430', '#13214a', '#1c2e5c', '#2c3c6a'].map((c) => new THREE.Color(c));
+const SKY_DUSK  = ['#33518f', '#6f68b0', '#ee9a6e', '#ffc98a'].map((c) => new THREE.Color(c));
+
+function currentHour() {
+    if (!Number.isNaN(HOUR_OVERRIDE)) return ((HOUR_OVERRIDE % 24) + 24) % 24;
+    const d = new Date();
+    return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+}
+// 1 = full day, 0 = full night; ramps over 5→7시 (sunrise) and 17→19시 (sunset).
+function dayFactor(h) {
+    if (h < 5 || h >= 19) return 0;
+    if (h < 7) return THREE.MathUtils.smoothstep(h, 5, 7);
+    if (h < 17) return 1;
+    return 1 - THREE.MathUtils.smoothstep(h, 17, 19);
+}
+// Golden-hour glow peaking exactly at 6시 and 18시.
+function duskGlow(h) {
+    return Math.min(1, Math.max(0, 1 - Math.abs(h - 6) / 1.3) + Math.max(0, 1 - Math.abs(h - 18) / 1.3));
+}
+// t: 0 = rising in the east → 1 = setting in the west, along an arc behind the island.
+function arcPos(t, height, out) {
+    const a = t * Math.PI;
+    return out.set(Math.cos(a) * 16, Math.sin(a) * height + 0.4, -7);
+}
+
+const _skyStop = new THREE.Color();
+let lastSkyStamp = -1;
+function updateDayNight(force = false) {
+    const stamp = Math.floor(Date.now() / 30000);
+    if (!force && stamp === lastSkyStamp) return;
+    lastSkyStamp = stamp;
+
+    const h = currentHour();
+    const dayF = dayFactor(h);
+    const glow = duskGlow(h);
+    const nightF = 1 - dayF;
+
+    // Sky gradient; fog + background follow the blended horizon color.
+    const grad = skyCtx.createLinearGradient(0, 0, 0, 256);
+    for (let i = 0; i < SKY_STOPS.length; i++) {
+        _skyStop.copy(SKY_NIGHT[i]).lerp(SKY_DAY[i], dayF).lerp(SKY_DUSK[i], glow * 0.8);
+        grad.addColorStop(SKY_STOPS[i], `#${_skyStop.getHexString()}`);
+    }
+    skyCtx.fillStyle = grad;
+    skyCtx.fillRect(0, 0, 1, 256);
+    skyTex.needsUpdate = true;
+    _skyStop.copy(SKY_NIGHT[3]).lerp(SKY_DAY[3], dayF).lerp(SKY_DUSK[3], glow * 0.8);
+    scene.fog.color.copy(_skyStop);
+    scene.background.copy(_skyStop);
+
+    // Sun & moon ride their arcs; each only shows around its own shift.
+    arcPos(THREE.MathUtils.clamp((h - 6) / 12, 0, 1), 11, sunMesh.position);
+    arcPos(THREE.MathUtils.clamp(((h + 6) % 24) / 12, 0, 1), 9, moonMesh.position);
+    sunMesh.visible = h > 5.4 && h < 18.6;
+    moonMesh.visible = h > 17.4 || h < 6.6;
+
+    // The one shadow light plays sun by day and moon by night.
+    sunLight.position.copy(dayF >= 0.5 ? sunMesh.position : moonMesh.position);
+    sunLight.color.copy(new THREE.Color(0x9db8e8).lerp(new THREE.Color(0xfff4e0), dayF).lerp(new THREE.Color(0xffb37a), glow * 0.55));
+    sunLight.intensity = 0.5 + 1.2 * dayF;
+    hemiLight.color.set(0x1d2b52).lerp(new THREE.Color(0xcfe6ff), dayF);
+    hemiLight.groundColor.set(0x233524).lerp(new THREE.Color(0x8fca62), dayF);
+    hemiLight.intensity = 0.32 + 0.53 * dayF;
+
+    // Night dresses the clouds and reveals the stars.
+    cloudMat.color.set(0x6c7ea6).lerp(new THREE.Color(0xffffff), dayF);
+    cloudMat.emissiveIntensity = 0.12 + 0.23 * dayF;
+    starMat.opacity = nightF * (0.35 + 0.55 * THREE.MathUtils.smoothstep(nightF, 0.6, 1));
+}
+updateDayNight(true);
 
 // Orbit camera: drag to circle the island, wheel to zoom; capped just above the horizon.
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -1155,6 +1254,7 @@ function animate() {
     updateSelectRing();
     updateChatBubble();
     cloudSpin.rotation.y += delta * 0.012;   // lazy cloud drift
+    updateDayNight();                        // throttled inside (repaints ~2×/min)
     if (ballFlight) {
         ballFlight.t += delta;
         const k = Math.min(1, ballFlight.t / ballFlight.dur);
