@@ -1137,6 +1137,8 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
           sandbox: false,
           webgl: true,
           devTools: isDev,
+          webAudio: true,
+          autoplayPolicy: 'no-user-gesture-required',
           preload: path.join(__dirname, 'static/js/preload.js')
         }
       });

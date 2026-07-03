@@ -6,6 +6,16 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **World chat (채팅 이식)**: a bottom chat bar in the world window talks through the same backend as
+  the pet windows — `/ws` (`set_user_input` → `trigger_send_message`) drives the main-UI agent, and
+  the reply's `/ws/vrm` TTS chunks are re-sequenced and played in order with their text shown in a
+  speech bubble anchored above the responder's head (silence chunks respected; omni streams show
+  text only). The pet you name answers (병아리/삐약/chick · 강아지/멍멍/댕댕/puppy), defaulting to
+  the chick; it ponders with the Think motion while the agent generates, stands still while
+  speaking, and does a happy hop when the reply finishes. The world only consumes reply chunks for
+  conversations it started, so chats typed in the main UI / pet windows don't echo into the world
+  (the reverse still overlaps: with a pet window open, a world-initiated reply sounds in both).
+  Enter respects Korean IME composition; the world window allows autoplay audio.
 - **World motions + click interactions (모션 이식)**: clicking a pet in the world opens the same
   data-driven motion menu as the pet windows (clicking a sleeping pet wakes it; short unmoved press =
   click, otherwise it's an orbit drag). All 12 shared motions play per-entity; the emoji/💤💭/파이팅/

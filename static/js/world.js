@@ -528,6 +528,222 @@ async function worldPlay(initiator) {
     }
 }
 
+// ---- Chat (채팅): the world talks through the same backend pipeline as the pet windows ----
+// Outgoing: the control socket `/ws` (`set_user_input` then `trigger_send_message` drives the
+// main-UI agent, exactly like the pet window's bubble input). Incoming: the `/ws/vrm` broadcast —
+// ordered TTS chunks carrying their text (+audio blobs), silence chunks and started/stop commands.
+// The world only consumes chunks while it is waiting on a conversation IT started, so chats typed
+// in the main UI or spoken to a pet window don't echo here. The responder (the pet you name in the
+// message, else the chick) ponders (Think) while the agent generates, then speaks via a bubble +
+// audio above its head and finishes with a happy hop.
+let chatWs = null;
+function initChatWs() {
+    if (chatWs && (chatWs.readyState === WebSocket.OPEN || chatWs.readyState === WebSocket.CONNECTING)) return;
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    chatWs = new WebSocket(`${proto}//${window.location.host}/ws`);
+    chatWs.onclose = () => setTimeout(initChatWs, 3000);
+}
+initChatWs();
+
+let vrmWs = null;
+function initVrmWs() {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    vrmWs = new WebSocket(`${proto}//${window.location.host}/ws/vrm`);
+    vrmWs.binaryType = 'arraybuffer';
+    vrmWs.onmessage = onVrmWsMessage;
+    vrmWs.onclose = () => setTimeout(initVrmWs, 3000);
+}
+initVrmWs();
+
+// Reply state: a miniature of the pet window's sort buffer — chunks can arrive out of order, so
+// they are sequenced by chunkIndex; a drain timer decides when the streamed reply is really over.
+let responder = null;
+let waitingReply = false;
+let waitTimer = null;          // give up if the agent never answers
+let thinkTimer = null;         // keeps re-posing Think while waiting
+let finishTimer = null;        // queue stayed drained → the reply is over
+let bubbleHideTimer = null;
+const chunkBuffer = new Map();
+let nextChunkIndex = 0;
+const playQueue = [];
+let playing = false;
+let currentAudio = null;
+
+const bubbleEl = document.createElement('div');
+bubbleEl.id = 'world-chat-bubble';
+bubbleEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); max-width:280px; background:rgba(255,255,255,0.96); color:#222; font-size:13px; line-height:1.45; font-family:sans-serif; padding:8px 12px; border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,0.25); z-index:80; pointer-events:none; white-space:pre-wrap; word-break:break-word;';
+document.body.appendChild(bubbleEl);
+function showBubble(text) {
+    if (bubbleHideTimer) { clearTimeout(bubbleHideTimer); bubbleHideTimer = null; }
+    bubbleEl.textContent = text;
+    bubbleEl.style.display = 'block';
+}
+function hideBubbleSoon(ms = 2400) {
+    if (bubbleHideTimer) clearTimeout(bubbleHideTimer);
+    bubbleHideTimer = setTimeout(() => { bubbleEl.style.display = 'none'; }, ms);
+}
+function updateChatBubble() {
+    if (bubbleEl.style.display === 'none' || !responder) return;
+    const pt = fxPoint(responder, 50, -6);        // just above the head
+    bubbleEl.style.left = `${Math.round(pt.x)}px`;
+    bubbleEl.style.top = `${Math.round(pt.y)}px`;
+}
+
+// Chat bar (bottom center). Enter respects Korean IME composition; clicks don't reach the canvas.
+const chatBar = document.createElement('div');
+chatBar.id = 'world-chat-bar';
+chatBar.style.cssText = 'position:fixed; left:50%; bottom:14px; transform:translateX(-50%); display:flex; gap:6px; z-index:90; width:min(480px, calc(100% - 32px));';
+const chatInput = document.createElement('input');
+chatInput.type = 'text';
+chatInput.placeholder = '펫에게 말 걸기… (병아리/강아지를 부르면 그 펫이 대답해요)';
+chatInput.style.cssText = 'flex:1; padding:10px 14px; border:none; border-radius:20px; background:rgba(30,32,40,0.85); color:#fff; font-size:13px; outline:none; box-shadow:0 4px 14px rgba(0,0,0,0.25);';
+const chatSend = document.createElement('button');
+chatSend.textContent = '보내기';
+chatSend.style.cssText = 'padding:10px 16px; border:none; border-radius:20px; background:#5b8def; color:#fff; font-size:13px; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,0.25);';
+chatBar.appendChild(chatInput);
+chatBar.appendChild(chatSend);
+document.body.appendChild(chatBar);
+chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) sendWorldChat(); e.stopPropagation(); });
+chatBar.addEventListener('pointerdown', (e) => e.stopPropagation());
+chatSend.addEventListener('click', sendWorldChat);
+
+function pickResponder(text) {
+    if (/병아리|삐약|chick/i.test(text)) return pets.find((p) => p.name === 'chick') || pets[0] || null;
+    if (/강아지|멍멍|댕댕|puppy/i.test(text)) return pets.find((p) => p.name === 'puppy') || pets[0] || null;
+    return pets.find((p) => p.name === 'chick') || pets[0] || null;
+}
+
+function sendWorldChat() {
+    const text = chatInput.value.trim();
+    if (!text) return;
+    if (!chatWs || chatWs.readyState !== WebSocket.OPEN) { initChatWs(); return; }
+    chatWs.send(JSON.stringify({ type: 'set_user_input', data: { text } }));
+    setTimeout(() => { try { chatWs.send(JSON.stringify({ type: 'trigger_send_message', data: {} })); } catch (e) {} }, 300);
+    chatInput.value = '';
+    responder = pickResponder(text);
+    startWaiting();
+}
+
+function startWaiting() {
+    resetReplyQueue();
+    waitingReply = true;
+    if (responder) { responder.pet.sleeping = false; responder.pet.autoSleeping = false; }
+    if (waitTimer) clearTimeout(waitTimer);
+    waitTimer = setTimeout(() => stopWaiting(false), 45000);
+    if (thinkTimer) clearInterval(thinkTimer);
+    thinkTimer = setInterval(() => {
+        if (!waitingReply || playing || !responder) return;
+        const free = !responder.pet.action && !responder.pet.sleeping
+            && responder.ai.state !== 'goto' && responder.ai.state !== 'busy';
+        if (free) responder.pet.action = { id: 'think', t: 0 };
+    }, 400);
+}
+
+function stopWaiting(success) {
+    waitingReply = false;
+    if (waitTimer) { clearTimeout(waitTimer); waitTimer = null; }
+    if (thinkTimer) { clearInterval(thinkTimer); thinkTimer = null; }
+    if (finishTimer) { clearTimeout(finishTimer); finishTimer = null; }
+    if (responder) {
+        if (responder.pet.action && responder.pet.action.id === 'think') responder.pet.action = null;
+        if (success && !responder.pet.action) responder.pet.action = { id: 'happy', t: 0 };
+    }
+    hideBubbleSoon();
+}
+
+function resetReplyQueue() {
+    chunkBuffer.clear();
+    playQueue.length = 0;
+    nextChunkIndex = 0;
+    if (currentAudio) { try { currentAudio.pause(); } catch (e) {} currentAudio = null; }
+    playing = false;
+    if (finishTimer) { clearTimeout(finishTimer); finishTimer = null; }
+}
+
+function enqueueChunk(task) {
+    if (finishTimer) { clearTimeout(finishTimer); finishTimer = null; }
+    chunkBuffer.set(task.chunkIndex, task);
+    while (chunkBuffer.has(nextChunkIndex)) {
+        playQueue.push(chunkBuffer.get(nextChunkIndex));
+        chunkBuffer.delete(nextChunkIndex);
+        nextChunkIndex++;
+    }
+    if (!playing && playQueue.length > 0) processReplyQueue();
+}
+
+function playAudio(url) {
+    return new Promise((resolve) => {
+        const a = new Audio(url);
+        currentAudio = a;
+        a.onended = resolve;
+        a.onerror = resolve;
+        a.play().catch(resolve);
+    });
+}
+
+async function processReplyQueue() {
+    if (playQueue.length === 0) {
+        playing = false;
+        // Drained — if nothing new arrives shortly, the streamed reply is over.
+        if (waitingReply && !finishTimer) finishTimer = setTimeout(() => stopWaiting(true), 2500);
+        return;
+    }
+    playing = true;
+    // Reply is speaking: stop pondering and stand still while talking.
+    if (responder) {
+        if (responder.pet.action && responder.pet.action.id === 'think') responder.pet.action = null;
+        if (responder.ai.state !== 'goto' && responder.ai.state !== 'busy') releaseAI(responder, 6);
+    }
+    const task = playQueue.shift();
+    if (task.text) showBubble(task.text);
+    if (task.silence) {
+        await sleepMs(600);
+    } else if (task.url) {
+        await playAudio(task.url);
+        URL.revokeObjectURL(task.url);
+        currentAudio = null;
+    }
+    processReplyQueue();
+}
+
+function onVrmWsMessage(event) {
+    if (event.data instanceof ArrayBuffer) {
+        if (!waitingReply) return;                     // not a conversation the world started
+        try {
+            const view = new DataView(event.data);
+            const jsonLen = view.getUint32(0, true);
+            const metadata = JSON.parse(new TextDecoder().decode(new Uint8Array(event.data, 4, jsonLen)));
+            const audioBytes = new Uint8Array(event.data, 4 + jsonLen);
+            if (metadata.type === 'audio_chunk') {
+                enqueueChunk({
+                    chunkIndex: metadata.chunkIndex,
+                    text: metadata.text,
+                    url: URL.createObjectURL(new Blob([audioBytes], { type: metadata.mimeType })),
+                });
+            } else if (metadata.type === 'omni_chunk') {
+                // Omni streams raw PCM tuned for the pet-window pipeline; the world shows the
+                // streamed text and lets the drain timer close the reply.
+                if (metadata.text) showBubble(metadata.text);
+                if (finishTimer) clearTimeout(finishTimer);
+                finishTimer = setTimeout(() => stopWaiting(true), 1800);
+            }
+        } catch (e) { console.error('[World] vrm chunk parse failed', e); }
+        return;
+    }
+    try {
+        const msg = JSON.parse(event.data);
+        if (!waitingReply) return;
+        if (msg.type === 'ttsStarted') {
+            resetReplyQueue();
+        } else if (msg.type === 'stopSpeaking') {
+            resetReplyQueue();
+            stopWaiting(false);
+        } else if (msg.type === 'startSpeaking' && msg.data && msg.data.voice === 'silence') {
+            enqueueChunk({ chunkIndex: msg.data.chunkIndex, text: msg.data.text, silence: true });
+        }
+    } catch (e) { /* non-JSON command — ignore */ }
+}
+
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -542,6 +758,7 @@ function animate() {
         updateGlbPetEntity(p.pet, delta);
         if (p.fxUpdate) p.fxUpdate();
     }
+    updateChatBubble();
     if (ballFlight) {
         ballFlight.t += delta;
         const k = Math.min(1, ballFlight.t / ballFlight.dur);
