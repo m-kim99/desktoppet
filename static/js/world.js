@@ -38,10 +38,22 @@ scene.add(sunLight);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 0.35, 0);
 controls.enableDamping = true;
-controls.dampingFactor = 0.08;
+controls.dampingFactor = 0.05;          // lower = silkier glide after a drag
+controls.rotateSpeed = 0.85;
 controls.minDistance = 2.2;
 controls.maxDistance = 11;
 controls.maxPolarAngle = Math.PI * 0.49;
+// Wheel zoom: OrbitControls dollies in hard steps per wheel tick, which feels stiff. Disable it and
+// glide toward a target distance in animate() instead (the ＋/－ buttons steer the same target).
+controls.enableZoom = false;
+let zoomTargetDist = camera.position.distanceTo(controls.target);
+renderer.domElement.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    zoomTargetDist = THREE.MathUtils.clamp(
+        zoomTargetDist * Math.pow(1.0015, e.deltaY),
+        controls.minDistance, controls.maxDistance
+    );
+}, { passive: false });
 controls.update();
 
 // ---- Stage: a small floating grass island (grass top sits at y=0, pets stand on it) ----
@@ -766,9 +778,8 @@ function onVrmWsMessage(event) {
 // the source of truth — these move camera/target directly; controls.update() keeps drags working. ----
 const UP = new THREE.Vector3(0, 1, 0);
 function camZoom(factor) {
-    const off = camera.position.clone().sub(controls.target);
-    off.setLength(THREE.MathUtils.clamp(off.length() * factor, controls.minDistance, controls.maxDistance));
-    camera.position.copy(controls.target).add(off);
+    // Buttons steer the same smoothed target the wheel uses; animate() glides the camera there.
+    zoomTargetDist = THREE.MathUtils.clamp(zoomTargetDist * factor, controls.minDistance, controls.maxDistance);
 }
 function camOrbit(dTheta, dPhi) {
     const off = camera.position.clone().sub(controls.target);
@@ -798,10 +809,25 @@ function camPan(dxRight, dzFwd) {
 }
 
 let heldCamAction = null;
+// The whole control cluster folds behind a single 📷 toggle in the bottom-right corner.
+const camDock = document.createElement('div');
+camDock.id = 'world-cam-dock';
+camDock.style.cssText = 'position:fixed; right:14px; bottom:14px; display:flex; flex-direction:column; align-items:flex-end; gap:6px; z-index:90; user-select:none; -webkit-user-select:none;';
+document.body.appendChild(camDock);
 const camPanel = document.createElement('div');
 camPanel.id = 'world-cam-panel';
-camPanel.style.cssText = 'position:fixed; right:14px; bottom:14px; display:flex; flex-direction:column; gap:4px; z-index:90; user-select:none; -webkit-user-select:none;';
-document.body.appendChild(camPanel);
+camPanel.style.cssText = 'display:none; flex-direction:column; gap:4px; background:rgba(20,22,28,0.55); padding:6px; border-radius:12px;';
+camDock.appendChild(camPanel);
+const camToggle = document.createElement('div');
+camToggle.textContent = '📷';
+camToggle.title = '카메라 조작';
+camToggle.style.cssText = 'width:38px; height:38px; display:flex; align-items:center; justify-content:center; background:rgba(30,32,40,0.85); font-size:18px; border-radius:11px; cursor:pointer; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
+camToggle.onclick = () => {
+    const open = camPanel.style.display !== 'none';
+    camPanel.style.display = open ? 'none' : 'flex';
+    camToggle.style.background = open ? 'rgba(30,32,40,0.85)' : 'rgba(91,141,239,0.9)';
+};
+camDock.appendChild(camToggle);
 function camRow() {
     const row = document.createElement('div');
     row.style.cssText = 'display:flex; gap:4px; justify-content:center;';
@@ -974,6 +1000,13 @@ function animate() {
         ballMesh.position.lerpVectors(ballFlight.from, ballFlight.to, k);
         ballMesh.position.y += Math.sin(k * Math.PI) * ballFlight.arc;
         if (k >= 1) { const done = ballFlight.resolve; ballFlight = null; done(); }
+    }
+    // Glide the camera distance toward the wheel/button zoom target (exponential ease-out).
+    const curDist = camera.position.distanceTo(controls.target);
+    if (Math.abs(curDist - zoomTargetDist) > 0.001) {
+        const eased = THREE.MathUtils.lerp(curDist, zoomTargetDist, Math.min(1, delta * 9));
+        const off = camera.position.clone().sub(controls.target).setLength(eased);
+        camera.position.copy(controls.target).add(off);
     }
     controls.update();
     renderer.render(scene, camera);

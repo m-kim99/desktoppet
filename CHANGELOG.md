@@ -6,6 +6,12 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **Camera panel folded into a 📷 toggle + silky zoom**: the camera buttons now live behind a single
+  📷 button in the bottom-right (click to expand/collapse; the toggle glows blue while open). Mouse
+  wheel zoom no longer uses OrbitControls' per-tick dolly steps — the wheel (and the ＋/－ buttons)
+  steer a target distance the camera glides toward each frame (exponential ease-out), and drag
+  damping/rotate speed were retuned (0.05 / 0.85), so zooming and orbiting feel smooth instead of
+  notchy.
 - **World camera buttons + pet keyboard control (카메라 조작·조종)**: a bottom-right button panel
   drives the camera — zoom in/out, a pan D-pad (island-clamped so the view can't drift off into the
   sky), and rotate/tilt angle buttons; tapping steps once, holding glides continuously. A pet's
