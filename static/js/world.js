@@ -4,6 +4,7 @@
 // flat/open ground, so later phases can swap in a heightmap (3rd-person) or voxels (sandbox).
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS } from './glb-pet-entity.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -11,20 +12,64 @@ renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;   // gentle filmic rolloff — pastels stay soft
+renderer.toneMappingExposure = 1.12;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87b5e5);      // clear daytime sky
-scene.fog = new THREE.Fog(0x87b5e5, 14, 30);       // soften the horizon so the island floats gently
+// Sky: a vertical pastel gradient painted onto a big inside-out dome (fog is disabled on it so the
+// gradient stays crisp), plus a few puffy clouds drifting slowly around the island.
+scene.background = new THREE.Color(0xdff1fd);
+scene.fog = new THREE.Fog(0xdff1fd, 14, 34);
+{
+    const cv = document.createElement('canvas');
+    cv.width = 1; cv.height = 256;
+    const ctx = cv.getContext('2d');
+    const grad = ctx.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0.0, '#4f9fe0');     // zenith blue
+    grad.addColorStop(0.45, '#a5d5f5');
+    grad.addColorStop(0.8, '#e4f4ff');
+    grad.addColorStop(1.0, '#ffeef2');     // warm pink haze at the horizon
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 1, 256);
+    const sky = new THREE.Mesh(
+        new THREE.SphereGeometry(42, 32, 24),
+        new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), side: THREE.BackSide, fog: false, depthWrite: false })
+    );
+    scene.add(sky);
+}
+const cloudSpin = new THREE.Group();     // rotated a hair every frame → clouds drift
+scene.add(cloudSpin);
+{
+    const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xaecbe8, emissiveIntensity: 0.35 });
+    const defs = [
+        { a: 0.3, r: 11,   y: 4.6, s: 1.0 },
+        { a: 1.9, r: 13,   y: 5.6, s: 1.35 },
+        { a: 3.6, r: 10,   y: 4.1, s: 0.8 },
+        { a: 5.1, r: 12.5, y: 5.1, s: 1.1 },
+    ];
+    for (const d of defs) {
+        const cloud = new THREE.Group();
+        for (const [lx, ly, lz, lr] of [[0, 0, 0, 0.55], [0.5, 0.08, 0.1, 0.4], [-0.48, 0.05, -0.08, 0.42], [0.15, 0.3, 0, 0.35], [-0.2, 0.26, 0.12, 0.3]]) {
+            const lobe = new THREE.Mesh(new THREE.SphereGeometry(lr, 18, 14), cloudMat);
+            lobe.position.set(lx, ly, lz);
+            lobe.scale.y = 0.62;           // squash into that puffy-flat cartoon cloud shape
+            cloud.add(lobe);
+        }
+        cloud.position.set(Math.cos(d.a) * d.r, d.y, Math.sin(d.a) * d.r);
+        cloud.scale.setScalar(d.s);
+        cloudSpin.add(cloud);
+    }
+}
 
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.position.set(0, 2.4, 5.2);
 camera.lookAt(0, 0.4, 0);
 
 // Lights: hemisphere fill (sky blue above, grass green below) + a shadow-casting sun
-const hemiLight = new THREE.HemisphereLight(0xbfdcff, 0x9ccc65, 0.9);
+const hemiLight = new THREE.HemisphereLight(0xcfe6ff, 0x8fca62, 0.85);
 scene.add(hemiLight);
-const sunLight = new THREE.DirectionalLight(0xffffff, 1.6);
+const sunLight = new THREE.DirectionalLight(0xfff4e0, 1.7);   // warm afternoon sun
 sunLight.position.set(4, 7, 3);
 sunLight.castShadow = true;
 sunLight.shadow.mapSize.set(2048, 2048);
@@ -32,6 +77,9 @@ sunLight.shadow.camera.left = -6;
 sunLight.shadow.camera.right = 6;
 sunLight.shadow.camera.top = 6;
 sunLight.shadow.camera.bottom = -6;
+sunLight.shadow.radius = 5;              // PCFSoft blur — soft cartoon-edged shadows
+sunLight.shadow.bias = -0.0002;
+sunLight.shadow.normalBias = 0.03;       // rolling terrain: keep self-shadow acne away
 scene.add(sunLight);
 
 // Orbit camera: drag to circle the island, wheel to zoom; capped just above the horizon.
@@ -57,104 +105,225 @@ renderer.domElement.addEventListener('wheel', (e) => {
 }, { passive: false });
 controls.update();
 
-// ---- Stage: a small floating grass island (grass top sits at y=0, pets stand on it) ----
+// ---- Stage: a floating meadow island — gently rolling vertex-colored grass over a rounded dirt
+// cliff, dressed with chubby pastel props. Pets still sense it ONLY through `world` below. ----
 const ISLAND_R = 3.2;
 const stage = new THREE.Group();
 scene.add(stage);
 
-const grass = new THREE.Mesh(
-    new THREE.CylinderGeometry(ISLAND_R, ISLAND_R * 0.97, 0.22, 36),
-    new THREE.MeshLambertMaterial({ color: 0x7cb342 })
-);
-grass.position.y = -0.11;
-grass.receiveShadow = true;
-stage.add(grass);
+// Terrain: soft rolling bumps that settle flat at the rim and under the house/pond pads. This ONE
+// function feeds both the visible mesh and world.groundHeightAt, so feet, props, the select ring
+// and the catch ball always agree with what you see.
+const FLAT_SPOTS = [
+    { x: 1.7, z: 1.3, r: 1.15 },    // house pad
+    { x: 0.2, z: -2.2, r: 0.95 },   // pond basin
+];
+function terrainHeight(x, z) {
+    const rr = Math.hypot(x, z);
+    if (rr >= ISLAND_R) return 0;
+    let h = 0.05 * Math.sin(x * 1.7 + 1.3) * Math.sin(z * 1.9 - 0.7)
+          + 0.04 * Math.sin((x + z) * 1.1 + 2.1) + 0.045;
+    h *= THREE.MathUtils.smoothstep(ISLAND_R - rr, 0, 0.9);
+    for (const s of FLAT_SPOTS) {
+        h *= THREE.MathUtils.smoothstep(Math.hypot(x - s.x, z - s.z), s.r * 0.55, s.r);
+    }
+    return h;
+}
 
-const dirt = new THREE.Mesh(
-    new THREE.CylinderGeometry(ISLAND_R * 0.97, ISLAND_R * 0.55, 0.85, 36),
-    new THREE.MeshLambertMaterial({ color: 0x8d6e63 })
-);
-dirt.position.y = -0.645;
-stage.add(dirt);
+// Grass top: a polar grid (26 rings × 72 segments) displaced by terrainHeight, with subtle
+// two-tone vertex-color patches so the meadow doesn't read as one flat green.
+{
+    const rings = 26, segs = 72;
+    const positions = [], colors = [], indices = [];
+    const base = new THREE.Color(0x77c34f), light = new THREE.Color(0x94d861);
+    const c = new THREE.Color();
+    for (let i = 0; i <= rings; i++) {
+        const r = (i / rings) * ISLAND_R;
+        for (let j = 0; j < segs; j++) {
+            const a = (j / segs) * Math.PI * 2;
+            const x = Math.cos(a) * r, z = Math.sin(a) * r;
+            const y = terrainHeight(x, z);
+            positions.push(x, y, z);
+            const patch = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1;
+            c.copy(base).lerp(light, Math.min(1, patch * 0.45 + y * 2.2));
+            colors.push(c.r, c.g, c.b);
+        }
+    }
+    for (let i = 0; i < rings; i++) {
+        for (let j = 0; j < segs; j++) {
+            const a = i * segs + j;
+            const b = i * segs + (j + 1) % segs;
+            const d = (i + 1) * segs + j;
+            const e = (i + 1) * segs + (j + 1) % segs;
+            indices.push(a, b, d, b, e, d);
+        }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    const grass = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    grass.receiveShadow = true;
+    stage.add(grass);
+}
 
-// Props are a data list (type + position + blocking radius) so the primitive builders below can be
-// swapped for a low-poly asset kit later without touching pet or world logic. `r` is the circle
-// collider the pets steer around (world.isBlocked); the bowl doubles as the Eat-motion spot later.
+// Cliff: a lathed, faceted dirt underside tapering to a rounded tip (the floating-island look).
+{
+    const pts = [
+        new THREE.Vector2(ISLAND_R, 0.004),
+        new THREE.Vector2(ISLAND_R * 0.995, -0.12),
+        new THREE.Vector2(ISLAND_R * 0.93, -0.42),
+        new THREE.Vector2(ISLAND_R * 0.72, -0.78),
+        new THREE.Vector2(ISLAND_R * 0.42, -1.0),
+        new THREE.Vector2(0.05, -1.14),
+    ];
+    const cliff = new THREE.Mesh(
+        new THREE.LatheGeometry(pts, 72),
+        new THREE.MeshLambertMaterial({ color: 0x9a6b47, flatShading: true })
+    );
+    cliff.receiveShadow = true;
+    stage.add(cliff);
+}
+
+// Props stay a data list (type + position + blocking radius) — same swap point as before, the
+// builders are just far chubbier now. `r` is the circle collider pets steer around; the pond is
+// blocking too (pets shouldn't wade). The bowl doubles as the Eat-motion spot later.
 const PROPS = [
-    { type: 'tree',  x: -2.0, z: -1.1, rotY: 0.0,  r: 0.45 },
-    { type: 'tree',  x:  2.1, z: -1.5, rotY: 2.1,  r: 0.45 },
+    { type: 'tree',  x: -2.0, z: -1.1, rotY: 0.0,  r: 0.45, big: true  },
+    { type: 'tree',  x:  2.1, z: -1.5, rotY: 2.1,  r: 0.45, big: false },
     { type: 'house', x:  1.7, z:  1.3, rotY: -0.6, r: 0.95 },
     { type: 'bowl',  x: -1.0, z:  1.6, rotY: 0.0,  r: 0.28 },
     { type: 'fence', x: -2.5, z:  0.6, rotY: 1.05, r: 0.5 },
+    { type: 'pond',  x:  0.2, z: -2.2, rotY: 0.0,  r: 0.72 },
 ];
+const M = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
 
-function makeTree() {
+function makeTree(p) {
     const g = new THREE.Group();
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.5, 8),
-        new THREE.MeshLambertMaterial({ color: 0x795548 }));
-    trunk.position.y = 0.25;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.095, 0.46, 10), M(0x8a5a3b));
+    trunk.position.y = 0.23;
     g.add(trunk);
-    const leafMat = new THREE.MeshLambertMaterial({ color: 0x66bb6a });
-    const leafLow = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.55, 8), leafMat);
-    leafLow.position.y = 0.72;
-    g.add(leafLow);
-    const leafTop = new THREE.Mesh(new THREE.ConeGeometry(0.30, 0.45, 8), leafMat);
-    leafTop.position.y = 1.04;
-    g.add(leafTop);
+    // Fluffy crown: overlapping spheres in two greens; the big tree gets berries.
+    const leafA = M(0x5db357), leafB = M(0x74c96a);
+    const lobes = p && p.big
+        ? [[0, 0.72, 0, 0.34, leafA], [0.22, 0.6, 0.1, 0.26, leafB], [-0.24, 0.62, -0.06, 0.27, leafB], [0.02, 0.92, -0.02, 0.24, leafB], [0.05, 0.55, 0.24, 0.22, leafA]]
+        : [[0, 0.62, 0, 0.28, leafA], [0.18, 0.52, 0.08, 0.2, leafB], [-0.18, 0.55, -0.05, 0.21, leafB], [0, 0.78, 0, 0.18, leafB]];
+    for (const [x, y, z, r, m] of lobes) {
+        const s = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 14), m);
+        s.position.set(x, y, z);
+        g.add(s);
+    }
+    if (p && p.big) {
+        const berry = M(0xff6b6b);
+        for (const [x, y, z] of [[0.2, 0.78, 0.18], [-0.25, 0.7, 0.14], [0.05, 0.98, 0.12], [0.3, 0.58, -0.1]]) {
+            const b = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), berry);
+            b.position.set(x, y, z);
+            g.add(b);
+        }
+    }
     return g;
 }
 
 function makeHouse() {
     const g = new THREE.Group();
-    const walls = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.62, 0.8),
-        new THREE.MeshLambertMaterial({ color: 0xfff3e0 }));
+    const walls = new THREE.Mesh(new RoundedBoxGeometry(0.95, 0.62, 0.8, 4, 0.05), M(0xfff2dd));
     walls.position.y = 0.31;
     g.add(walls);
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.78, 0.5, 4),
-        new THREE.MeshLambertMaterial({ color: 0xe57373 }));
-    roof.position.y = 0.62 + 0.25;
-    roof.rotation.y = Math.PI / 4;       // align the 4-sided cone with the box walls
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.84, 0.52, 4), M(0xef8a7a, { flatShading: true }));
+    roof.position.y = 0.88;
+    roof.rotation.y = Math.PI / 4;       // align the 4-sided cone with the walls, eaves overhang
     g.add(roof);
-    const door = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.32, 0.03),
-        new THREE.MeshLambertMaterial({ color: 0x8d6e63 }));
-    door.position.set(0, 0.16, 0.41);
+    const chimney = new THREE.Mesh(new RoundedBoxGeometry(0.11, 0.24, 0.11, 3, 0.02), M(0xc97b6e));
+    chimney.position.set(-0.24, 0.86, -0.16);
+    g.add(chimney);
+    const door = new THREE.Mesh(new RoundedBoxGeometry(0.2, 0.34, 0.05, 3, 0.02), M(0x9c6b4f));
+    door.position.set(0, 0.17, 0.41);
     g.add(door);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.018, 10, 8), M(0xffd54f));
+    knob.position.set(0.055, 0.17, 0.445);
+    g.add(knob);
+    const frame = new THREE.Mesh(new RoundedBoxGeometry(0.2, 0.2, 0.05, 3, 0.02), M(0xffffff));
+    frame.position.set(0.3, 0.42, 0.41);
+    g.add(frame);
+    const pane = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.056), M(0xbfe3f2));
+    pane.position.copy(frame.position);
+    g.add(pane);
+    const step = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.05, 14), M(0xcfcac0));
+    step.position.set(0, 0.025, 0.52);
+    g.add(step);
     return g;
 }
 
 function makeBowl() {
     const g = new THREE.Group();
-    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.12, 0.08, 16),
-        new THREE.MeshLambertMaterial({ color: 0xef5350 }));
-    bowl.position.y = 0.04;
+    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.155, 0.11, 0.085, 24), M(0xef5350));
+    bowl.position.y = 0.0425;
     g.add(bowl);
-    const food = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.03, 16),
-        new THREE.MeshLambertMaterial({ color: 0xa1887f }));
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.148, 0.018, 10, 24), M(0xf47c78));
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = 0.085;
+    g.add(rim);
+    const food = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.115, 0.03, 20), M(0xa1887f));
     food.position.y = 0.075;
     g.add(food);
+    const kibble = M(0x8d6e5c);
+    for (const [x, z] of [[0.04, 0.02], [-0.03, 0.05], [0.01, -0.05], [-0.06, -0.02], [0.07, -0.03]]) {
+        const k = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 6), kibble);
+        k.position.set(x, 0.095, z);
+        g.add(k);
+    }
     return g;
 }
 
 function makeFence() {
     const g = new THREE.Group();
-    const mat = new THREE.MeshLambertMaterial({ color: 0xbcaaa4 });
+    const wood = M(0xd7bfa8);
     for (let i = -1; i <= 1; i++) {
-        const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.34, 0.06), mat);
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.036, 0.34, 10), wood);
         post.position.set(i * 0.34, 0.17, 0);
         g.add(post);
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.036, 10, 8), wood);
+        cap.position.set(i * 0.34, 0.345, 0);
+        g.add(cap);
     }
-    for (const y of [0.12, 0.26]) {
-        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.045, 0.045), mat);
+    for (const y of [0.13, 0.25]) {
+        const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.8, 8), wood);
+        rail.rotation.z = Math.PI / 2;
         rail.position.y = y;
         g.add(rail);
     }
     return g;
 }
 
-const PROP_BUILDERS = { tree: makeTree, house: makeHouse, bowl: makeBowl, fence: makeFence };
+function makePond() {
+    const g = new THREE.Group();
+    const sand = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.76, 0.05, 36), M(0xe8d8a8));
+    sand.position.y = 0.012;
+    g.add(sand);
+    const water = new THREE.Mesh(new THREE.CylinderGeometry(0.585, 0.585, 0.045, 36), M(0x6ec6e8));
+    water.position.y = 0.038;
+    g.add(water);
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.014, 16), M(0x66bb6a));
+    pad.position.set(0.16, 0.066, -0.12);
+    g.add(pad);
+    const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.032, 10, 8), M(0xff8fb3));
+    bloom.position.set(0.16, 0.085, -0.12);
+    g.add(bloom);
+    const stoneM = M(0xb9b2a6);
+    for (const [x, z, s] of [[-0.62, 0.28, 1], [0.05, 0.68, 0.8], [0.6, -0.35, 0.9]]) {
+        const st = new THREE.Mesh(new THREE.DodecahedronGeometry(0.07 * s, 0), stoneM);
+        st.position.set(x, 0.045, z);
+        st.scale.y = 0.6;
+        g.add(st);
+    }
+    return g;
+}
+
+const PROP_BUILDERS = { tree: makeTree, house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond };
 for (const p of PROPS) {
-    const obj = PROP_BUILDERS[p.type]();
-    obj.position.set(p.x, 0, p.z);
+    const obj = PROP_BUILDERS[p.type](p);
+    obj.position.set(p.x, terrainHeight(p.x, p.z), p.z);
     obj.rotation.y = p.rotY || 0;
     obj.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     stage.add(obj);
@@ -163,7 +332,7 @@ for (const p of PROPS) {
 // ---- World interface: the ONLY way pets sense the ground/space (keeps them portable) ----
 const world = {
     islandRadius: ISLAND_R,
-    groundHeightAt(x, z) { return 0; },                          // flat island for now
+    groundHeightAt(x, z) { return terrainHeight(x, z); },        // rolling meadow (was flat)
     isBlocked(x, z) {
         if (Math.hypot(x, z) > ISLAND_R - 0.35) return true;     // stay clear of the rim
         for (const p of PROPS) {
@@ -172,6 +341,67 @@ const world = {
         return false;
     },
 };
+
+// ---- Decorations (non-blocking set dressing): instanced grass tufts, flowers and pebbles ----
+{
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    const spots = (count, margin) => {
+        const out = [];
+        for (let tries = 0; out.length < count && tries < count * 30; tries++) {
+            const a = Math.random() * Math.PI * 2;
+            const r = Math.sqrt(Math.random()) * (ISLAND_R - margin);
+            const x = Math.cos(a) * r, z = Math.sin(a) * r;
+            if (world.isBlocked(x, z)) continue;
+            out.push({ x, z });
+        }
+        return out;
+    };
+    const dummy = new THREE.Object3D();
+
+    const tufts = spots(170, 0.45);
+    const tuftMesh = new THREE.InstancedMesh(new THREE.ConeGeometry(0.022, 0.1, 5), M(0x5fae44), tufts.length);
+    tufts.forEach((s, i) => {
+        dummy.position.set(s.x, terrainHeight(s.x, s.z) + 0.04, s.z);
+        dummy.rotation.set(rnd(-0.16, 0.16), rnd(0, Math.PI), rnd(-0.16, 0.16));
+        dummy.scale.setScalar(rnd(0.7, 1.5));
+        dummy.updateMatrix();
+        tuftMesh.setMatrixAt(i, dummy.matrix);
+    });
+    tuftMesh.castShadow = true;
+    stage.add(tuftMesh);
+
+    const petals = [0xff8fb3, 0xffd54f, 0xffffff, 0xb39ddb, 0xff8a65];
+    const blooms = spots(34, 0.5);
+    const stemMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.008, 0.01, 0.09, 6), M(0x4e9a3d), blooms.length);
+    const headMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.028, 10, 8), new THREE.MeshLambertMaterial({ color: 0xffffff }), blooms.length);
+    blooms.forEach((s, i) => {
+        const y = terrainHeight(s.x, s.z);
+        dummy.rotation.set(0, 0, 0);
+        dummy.scale.setScalar(rnd(0.8, 1.3));
+        dummy.position.set(s.x, y + 0.045, s.z);
+        dummy.updateMatrix();
+        stemMesh.setMatrixAt(i, dummy.matrix);
+        dummy.position.set(s.x, y + 0.095, s.z);
+        dummy.updateMatrix();
+        headMesh.setMatrixAt(i, dummy.matrix);
+        headMesh.setColorAt(i, new THREE.Color(petals[i % petals.length]));
+    });
+    headMesh.castShadow = true;
+    stage.add(stemMesh);
+    stage.add(headMesh);
+
+    const pebbles = spots(22, 0.5);
+    const pebbleMesh = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.045, 0), M(0xbdb7ab), pebbles.length);
+    pebbles.forEach((s, i) => {
+        dummy.position.set(s.x, terrainHeight(s.x, s.z) + 0.012, s.z);
+        dummy.rotation.set(rnd(0, Math.PI), rnd(0, Math.PI), 0);
+        dummy.scale.set(rnd(0.6, 1.4), rnd(0.4, 0.8), rnd(0.6, 1.4));
+        dummy.updateMatrix();
+        pebbleMesh.setMatrixAt(i, dummy.matrix);
+    });
+    pebbleMesh.receiveShadow = true;
+    stage.add(pebbleMesh);
+}
 
 // ---- Pets: both GLB pets live in this one scene (separate instances from the desktop windows) ----
 // Each entity sits inside a "mover" group that carries its world position + travel heading. The
@@ -905,6 +1135,7 @@ function animate() {
     updatePlayer(delta);
     updateSelectRing();
     updateChatBubble();
+    cloudSpin.rotation.y += delta * 0.012;   // lazy cloud drift
     if (ballFlight) {
         ballFlight.t += delta;
         const k = Math.min(1, ballFlight.t / ballFlight.dur);

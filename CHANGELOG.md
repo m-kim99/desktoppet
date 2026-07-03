@@ -6,6 +6,19 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **World visual upgrade (퍼피레드 감성)**: the diorama got a pastel virtual-world glow-up.
+  *Sky* — a gradient dome (zenith blue → warm pink horizon, painted on an inside-out sphere) with
+  four puffy multi-lobe clouds drifting slowly around the island. *Terrain* — the flat disc became a
+  gently rolling meadow: a 26×72 polar grid displaced by a `terrainHeight` function with two-tone
+  vertex-color grass patches, flat pads auto-leveled under the house/pond, and a lathed faceted dirt
+  cliff tapering to a rounded tip; `world.groundHeightAt` now returns the same function, so pets,
+  props, the select ring and the catch ball all follow the hills. *Props* — trees grew fluffy
+  sphere crowns (berries on the big one), the house got rounded walls, eaves, a chimney, a knobbed
+  door, a framed window and a doorstep (RoundedBoxGeometry), the bowl gained a rim + kibbles, the
+  fence turned to capped round posts, and a new pond (blocking) with sand rim, lily pad and stones
+  joined the scene. *Set dressing* — ~170 instanced grass tufts, 34 color-varied flowers and 22
+  pebbles scattered on unblocked ground. *Rendering* — ACES filmic tone mapping, warm sun, soft
+  blurred shadows with normal-bias tuned for the curved terrain.
 - **Camera buttons removed — mouse-only camera**: with drag-orbit damped and wheel zoom smoothed,
   the 📷 toggle and its button panel became redundant and are gone. Camera is now fully mouse-driven:
   drag = orbit, right-drag/two-finger = pan, wheel = smooth glide zoom (wheel deltas are normalized
