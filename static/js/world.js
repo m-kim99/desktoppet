@@ -62,6 +62,8 @@ let starMat = null;
 const cloudSpin = new THREE.Group();     // rotated a hair every frame → clouds drift
 scene.add(cloudSpin);
 const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xaecbe8, emissiveIntensity: 0.35 });
+let seaMat = null;           // assigned when the ocean is built below; day/night tints it
+const foamRings = [];        // lapping foam meshes around the cliff
 {
     const defs = [
         { a: 0.3, r: 11,   y: 4.6, s: 1.0 },
@@ -178,6 +180,14 @@ function updateDayNight(force = false) {
     cloudMat.color.set(0x6c7ea6).lerp(new THREE.Color(0xffffff), dayF);
     cloudMat.emissiveIntensity = 0.12 + 0.23 * dayF;
     starMat.opacity = nightF * (0.35 + 0.55 * THREE.MathUtils.smoothstep(nightF, 0.6, 1));
+
+    // The sea darkens after sunset and warms a touch at golden hour; foam dims with it.
+    if (seaMat) {
+        seaMat.color.set(0x16345c).lerp(new THREE.Color(0x3fa9d0), dayF).lerp(new THREE.Color(0x5a79b0), glow * 0.35);
+        for (const foam of foamRings) {
+            foam.material.color.set(0x9fb8d8).lerp(new THREE.Color(0xffffff), dayF);
+        }
+    }
 }
 updateDayNight(true);
 
@@ -281,6 +291,7 @@ function terrainHeight(x, z) {
         new THREE.LatheGeometry(pts, 72),
         new THREE.MeshLambertMaterial({ color: 0x9a6b47, flatShading: true })
     );
+    cliff.castShadow = true;         // the island shades the sea at low sun
     cliff.receiveShadow = true;
     stage.add(cliff);
 }
@@ -500,6 +511,89 @@ const world = {
     });
     pebbleMesh.receiveShadow = true;
     stage.add(pebbleMesh);
+}
+
+// ---- Ocean (바다): an animated sea ringing the floating island. A polar grid with geometric ring
+// spacing (dense near the island where you look, sparse toward the horizon) gets four layered
+// directional sine waves each frame; recomputed normals make the swells actually catch the sun and
+// moonlight on the water (Phong specular), and the amplitude fades toward the foggy horizon so the
+// far sea doesn't shimmer. Two foam rings lap against the cliff, swelling and fading out of phase.
+const OCEAN_LEVEL = -0.52;
+let oceanMesh = null;
+let oceanPos = null;         // live position attribute, y-animated every frame
+let oceanXZ = null;          // per-vertex [x, z, horizonFade] — precomputed once
+{
+    const inner = 2.6, outer = 40, rings = 40, segs = 112;
+    const positions = [], indices = [];
+    oceanXZ = [];
+    for (let i = 0; i <= rings; i++) {
+        const r = inner * Math.pow(outer / inner, i / rings);
+        for (let j = 0; j < segs; j++) {
+            const a = (j / segs) * Math.PI * 2;
+            const x = Math.cos(a) * r, z = Math.sin(a) * r;
+            positions.push(x, OCEAN_LEVEL, z);
+            oceanXZ.push(x, z, 1 - THREE.MathUtils.smoothstep(r, 24, 36));
+        }
+    }
+    for (let i = 0; i < rings; i++) {
+        for (let j = 0; j < segs; j++) {
+            const a = i * segs + j;
+            const b = i * segs + (j + 1) % segs;
+            const d = (i + 1) * segs + j;
+            const e = (i + 1) * segs + (j + 1) % segs;
+            indices.push(a, b, d, b, e, d);
+        }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    seaMat = new THREE.MeshPhongMaterial({ color: 0x3fa9d0, specular: 0x99ddff, shininess: 42 });
+    oceanMesh = new THREE.Mesh(geo, seaMat);
+    oceanMesh.receiveShadow = true;
+    scene.add(oceanMesh);
+    oceanPos = geo.attributes.position;
+
+    for (let i = 0; i < 2; i++) {
+        const foam = new THREE.Mesh(
+            new THREE.RingGeometry(2.62, 2.98, 72),
+            new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthWrite: false })
+        );
+        foam.rotation.x = -Math.PI / 2;
+        foam.position.y = OCEAN_LEVEL + 0.035;
+        scene.add(foam);
+        foamRings.push(foam);
+    }
+    updateDayNight(true);            // tint the fresh sea/foam for the current hour
+}
+
+let oceanT = 0;
+function updateOcean(delta) {
+    if (!oceanPos) return;
+    oceanT += delta;
+    const t = oceanT;
+    const arr = oceanPos.array;
+    for (let v = 0, n = oceanXZ.length / 3; v < n; v++) {
+        const fade = oceanXZ[v * 3 + 2];
+        if (fade === 0) continue;                     // flat past the horizon fade — skip the math
+        const x = oceanXZ[v * 3], z = oceanXZ[v * 3 + 1];
+        arr[v * 3 + 1] = OCEAN_LEVEL + fade * (
+            0.045 * Math.sin(x * 0.9 + t * 0.9)
+          + 0.038 * Math.sin(z * 1.15 - t * 0.75)
+          + 0.028 * Math.sin((x * 0.55 + z * 0.83) * 1.6 + t * 1.35)
+          + 0.012 * Math.sin(x * 3.1 - z * 2.3 + t * 2.4)
+        );
+    }
+    oceanPos.needsUpdate = true;
+    oceanMesh.geometry.computeVertexNormals();
+    // Foam: swell outward, fade, restart — the two rings run half a phase apart.
+    foamRings.forEach((foam, i) => {
+        const ph = (t * 0.42 + i * 0.5) % 1;
+        const s = 1 + ph * 0.085;
+        foam.scale.set(s, s, 1);
+        foam.material.opacity = (1 - ph) * (1 - ph) * 0.42;
+        foam.position.y = OCEAN_LEVEL + 0.035 + Math.sin(t * 1.4 + i * 2.6) * 0.012;
+    });
 }
 
 // ---- Pets: both GLB pets live in this one scene (separate instances from the desktop windows) ----
@@ -1255,6 +1349,7 @@ function animate() {
     updateChatBubble();
     cloudSpin.rotation.y += delta * 0.012;   // lazy cloud drift
     updateDayNight();                        // throttled inside (repaints ~2×/min)
+    updateOcean(delta);
     if (ballFlight) {
         ballFlight.t += delta;
         const k = Math.min(1, ballFlight.t / ballFlight.dur);

@@ -6,6 +6,15 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **Rippling ocean around the island (바다)**: the floating island now sits over an animated sea. A
+  polar-grid ocean mesh (geometric ring spacing — dense where you look, sparse toward the horizon)
+  runs four layered directional sine waves on its vertices every frame with recomputed normals, so
+  the swells genuinely catch the sun/moon glints (Phong specular highlights that sweep with the
+  day/night light). Wave amplitude fades toward the foggy horizon to avoid far shimmer, and the
+  cliff now casts its shadow onto the water at low sun. Two foam rings lap against the cliff base,
+  swelling outward and fading half a phase apart, with a gentle bob. Sea color follows the clock —
+  pastel cyan by day, deep navy at night, a warm tint at golden hour — and the foam dims to a pale
+  blue after dark.
 - **World day/night cycle (밤낮)**: the world now follows the real clock — the sun rises at 6시 and
   sets at 18시, when the moon takes over the same east→west arc until morning; both slide along the
   sky as time passes (refreshed ~2×/min). The sky gradient blends between day pastels, a deep navy
