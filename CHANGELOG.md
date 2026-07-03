@@ -5,6 +5,18 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Added
+- **Swimming + ⌘ interaction key (수영)**: the interaction key now accepts the Mac Command key
+  alongside Ctrl everywhere (tuck-in, climb-out, hints show "Ctrl/⌘"). A possessed pet can now
+  swim: wade into the pond or walk right off the cliff rim — it falls, lands with a puff of 3D
+  water droplets, and switches to swim mode, floating half-submerged with a wave bob and a forward
+  paddling lean (the waddle reads as a dog-paddle). Swimming is slower than trotting, Space does a
+  splash-hop, and a leash keeps the swimmer from vanishing into the fog. Near the cliff the hint
+  offers "Ctrl/⌘ 섬으로 올라가기" — an arced climb back onto the rim. Only the player-driven pet
+  swims (wander AI still treats water as blocked), and releasing possession mid-swim returns the
+  pet to solid ground so the AI never strands at sea. Splash droplets die on the sea surface
+  beyond the rim (not the phantom terrain height).
+
 ### Changed (밥때 tuning)
 - **Meals: 30-minute windows, random spots, huggable diners, 3D food**: the serving window shrank
   to 30 minutes; each pet now picks a random free spot around the bowl instead of a fixed side

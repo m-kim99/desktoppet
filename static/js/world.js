@@ -1349,6 +1349,20 @@ function releasePossession() {
     const p = possessed;
     possessed = null;
     airborne = false; jumpVy = 0;
+    seaHop = null;
+    // The AI only lives on land — if released while swimming (or mid-air past the rim), bring the
+    // pet back to solid, unblocked ground first.
+    if (p.swimming || Math.hypot(p.mover.position.x, p.mover.position.z) > ISLAND_R - 0.45) {
+        const pos = p.mover.position;
+        const rr = Math.hypot(pos.x, pos.z) || 1;
+        if (rr > ISLAND_R - 0.5) {
+            const k = (ISLAND_R - 0.6) / rr;
+            pos.x *= k; pos.z *= k;
+        }
+        if (world.isBlocked(pos.x, pos.z)) { pos.x = -0.5; pos.z = 0.2; }   // e.g. released in the pond
+        p.swimming = false;
+        p.mover.rotation.x = 0;
+    }
     p.mover.position.y = world.groundHeightAt(p.mover.position.x, p.mover.position.z);
     if (p.ai.state === 'player') releaseAI(p);
     heldKeys.clear();
@@ -1364,12 +1378,22 @@ window.addEventListener('keydown', (e) => {
     if (ARROW_KEYS.includes(e.key)) { heldKeys.add(e.key); e.preventDefault(); }
     else if (e.code === 'Space') {
         e.preventDefault();
-        if (!airborne) { airborne = true; jumpVy = 2.5; }
+        if (!airborne) { airborne = true; jumpVy = possessed.swimming ? 1.7 : 2.5; }   // splash-hop in water
     }
-    else if (e.key === 'Control') {
-        // Tuck-in interaction: near a free bed, Ctrl sends the pet to climb on and lie down.
-        // Possession auto-releases as its AI leaves the 'player' state for the approach walk.
+    else if (e.key === 'Control' || e.key === 'Meta') {
+        // Interaction key (Ctrl or ⌘): climb back onto the island while swimming near the cliff,
+        // otherwise tuck into a nearby free bed. Possession auto-releases for the bed approach.
         e.preventDefault();
+        if (possessed.swimming === 'sea') {
+            const pos = possessed.mover.position;
+            const rr = Math.hypot(pos.x, pos.z);
+            if (rr < ISLAND_R + 0.6 && !seaHop) {
+                const k = (ISLAND_R - 0.5) / (rr || 1);
+                const tx = pos.x * k, tz = pos.z * k;
+                seaHop = { fx: pos.x, fy: pos.y, fz: pos.z, tx, tz, ty: world.groundHeightAt(tx, tz), t: 0 };
+            }
+            return;
+        }
         const bed = !possessed.bed && nearestFreeBed(possessed, 0.95);
         if (bed) mountBed(possessed, bed);
     }
@@ -1377,10 +1401,48 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => { heldKeys.delete(e.key); });
 window.addEventListener('blur', () => heldKeys.clear());
 
+// Swimming (조종 전용): the player pet may wade into the pond or dive off the rim into the sea —
+// the wander AI never does (world.isBlocked still fences it). Support height decides the medium;
+// in water the pet floats half-submerged with a gentle bob, leans forward and paddles.
+const pondPropRef = PROPS.find((q) => q.type === 'pond');
+const POND_WATER_Y = terrainHeight(pondPropRef.x, pondPropRef.z) + 0.06;
+const SWIM_LEASH = ISLAND_R + 4;                 // don't let the swimmer vanish into the fog
+let seaHop = null;                               // climb-back tween { fx,fy,fz, tx,ty,tz, t }
+
+function playerBlocked(nx, nz) {
+    if (Math.hypot(nx, nz) > SWIM_LEASH) return true;
+    for (const q of PROPS) {
+        if (q.type === 'pond') continue;                          // the pond is swimmable
+        if (Math.hypot(nx - q.x, nz - q.z) < q.r) return true;
+    }
+    return false;                                                 // no rim fence — diving is allowed
+}
+function playerSupportY(p, x, z) {
+    if (Math.hypot(x, z) > ISLAND_R - 0.05) {
+        return { y: OCEAN_LEVEL + 0.02 - p.height * 0.45, medium: 'sea' };
+    }
+    if (Math.hypot(x - pondPropRef.x, z - pondPropRef.z) < 0.55) {
+        return { y: POND_WATER_Y - p.height * 0.45, medium: 'pond' };
+    }
+    return { y: world.groundHeightAt(x, z), medium: 'land' };
+}
+
 function updatePlayer(delta) {
     if (!possessed) return;
     const p = possessed;
     if (p.ai.state !== 'player') { releasePossession(); return; }   // something reclaimed it — let go
+    if (seaHop) {
+        // Climbing back up the cliff: a short arc from the water onto the rim.
+        seaHop.t += delta;
+        const k = Math.min(1, seaHop.t / 0.55);
+        const e = k * k * (3 - 2 * k);
+        p.mover.position.x = THREE.MathUtils.lerp(seaHop.fx, seaHop.tx, e);
+        p.mover.position.z = THREE.MathUtils.lerp(seaHop.fz, seaHop.tz, e);
+        p.mover.position.y = THREE.MathUtils.lerp(seaHop.fy, seaHop.ty, e) + Math.sin(k * Math.PI) * 0.55;
+        p.pet.walking = false;
+        if (k >= 1) { seaHop = null; p.swimming = false; p.mover.rotation.x = 0; airborne = false; jumpVy = 0; }
+        return;
+    }
     let ix = 0, iz = 0;
     if (heldKeys.has('ArrowUp')) iz += 1;
     if (heldKeys.has('ArrowDown')) iz -= 1;
@@ -1398,28 +1460,42 @@ function updatePlayer(delta) {
             while (diff > Math.PI) diff -= Math.PI * 2;
             while (diff < -Math.PI) diff += Math.PI * 2;
             p.mover.rotation.y += THREE.MathUtils.clamp(diff, -delta * 7, delta * 7);
-            const step = p.speed * 1.5 * delta;                    // player pace: brisker than wandering
+            const step = p.speed * (p.swimming ? 1.05 : 1.5) * delta;   // paddling is slower than trotting
             const nx = p.mover.position.x + dir.x * step;
             const nz = p.mover.position.z + dir.z * step;
-            if (!world.isBlocked(nx, nz)) { p.mover.position.x = nx; p.mover.position.z = nz; }
+            if (!playerBlocked(nx, nz)) { p.mover.position.x = nx; p.mover.position.z = nz; }
             p.pet.walking = true;
         }
     } else {
         p.pet.walking = false;
     }
-    const groundY = world.groundHeightAt(p.mover.position.x, p.mover.position.z);
+    // Vertical: land / pond / sea. Stepping past a drop (rim, pond edge) starts a fall; landing on
+    // water splashes and switches to swimming. On the surface the pet bobs with the waves.
+    const sup = playerSupportY(p, p.mover.position.x, p.mover.position.z);
+    if (!airborne && p.mover.position.y > sup.y + 0.09) { airborne = true; jumpVy = Math.min(jumpVy, 0); }
     if (airborne) {
         jumpVy -= 7.0 * delta;
         p.mover.position.y += jumpVy * delta;
-        if (p.mover.position.y <= groundY && jumpVy < 0) {
-            p.mover.position.y = groundY; airborne = false; jumpVy = 0;
+        if (p.mover.position.y <= sup.y && jumpVy < 0) {
+            p.mover.position.y = sup.y;
+            airborne = false; jumpVy = 0;
+            if (sup.medium !== 'land') {
+                spawnSplash(p.mover.position.x, sup.y + p.height * 0.42, p.mover.position.z);
+            }
+            p.swimming = sup.medium === 'land' ? false : sup.medium;
         }
     } else {
-        p.mover.position.y = groundY;
+        p.swimming = sup.medium === 'land' ? false : sup.medium;
+        p.mover.position.y = sup.y + (p.swimming ? Math.sin(p.pet.t * 2.6) * 0.02 : 0);
     }
-    // Offer the tuck-in hint while standing near a free bed.
-    const bedNear = !p.bed && nearestFreeBed(p, 0.95);
-    const hint = `🎮 ${p.name === 'chick' ? '병아리' : '강아지'} 조종 중 — 방향키 이동 · Space 점프${bedNear ? ' · Ctrl 눕기' : ''} · Esc 해제`;
+    p.mover.rotation.x = p.swimming ? 0.3 : 0;    // lean into the paddle
+    // Hint: swimming shows the climb-out key near the cliff; on land, the tuck-in key near a bed.
+    const petName = p.name === 'chick' ? '병아리' : '강아지';
+    const nearCliff = p.swimming === 'sea' && Math.hypot(p.mover.position.x, p.mover.position.z) < ISLAND_R + 0.6;
+    const bedNear = !p.swimming && !p.bed && nearestFreeBed(p, 0.95);
+    const hint = p.swimming
+        ? `🏊 ${petName} 수영 중 — 방향키 이동 · Space 물장구${nearCliff ? ' · Ctrl/⌘ 섬으로 올라가기' : ''} · Esc 해제`
+        : `🎮 ${petName} 조종 중 — 방향키 이동 · Space 점프${bedNear ? ' · Ctrl/⌘ 눕기' : ''} · Esc 해제`;
     if (controlHint.textContent !== hint) controlHint.textContent = hint;
 }
 
@@ -1427,7 +1503,7 @@ function updateSelectRing() {
     if (!possessed) return;
     selectRing.position.set(
         possessed.mover.position.x,
-        world.groundHeightAt(possessed.mover.position.x, possessed.mover.position.z) + 0.012,
+        possessed.mover.position.y + 0.012,   // rides jumps and floats on water with the pet
         possessed.mover.position.z
     );
 }
@@ -1624,6 +1700,17 @@ function spawnFoodCrumb(p) {
     scene.add(m);
     crumbs.push({ m, vx: (Math.random() - 0.5) * 0.5, vy: 0.7 + Math.random() * 0.6, vz: (Math.random() - 0.5) * 0.5, t: 0 });
 }
+// Water splash shares the crumb particle system — a puff of pale-blue droplets on entry/hops.
+const splashMat = M(0xaadcf2);
+function spawnSplash(x, y, z) {
+    for (let i = 0; i < 9; i++) {
+        const m = new THREE.Mesh(crumbGeo, splashMat);
+        m.position.set(x + (Math.random() - 0.5) * 0.12, y, z + (Math.random() - 0.5) * 0.12);
+        m.scale.setScalar(0.8 + Math.random() * 0.9);
+        scene.add(m);
+        crumbs.push({ m, vx: (Math.random() - 0.5) * 1.1, vy: 1.0 + Math.random() * 0.9, vz: (Math.random() - 0.5) * 1.1, t: 0 });
+    }
+}
 function updateCrumbs(delta) {
     for (let i = crumbs.length - 1; i >= 0; i--) {
         const c = crumbs[i];
@@ -1632,8 +1719,10 @@ function updateCrumbs(delta) {
         c.m.position.x += c.vx * delta;
         c.m.position.y += c.vy * delta;
         c.m.position.z += c.vz * delta;
-        const gy = world.groundHeightAt(c.m.position.x, c.m.position.z);
-        if (c.m.position.y <= gy + 0.008 || c.t > 1.2) {
+        // Particles die on the local surface: terrain on the island, the sea beyond the rim.
+        const offIsland = Math.hypot(c.m.position.x, c.m.position.z) >= ISLAND_R;
+        const floor = offIsland ? OCEAN_LEVEL : world.groundHeightAt(c.m.position.x, c.m.position.z);
+        if (c.m.position.y <= floor + 0.008 || c.t > 1.2) {
             scene.remove(c.m);
             crumbs.splice(i, 1);
         }
