@@ -6,6 +6,15 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **AI pool days + adjustable streetlamps (물놀이·가로등)**: wandering pets now fancy a dip of
+  their own — every few minutes (daytime only, cooldown) an idle pet walks to the pond edge or the
+  cliff rim, wades in with a splash, cruises a few waypoints with the full swim stroke, then wades
+  out (pond) or climbs the cliff back up (sea) — so both pets, player included, can end up swimming
+  together. Dipping pets are excluded from duo partnering; sleep or possession ends a dip
+  instantly. And the night got friendlier: four rim streetlamps (metal pole + glowing globe +
+  warm point light) fade up through dusk, with a 💡 brightness slider (bottom-right, persisted
+  across sessions) scaling both the light and the globe glow; moon/ambient night levels were also
+  nudged up.
 - **Translucent water + real swim strokes (물 투명도·수영 모션)**: the sea (opacity 0.85) and pond
   (0.68) are now glassy — the submerged cliff, the sandy pond basin and the swimmer's paddling legs
   all show through the surface. Swimming drops the land waddle for a dedicated procedural stroke,

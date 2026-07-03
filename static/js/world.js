@@ -64,6 +64,14 @@ scene.add(cloudSpin);
 const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xaecbe8, emissiveIntensity: 0.35 });
 let seaMat = null;           // assigned when the ocean is built below; day/night tints it
 const foamRings = [];        // lapping foam meshes around the cliff
+// Streetlamps: filled with the stage; glow ramps up through dusk, scaled by the 💡 slider.
+const lamps = [];            // { light: PointLight }
+const lampGlobeMat = new THREE.MeshLambertMaterial({ color: 0xfff1cf, emissive: 0xffc978, emissiveIntensity: 0 });
+let lampBrightness = 0.6;
+try {
+    const saved = parseFloat(localStorage.getItem('worldLampBrightness'));
+    if (!Number.isNaN(saved)) lampBrightness = THREE.MathUtils.clamp(saved, 0, 1);
+} catch (e) {}
 {
     const defs = [
         { a: 0.3, r: 11,   y: 4.6, s: 1.0 },
@@ -171,10 +179,15 @@ function updateDayNight(force = false) {
     // The one shadow light plays sun by day and moon by night.
     sunLight.position.copy(dayF >= 0.5 ? sunMesh.position : moonMesh.position);
     sunLight.color.copy(new THREE.Color(0x9db8e8).lerp(new THREE.Color(0xfff4e0), dayF).lerp(new THREE.Color(0xffb37a), glow * 0.55));
-    sunLight.intensity = 0.5 + 1.2 * dayF;
+    sunLight.intensity = 0.62 + 1.1 * dayF;
     hemiLight.color.set(0x1d2b52).lerp(new THREE.Color(0xcfe6ff), dayF);
     hemiLight.groundColor.set(0x233524).lerp(new THREE.Color(0x8fca62), dayF);
-    hemiLight.intensity = 0.32 + 0.53 * dayF;
+    hemiLight.intensity = 0.4 + 0.45 * dayF;
+
+    // Streetlamps fade up through dusk; the 💡 slider scales both the light and the globe glow.
+    const lampGlow = (1 - dayF) * lampBrightness;
+    lampGlobeMat.emissiveIntensity = 0.05 + 1.3 * lampGlow;
+    for (const l of lamps) l.light.intensity = 6 * lampGlow;
 
     // Night dresses the clouds and reveals the stars.
     cloudMat.color.set(0x6c7ea6).lerp(new THREE.Color(0xffffff), dayF);
@@ -308,6 +321,10 @@ const PROPS = [
     { type: 'pond',  x:  0.2, z: -2.2, rotY: 0.0,  r: 0.72 },
     { type: 'sunbed',  x:  2.35, z:  0.0,  rotY: -1.2, r: 0.42 },
     { type: 'hammock', x: -1.55, z: -1.95, rotY: 0.5,  r: 0.55 },
+    { type: 'lamp', x:  0.94, z:  2.58, rotY: 0, r: 0.18 },
+    { type: 'lamp', x:  1.65, z: -2.2,  rotY: 0, r: 0.18 },
+    { type: 'lamp', x: -2.46, z: -1.23, rotY: 0, r: 0.18 },
+    { type: 'lamp', x: -1.94, z:  1.95, rotY: 0, r: 0.18 },
 ];
 const BEDS = [];   // filled during prop placement: where pets sleep at night / lie via Ctrl
 const M = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
@@ -488,13 +505,37 @@ function makeHammock() {
     return g;
 }
 
-const PROP_BUILDERS = { tree: makeTree, house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock };
+function makeLamp() {
+    const g = new THREE.Group();
+    const metal = M(0x5a6a75);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.06, 12), metal);
+    base.position.y = 0.03;
+    g.add(base);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.034, 0.82, 10), metal);
+    pole.position.y = 0.47;
+    g.add(pole);
+    const globe = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 12), lampGlobeMat);
+    globe.position.y = 0.95;
+    g.add(globe);
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.09, 10), metal);
+    cap.position.y = 1.06;
+    g.add(cap);
+    return g;
+}
+
+const PROP_BUILDERS = { tree: makeTree, house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, lamp: makeLamp };
 for (const p of PROPS) {
     const obj = PROP_BUILDERS[p.type](p);
     obj.position.set(p.x, terrainHeight(p.x, p.z), p.z);
     obj.rotation.y = p.rotY || 0;
     obj.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     stage.add(obj);
+    if (p.type === 'lamp') {
+        const light = new THREE.PointLight(0xffd9a0, 0, 4.5, 2);
+        light.position.set(p.x, terrainHeight(p.x, p.z) + 0.95, p.z);
+        scene.add(light);
+        lamps.push({ light });
+    }
     // Beds register a lying spot (on the furniture, with a lean-back tilt + heading) and an
     // approach point just outside their collider that the pet walks to before climbing on.
     if (p.type === 'sunbed' || p.type === 'hammock') {
@@ -765,6 +806,13 @@ function updateWander(p, delta) {
         pet.walking = false;
         ai.wait -= delta;
         if (ai.wait <= 0) {
+            // Sometimes fancy a dip instead of a stroll (daytime only, on a cooldown) — so the
+            // pets end up swimming together, player included.
+            if (!isSleepTime(currentHour()) && Date.now() > (p.nextDipAt || 0) && Math.random() < 0.25) {
+                p.nextDipAt = Date.now() + 150000 + Math.random() * 150000;
+                startDip(p);
+                return;
+            }
             const target = pickTarget(mover.position);
             if (target) { ai.target = target; ai.state = 'walk'; }
             else ai.wait = 1 + Math.random() * 2;
@@ -1018,7 +1066,7 @@ function playWorldMotion(p, id) {
 }
 
 async function worldHug(initiator) {
-    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed);
+    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed && !q.dip);
     if (!partner || duoBusy) { initiator.pet.action = { id: 'hug', t: 0, role: 'solo', dir: 1 }; return; }
     duoBusy = true;
     try {
@@ -1061,7 +1109,7 @@ function handPos(p) {
 }
 
 async function worldPlay(initiator) {
-    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed);
+    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed && !q.dip);
     if (!partner || duoBusy) {
         initiator.pet.action = { id: 'play', t: 0, role: 'solo', dir: 1, cue: 'ready', cueT: 0 };
         setTimeout(() => { if (initiator.pet.action && initiator.pet.action.id === 'play') initiator.pet.action = null; }, 1600);
@@ -1176,6 +1224,28 @@ document.body.appendChild(chatBar);
 chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) sendWorldChat(); e.stopPropagation(); });
 chatBar.addEventListener('pointerdown', (e) => e.stopPropagation());
 chatSend.addEventListener('click', sendWorldChat);
+
+// ---- 💡 가로등 밝기 (bottom-right): scales the rim lamps at night; persists across sessions.
+const lampUI = document.createElement('div');
+lampUI.style.cssText = 'position:fixed; right:14px; bottom:14px; display:flex; align-items:center; gap:8px; z-index:90; background:rgba(30,32,40,0.85); padding:8px 12px; border-radius:12px; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
+const lampIcon = document.createElement('span');
+lampIcon.textContent = '💡';
+lampIcon.style.cssText = 'font-size:15px;';
+const lampSlider = document.createElement('input');
+lampSlider.type = 'range';
+lampSlider.min = '0';
+lampSlider.max = '100';
+lampSlider.value = String(Math.round(lampBrightness * 100));
+lampSlider.title = '가로등 밝기';
+lampSlider.style.cssText = 'width:110px; accent-color:#ffd54f; cursor:pointer;';
+lampSlider.addEventListener('input', () => {
+    lampBrightness = Number(lampSlider.value) / 100;
+    try { localStorage.setItem('worldLampBrightness', String(lampBrightness)); } catch (e) {}
+    updateDayNight(true);
+});
+lampUI.appendChild(lampIcon);
+lampUI.appendChild(lampSlider);
+document.body.appendChild(lampUI);
 
 function pickResponder(text) {
     if (/병아리|삐약|chick/i.test(text)) return pets.find((p) => p.name === 'chick') || pets[0] || null;
@@ -1549,6 +1619,146 @@ function spawnKickDroplets(p) {
     }
 }
 
+// ---- 물놀이 (AI dips): every few minutes an idle pet may fancy a swim — pond or sea — so the two
+// can paddle together (player included). A dip director drives phases like the bed system: walk to
+// the waterside, wade past the edge (the fall + splash + swim switch come from the shared support
+// logic), cruise a few waypoints, then wade out of the pond or climb the cliff back up. Dipping
+// pets are excluded from duo partnering; sleep/possession end a dip on the spot.
+function dipSteer(p, target, delta, speedMul = 1) {
+    // Same shortest-arc steering as land, but no collision fence and no ground snapping —
+    // the dip's vertical resolver owns the Y axis.
+    const dx = target.x - p.mover.position.x;
+    const dz = target.z - p.mover.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < 0.1) { p.pet.walking = false; return 'arrived'; }
+    const desired = Math.atan2(dx, dz);
+    let diff = desired - p.mover.rotation.y;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    p.mover.rotation.y += THREE.MathUtils.clamp(diff, -delta * 3.5, delta * 3.5);
+    p.pet.walking = true;
+    if (Math.abs(diff) < 0.6) {
+        const step = Math.min(p.speed * speedMul * delta, dist);
+        p.mover.position.x += Math.sin(p.mover.rotation.y) * step;
+        p.mover.position.z += Math.cos(p.mover.rotation.y) * step;
+    }
+    return 'moving';
+}
+function dipVertical(p, delta) {
+    const sup = playerSupportY(p, p.mover.position.x, p.mover.position.z);
+    if (!p.dipAir && p.mover.position.y > sup.y + 0.09) { p.dipAir = true; p.dipVy = 0; }
+    if (p.dipAir) {
+        p.dipVy -= 7.0 * delta;
+        p.mover.position.y += p.dipVy * delta;
+        if (p.mover.position.y <= sup.y && p.dipVy < 0) {
+            p.mover.position.y = sup.y;
+            p.dipAir = false; p.dipVy = 0;
+            if (sup.medium !== 'land') spawnSplash(p.mover.position.x, sup.y + p.height * 0.42, p.mover.position.z);
+            p.swimming = sup.medium === 'land' ? false : sup.medium;
+        }
+    } else {
+        p.swimming = sup.medium === 'land' ? false : sup.medium;
+        p.mover.position.y = sup.y + (p.swimming ? Math.sin(p.pet.t * 2.6) * 0.02 : 0);
+    }
+    p.mover.rotation.x = p.swimming ? 0.3 : 0;
+}
+function pickDipWaypoint(p) {
+    if (p.dip.kind === 'pond') {
+        const a = Math.random() * Math.PI * 2, r = Math.random() * 0.38;
+        return { x: pondPropRef.x + Math.sin(a) * r, z: pondPropRef.z + Math.cos(a) * r };
+    }
+    const cur = Math.atan2(p.mover.position.x, p.mover.position.z);
+    const a = cur + (Math.random() - 0.5) * 1.1;
+    const r = ISLAND_R + 0.5 + Math.random() * 1.5;
+    return { x: Math.sin(a) * r, z: Math.cos(a) * r };
+}
+async function startDip(p) {
+    const kind = Math.random() < 0.5 ? 'pond' : 'sea';
+    let entry = null;
+    for (let i = 0; i < 10 && !entry; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const x = kind === 'pond' ? pondPropRef.x + Math.sin(a) * 0.85 : Math.sin(a) * (ISLAND_R - 0.55);
+        const z = kind === 'pond' ? pondPropRef.z + Math.cos(a) * 0.85 : Math.cos(a) * (ISLAND_R - 0.55);
+        if (!world.isBlocked(x, z)) entry = { x, z, a };
+    }
+    if (!entry) return;
+    p.dip = {
+        kind, phase: 'approach', swimLeft: 9 + Math.random() * 9, waypoint: null,
+        waterPt: kind === 'pond'
+            ? { x: pondPropRef.x, z: pondPropRef.z }
+            : { x: Math.sin(entry.a) * (ISLAND_R + 0.8), z: Math.cos(entry.a) * (ISLAND_R + 0.8) },
+    };
+    await gotoAsync(p, entry.x, entry.z);
+    if (!p.dip) return;
+    p.dip.phase = 'enter';
+}
+function endDip(p) {
+    p.dip = null;
+    p.swimming = false;
+    p.dipAir = false; p.dipVy = 0;
+    p.mover.rotation.x = 0;
+    p.mover.position.y = world.groundHeightAt(p.mover.position.x, p.mover.position.z);
+    releaseAI(p, 2);
+}
+function updateDips(delta) {
+    for (const p of pets) {
+        const dip = p.dip;
+        if (!dip || dip.phase === 'approach') continue;
+        if (p.bed || p.pet.sleeping || p === possessed) { endDip(p); continue; }
+        if (dip.phase !== 'climb') dipVertical(p, delta);
+        if (dip.phase === 'enter') {
+            dipSteer(p, dip.waterPt, delta, 1);
+            if (p.swimming) { dip.phase = 'swim'; dip.waypoint = pickDipWaypoint(p); }
+        } else if (dip.phase === 'swim') {
+            dip.swimLeft -= delta;
+            if (!dip.waypoint || dipSteer(p, dip.waypoint, delta, 0.8) === 'arrived') dip.waypoint = pickDipWaypoint(p);
+            if (dip.swimLeft <= 0) {
+                if (dip.kind === 'pond') {
+                    let exit = null;
+                    for (let i = 0; i < 10 && !exit; i++) {
+                        const a = Math.random() * Math.PI * 2;
+                        const x = pondPropRef.x + Math.sin(a) * 0.85, z = pondPropRef.z + Math.cos(a) * 0.85;
+                        if (!world.isBlocked(x, z)) exit = { x, z };
+                    }
+                    dip.exitPt = exit || { x: pondPropRef.x + 0.85, z: pondPropRef.z };
+                } else {
+                    const a = Math.atan2(p.mover.position.x, p.mover.position.z);
+                    dip.exitPt = { x: Math.sin(a) * (ISLAND_R + 0.45), z: Math.cos(a) * (ISLAND_R + 0.45), a };
+                }
+                dip.phase = 'exitSwim';
+            }
+        } else if (dip.phase === 'exitSwim') {
+            if (dipSteer(p, dip.exitPt, delta, 0.9) === 'arrived') {
+                if (dip.kind === 'pond') {
+                    endDip(p);
+                } else {
+                    let a = dip.exitPt.a, tx = 0, tz = 0;
+                    for (let i = 0; i < 8; i++) {
+                        tx = Math.sin(a) * (ISLAND_R - 0.55);
+                        tz = Math.cos(a) * (ISLAND_R - 0.55);
+                        if (!world.isBlocked(tx, tz)) break;
+                        a += 0.35;
+                    }
+                    dip.hop = { fx: p.mover.position.x, fy: p.mover.position.y, fz: p.mover.position.z, tx, tz, ty: world.groundHeightAt(tx, tz), t: 0 };
+                    dip.phase = 'climb';
+                }
+            }
+        } else if (dip.phase === 'climb') {
+            const h = dip.hop;
+            h.t += delta;
+            const k = Math.min(1, h.t / 0.55);
+            const e = k * k * (3 - 2 * k);
+            p.mover.position.x = THREE.MathUtils.lerp(h.fx, h.tx, e);
+            p.mover.position.z = THREE.MathUtils.lerp(h.fz, h.tz, e);
+            p.mover.position.y = THREE.MathUtils.lerp(h.fy, h.ty, e) + Math.sin(k * Math.PI) * 0.55;
+            p.pet.walking = false;
+            p.swimming = false;
+            p.mover.rotation.x = 0;
+            if (k >= 1) endDip(p);
+        }
+    }
+}
+
 function updateSelectRing() {
     if (!possessed) return;
     selectRing.position.set(
@@ -1796,6 +2006,7 @@ function animate() {
     }
     updatePlayer(delta);
     updateBeds(delta);
+    updateDips(delta);
     updateAutoSleep();
     updateMeals();
     updateCrumbs(delta);
