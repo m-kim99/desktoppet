@@ -414,7 +414,10 @@ function makePond() {
     const sand = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.76, 0.05, 36), M(0xe8d8a8));
     sand.position.y = 0.012;
     g.add(sand);
-    const water = new THREE.Mesh(new THREE.CylinderGeometry(0.585, 0.585, 0.045, 36), M(0x6ec6e8));
+    const water = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.585, 0.585, 0.045, 36),
+        M(0x6ec6e8, { transparent: true, opacity: 0.68 })   // see the sandy basin + paddling feet
+    );
     water.position.y = 0.038;
     g.add(water);
     const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.014, 16), M(0x66bb6a));
@@ -622,7 +625,10 @@ let oceanXZ = null;          // per-vertex [x, z, horizonFade] — precomputed o
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geo.setIndex(indices);
     geo.computeVertexNormals();
-    seaMat = new THREE.MeshPhongMaterial({ color: 0x3fa9d0, specular: 0x99ddff, shininess: 42 });
+    seaMat = new THREE.MeshPhongMaterial({
+        color: 0x3fa9d0, specular: 0x99ddff, shininess: 42,
+        transparent: true, opacity: 0.85,     // glassy: the submerged cliff + swimmers show through
+    });
     oceanMesh = new THREE.Mesh(geo, seaMat);
     oceanMesh.receiveShadow = true;
     scene.add(oceanMesh);
@@ -1488,7 +1494,7 @@ function updatePlayer(delta) {
         p.swimming = sup.medium === 'land' ? false : sup.medium;
         p.mover.position.y = sup.y + (p.swimming ? Math.sin(p.pet.t * 2.6) * 0.02 : 0);
     }
-    p.mover.rotation.x = p.swimming ? 0.3 : 0;    // lean into the paddle
+    p.mover.rotation.x = p.swimming ? 0.3 : 0;    // lean into the paddle (applySwimPose counters at the head)
     // Hint: swimming shows the climb-out key near the cliff; on land, the tuck-in key near a bed.
     const petName = p.name === 'chick' ? '병아리' : '강아지';
     const nearCliff = p.swimming === 'sea' && Math.hypot(p.mover.position.x, p.mover.position.z) < ISLAND_R + 0.6;
@@ -1497,6 +1503,50 @@ function updatePlayer(delta) {
         ? `🏊 ${petName} 수영 중 — 방향키 이동 · Space 물장구${nearCliff ? ' · Ctrl/⌘ 섬으로 올라가기' : ''} · Esc 해제`
         : `🎮 ${petName} 조종 중 — 방향키 이동 · Space 점프${bedNear ? ' · Ctrl/⌘ 눕기' : ''} · Esc 해제`;
     if (controlHint.textContent !== hint) controlHint.textContent = hint;
+}
+
+// Swim pose: applied AFTER the shared entity update each frame (same overwrite technique the
+// module itself uses), so the pet windows stay untouched. Replaces the land waddle with a real
+// paddle: deep alternating leg kicks, rowing wing sweeps (chick) / trailing ears + rudder tail
+// (puppy), a stroke-synced roll and head held out of the water, plus a droplet wake while moving.
+// Blinking from the shared idle logic is left alone. Menu motions still override (action wins).
+function applySwimPose(p, delta) {
+    const pet = p.pet;
+    if (!p.swimming || pet.action) return;
+    const moving = pet.walking;
+    const amp = moving ? 1 : 0.45;                       // full strokes vs treading water
+    const stroke = pet.t * (moving ? 5.2 : 3.4);
+    pet.wrap.position.y = Math.sin(stroke) * 0.012 * amp;
+    pet.wrap.rotation.x = -0.2 + Math.sin(stroke) * 0.035 * amp;   // counter the mover lean → head up
+    pet.wrap.rotation.z = Math.sin(stroke * 0.5) * 0.06 * amp;     // gentle roll between strokes
+    pet.feet.forEach((f, i) => {
+        f.rotation.x = (f.userData._restRotX || 0) + Math.sin(stroke + (i % 2 === 0 ? 0 : Math.PI)) * 0.85 * amp;
+    });
+    pet.wings.forEach((wg, i) => {
+        const side = (i % 2 === 0) ? 1 : -1;
+        wg.rotation.z = (wg.userData._restRotZ || 0) - side * (0.35 + Math.max(0, Math.sin(stroke - 0.9)) * 0.5) * amp;
+    });
+    pet.ears.forEach((e2) => { e2.rotation.x = (e2.userData._restRotX || 0) + 0.3 + Math.sin(stroke) * 0.05; });
+    if (pet.tail) pet.tail.rotation.y = Math.sin(stroke) * 0.3;    // rudder wag
+    p.kickT = (p.kickT || 0) - delta;
+    if (moving && p.kickT <= 0) {
+        spawnKickDroplets(p);
+        p.kickT = 0.32 + Math.random() * 0.2;
+    }
+}
+function spawnKickDroplets(p) {
+    const backX = -Math.sin(p.mover.rotation.y), backZ = -Math.cos(p.mover.rotation.y);
+    for (let i = 0; i < 2; i++) {
+        const m = new THREE.Mesh(crumbGeo, splashMat);
+        m.position.set(
+            p.mover.position.x + backX * 0.14 + (Math.random() - 0.5) * 0.08,
+            p.mover.position.y + p.height * 0.18,
+            p.mover.position.z + backZ * 0.14 + (Math.random() - 0.5) * 0.08
+        );
+        m.scale.setScalar(0.5 + Math.random() * 0.5);
+        scene.add(m);
+        crumbs.push({ m, vx: backX * 0.35 + (Math.random() - 0.5) * 0.3, vy: 0.55 + Math.random() * 0.4, vz: backZ * 0.35 + (Math.random() - 0.5) * 0.3, t: 0 });
+    }
 }
 
 function updateSelectRing() {
@@ -1741,6 +1791,7 @@ function animate() {
     for (const p of pets) {
         updateWander(p, delta);
         updateGlbPetEntity(p.pet, delta);
+        applySwimPose(p, delta);
         if (p.fxUpdate) p.fxUpdate();
     }
     updatePlayer(delta);

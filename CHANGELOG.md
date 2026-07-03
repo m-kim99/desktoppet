@@ -6,6 +6,14 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **Translucent water + real swim strokes (물 투명도·수영 모션)**: the sea (opacity 0.85) and pond
+  (0.68) are now glassy — the submerged cliff, the sandy pond basin and the swimmer's paddling legs
+  all show through the surface. Swimming drops the land waddle for a dedicated procedural stroke,
+  applied as a world-side overlay after the shared entity update (pet windows untouched): deep
+  alternating leg kicks, rowing wing sweeps for the chick / trailing ears and a rudder-wag tail for
+  the puppy, a stroke-synced body roll and bob with the head held out of the water, full strokes
+  while moving vs. gentle treading when idle, and a little droplet wake kicked up behind while
+  paddling. Blinking carries through; menu motions still take precedence.
 - **Swimming + ⌘ interaction key (수영)**: the interaction key now accepts the Mac Command key
   alongside Ctrl everywhere (tuck-in, climb-out, hints show "Ctrl/⌘"). A possessed pet can now
   swim: wade into the pond or walk right off the cliff rim — it falls, lands with a puff of 3D
