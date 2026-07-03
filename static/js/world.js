@@ -809,12 +809,10 @@ function wireWorldFx(p) {
     const zzzEl   = mk('zzz', '💤');
     const thinkEl = mk('think', '💭');
     const cheerEl = mk('cheer', '파이팅!', 'font-weight:700; text-shadow:0 2px 5px rgba(0,0,0,0.55), 0 0 2px rgba(0,0,0,0.5); white-space:nowrap;');
-    const eatEl   = mk('eat', p.pet.wings.length ? '🌾' : '🥣');
     const overlays = [
         { el: zzzEl,   left: 58, top: 14, size: 44 },
         { el: thinkEl, left: 62, top: 10, size: 44 },
         { el: cheerEl, left: 50, top: 4,  size: 18 },
-        { el: eatEl,   left: 50, top: 72, size: 40 },
     ];
     p.pet.setZzz   = (on) => { zzzEl.style.opacity   = on ? '0.9' : '0'; };
     p.pet.setThink = (on) => { thinkEl.style.opacity = on ? '0.95' : '0'; };
@@ -824,8 +822,27 @@ function wireWorldFx(p) {
         }
         cheerEl.style.opacity = on ? '1' : '0';
     };
-    p.pet.setEat = (on) => { eatEl.style.opacity = on ? '1' : '0'; };
+    // Eat FX are real 3D in the world (no emoji): a per-pet ground prop — grain patch for the
+    // chick, mini kibble bowl for the puppy — placed in front of the pet when the motion starts,
+    // and hidden entirely when eating at the real bowl (the bowl IS the food there).
+    p.foodProp = p.pet.wings.length ? makeGrainPatch() : makeMiniBowl();
+    p.foodProp.visible = false;
+    scene.add(p.foodProp);
+    p.pet.setEat = (on) => {
+        if (!on) { p.foodProp.visible = false; return; }
+        if (Math.hypot(p.mover.position.x - bowlProp.x, p.mover.position.z - bowlProp.z) < 0.65) {
+            p.foodProp.visible = false;
+            return;
+        }
+        if (!p.foodProp.visible) {
+            const fx = p.mover.position.x + Math.sin(p.mover.rotation.y) * 0.2;
+            const fz = p.mover.position.z + Math.cos(p.mover.rotation.y) * 0.2;
+            p.foodProp.position.set(fx, world.groundHeightAt(fx, fz), fz);
+        }
+        p.foodProp.visible = true;
+    };
     p.pet.spawnEmoji = (ch, { left = 50, top = 28, size = 28, dx = 0, duration = 1400 } = {}) => {
+        if (p.pet.action && p.pet.action.id === 'eat') { spawnFoodCrumb(p); return; }   // 밥알은 3D로
         const pt = fxPoint(p, left, top);
         const el = document.createElement('div');
         el.textContent = ch;
@@ -995,8 +1012,7 @@ function playWorldMotion(p, id) {
 }
 
 async function worldHug(initiator) {
-    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed
-        && q.ai.state !== 'goto' && q.ai.state !== 'busy');
+    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed);
     if (!partner || duoBusy) { initiator.pet.action = { id: 'hug', t: 0, role: 'solo', dir: 1 }; return; }
     duoBusy = true;
     try {
@@ -1039,8 +1055,7 @@ function handPos(p) {
 }
 
 async function worldPlay(initiator) {
-    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed
-        && q.ai.state !== 'goto' && q.ai.state !== 'busy');
+    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed);
     if (!partner || duoBusy) {
         initiator.pet.action = { id: 'play', t: 0, role: 'solo', dir: 1, cue: 'ready', cueT: 0 };
         setTimeout(() => { if (initiator.pet.action && initiator.pet.action.id === 'play') initiator.pet.action = null; }, 1600);
@@ -1516,40 +1531,112 @@ function updateAutoSleep() {
     }
 }
 
-// ---- 밥때 (meal times): at 8시·12시·18시 the pets trot to the food bowl, take a spot each, face
-// the bowl and have a couple of helpings with the shared Eat motion, then wander off. A serving
-// lasts 45 minutes and each pet eats once per serving; meals are skipped while possessed,
-// sleeping, in bed or mid-choreography (the duo partner filter also skips busy/goto pets, so
-// nobody gets dragged into a hug mid-bite).
+// ---- 밥때 (meal times): at 8시·12시·18시 the pets trot to the food bowl, each picking a random
+// free spot around it, face the bowl and have a couple of helpings with the shared Eat motion,
+// then wander off. A serving lasts 30 minutes and each pet eats once per serving. Meals can be
+// interrupted — a hug invitation mid-bite simply wins (the meal is abandoned gracefully); only
+// sleep/beds/possession block getting up for food in the first place.
 const MEAL_TIMES = [8, 12, 18];
-const MEAL_WINDOW = 0.75;
+const MEAL_WINDOW = 0.5;
 const bowlProp = PROPS.find((p) => p.type === 'bowl');
-const EAT_SPOTS = {
-    chick: { x: bowlProp.x + 0.36, z: bowlProp.z - 0.26 },
-    puppy: { x: bowlProp.x - 0.38, z: bowlProp.z + 0.24 },
-};
+function pickEatSpot(p) {
+    for (let i = 0; i < 14; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const d = 0.4 + Math.random() * 0.12;
+        const x = bowlProp.x + Math.sin(a) * d;
+        const z = bowlProp.z + Math.cos(a) * d;
+        if (world.isBlocked(x, z)) continue;
+        if (pets.some((q) => q !== p && q.eatSpot && Math.hypot(q.eatSpot.x - x, q.eatSpot.z - z) < 0.3)) continue;
+        return { x, z };
+    }
+    return { x: bowlProp.x + 0.42, z: bowlProp.z };
+}
 async function haveMeal(p) {
     await gotoAsync(p, p.eatSpot.x, p.eatSpot.z);
+    if (p.bed || p.ai.state !== 'busy') { p.eatSpot = null; return; }   // hijacked en route (hug/bed)
     p.mover.rotation.y = Math.atan2(bowlProp.x - p.mover.position.x, bowlProp.z - p.mover.position.z);
     for (let i = 0; i < 2; i++) {
-        if (p.bed || p.pet.sleeping || p.ai.state !== 'busy') break;   // interrupted — abandon the meal
+        if (p.bed || p.pet.sleeping || p.ai.state !== 'busy') break;
+        if (p.pet.action && p.pet.action.id !== 'eat') break;           // pulled into a hug mid-bite
         p.pet.action = { id: 'eat', t: 0 };
         await sleepMs(3350);
     }
-    if (p.ai.state === 'busy') releaseAI(p);
+    p.eatSpot = null;
+    // Only hand the AI back if the meal still owns the pet (not mid-hug someone dragged it into).
+    if (p.ai.state === 'busy' && (!p.pet.action || p.pet.action.id === 'eat')) releaseAI(p);
 }
 function updateMeals() {
     const h = currentHour();
     const meal = MEAL_TIMES.find((m) => h >= m && h < m + MEAL_WINDOW);
-    if (meal === undefined) return;
+    if (meal === undefined) {
+        for (const p of pets) p.eatSpot = null;    // sweep spots stranded by interrupted meals
+        return;
+    }
     const key = `${Math.floor(Date.now() / 86400000)}-${meal}`;    // one serving per meal per day
     for (const p of pets) {
         if (p.mealDone === key) continue;
         if (p === possessed || p.bed || p.pet.sleeping || p.pet.action) continue;
         if (p.ai.state !== 'idle' && p.ai.state !== 'walk') continue;
-        p.eatSpot = EAT_SPOTS[p.name] || EAT_SPOTS.chick;
+        p.eatSpot = pickEatSpot(p);
         p.mealDone = key;
         haveMeal(p);
+    }
+}
+
+// ---- 3D eat FX (월드 전용): instead of the pet-window emoji, eating in the world shows a real
+// ground prop per pet — a scattered grain patch for the chick, a little kibble bowl for the puppy
+// (hidden when eating at the real bowl, which IS the food there) — and the nibble particles are
+// tiny 3D morsels that pop from the mouth and fall to the grass.
+function makeGrainPatch() {
+    const g = new THREE.Group();
+    const grain = M(0xe3c368);
+    for (let i = 0; i < 10; i++) {
+        const k = new THREE.Mesh(new THREE.SphereGeometry(0.013, 6, 5), grain);
+        const a = Math.random() * Math.PI * 2, r = Math.random() * 0.08;
+        k.position.set(Math.cos(a) * r, 0.011, Math.sin(a) * r);
+        k.scale.y = 0.65;
+        g.add(k);
+    }
+    return g;
+}
+function makeMiniBowl() {
+    const g = new THREE.Group();
+    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.055, 0.045, 16), M(0x5b8def));
+    bowl.position.y = 0.022;
+    g.add(bowl);
+    const food = new THREE.Mesh(new THREE.CylinderGeometry(0.056, 0.056, 0.02, 12), M(0x8d6e5c));
+    food.position.y = 0.042;
+    g.add(food);
+    return g;
+}
+const crumbs = [];
+const crumbGeo = new THREE.SphereGeometry(0.016, 6, 5);
+const crumbMatChick = M(0xe3c368);
+const crumbMatPuppy = M(0x8d6e5c);
+function spawnFoodCrumb(p) {
+    const m = new THREE.Mesh(crumbGeo, p.pet.wings.length ? crumbMatChick : crumbMatPuppy);
+    m.position.set(
+        p.mover.position.x + Math.sin(p.mover.rotation.y) * 0.16,
+        p.mover.position.y + p.height * 0.28,
+        p.mover.position.z + Math.cos(p.mover.rotation.y) * 0.16
+    );
+    m.scale.setScalar(0.7 + Math.random() * 0.7);
+    scene.add(m);
+    crumbs.push({ m, vx: (Math.random() - 0.5) * 0.5, vy: 0.7 + Math.random() * 0.6, vz: (Math.random() - 0.5) * 0.5, t: 0 });
+}
+function updateCrumbs(delta) {
+    for (let i = crumbs.length - 1; i >= 0; i--) {
+        const c = crumbs[i];
+        c.t += delta;
+        c.vy -= 4.5 * delta;
+        c.m.position.x += c.vx * delta;
+        c.m.position.y += c.vy * delta;
+        c.m.position.z += c.vz * delta;
+        const gy = world.groundHeightAt(c.m.position.x, c.m.position.z);
+        if (c.m.position.y <= gy + 0.008 || c.t > 1.2) {
+            scene.remove(c.m);
+            crumbs.splice(i, 1);
+        }
     }
 }
 
@@ -1571,6 +1658,7 @@ function animate() {
     updateBeds(delta);
     updateAutoSleep();
     updateMeals();
+    updateCrumbs(delta);
     updateSelectRing();
     updateChatBubble();
     cloudSpin.rotation.y += delta * 0.012;   // lazy cloud drift

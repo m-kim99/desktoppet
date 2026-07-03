@@ -5,6 +5,16 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Changed (밥때 tuning)
+- **Meals: 30-minute windows, random spots, huggable diners, 3D food**: the serving window shrank
+  to 30 minutes; each pet now picks a random free spot around the bowl instead of a fixed side
+  (retrying against colliders and the other diner's spot); and hugging an eating pet is allowed
+  again — the meal is abandoned gracefully mid-bite (hijack-safe: the meal never stomps the hug
+  and only releases the AI if it still owns the pet). Eating FX in the world are no longer emoji:
+  each pet gets a real 3D ground prop (scattered golden grain patch for the chick, a little blue
+  kibble bowl for the puppy) that is hidden when dining at the real bowl, and the nibble particles
+  are tiny 3D morsels that pop from the mouth, arc under gravity and land in the grass.
+
 ### Added
 - **Meal times at the bowl (밥때)**: at 8시·12시·18시 the pets trot over to the food bowl, take
   their own spot each (chick on one side, puppy on the other), turn to face the bowl and eat two
