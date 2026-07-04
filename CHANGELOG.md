@@ -6,6 +6,13 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Fixed
+- **조종하기 always works now**: possession used to be refused while a pet was mid-anything
+  (meal, dip, bed approach, duo) — which is why it often "didn't take", especially right after
+  launch when the meal window or the first random swim kicks in. Taking control now forcibly and
+  safely inherits the pet from ANY activity: beds/seats dismount instantly (occupancy cleared),
+  a passenger hops out of the car, dips wind down on the next frame, and any director awaiting
+  that pet's arrival is resolved so nothing deadlocks — their later cleanup calls no-op against
+  the player state (releaseAI now respects 'player').
 - **Zoom buttons actually zoom now**: the `camZoom` helper had been deleted along with the old
   camera button panel, so the ＋/－ buttons and keyboard +/- were silently throwing on every press —
   the function is back (steering the same smoothed distance target the wheel uses). Also the sports

@@ -1694,6 +1694,7 @@ const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 let duoBusy = false;
 
 function releaseAI(p, wait = 1.5) {
+    if (p.ai.state === 'player') return;   // a director letting go of a pet the player took over
     p.ai.state = 'idle'; p.ai.wait = wait + Math.random();
     p.ai.target = null; p.ai.waypoints = null; p.ai.onArrive = null;
 }
@@ -2397,8 +2398,24 @@ controlHint.style.cssText = 'position:fixed; left:14px; bottom:14px; display:non
 document.body.appendChild(controlHint);
 
 function possessPet(p) {
+    // 조종은 무조건 성공: whatever the pet was doing gets cleanly taken over. Bed/seat → instant
+    // dismount; passenger seat → hop out; dips end themselves next frame (updateDips checks
+    // possessed); any director awaiting this pet's arrival is resolved so it can never deadlock
+    // (its later releaseAI calls no-op against the 'player' state).
     if (p.ai.state === 'held') releaseHandHold();                 // let go before switching drivers
-    if (p.ai.state === 'goto' || p.ai.state === 'busy') return;   // mid-duo — let it finish first
+    if (carDrive && carDrive.passenger === p) {
+        const rX = Math.cos(CAR.heading), rZ = -Math.sin(CAR.heading);
+        p.mover.position.x = CAR.x + rX * 0.85;
+        p.mover.position.z = CAR.z + rZ * 0.85;
+        p.mover.position.y = world.groundHeightAt(p.mover.position.x, p.mover.position.z);
+        carDrive.passenger = null;
+    }
+    forceEndBed(p);
+    if (p.ai.onArrive) {
+        const done = p.ai.onArrive;
+        p.ai.onArrive = null;
+        done();
+    }
     releasePossession();
     possessed = p;
     p.pet.sleeping = false; p.pet.autoSleeping = false;
@@ -2418,7 +2435,7 @@ function releasePossession() {
     releaseHandHold();
     running = false;
     snapToLand(p);
-    if (p.ai.state === 'player') releaseAI(p);
+    if (p.ai.state === 'player') { p.ai.state = 'idle'; releaseAI(p); }
     heldKeys.clear();
     selectRing.visible = false;
     controlHint.style.display = 'none';
@@ -3040,6 +3057,21 @@ function dismountBed(p) {
     if (!p.bed) return;
     p.bedPhase = 'dismount'; p.bedT = 0;
     p.bedFrom = { x: p.mover.position.x, y: p.mover.position.y, z: p.mover.position.z, tilt: p.mover.rotation.x };
+}
+// Instant bed release (no tween) — used when the player forcibly takes a pet over mid-nap/seat.
+function forceEndBed(p) {
+    const bed = p.bed;
+    if (!bed) return;
+    bed.occupant = null;
+    p.bed = null;
+    p.bedPhase = null;
+    p.bedExit = false;
+    p.pet.sleeping = false;
+    p.mover.rotation.x = 0;
+    p.mover.rotation.z = 0;
+    p.mover.position.x = bed.approach.x;
+    p.mover.position.z = bed.approach.z;
+    p.mover.position.y = world.groundHeightAt(bed.approach.x, bed.approach.z);
 }
 function updateBeds(delta) {
     for (const p of pets) {
