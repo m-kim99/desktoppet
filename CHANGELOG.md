@@ -6,6 +6,9 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Fixed (클릭·음료 후속 3)
+- **Cup rim meets the beak**: while drinking, the cup group's origin (its bottom) was placed at the
+  mouth, floating the whole cup above the chick's beak. Each drink now knows its rim height and the
+  cup is lowered by it — the rim touches the beak/lips for every cup type (iced/hot/espresso).
 - **Drink arm attaches to the body for real**: bounding-box math put the stub arm off the flank on
   the puppy's chunky shape. `giveDrink` now raycasts into the body at cup height to find the actual
   fur surface — the arm anchors just inside that hit point and the cup rests just outside it, so

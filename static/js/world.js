@@ -2366,6 +2366,7 @@ function drawDrinkIcon(cv, d) {
 function makeDrinkMesh(d) {
     const g = new THREE.Group();
     const colorNum = parseInt(d.color.slice(1), 16);
+    g.userData.topH = d.iced ? 0.075 : d.small ? 0.04 : 0.08;   // rim height — the mouth meets the TOP
     if (d.iced) {
         const cup = new THREE.Mesh(
             new THREE.CylinderGeometry(0.028, 0.021, 0.075, 12),
@@ -2502,11 +2503,14 @@ function applyCarryPose(p, delta) {
             }
         }
     }
-    // cup position: rest ↔ mouth (mouth read from the live node so it never hides in the body)
+    // cup position: rest ↔ mouth (mouth read from the live node so it never hides in the body).
+    // The group origin is the cup BOTTOM, so drop by the cup's rim height — the rim touches the
+    // beak/lips instead of the whole cup floating above them.
     mouthLocal(p, _cupTarget);
+    const topH = dr.mesh.userData.topH || 0.07;
     dr.mesh.position.set(
         THREE.MathUtils.lerp(dr.rest.x, _cupTarget.x, raise),
-        THREE.MathUtils.lerp(dr.rest.y, _cupTarget.y - 0.03, raise),
+        THREE.MathUtils.lerp(dr.rest.y, _cupTarget.y - topH + 0.005, raise),
         THREE.MathUtils.lerp(dr.rest.z, _cupTarget.z, raise)
     );
     if (dr.arm) {
