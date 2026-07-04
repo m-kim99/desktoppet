@@ -5,6 +5,18 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Added
+- **Coffee booth takeout (☕ 커피 부스)**: a striped-awning coffee stand (espresso machine, cup
+  stack, COFFEE sign) joins the plaza's west side. Drive a pet up and press Ctrl/⌘ to open a 3×3
+  takeout menu of nine drinks — 아메리카노, 아이스 아메리카노, 에스프레소, 카페라떼, 카푸치노,
+  초코라떼, 딸기라떼, 녹차라떼, 아이스티 — each drawn as a little canvas icon (clear cups with ice
+  and a straw for iced, sleeved paper cups with lids for hot, a saucer demitasse for espresso).
+  Picking one puts a matching 3D mini-cup in the pet's paw/wing, parented to the motion wrap so it
+  bobs along with walking, running, even swimming. Right-click sips: the cup rises to the mouth
+  with a head-tip and a gulp sound, and after four sips the cup is finished with a happy hop.
+  Climbing into a bed puts the cup down first, and the world canvas no longer shows the browser
+  context menu.
+
 ### Fixed
 - **조종하기 always works now**: possession used to be refused while a pet was mid-anything
   (meal, dip, bed approach, duo) — which is why it often "didn't take", especially right after

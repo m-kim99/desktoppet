@@ -544,6 +544,7 @@ const PROPS = [
     { type: 'lamp', x: -3.33, z: -0.37, rotY: 0, r: 0.18 },
     { type: 'lamp', x: -1.85, z:  2.79, rotY: 0, r: 0.18 },
     { type: 'radio', x: 0.35, z: 1.55, rotY: 2.6, r: 0.24 },   // plaza-edge radio (Ctrl/⌘로 재생)
+    { type: 'coffee', x: -1.5, z: 1.1, rotY: 2.2, r: 0.5 },    // 커피 부스 (Ctrl/⌘로 주문)
     // Satellite islands: a tree and a lamp at each bridgehead (otherwise open feature ground)
     { type: 'tree',  x:  8.7,  z:  3.78, rotY: 0.7, r: 0.45, big: true  },
     { type: 'tree',  x: -8.4,  z: -3.0,  rotY: 2.9, r: 0.45, big: false },
@@ -879,7 +880,55 @@ function makeRadio() {
     return g;
 }
 
-const PROP_BUILDERS = { tree: makeTree, house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, lamp: makeLamp, radio: makeRadio };
+function makeCoffeeBooth() {
+    const g = new THREE.Group();
+    const wood = M(0xb08a60, { map: woodTex });
+    const counter = new THREE.Mesh(new RoundedBoxGeometry(0.8, 0.4, 0.42, 3, 0.03), M(0xfff2dd, { map: plasterTex }));
+    counter.position.y = 0.2;
+    g.add(counter);
+    const top = new THREE.Mesh(new RoundedBoxGeometry(0.88, 0.05, 0.5, 2, 0.02), wood);
+    top.position.y = 0.42;
+    g.add(top);
+    for (const px of [-0.4, 0.4]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.75, 8), wood);
+        post.position.set(px, 0.78, -0.12);
+        g.add(post);
+    }
+    const awning = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.03, 0.55), new THREE.MeshStandardMaterial({ map: awningTex, roughness: 1, metalness: 0 }));
+    awning.position.set(0, 1.16, 0.02);
+    awning.rotation.x = 0.22;
+    g.add(awning);
+    // espresso machine
+    const machine = new THREE.Mesh(new RoundedBoxGeometry(0.24, 0.2, 0.2, 3, 0.02), M(0x5a6a75));
+    machine.position.set(-0.2, 0.545, -0.05);
+    g.add(machine);
+    const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.06, 8), M(0xcfd6dd));
+    spout.position.set(-0.2, 0.47, 0.06);
+    g.add(spout);
+    // little stack of cups + sign
+    for (let i = 0; i < 3; i++) {
+        const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.024, 0.05, 10), M(0xffffff));
+        cup.position.set(0.18 + i * 0.02, 0.47 + i * 0.035, -0.08);
+        g.add(cup);
+    }
+    const signCv = document.createElement('canvas');
+    signCv.width = 128; signCv.height = 64;
+    const sctx = signCv.getContext('2d');
+    sctx.fillStyle = '#6b4a2f';
+    sctx.fillRect(0, 0, 128, 64);
+    sctx.fillStyle = '#fff2dd';
+    sctx.font = 'bold 26px sans-serif';
+    sctx.textAlign = 'center';
+    sctx.fillText('☕ COFFEE', 64, 40);
+    const signTex = new THREE.CanvasTexture(signCv);
+    signTex.colorSpace = THREE.SRGBColorSpace;
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.03), new THREE.MeshStandardMaterial({ map: signTex, roughness: 1, metalness: 0 }));
+    sign.position.set(0, 0.95, -0.1);
+    g.add(sign);
+    return g;
+}
+
+const PROP_BUILDERS = { tree: makeTree, house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth };
 for (const p of PROPS) {
     const obj = PROP_BUILDERS[p.type](p);
     obj.position.set(p.x, terrainHeight(p.x, p.z), p.z);
@@ -2234,6 +2283,212 @@ function updateSfx() {
     if (swimLoopGain) swimLoopGain.gain.setTargetAtTime(swimLevel * 0.5, audioCtx.currentTime, 0.18);
 }
 
+// ---- ☕ 커피 테이크아웃: Ctrl/⌘ at the booth opens a 3×3 menu of canvas-drawn drink icons.
+// Picking one puts a little 3D cup in the pet's paw/wing (parented to the motion wrap, so it bobs
+// with every animation) — walk, run, even swim with it. Right-click = one sip: the cup rises to
+// the mouth with a small head-tip, a gulp sound plays, and after 4 sips the cup is finished with a
+// happy hop. Climbing into a bed puts the cup down (poof).
+const DRINKS = [
+    { id: 'americano',  name: '아메리카노',        color: '#6b4a2f', iced: false },
+    { id: 'iced-ame',   name: '아이스 아메리카노', color: '#7a5230', iced: true },
+    { id: 'espresso',   name: '에스프레소',        color: '#4a2e1c', iced: false, small: true },
+    { id: 'latte',      name: '카페라떼',          color: '#c9a377', iced: false },
+    { id: 'cappuccino', name: '카푸치노',          color: '#d7b98e', iced: false, foam: true },
+    { id: 'choco',      name: '초코라떼',          color: '#8a5a3b', iced: false, cream: true },
+    { id: 'strawberry', name: '딸기라떼',          color: '#f5a3bb', iced: true },
+    { id: 'matcha',     name: '녹차라떼',          color: '#9ccc65', iced: true },
+    { id: 'icetea',     name: '아이스티',          color: '#e0a53c', iced: true },
+];
+const sipBuf = synthNoiseBuffer(0.16, (t) => Math.pow(Math.sin(t * Math.PI), 2) * (t < 0.5 ? 1 : 0.55));
+
+function drawDrinkIcon(cv, d) {
+    const ctx = cv.getContext('2d');
+    const s = cv.width;
+    ctx.clearRect(0, 0, s, s);
+    if (d.iced) {
+        // clear cup + liquid + ice + straw
+        ctx.fillStyle = 'rgba(215,235,245,0.55)';
+        ctx.beginPath();
+        ctx.moveTo(s * 0.28, s * 0.2); ctx.lineTo(s * 0.72, s * 0.2);
+        ctx.lineTo(s * 0.66, s * 0.88); ctx.lineTo(s * 0.34, s * 0.88);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = d.color;
+        ctx.beginPath();
+        ctx.moveTo(s * 0.3, s * 0.38); ctx.lineTo(s * 0.7, s * 0.38);
+        ctx.lineTo(s * 0.655, s * 0.86); ctx.lineTo(s * 0.345, s * 0.86);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.75)';
+        ctx.fillRect(s * 0.38, s * 0.42, s * 0.11, s * 0.11);
+        ctx.fillRect(s * 0.52, s * 0.55, s * 0.11, s * 0.11);
+        ctx.strokeStyle = '#ef8a8a';
+        ctx.lineWidth = s * 0.05;
+        ctx.beginPath(); ctx.moveTo(s * 0.56, s * 0.22); ctx.lineTo(s * 0.66, s * 0.02); ctx.stroke();
+    } else if (d.small) {
+        // espresso: little cup + saucer + handle
+        ctx.fillStyle = '#f4f1ea';
+        ctx.beginPath(); ctx.ellipse(s * 0.5, s * 0.82, s * 0.32, s * 0.07, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.moveTo(s * 0.32, s * 0.42); ctx.lineTo(s * 0.68, s * 0.42);
+        ctx.lineTo(s * 0.62, s * 0.76); ctx.lineTo(s * 0.38, s * 0.76);
+        ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = s * 0.05;
+        ctx.beginPath(); ctx.arc(s * 0.72, s * 0.56, s * 0.09, -1.2, 1.2); ctx.stroke();
+        ctx.fillStyle = d.color;
+        ctx.beginPath(); ctx.ellipse(s * 0.5, s * 0.45, s * 0.16, s * 0.05, 0, 0, Math.PI * 2); ctx.fill();
+    } else {
+        // paper cup + sleeve + lid (foam/cream variants tint the lid area)
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.moveTo(s * 0.3, s * 0.26); ctx.lineTo(s * 0.7, s * 0.26);
+        ctx.lineTo(s * 0.62, s * 0.9); ctx.lineTo(s * 0.38, s * 0.9);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = d.color;
+        ctx.beginPath();
+        ctx.moveTo(s * 0.315, s * 0.42); ctx.lineTo(s * 0.685, s * 0.42);
+        ctx.lineTo(s * 0.64, s * 0.72); ctx.lineTo(s * 0.36, s * 0.72);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = d.foam || d.cream ? (d.cream ? '#fff3e0' : '#fdf6ec') : '#e8e2d8';
+        ctx.beginPath(); ctx.ellipse(s * 0.5, s * 0.24, s * 0.22, s * 0.08, 0, 0, Math.PI * 2); ctx.fill();
+        if (d.cream) {
+            ctx.beginPath(); ctx.arc(s * 0.5, s * 0.16, s * 0.08, 0, Math.PI * 2); ctx.fill();
+        }
+    }
+}
+
+function makeDrinkMesh(d) {
+    const g = new THREE.Group();
+    const colorNum = parseInt(d.color.slice(1), 16);
+    if (d.iced) {
+        const cup = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.028, 0.021, 0.075, 12),
+            M(0xdfeef7, { transparent: true, opacity: 0.45 })
+        );
+        cup.position.y = 0.0375;
+        g.add(cup);
+        const liquid = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.019, 0.05, 12), M(colorNum));
+        liquid.position.y = 0.028;
+        g.add(liquid);
+        const straw = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.07, 6), M(0xef8a8a));
+        straw.position.set(0.008, 0.09, 0);
+        straw.rotation.z = -0.25;
+        g.add(straw);
+    } else if (d.small) {
+        const saucer = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.006, 12), M(0xf4f1ea));
+        saucer.position.y = 0.003;
+        g.add(saucer);
+        const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.015, 0.032, 12), M(0xffffff));
+        cup.position.y = 0.022;
+        g.add(cup);
+        const shot = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.014, 0.008, 10), M(colorNum));
+        shot.position.y = 0.036;
+        g.add(shot);
+    } else {
+        const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.019, 0.07, 12), M(0xffffff));
+        cup.position.y = 0.035;
+        g.add(cup);
+        const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.0255, 0.023, 0.026, 12), M(0xb08a60));
+        sleeve.position.y = 0.033;
+        g.add(sleeve);
+        const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.0255, 0.0255, 0.01, 12), M(d.cream ? 0xfff3e0 : 0xe8e2d8));
+        lid.position.y = 0.075;
+        g.add(lid);
+    }
+    return g;
+}
+
+function removeDrink(p) {
+    if (!p.drink) return;
+    if (p.drink.mesh && p.drink.mesh.parent) p.drink.mesh.parent.remove(p.drink.mesh);
+    p.drink = null;
+}
+function giveDrink(p, d) {
+    removeDrink(p);
+    const mesh = makeDrinkMesh(d);
+    p.pet.wrap.add(mesh);
+    // wrap-local: the wrap is π-flipped, so (-x, -z) in wrap space = (+x, +z) in travel space
+    mesh.position.set(-0.12, p.height * 0.3, -0.14);
+    p.drink = { def: d, mesh, sips: 0, sipT: 0, rest: mesh.position.clone() };
+    showToast(`☕ ${d.name} 나왔습니다!`);
+}
+// Sip pose overlay (runs after the entity update, same slot as the swim pose): raise the cup to
+// the mouth with a little head-tip, then settle back.
+function applyCarryPose(p, delta) {
+    const dr = p.drink;
+    if (!dr) return;
+    if (dr.sipT > 0) {
+        dr.sipT -= delta;
+        const t = 1 - Math.max(0, dr.sipT) / 0.95;
+        const raise = t < 0.35 ? t / 0.35 : t > 0.7 ? Math.max(0, (1 - t) / 0.3) : 1;
+        dr.mesh.position.set(
+            THREE.MathUtils.lerp(dr.rest.x, -0.015, raise),
+            THREE.MathUtils.lerp(dr.rest.y, p.height * 0.62, raise),
+            THREE.MathUtils.lerp(dr.rest.z, -0.17, raise)
+        );
+        p.pet.wrap.rotation.x += -0.14 * raise;              // tip the head back for the gulp
+        if (dr.sipT <= 0) {
+            if (dr.sips >= 4) {
+                removeDrink(p);
+                if (!p.pet.action) p.pet.action = { id: 'happy', t: 0 };
+                showToast('☕ 다 마셨다!');
+            } else {
+                dr.mesh.position.copy(dr.rest);
+            }
+        }
+    }
+}
+
+// ☕ order panel: 3×3 grid of drawn icons.
+const coffeePanel = document.createElement('div');
+coffeePanel.style.cssText = 'position:fixed; right:64px; bottom:70px; display:none; width:264px; background:rgba(30,32,40,0.94); border-radius:12px; padding:10px; z-index:110; box-shadow:0 6px 24px rgba(0,0,0,0.4); font-family:sans-serif;';
+const coffeeHeader = document.createElement('div');
+coffeeHeader.style.cssText = 'display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;';
+coffeeHeader.innerHTML = '<span style="color:#fff; font-size:13px; font-weight:700;">☕ 커피 테이크아웃</span>';
+const coffeeClose = document.createElement('div');
+coffeeClose.textContent = '✕';
+coffeeClose.style.cssText = 'color:#aab; font-size:13px; cursor:pointer; padding:2px 6px;';
+coffeeClose.onclick = () => { coffeePanel.style.display = 'none'; };
+coffeeHeader.appendChild(coffeeClose);
+coffeePanel.appendChild(coffeeHeader);
+const coffeeGrid = document.createElement('div');
+coffeeGrid.style.cssText = 'display:grid; grid-template-columns:repeat(3, 1fr); gap:6px;';
+coffeePanel.appendChild(coffeeGrid);
+for (const d of DRINKS) {
+    const item = document.createElement('div');
+    item.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 2px; border-radius:9px; cursor:pointer;';
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 48;
+    drawDrinkIcon(cv, d);
+    cv.style.cssText = 'width:44px; height:44px;';
+    const label = document.createElement('div');
+    label.textContent = d.name;
+    label.style.cssText = 'color:#fff; font-size:10.5px; text-align:center; line-height:1.2; word-break:keep-all;';
+    item.appendChild(cv);
+    item.appendChild(label);
+    item.onmouseenter = () => { item.style.background = 'rgba(255,255,255,0.1)'; };
+    item.onmouseleave = () => { item.style.background = 'transparent'; };
+    item.onclick = () => {
+        if (possessed) giveDrink(possessed, d);
+        coffeePanel.style.display = 'none';
+    };
+    coffeeGrid.appendChild(item);
+}
+document.body.appendChild(coffeePanel);
+function toggleCoffeePanel() {
+    coffeePanel.style.display = (coffeePanel.style.display === 'none' || !coffeePanel.style.display) ? 'block' : 'none';
+}
+
+// Right-click = sip (and never the browser context menu over the world).
+renderer.domElement.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (possessed && possessed.drink && possessed.drink.sipT <= 0) {
+        possessed.drink.sipT = 0.95;
+        possessed.drink.sips += 1;
+        playBuffer(sipBuf, { vol: 0.5, rate: 1.1 + Math.random() * 0.2, filterFreq: 600 });
+    }
+});
+
 function pickResponder(text) {
     if (/병아리|삐약|chick/i.test(text)) return pets.find((p) => p.name === 'chick') || pets[0] || null;
     if (/강아지|멍멍|댕댕|puppy/i.test(text)) return pets.find((p) => p.name === 'puppy') || pets[0] || null;
@@ -2478,6 +2733,10 @@ window.addEventListener('keydown', (e) => {
         if (tryGrabHand()) return;
         const bed = !possessed.bed && nearestFreeBed(possessed, 0.95);
         if (bed) { mountBed(possessed, bed); return; }
+        if (nearestPropDist(possessed, 'coffee') < 1.1) {
+            toggleCoffeePanel();
+            return;
+        }
         if (nearestPropDist(possessed, 'radio') < 1.0) {
             toggleRadioPanel();
             return;
@@ -2669,13 +2928,15 @@ function updatePlayer(delta) {
         && (friend.ai.state === 'idle' || friend.ai.state === 'walk')
         && Math.hypot(friend.mover.position.x - p.mover.position.x, friend.mover.position.z - p.mover.position.z) < 0.95;
     const bedNear = !p.swimming && !handHold && !friendNear && !p.bed && nearestFreeBed(p, 0.95);
-    const radioNear = !p.swimming && !handHold && !friendNear && !bedNear && nearestPropDist(p, 'radio') < 1.0;
-    const lampNear = !p.swimming && !handHold && !friendNear && !bedNear && !radioNear && nearestPropDist(p, 'lamp') < 1.0;
+    const coffeeNear = !p.swimming && !handHold && !friendNear && !bedNear && nearestPropDist(p, 'coffee') < 1.1;
+    const radioNear = !p.swimming && !handHold && !friendNear && !bedNear && !coffeeNear && nearestPropDist(p, 'radio') < 1.0;
+    const lampNear = !p.swimming && !handHold && !friendNear && !bedNear && !coffeeNear && !radioNear && nearestPropDist(p, 'lamp') < 1.0;
     const carNear = !p.swimming && Math.hypot(p.mover.position.x - CAR.x, p.mover.position.z - CAR.z) < 1.15;
     const act = carNear ? ' · Ctrl/⌘ 차 타기'
         : handHold ? ' · Ctrl/⌘ 손 놓기'
         : friendNear ? ' · Ctrl/⌘ 손잡기'
         : bedNear ? (bedNear.mode === 'sit' ? ' · Ctrl/⌘ 앉기' : ' · Ctrl/⌘ 눕기')
+        : coffeeNear ? ' · Ctrl/⌘ 커피 주문'
         : radioNear ? ' · Ctrl/⌘ 라디오'
         : lampNear ? ` · Ctrl/⌘ 가로등 ${Math.round(lampBrightness * 100)}%` : '';
     const hint = p.swimming
@@ -3047,6 +3308,7 @@ function nearestFreeBed(p, maxDist) {
 }
 async function mountBed(p, bed) {
     if (p.bed || bed.occupant) return;
+    removeDrink(p);                                   // put the cup down before climbing in
     bed.occupant = p; p.bed = bed; p.bedPhase = 'approach';
     await gotoAsync(p, bed.approach.x, bed.approach.z);
     if (p.bed !== bed) return;
@@ -3278,6 +3540,7 @@ function animate() {
         updateWander(p, delta);
         updateGlbPetEntity(p.pet, delta);
         applySwimPose(p, delta);
+        applyCarryPose(p, delta);
         if (p.fxUpdate) p.fxUpdate();
     }
     updatePlayer(delta);
