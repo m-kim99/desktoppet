@@ -5,6 +5,14 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Fixed (클릭·음료 후속)
+- **Right-click menus are back**: the recent mouse-button separation accidentally made pet menus
+  (조종하기/모션) left-click-only — both buttons open them again like before. Right-clicking empty
+  ground while holding a drink is the only thing that shows the 먹기 popup (and drags never do).
+- **Puppy cup/arm no longer stuck in the body**: the cup's rest position and the arm's shoulder
+  anchor are now computed from the model's measured size (`pet.dims`) instead of fixed numbers, so
+  they sit just outside the fur on any body shape.
+
 ### Changed (음료 리워크)
 - **Drinking looks right now**: the cup's drinking position is no longer a fixed guess — it reads
   the pet's actual mouth node (chick beak / puppy tongue) live every frame and hovers just in front
