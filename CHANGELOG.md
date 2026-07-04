@@ -6,6 +6,16 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **Animal Crossing-style texture pass (동숲 텍스처)**: the world graduates from flat colors to
+  hand-painted-feel materials — all generated as tiling canvas textures at load, no asset files.
+  The meadow wears the iconic staggered-triangle grass pattern (planar-mapped UVs on the terrain
+  grid, near-white vertex tints for sunny/mossy patches), the cliff shows horizontal dirt strata
+  with speckle, trunks/fence/hammock posts/door get wood grain, the house walls plaster and the
+  roof scalloped shingles, the hammock becomes a striped awning and the sunbed towel striped pink,
+  the pond rim sandy speckle. Tree crowns bake a vertical shade gradient into vertex colors (dark
+  underside — the classic AC foliage read). Everything moves to MeshStandardMaterial with a subtle
+  RoomEnvironment IBL (environmentIntensity 0.4) so materials get a soft studio sheen; emissive
+  clouds/lamp globes stay Lambert. Pet models are untouched (they only pick up the gentle ambient).
 - **AI pool days + adjustable streetlamps (물놀이·가로등)**: wandering pets now fancy a dip of
   their own — every few minutes (daytime only, cooldown) an idle pet walks to the pond edge or the
   cliff rim, wades in with a splash, cruises a few waypoints with the full swim stroke, then wades

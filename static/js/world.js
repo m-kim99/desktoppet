@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory } from './glb-pet-entity.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -17,6 +18,14 @@ renderer.toneMappingExposure = 1.12;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
+// Soft image-based ambient (RoomEnvironment) — gives every standard material a gentle studio
+// sheen instead of dead-flat shading. Kept subtle; the sun/hemisphere still carry the scene.
+{
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environmentIntensity = 0.4;
+    pmrem.dispose();
+}
 // Sky: a vertical gradient painted onto a big inside-out dome (fog is disabled on it so the
 // gradient stays crisp), repainted through the day/night cycle below — plus drifting clouds, a
 // sun, a moon, and a bed of stars that fades in after dark.
@@ -227,6 +236,125 @@ renderer.domElement.addEventListener('wheel', (e) => {
 }, { passive: false });
 controls.update();
 
+// ---- Hand-drawn repeat textures (동물의 숲 스타일): tiny canvas paintings tiled across the
+// stage — the iconic staggered-triangle grass, wood grain, cliff strata, plaster, shingles,
+// awning stripes and sand speckle. No external files; everything is painted at load. ----
+function canvasTex(size, repeatX, repeatY, draw) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = size;
+    const ctx = cv.getContext('2d');
+    draw(ctx, size);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(repeatX, repeatY);
+    tex.anisotropy = 4;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+}
+const grassTex = canvasTex(128, 1, 1, (ctx, s) => {
+    ctx.fillStyle = '#7cc351';
+    ctx.fillRect(0, 0, s, s);
+    const cell = s / 8;
+    for (let r = 0; r < 8; r++) {
+        for (let q = 0; q < 8; q++) {
+            const x = q * cell + (r % 2 ? cell / 2 : 0);
+            const y = r * cell;
+            ctx.fillStyle = (r + q) % 3 ? 'rgba(255,255,255,0.10)' : 'rgba(25,75,15,0.10)';
+            ctx.beginPath();
+            ctx.moveTo(x + cell * 0.5, y + cell * 0.2);
+            ctx.lineTo(x + cell * 0.8, y + cell * 0.64);
+            ctx.lineTo(x + cell * 0.2, y + cell * 0.64);
+            ctx.closePath();
+            ctx.fill();
+        }
+    }
+});
+const woodTex = canvasTex(64, 1, 1, (ctx, s) => {
+    ctx.fillStyle = '#cfae7f';
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 20; i++) {
+        const x = Math.random() * s;
+        ctx.strokeStyle = `rgba(90,55,25,${0.10 + Math.random() * 0.14})`;
+        ctx.lineWidth = 1 + Math.random() * 1.6;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.quadraticCurveTo(x + (Math.random() - 0.5) * 6, s / 2, x, s);
+        ctx.stroke();
+    }
+});
+const strataTex = canvasTex(128, 4, 1, (ctx, s) => {
+    const bands = ['#a3744e', '#8a5f40', '#9c6f49', '#815838', '#946849', '#7c5335'];
+    const bh = s / bands.length;
+    bands.forEach((c, i) => {
+        ctx.fillStyle = c;
+        ctx.fillRect(0, i * bh, s, bh + 1);
+        ctx.fillStyle = 'rgba(255,235,200,0.10)';
+        ctx.fillRect(0, i * bh, s, 2);
+    });
+    for (let i = 0; i < 70; i++) {
+        ctx.fillStyle = `rgba(${Math.random() < 0.5 ? '60,38,20' : '235,205,170'},0.16)`;
+        ctx.fillRect(Math.random() * s, Math.random() * s, 2 + Math.random() * 3, 2 + Math.random() * 2);
+    }
+});
+const plasterTex = canvasTex(64, 2, 2, (ctx, s) => {
+    ctx.fillStyle = '#fff3e0';
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 90; i++) {
+        ctx.fillStyle = `rgba(${Math.random() < 0.5 ? '200,170,130' : '255,255,255'},0.10)`;
+        ctx.fillRect(Math.random() * s, Math.random() * s, 1.5, 1.5);
+    }
+});
+const roofTex = canvasTex(64, 3, 2, (ctx, s) => {
+    ctx.fillStyle = '#ef8a7a';
+    ctx.fillRect(0, 0, s, s);
+    const row = s / 4;
+    for (let r = 0; r < 4; r++) {
+        ctx.strokeStyle = 'rgba(120,40,30,0.22)';
+        ctx.lineWidth = 2;
+        for (let q = -1; q < 5; q++) {
+            const x = q * (s / 4) + (r % 2 ? s / 8 : 0);
+            ctx.beginPath();
+            ctx.arc(x + s / 8, r * row, s / 8, 0, Math.PI);
+            ctx.stroke();
+        }
+    }
+});
+const awningTex = canvasTex(64, 3, 1, (ctx, s) => {
+    for (let i = 0; i < 4; i++) {
+        ctx.fillStyle = i % 2 ? '#fdf0d5' : '#f6c96d';
+        ctx.fillRect((i * s) / 4, 0, s / 4, s);
+    }
+});
+const towelTex = canvasTex(64, 2, 1, (ctx, s) => {
+    for (let i = 0; i < 4; i++) {
+        ctx.fillStyle = i % 2 ? '#ffe4ee' : '#ff8fb3';
+        ctx.fillRect((i * s) / 4, 0, s / 4, s);
+    }
+});
+const sandTex = canvasTex(64, 2, 2, (ctx, s) => {
+    ctx.fillStyle = '#e8d8a8';
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 80; i++) {
+        ctx.fillStyle = `rgba(${Math.random() < 0.5 ? '170,145,90' : '255,248,220'},0.20)`;
+        ctx.fillRect(Math.random() * s, Math.random() * s, 1.5, 1.5);
+    }
+});
+// Tree crowns get a vertical shade gradient baked into vertex colors (dark under, lit on top) —
+// the classic Animal Crossing foliage read.
+function gradSphereGeo(r, topHex, bottomHex) {
+    const g = new THREE.SphereGeometry(r, 18, 14);
+    const pos = g.attributes.position;
+    const cT = new THREE.Color(topHex), cB = new THREE.Color(bottomHex), c = new THREE.Color();
+    const cols = [];
+    for (let i = 0; i < pos.count; i++) {
+        const t = THREE.MathUtils.clamp(pos.getY(i) / r * 0.5 + 0.5, 0, 1);
+        c.copy(cB).lerp(cT, t);
+        cols.push(c.r, c.g, c.b);
+    }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    return g;
+}
+
 // ---- Stage: a floating meadow island — gently rolling vertex-colored grass over a rounded dirt
 // cliff, dressed with chubby pastel props. Pets still sense it ONLY through `world` below. ----
 const ISLAND_R = 3.2;
@@ -256,8 +384,9 @@ function terrainHeight(x, z) {
 // two-tone vertex-color patches so the meadow doesn't read as one flat green.
 {
     const rings = 26, segs = 72;
-    const positions = [], colors = [], indices = [];
-    const base = new THREE.Color(0x77c34f), light = new THREE.Color(0x94d861);
+    const positions = [], colors = [], uvs = [], indices = [];
+    // Vertex colors are near-white multipliers over the grass texture: subtle sunny/mossy patches.
+    const base = new THREE.Color(0.93, 0.95, 0.88), light = new THREE.Color(1.07, 1.1, 1.0);
     const c = new THREE.Color();
     for (let i = 0; i <= rings; i++) {
         const r = (i / rings) * ISLAND_R;
@@ -266,6 +395,7 @@ function terrainHeight(x, z) {
             const x = Math.cos(a) * r, z = Math.sin(a) * r;
             const y = terrainHeight(x, z);
             positions.push(x, y, z);
+            uvs.push(x * 0.8, z * 0.8);                 // planar mapping — the triangle tile repeats ~1.25u
             const patch = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1;
             c.copy(base).lerp(light, Math.min(1, patch * 0.45 + y * 2.2));
             colors.push(c.r, c.g, c.b);
@@ -283,9 +413,10 @@ function terrainHeight(x, z) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geo.setIndex(indices);
     geo.computeVertexNormals();
-    const grass = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    const grass = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: grassTex, vertexColors: true, roughness: 1, metalness: 0 }));
     grass.receiveShadow = true;
     stage.add(grass);
 }
@@ -302,7 +433,7 @@ function terrainHeight(x, z) {
     ];
     const cliff = new THREE.Mesh(
         new THREE.LatheGeometry(pts, 72),
-        new THREE.MeshLambertMaterial({ color: 0x9a6b47, flatShading: true })
+        new THREE.MeshStandardMaterial({ map: strataTex, roughness: 1, metalness: 0, flatShading: true })
     );
     cliff.castShadow = true;         // the island shades the sea at low sun
     cliff.receiveShadow = true;
@@ -327,20 +458,20 @@ const PROPS = [
     { type: 'lamp', x: -1.94, z:  1.95, rotY: 0, r: 0.18 },
 ];
 const BEDS = [];   // filled during prop placement: where pets sleep at night / lie via Ctrl
-const M = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
+const M = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, ...extra });
+const leafMatGrad = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
 
 function makeTree(p) {
     const g = new THREE.Group();
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.095, 0.46, 10), M(0x8a5a3b));
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.095, 0.46, 10), M(0x9a6a45, { map: woodTex }));
     trunk.position.y = 0.23;
     g.add(trunk);
-    // Fluffy crown: overlapping spheres in two greens; the big tree gets berries.
-    const leafA = M(0x5db357), leafB = M(0x74c96a);
+    // Fluffy crown: overlapping spheres with a baked top-lit gradient; the big tree gets berries.
     const lobes = p && p.big
-        ? [[0, 0.72, 0, 0.34, leafA], [0.22, 0.6, 0.1, 0.26, leafB], [-0.24, 0.62, -0.06, 0.27, leafB], [0.02, 0.92, -0.02, 0.24, leafB], [0.05, 0.55, 0.24, 0.22, leafA]]
-        : [[0, 0.62, 0, 0.28, leafA], [0.18, 0.52, 0.08, 0.2, leafB], [-0.18, 0.55, -0.05, 0.21, leafB], [0, 0.78, 0, 0.18, leafB]];
-    for (const [x, y, z, r, m] of lobes) {
-        const s = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 14), m);
+        ? [[0, 0.72, 0, 0.34, 0x7fd06c, 0x3f8f3a], [0.22, 0.6, 0.1, 0.26, 0x8fdc7a, 0x4da045], [-0.24, 0.62, -0.06, 0.27, 0x8fdc7a, 0x4da045], [0.02, 0.92, -0.02, 0.24, 0x8fdc7a, 0x4da045], [0.05, 0.55, 0.24, 0.22, 0x7fd06c, 0x3f8f3a]]
+        : [[0, 0.62, 0, 0.28, 0x7fd06c, 0x3f8f3a], [0.18, 0.52, 0.08, 0.2, 0x8fdc7a, 0x4da045], [-0.18, 0.55, -0.05, 0.21, 0x8fdc7a, 0x4da045], [0, 0.78, 0, 0.18, 0x8fdc7a, 0x4da045]];
+    for (const [x, y, z, r, top, bottom] of lobes) {
+        const s = new THREE.Mesh(gradSphereGeo(r, top, bottom), leafMatGrad);
         s.position.set(x, y, z);
         g.add(s);
     }
@@ -357,17 +488,17 @@ function makeTree(p) {
 
 function makeHouse() {
     const g = new THREE.Group();
-    const walls = new THREE.Mesh(new RoundedBoxGeometry(0.95, 0.62, 0.8, 4, 0.05), M(0xfff2dd));
+    const walls = new THREE.Mesh(new RoundedBoxGeometry(0.95, 0.62, 0.8, 4, 0.05), M(0xffffff, { map: plasterTex }));
     walls.position.y = 0.31;
     g.add(walls);
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.84, 0.52, 4), M(0xef8a7a, { flatShading: true }));
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.84, 0.52, 4), M(0xffffff, { map: roofTex, flatShading: true }));
     roof.position.y = 0.88;
     roof.rotation.y = Math.PI / 4;       // align the 4-sided cone with the walls, eaves overhang
     g.add(roof);
     const chimney = new THREE.Mesh(new RoundedBoxGeometry(0.11, 0.24, 0.11, 3, 0.02), M(0xc97b6e));
     chimney.position.set(-0.24, 0.86, -0.16);
     g.add(chimney);
-    const door = new THREE.Mesh(new RoundedBoxGeometry(0.2, 0.34, 0.05, 3, 0.02), M(0x9c6b4f));
+    const door = new THREE.Mesh(new RoundedBoxGeometry(0.2, 0.34, 0.05, 3, 0.02), M(0x9c6b4f, { map: woodTex }));
     door.position.set(0, 0.17, 0.41);
     g.add(door);
     const knob = new THREE.Mesh(new THREE.SphereGeometry(0.018, 10, 8), M(0xffd54f));
@@ -408,7 +539,7 @@ function makeBowl() {
 
 function makeFence() {
     const g = new THREE.Group();
-    const wood = M(0xd7bfa8);
+    const wood = M(0xe6d2b8, { map: woodTex });
     for (let i = -1; i <= 1; i++) {
         const post = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.036, 0.34, 10), wood);
         post.position.set(i * 0.34, 0.17, 0);
@@ -428,7 +559,7 @@ function makeFence() {
 
 function makePond() {
     const g = new THREE.Group();
-    const sand = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.76, 0.05, 36), M(0xe8d8a8));
+    const sand = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.76, 0.05, 36), M(0xffffff, { map: sandTex }));
     sand.position.y = 0.012;
     g.add(sand);
     const water = new THREE.Mesh(
@@ -468,7 +599,7 @@ function makeSunbed() {
     back.position.set(0, 0.225, -0.345);
     back.rotation.x = -0.85;                      // reclined backrest (pets tip onto it)
     g.add(back);
-    const towel = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.012, 0.2), M(0xff8fb3));
+    const towel = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.012, 0.2), M(0xffffff, { map: towelTex }));
     towel.position.set(0, 0.176, 0.1);
     g.add(towel);
     const pillow = new THREE.Mesh(new RoundedBoxGeometry(0.24, 0.06, 0.12, 3, 0.025), M(0xffffff));
@@ -480,7 +611,7 @@ function makeSunbed() {
 
 function makeHammock() {
     const g = new THREE.Group();
-    const wood = M(0xa9825f);
+    const wood = M(0xb08a60, { map: woodTex });
     for (const side of [-1, 1]) {
         const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.52, 10), wood);
         post.position.set(side * 0.52, 0.26, 0);
@@ -498,7 +629,7 @@ function makeHammock() {
         cp.setZ(i, -0.13 * Math.cos((x / 0.52) * (Math.PI / 2)) + 0.05 * Math.pow(Math.abs(y) / 0.17, 2));
     }
     cloth.computeVertexNormals();
-    const clothMesh = new THREE.Mesh(cloth, new THREE.MeshLambertMaterial({ color: 0xf2c063, side: THREE.DoubleSide }));
+    const clothMesh = new THREE.Mesh(cloth, new THREE.MeshStandardMaterial({ map: awningTex, side: THREE.DoubleSide, roughness: 1, metalness: 0 }));
     clothMesh.rotation.x = -Math.PI / 2;
     clothMesh.position.y = 0.5;
     g.add(clothMesh);
