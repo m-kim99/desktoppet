@@ -6,6 +6,15 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **Run mode + hand-holding (달리기·손잡기)**: Shift toggles the driven pet between 걷기 and 달리기
+  (2× walk speed; the hint header flips to 🏃 달리는 중 and shows the toggle). Walk up to the friend
+  and press Ctrl/⌘ to take its hand — it parks in a dedicated `held` state and walks, runs and even
+  swims side-by-side at your pace, staying on the side you grabbed, leaning gently into you with
+  little 💕 hearts drifting up now and then. On narrow ground (bridge decks) it tucks into single
+  file behind you; press the key again (or Esc) to let go, and mid-water releases snap the friend
+  safely back onto land (shared `snapToLand` helper now also backs possession release). Held pets
+  are excluded from duo partnering, menu motions, meals and auto-sleep; grabbing hand-offs cleanly
+  when you switch which pet you drive. Interaction priority: climb-out → hand → bed → radio → lamp.
 - **Radio, screenshots, follow-cam + zoom fixes (라디오·스샷·팔로우캠)**: a little radio prop sits at
   the plaza edge — drive a pet up and press Ctrl/⌘ to open a scrollable playlist of whatever audio
   files you drop into `static/music/` (new `/api/radio_list` backend endpoint; picking a track

@@ -1190,6 +1190,7 @@ function steerToward(p, target, delta) {
 function updateWander(p, delta) {
     const { ai, mover, pet } = p;
     if (ai.state === 'player') return;                               // the keyboard controller owns it
+    if (ai.state === 'held') return;                                 // walking hand-in-hand with the player
     if (ai.state === 'busy') { pet.walking = false; return; }        // a duo director owns the pet
     if (ai.state === 'goto') {
         // Approach walk (duo/bed/meal/dip): follows its waypoint route (bridges included) and
@@ -1485,7 +1486,7 @@ function faceEachOther(a, b) {
 }
 
 function playWorldMotion(p, id) {
-    if (p.ai.state === 'goto' || p.ai.state === 'busy') return;   // mid-duo choreography — ignore
+    if (p.ai.state === 'goto' || p.ai.state === 'busy' || p.ai.state === 'held') return;   // choreography/hand-hold owns it
     if (id === 'sleep') { p.pet.sleeping = true; releaseAI(p, 4); return; }
     p.pet.sleeping = false; p.pet.autoSleeping = false;
     if (id === 'hug' || id === 'play') {
@@ -1497,7 +1498,7 @@ function playWorldMotion(p, id) {
 }
 
 async function worldHug(initiator) {
-    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed && !q.dip);
+    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed && !q.dip && q.ai.state !== 'held');
     if (!partner || duoBusy) { initiator.pet.action = { id: 'hug', t: 0, role: 'solo', dir: 1 }; return; }
     duoBusy = true;
     try {
@@ -1540,7 +1541,7 @@ function handPos(p) {
 }
 
 async function worldPlay(initiator) {
-    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed && !q.dip);
+    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && !q.bed && !q.dip && q.ai.state !== 'held');
     if (!partner || duoBusy) {
         initiator.pet.action = { id: 'play', t: 0, role: 'solo', dir: 1, cue: 'ready', cueT: 0 };
         setTimeout(() => { if (initiator.pet.action && initiator.pet.action.id === 'play') initiator.pet.action = null; }, 1600);
@@ -1956,6 +1957,7 @@ let possessed = null;
 const heldKeys = new Set();
 let jumpVy = 0;
 let airborne = false;
+let running = false;    // Shift toggles 걷기 ↔ 달리기 (2×)
 
 const selectRing = new THREE.Mesh(
     new THREE.RingGeometry(0.26, 0.34, 32),
@@ -1970,6 +1972,7 @@ controlHint.style.cssText = 'position:fixed; left:14px; bottom:14px; display:non
 document.body.appendChild(controlHint);
 
 function possessPet(p) {
+    if (p.ai.state === 'held') releaseHandHold();                 // let go before switching drivers
     if (p.ai.state === 'goto' || p.ai.state === 'busy') return;   // mid-duo — let it finish first
     releasePossession();
     possessed = p;
@@ -1986,26 +1989,9 @@ function releasePossession() {
     possessed = null;
     airborne = false; jumpVy = 0;
     seaHop = null;
-    // The AI only lives on land — if released while swimming (or off every island), bring the pet
-    // onto the nearest island's solid ground first. Standing on a bridge deck is fine as-is.
-    const rx = p.mover.position.x, rz = p.mover.position.z;
-    if (p.swimming || (islandOf(rx, rz) < 0 && !onBridge(rx, rz))) {
-        const pos = p.mover.position;
-        let best = ISLANDS[0], bd = Infinity;
-        for (const s of ISLANDS) {
-            const d = Math.hypot(pos.x - s.x, pos.z - s.z) - s.r;
-            if (d < bd) { bd = d; best = s; }
-        }
-        const dx = pos.x - best.x, dz = pos.z - best.z;
-        const rr = Math.hypot(dx, dz) || 1;
-        const k = Math.min(rr, best.r - 0.6) / rr;
-        pos.x = best.x + dx * k;
-        pos.z = best.z + dz * k;
-        if (world.isBlocked(pos.x, pos.z)) { pos.x = -0.5; pos.z = 0.2; }   // e.g. released in the pond
-        p.swimming = false;
-        p.mover.rotation.x = 0;
-    }
-    p.mover.position.y = world.groundHeightAt(p.mover.position.x, p.mover.position.z);
+    releaseHandHold();
+    running = false;
+    snapToLand(p);
     if (p.ai.state === 'player') releaseAI(p);
     heldKeys.clear();
     selectRing.visible = false;
@@ -2022,18 +2008,26 @@ window.addEventListener('keydown', (e) => {
         e.preventDefault();
         if (!airborne) { airborne = true; jumpVy = possessed.swimming ? 1.7 : 2.5; }   // splash-hop in water
     }
+    else if (e.key === 'Shift') {
+        e.preventDefault();
+        running = !running;                                       // 🚶 ↔ 🏃
+    }
     else if (e.key === 'Control' || e.key === 'Meta') {
-        // Interaction key (Ctrl or ⌘): climb back onto the island while swimming near the cliff,
-        // otherwise tuck into a nearby free bed. Possession auto-releases for the bed approach.
+        // Interaction key (Ctrl or ⌘): climb out of the sea near a cliff; take/release the friend's
+        // hand; tuck into a bed; open the radio; or cycle a streetlamp — in that priority order.
         e.preventDefault();
         if (possessed.swimming === 'sea') {
             const pos = possessed.mover.position;
             const spot = nearestClimbSpot(pos);
             if (spot && !seaHop) {
                 seaHop = { fx: pos.x, fy: pos.y, fz: pos.z, tx: spot.tx, tz: spot.tz, ty: spot.ty, t: 0 };
+                return;
             }
+            if (handHold) releaseHandHold();
             return;
         }
+        if (handHold) { releaseHandHold(); return; }
+        if (tryGrabHand()) return;
         const bed = !possessed.bed && nearestFreeBed(possessed, 0.95);
         if (bed) { mountBed(possessed, bed); return; }
         if (nearestPropDist(possessed, 'radio') < 1.0) {
@@ -2138,7 +2132,7 @@ function updatePlayer(delta) {
             while (diff > Math.PI) diff -= Math.PI * 2;
             while (diff < -Math.PI) diff += Math.PI * 2;
             p.mover.rotation.y += THREE.MathUtils.clamp(diff, -delta * 7, delta * 7);
-            const step = p.speed * (p.swimming ? 1.05 : 1.5) * delta;   // paddling is slower than trotting
+            const step = p.speed * (p.swimming ? 1.05 : running ? 3.0 : 1.5) * delta;   // 달리기 = 걷기 ×2
             const nx = p.mover.position.x + dir.x * step;
             const nz = p.mover.position.z + dir.z * step;
             if (!playerBlocked(nx, nz)) { p.mover.position.x = nx; p.mover.position.z = nz; }
@@ -2170,12 +2164,21 @@ function updatePlayer(delta) {
     // Hint: swimming shows the climb-out key near the cliff; on land, the tuck-in key near a bed.
     const petName = p.name === 'chick' ? '병아리' : '강아지';
     const nearCliff = p.swimming === 'sea' && !!nearestClimbSpot(p.mover.position);
-    const bedNear = !p.swimming && !p.bed && nearestFreeBed(p, 0.95);
-    const radioNear = !p.swimming && !bedNear && nearestPropDist(p, 'radio') < 1.0;
-    const lampNear = !p.swimming && !bedNear && !radioNear && nearestPropDist(p, 'lamp') < 1.0;
+    const friend = pets.find((q) => q !== p);
+    const friendNear = !handHold && !p.swimming && friend && !friend.bed && !friend.dip && !friend.pet.sleeping
+        && (friend.ai.state === 'idle' || friend.ai.state === 'walk')
+        && Math.hypot(friend.mover.position.x - p.mover.position.x, friend.mover.position.z - p.mover.position.z) < 0.95;
+    const bedNear = !p.swimming && !handHold && !friendNear && !p.bed && nearestFreeBed(p, 0.95);
+    const radioNear = !p.swimming && !handHold && !friendNear && !bedNear && nearestPropDist(p, 'radio') < 1.0;
+    const lampNear = !p.swimming && !handHold && !friendNear && !bedNear && !radioNear && nearestPropDist(p, 'lamp') < 1.0;
+    const act = handHold ? ' · Ctrl/⌘ 손 놓기'
+        : friendNear ? ' · Ctrl/⌘ 손잡기'
+        : bedNear ? ' · Ctrl/⌘ 눕기'
+        : radioNear ? ' · Ctrl/⌘ 라디오'
+        : lampNear ? ` · Ctrl/⌘ 가로등 ${Math.round(lampBrightness * 100)}%` : '';
     const hint = p.swimming
-        ? `🏊 ${petName} 수영 중 — 방향키 이동 · Space 물장구${nearCliff ? ' · Ctrl/⌘ 섬으로 올라가기' : ''} · Esc 해제`
-        : `🎮 ${petName} 조종 중 — 방향키 이동 · Space 점프${bedNear ? ' · Ctrl/⌘ 눕기' : radioNear ? ' · Ctrl/⌘ 라디오' : lampNear ? ` · Ctrl/⌘ 가로등 ${Math.round(lampBrightness * 100)}%` : ''} · Esc 해제`;
+        ? `🏊 ${petName} 수영 중${handHold ? ' 🤝' : ''} — 방향키 이동 · Space 물장구${nearCliff ? ' · Ctrl/⌘ 섬으로 올라가기' : handHold ? ' · Ctrl/⌘ 손 놓기' : ''} · Esc 해제`
+        : `${running ? '🏃' : '🎮'} ${petName} ${running ? '달리는 중' : '조종 중'}${handHold ? ' 🤝' : ''} — 방향키 이동 · Shift ${running ? '걷기' : '달리기'} · Space 점프${act} · Esc 해제`;
     if (controlHint.textContent !== hint) controlHint.textContent = hint;
 }
 
@@ -2385,6 +2388,99 @@ function updateFollowCam(delta) {
     ).sub(controls.target).multiplyScalar(Math.min(1, delta * 5));
     controls.target.add(_followDelta);
     camera.position.add(_followDelta);
+}
+
+// Put a pet back on the nearest island's solid ground (used when a swim ends abruptly — releasing
+// possession or letting go of a hand mid-water). Standing on a bridge deck counts as fine.
+function snapToLand(p) {
+    const pos = p.mover.position;
+    if (p.swimming || (islandOf(pos.x, pos.z) < 0 && !onBridge(pos.x, pos.z))) {
+        let best = ISLANDS[0], bd = Infinity;
+        for (const s of ISLANDS) {
+            const d = Math.hypot(pos.x - s.x, pos.z - s.z) - s.r;
+            if (d < bd) { bd = d; best = s; }
+        }
+        const dx = pos.x - best.x, dz = pos.z - best.z;
+        const rr = Math.hypot(dx, dz) || 1;
+        const k = Math.min(rr, best.r - 0.6) / rr;
+        pos.x = best.x + dx * k;
+        pos.z = best.z + dz * k;
+        if (world.isBlocked(pos.x, pos.z)) { pos.x = -0.5; pos.z = 0.2; }   // e.g. released in the pond
+        p.swimming = false;
+        p.mover.rotation.x = 0;
+    }
+    pos.y = world.groundHeightAt(pos.x, pos.z);
+}
+
+// ---- 🤝 손잡기 (hand-holding): grab the friend with Ctrl/⌘ and it walks, runs and even swims at
+// your side, hand in hand. The side you grabbed from is kept; on narrow ground (bridge decks) the
+// friend falls into single file just behind; little hearts drift up now and then. Press the key
+// again (or Esc) to let go — mid-water releases snap the friend safely back onto land.
+let handHold = null;    // { partner, side, heartT }
+function tryGrabHand() {
+    const q = pets.find((x) => x !== possessed);
+    if (!q || q.bed || q.dip || q.pet.sleeping) return false;
+    if (q.ai.state !== 'idle' && q.ai.state !== 'walk') return false;
+    const d = Math.hypot(q.mover.position.x - possessed.mover.position.x, q.mover.position.z - possessed.mover.position.z);
+    if (d > 0.95) return false;
+    releaseAI(q);
+    q.ai.state = 'held';
+    q.pet.sleeping = false;
+    const h = possessed.mover.rotation.y;
+    const relX = q.mover.position.x - possessed.mover.position.x;
+    const relZ = q.mover.position.z - possessed.mover.position.z;
+    const side = (relX * Math.cos(h) - relZ * Math.sin(h)) >= 0 ? 1 : -1;   // which side it was grabbed on
+    handHold = { partner: q, side, heartT: 0.6 };
+    return true;
+}
+function releaseHandHold() {
+    if (!handHold) return;
+    const q = handHold.partner;
+    handHold = null;
+    if (possessed) possessed.mover.rotation.z = 0;
+    q.mover.rotation.z = 0;
+    snapToLand(q);
+    if (q.ai.state === 'held') releaseAI(q);
+}
+function updateHandHold(delta) {
+    if (!handHold) return;
+    const leader = possessed;
+    const q = handHold.partner;
+    if (!leader || q.ai.state !== 'held') { releaseHandHold(); return; }
+    const h = leader.mover.rotation.y;
+    const fwdX = Math.sin(h), fwdZ = Math.cos(h);
+    const rightX = Math.cos(h), rightZ = -Math.sin(h);
+    let sx = leader.mover.position.x + rightX * handHold.side * 0.4;
+    let sz = leader.mover.position.z + rightZ * handHold.side * 0.4;
+    // Narrow ground (bridges): if the side slot hangs over open water while the leader is on
+    // land, tuck into single file just behind instead.
+    const leaderSup = playerSupportY(leader, leader.mover.position.x, leader.mover.position.z);
+    let slotSup = playerSupportY(q, sx, sz);
+    if (slotSup.medium === 'sea' && leaderSup.medium !== 'sea') {
+        sx = leader.mover.position.x - fwdX * 0.42;
+        sz = leader.mover.position.z - fwdZ * 0.42;
+        slotSup = playerSupportY(q, sx, sz);
+    }
+    const beforeX = q.mover.position.x, beforeZ = q.mover.position.z;
+    const k = Math.min(1, delta * 7);
+    q.mover.position.x += (sx - q.mover.position.x) * k;
+    q.mover.position.z += (sz - q.mover.position.z) * k;
+    q.swimming = slotSup.medium === 'land' ? false : slotSup.medium;
+    q.mover.position.y = slotSup.y + (q.swimming ? Math.sin(q.pet.t * 2.6) * 0.02 : 0);
+    q.mover.rotation.x = q.swimming ? 0.3 : 0;
+    let dh = h - q.mover.rotation.y;
+    while (dh > Math.PI) dh -= Math.PI * 2;
+    while (dh < -Math.PI) dh += Math.PI * 2;
+    q.mover.rotation.y += dh * Math.min(1, delta * 8);
+    // Lean gently into each other; the friend reads as walking whenever it actually moves.
+    q.mover.rotation.z = -handHold.side * 0.05;
+    leader.mover.rotation.z = handHold.side * 0.05;
+    q.pet.walking = Math.hypot(q.mover.position.x - beforeX, q.mover.position.z - beforeZ) > delta * 0.12;
+    handHold.heartT -= delta;
+    if (handHold.heartT <= 0) {
+        q.pet.spawnEmoji(Math.random() < 0.5 ? '💕' : '💗', { left: 50 - handHold.side * 10, top: 16, size: 18, dx: (Math.random() - 0.5) * 10, duration: 1200 });
+        handHold.heartT = 3.5 + Math.random() * 2.5;
+    }
 }
 
 // ---- 잠자리 & auto-sleep: at 22시 the pets head to bed (chick→hammock, puppy→sunbed), climb on,
@@ -2624,6 +2720,7 @@ function animate() {
         if (p.fxUpdate) p.fxUpdate();
     }
     updatePlayer(delta);
+    updateHandHold(delta);
     updateBeds(delta);
     updateDips(delta);
     updateAutoSleep();
