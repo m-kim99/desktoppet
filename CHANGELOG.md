@@ -5,6 +5,16 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Changed (음료 리워크)
+- **Drinking looks right now**: the cup's drinking position is no longer a fixed guess — it reads
+  the pet's actual mouth node (chick beak / puppy tongue) live every frame and hovers just in front
+  of the lips, so the cup never sinks into the body (the puppy especially). The puppy also grows a
+  little arm + paw while holding a drink (a fur-toned limb stretched dynamically from the shoulder
+  to wherever the cup is). Right-click now opens a small "🥤 먹기" popup instead of sipping
+  instantly; picking it runs a 2~3-gulp drinking sequence — cup held to the mouth, head tipping
+  rhythmically, 꿀꺽 sound per gulp — and the cup finishes after ~8 gulps total. Left/right mouse
+  buttons are now cleanly separated (right never triggers pet clicks or closes menus).
+
 ### Added
 - **Coffee booth takeout (☕ 커피 부스)**: a striped-awning coffee stand (espresso machine, cup
   stack, COFFEE sign) joins the plaza's west side. Drive a pet up and press Ctrl/⌘ to open a 3×3

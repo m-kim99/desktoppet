@@ -1715,10 +1715,13 @@ const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
 let pressAt = null;
 renderer.domElement.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;                    // right-click is the 먹기 popup's business
     pressAt = { x: e.clientX, y: e.clientY, t: performance.now() };
 });
 renderer.domElement.addEventListener('pointerup', (e) => {
+    if (e.button !== 0) return;
     hideMenu();
+    hideSipMenu();
     if (!pressAt) return;
     const moved = Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y);
     const held = performance.now() - pressAt.t;
@@ -2400,7 +2403,9 @@ function makeDrinkMesh(d) {
 
 function removeDrink(p) {
     if (!p.drink) return;
-    if (p.drink.mesh && p.drink.mesh.parent) p.drink.mesh.parent.remove(p.drink.mesh);
+    for (const m of [p.drink.mesh, p.drink.arm, p.drink.paw]) {
+        if (m && m.parent) m.parent.remove(m);
+    }
     p.drink = null;
 }
 function giveDrink(p, d) {
@@ -2409,33 +2414,89 @@ function giveDrink(p, d) {
     p.pet.wrap.add(mesh);
     // wrap-local: the wrap is π-flipped, so (-x, -z) in wrap space = (+x, +z) in travel space
     mesh.position.set(-0.12, p.height * 0.3, -0.14);
-    p.drink = { def: d, mesh, sips: 0, sipT: 0, rest: mesh.position.clone() };
+    const drink = { def: d, mesh, gulps: 0, seq: null, rest: mesh.position.clone() };
+    // 강아지 (no wings) gets a little arm + paw that stretch from the shoulder to the cup, so the
+    // cup reads as held instead of floating.
+    if (!p.pet.wings.length) {
+        const furMat = M(0xe6cba6);
+        drink.arm = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 1, 8), furMat);
+        drink.paw = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 8), furMat);
+        p.pet.wrap.add(drink.arm);
+        p.pet.wrap.add(drink.paw);
+    }
+    p.drink = drink;
     showToast(`☕ ${d.name} 나왔습니다!`);
 }
-// Sip pose overlay (runs after the entity update, same slot as the swim pose): raise the cup to
-// the mouth with a little head-tip, then settle back.
+// The cup's "mouth slot": read the pet's actual mouth node (beak for the chick, tongue for the
+// puppy) every frame and hover the cup just in front of it — so drinking always meets the mouth
+// no matter the pose, instead of sinking into the body.
+const _mouthV = new THREE.Vector3();
+function mouthLocal(p, out) {
+    const node = p.pet.beak || p.pet.tongue;
+    if (node) {
+        node.getWorldPosition(out);
+        p.pet.wrap.worldToLocal(out);
+        out.z -= 0.05;            // just in front of the lips (model faces -Z in wrap space)
+        out.y += 0.008;
+    } else {
+        out.set(0, p.height * 0.6, -0.2);
+    }
+    return out;
+}
+// Stretch a unit-height cylinder between two wrap-local points (the puppy's arm).
+const _armDir = new THREE.Vector3();
+const _armUp = new THREE.Vector3(0, 1, 0);
+function stretchBetween(mesh, a, b) {
+    mesh.position.copy(a).add(b).multiplyScalar(0.5);
+    _armDir.subVectors(b, a);
+    const len = Math.max(0.02, _armDir.length());
+    mesh.scale.set(1, len, 1);
+    mesh.quaternion.setFromUnitVectors(_armUp, _armDir.normalize());
+}
+// Carry/drink pose overlay (runs after the entity update, same slot as the swim pose). A drink
+// sequence keeps the cup at the mouth while the head tips rhythmically — 꿀꺽꿀꺽 per gulp.
+const _cupTarget = new THREE.Vector3();
 function applyCarryPose(p, delta) {
     const dr = p.drink;
     if (!dr) return;
-    if (dr.sipT > 0) {
-        dr.sipT -= delta;
-        const t = 1 - Math.max(0, dr.sipT) / 0.95;
-        const raise = t < 0.35 ? t / 0.35 : t > 0.7 ? Math.max(0, (1 - t) / 0.3) : 1;
-        dr.mesh.position.set(
-            THREE.MathUtils.lerp(dr.rest.x, -0.015, raise),
-            THREE.MathUtils.lerp(dr.rest.y, p.height * 0.62, raise),
-            THREE.MathUtils.lerp(dr.rest.z, -0.17, raise)
-        );
-        p.pet.wrap.rotation.x += -0.14 * raise;              // tip the head back for the gulp
-        if (dr.sipT <= 0) {
-            if (dr.sips >= 4) {
+    let raise = 0;
+    if (dr.seq) {
+        const per = 0.55;
+        const total = dr.seq.count * per + 0.3;
+        dr.seq.t += delta;
+        const gulpIdx = Math.min(dr.seq.count - 1, Math.floor(dr.seq.t / per));
+        if (gulpIdx !== dr.seq.played && dr.seq.t < dr.seq.count * per) {
+            dr.seq.played = gulpIdx;
+            playBuffer(sipBuf, { vol: 0.55, rate: 1.05 + Math.random() * 0.25, filterFreq: 620 });
+        }
+        raise = Math.min(1, dr.seq.t / 0.25) * Math.min(1, Math.max(0, (total - dr.seq.t) / 0.25));
+        const gulpPhase = (dr.seq.t % per) / per;
+        p.pet.wrap.rotation.x += -0.16 * raise * (0.55 + 0.45 * Math.sin(gulpPhase * Math.PI));
+        if (dr.seq.t >= total) {
+            dr.gulps += dr.seq.count;
+            dr.seq = null;
+            if (dr.gulps >= 8) {
                 removeDrink(p);
                 if (!p.pet.action) p.pet.action = { id: 'happy', t: 0 };
                 showToast('☕ 다 마셨다!');
-            } else {
-                dr.mesh.position.copy(dr.rest);
+                return;
             }
         }
+    }
+    // cup position: rest ↔ mouth (mouth read from the live node so it never hides in the body)
+    mouthLocal(p, _cupTarget);
+    dr.mesh.position.set(
+        THREE.MathUtils.lerp(dr.rest.x, _cupTarget.x, raise),
+        THREE.MathUtils.lerp(dr.rest.y, _cupTarget.y - 0.03, raise),
+        THREE.MathUtils.lerp(dr.rest.z, _cupTarget.z, raise)
+    );
+    if (dr.arm) {
+        // shoulder → cup arm, paw wrapped on the cup side
+        _mouthV.set(-0.05, p.height * 0.42, -0.05);          // shoulder anchor (wrap-local)
+        stretchBetween(dr.arm, _mouthV, dr.mesh.position);
+        dr.paw.position.copy(dr.mesh.position);
+        dr.paw.position.y += 0.012;
+        dr.paw.position.x += 0.012;
     }
 }
 
@@ -2479,13 +2540,31 @@ function toggleCoffeePanel() {
     coffeePanel.style.display = (coffeePanel.style.display === 'none' || !coffeePanel.style.display) ? 'block' : 'none';
 }
 
-// Right-click = sip (and never the browser context menu over the world).
+// Right-click on the world → a tiny "먹기" popup (and never the browser context menu). Picking
+// 먹기 runs a 2~3-gulp drinking sequence with the cup held to the mouth.
+const sipMenu = document.createElement('div');
+sipMenu.style.cssText = 'position:fixed; display:none; z-index:120; background:rgba(30,32,40,0.94); border-radius:10px; padding:5px; box-shadow:0 6px 24px rgba(0,0,0,0.4); font-family:sans-serif;';
+const sipItem = document.createElement('div');
+sipItem.textContent = '🥤 먹기';
+sipItem.style.cssText = 'padding:8px 16px; font-size:13px; color:#fff; border-radius:7px; cursor:pointer; white-space:nowrap;';
+sipItem.onmouseenter = () => { sipItem.style.background = 'rgba(255,255,255,0.14)'; };
+sipItem.onmouseleave = () => { sipItem.style.background = 'transparent'; };
+sipItem.onclick = () => {
+    hideSipMenu();
+    const dr = possessed && possessed.drink;
+    if (dr && !dr.seq) {
+        dr.seq = { count: 2 + Math.round(Math.random()), t: 0, played: -1 };   // 2~3 gulps
+    }
+};
+sipMenu.appendChild(sipItem);
+document.body.appendChild(sipMenu);
+function hideSipMenu() { sipMenu.style.display = 'none'; }
 renderer.domElement.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    if (possessed && possessed.drink && possessed.drink.sipT <= 0) {
-        possessed.drink.sipT = 0.95;
-        possessed.drink.sips += 1;
-        playBuffer(sipBuf, { vol: 0.5, rate: 1.1 + Math.random() * 0.2, filterFreq: 600 });
+    if (possessed && possessed.drink && !possessed.drink.seq) {
+        sipMenu.style.display = 'block';
+        sipMenu.style.left = `${Math.min(e.clientX, window.innerWidth - 110)}px`;
+        sipMenu.style.top = `${Math.min(e.clientY, window.innerHeight - 50)}px`;
     }
 });
 
@@ -2699,7 +2778,7 @@ function releasePossession() {
 const ARROW_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 window.addEventListener('keydown', (e) => {
     if (e.target && e.target.tagName === 'INPUT') return;        // typing in the chat bar
-    if (e.key === 'Escape') { releasePossession(); hideMenu(); radioPanel.style.display = 'none'; return; }
+    if (e.key === 'Escape') { releasePossession(); hideMenu(); radioPanel.style.display = 'none'; coffeePanel.style.display = 'none'; hideSipMenu(); return; }
     if (!possessed) return;
     if (ARROW_KEYS.includes(e.key)) { heldKeys.add(e.key); e.preventDefault(); }
     else if (e.code === 'Space') {
