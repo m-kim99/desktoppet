@@ -6,6 +6,17 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **Island expansion + road network (섬 확장·도로)**: the island grows from R3.2 to R5.2 (~2.6×
+  the area) to make room for the expansion wishlist. The layout is zoned — NE house yard (+bowl),
+  E rest area (sunbed), S hammock nook, SW pond, W fence lawn, four trees spread around — with the
+  center kept as an open stone-tiled plaza (auto-leveled flat spot; hug point & monument land
+  there next) and the N/NW meadows reserved for future features. A stone-dust loop road at
+  mid-radius plus four spokes out of the plaza are terrain-hugging ribbon meshes with their own
+  painted path/plaza-tile textures; six streetlamps now line the loop. Pets draw ~45% of their
+  wander destinations from the road network (plaza/loop/spoke nodes) so movement between zones
+  actually follows the paths; decorations (scaled up to ~380 tufts / 75 flowers / 46 pebbles)
+  avoid the roads. Ocean inner radius/foam scale with the island; camera starts further out
+  (zoom cap 15), shadow coverage widened, terrain grid densified to 34×96.
 - **Animal Crossing-style texture pass (동숲 텍스처)**: the world graduates from flat colors to
   hand-painted-feel materials — all generated as tiling canvas textures at load, no asset files.
   The meadow wears the iconic staggered-triangle grass pattern (planar-mapped UVs on the terrain

@@ -103,7 +103,7 @@ try {
 }
 
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.set(0, 2.4, 5.2);
+camera.position.set(0, 3.0, 8.2);
 camera.lookAt(0, 0.4, 0);
 
 // Lights: hemisphere fill (sky blue above, grass green below) + a shadow-casting sun
@@ -113,10 +113,10 @@ const sunLight = new THREE.DirectionalLight(0xfff4e0, 1.7);   // warm afternoon 
 sunLight.position.set(4, 7, 3);
 sunLight.castShadow = true;
 sunLight.shadow.mapSize.set(2048, 2048);
-sunLight.shadow.camera.left = -6;
-sunLight.shadow.camera.right = 6;
-sunLight.shadow.camera.top = 6;
-sunLight.shadow.camera.bottom = -6;
+sunLight.shadow.camera.left = -8.5;
+sunLight.shadow.camera.right = 8.5;
+sunLight.shadow.camera.top = 8.5;
+sunLight.shadow.camera.bottom = -8.5;
 sunLight.shadow.radius = 5;              // PCFSoft blur — soft cartoon-edged shadows
 sunLight.shadow.bias = -0.0002;
 sunLight.shadow.normalBias = 0.03;       // rolling terrain: keep self-shadow acne away
@@ -220,7 +220,7 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.05;          // lower = silkier glide after a drag
 controls.rotateSpeed = 0.85;
 controls.minDistance = 2.2;
-controls.maxDistance = 11;
+controls.maxDistance = 15;
 controls.maxPolarAngle = Math.PI * 0.49;
 // Wheel zoom: OrbitControls dollies in hard steps per wheel tick, which feels stiff. Disable it and
 // glide toward a target distance in animate() instead (the ＋/－ buttons steer the same target).
@@ -357,7 +357,7 @@ function gradSphereGeo(r, topHex, bottomHex) {
 
 // ---- Stage: a floating meadow island — gently rolling vertex-colored grass over a rounded dirt
 // cliff, dressed with chubby pastel props. Pets still sense it ONLY through `world` below. ----
-const ISLAND_R = 3.2;
+const ISLAND_R = 5.2;
 const stage = new THREE.Group();
 scene.add(stage);
 
@@ -365,8 +365,9 @@ scene.add(stage);
 // function feeds both the visible mesh and world.groundHeightAt, so feet, props, the select ring
 // and the catch ball always agree with what you see.
 const FLAT_SPOTS = [
-    { x: 1.7, z: 1.3, r: 1.15 },    // house pad
-    { x: 0.2, z: -2.2, r: 0.95 },   // pond basin
+    { x: 0.0, z: 0.0, r: 1.7 },     // central plaza (hug point / monument to come)
+    { x: 2.9, z: 2.2, r: 1.2 },     // house pad
+    { x: -2.6, z: -2.9, r: 0.95 },  // pond basin
 ];
 function terrainHeight(x, z) {
     const rr = Math.hypot(x, z);
@@ -383,7 +384,7 @@ function terrainHeight(x, z) {
 // Grass top: a polar grid (26 rings × 72 segments) displaced by terrainHeight, with subtle
 // two-tone vertex-color patches so the meadow doesn't read as one flat green.
 {
-    const rings = 26, segs = 72;
+    const rings = 34, segs = 96;
     const positions = [], colors = [], uvs = [], indices = [];
     // Vertex colors are near-white multipliers over the grass texture: subtle sunny/mossy patches.
     const base = new THREE.Color(0.93, 0.95, 0.88), light = new THREE.Color(1.07, 1.1, 1.0);
@@ -443,19 +444,27 @@ function terrainHeight(x, z) {
 // Props stay a data list (type + position + blocking radius) — same swap point as before, the
 // builders are just far chubbier now. `r` is the circle collider pets steer around; the pond is
 // blocking too (pets shouldn't wade). The bowl doubles as the Eat-motion spot later.
+// Zoned layout on the bigger island: NE = house yard (+bowl), E = rest area (sunbed), S = hammock
+// nook, SW = pond, W = fence lawn, plus four trees spread around. The center stays an open plaza
+// (hug point / monument land later) and the N/NW meadows are reserved for future features
+// (텃밭·커피 스탠드·도서관·전망대). Six lamps line the loop road.
 const PROPS = [
-    { type: 'tree',  x: -2.0, z: -1.1, rotY: 0.0,  r: 0.45, big: true  },
-    { type: 'tree',  x:  2.1, z: -1.5, rotY: 2.1,  r: 0.45, big: false },
-    { type: 'house', x:  1.7, z:  1.3, rotY: -0.6, r: 0.95 },
-    { type: 'bowl',  x: -1.0, z:  1.6, rotY: 0.0,  r: 0.28 },
-    { type: 'fence', x: -2.5, z:  0.6, rotY: 1.05, r: 0.5 },
-    { type: 'pond',  x:  0.2, z: -2.2, rotY: 0.0,  r: 0.72 },
-    { type: 'sunbed',  x:  2.35, z:  0.0,  rotY: -1.2, r: 0.42 },
-    { type: 'hammock', x: -1.55, z: -1.95, rotY: 0.5,  r: 0.55 },
-    { type: 'lamp', x:  0.94, z:  2.58, rotY: 0, r: 0.18 },
-    { type: 'lamp', x:  1.65, z: -2.2,  rotY: 0, r: 0.18 },
-    { type: 'lamp', x: -2.46, z: -1.23, rotY: 0, r: 0.18 },
-    { type: 'lamp', x: -1.94, z:  1.95, rotY: 0, r: 0.18 },
+    { type: 'tree',  x: -3.4, z: -1.9, rotY: 0.0,  r: 0.45, big: true  },
+    { type: 'tree',  x:  3.6, z: -2.6, rotY: 2.1,  r: 0.45, big: false },
+    { type: 'tree',  x: -1.2, z:  3.7, rotY: 4.2,  r: 0.45, big: true  },
+    { type: 'tree',  x:  4.1, z:  1.0, rotY: 1.3,  r: 0.45, big: false },
+    { type: 'house', x:  2.9, z:  2.2, rotY: -0.65, r: 0.95 },
+    { type: 'bowl',  x:  1.35, z:  2.1, rotY: 0.0,  r: 0.28 },
+    { type: 'fence', x: -4.1, z:  0.9, rotY: 1.05, r: 0.5 },
+    { type: 'pond',  x: -2.6, z: -2.9, rotY: 0.0,  r: 0.72 },
+    { type: 'sunbed',  x:  4.05, z: -0.4,  rotY: -1.35, r: 0.42 },
+    { type: 'hammock', x: -0.9,  z: -4.15, rotY: 0.35,  r: 0.55 },
+    { type: 'lamp', x:  1.30, z:  3.09, rotY: 0, r: 0.18 },
+    { type: 'lamp', x:  3.34, z:  0.24, rotY: 0, r: 0.18 },
+    { type: 'lamp', x:  2.00, z: -2.68, rotY: 0, r: 0.18 },
+    { type: 'lamp', x: -1.48, z: -3.00, rotY: 0, r: 0.18 },
+    { type: 'lamp', x: -3.33, z: -0.37, rotY: 0, r: 0.18 },
+    { type: 'lamp', x: -1.85, z:  2.79, rotY: 0, r: 0.18 },
 ];
 const BEDS = [];   // filled during prop placement: where pets sleep at night / lie via Ctrl
 const M = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, ...extra });
@@ -701,6 +710,136 @@ const world = {
     },
 };
 
+// ---- 길 (roads & plaza): a stone-dust loop at mid-radius with four spokes out of the central
+// plaza — ribbons that hug the terrain (every vertex sits on terrainHeight), so movement between
+// zones reads as real paths. Pets bias their wandering onto ROAD_NODES; decorations avoid paths.
+const ROAD_LOOP_R = 3.0;
+const ROAD_W = 0.55;
+const PLAZA_R = 1.45;
+const SPOKE_ANGLES = [0.92, 1.67, 3.6, 5.0];    // toward house yard / rest area / pond·hammock / west lawn
+
+function isOnRoad(x, z) {
+    const r = Math.hypot(x, z);
+    if (r < PLAZA_R + 0.15) return true;
+    if (Math.abs(r - ROAD_LOOP_R) < ROAD_W * 0.5 + 0.12) return true;
+    for (const a of SPOKE_ANGLES) {
+        const dx = Math.sin(a), dz = Math.cos(a);
+        const t = x * dx + z * dz;
+        if (t < PLAZA_R - 0.2 || t > 3.4) continue;
+        const px = x - dx * t, pz = z - dz * t;
+        if (Math.hypot(px, pz) < ROAD_W * 0.5 + 0.12) return true;
+    }
+    return false;
+}
+
+const pathTex = canvasTex(64, 5, 1, (ctx, s) => {
+    ctx.fillStyle = '#d9c294';
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 60; i++) {
+        ctx.fillStyle = `rgba(${Math.random() < 0.5 ? '150,120,75' : '255,245,215'},0.18)`;
+        ctx.fillRect(Math.random() * s, Math.random() * s, 2, 2);
+    }
+    for (let i = 0; i < 7; i++) {                                  // little flat stones
+        ctx.fillStyle = 'rgba(160,150,130,0.5)';
+        ctx.beginPath();
+        ctx.ellipse(Math.random() * s, Math.random() * s, 3 + Math.random() * 3, 2 + Math.random() * 2, Math.random() * 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+});
+const plazaTex = canvasTex(128, 4, 4, (ctx, s) => {
+    ctx.fillStyle = '#e5decb';
+    ctx.fillRect(0, 0, s, s);
+    ctx.strokeStyle = 'rgba(150,135,110,0.35)';
+    ctx.lineWidth = 2;
+    const tile = s / 4;
+    for (let i = 0; i <= 4; i++) {
+        ctx.beginPath(); ctx.moveTo(i * tile, 0); ctx.lineTo(i * tile, s); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, i * tile); ctx.lineTo(s, i * tile); ctx.stroke();
+    }
+    for (let i = 0; i < 50; i++) {
+        ctx.fillStyle = 'rgba(170,155,125,0.14)';
+        ctx.fillRect(Math.random() * s, Math.random() * s, 2, 2);
+    }
+});
+const roadMat = new THREE.MeshStandardMaterial({ map: pathTex, roughness: 1, metalness: 0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1 });
+
+function buildRibbon(points, width, closed) {
+    const positions = [], uvs = [], indices = [];
+    const n = points.length;
+    let dist = 0;
+    for (let i = 0; i < n; i++) {
+        const p = points[i];
+        const prev = points[(i - 1 + n) % n];
+        const next = points[(i + 1) % n];
+        let dx, dz;
+        if (!closed && i === 0) { dx = next.x - p.x; dz = next.z - p.z; }
+        else if (!closed && i === n - 1) { dx = p.x - prev.x; dz = p.z - prev.z; }
+        else { dx = next.x - prev.x; dz = next.z - prev.z; }
+        const len = Math.hypot(dx, dz) || 1;
+        const nx = -dz / len, nz = dx / len;
+        if (i > 0) dist += Math.hypot(p.x - prev.x, p.z - prev.z);
+        for (const side of [-1, 1]) {
+            const x = p.x + nx * side * width / 2;
+            const z = p.z + nz * side * width / 2;
+            positions.push(x, terrainHeight(x, z) + 0.013, z);
+            uvs.push(dist * 0.9, side * 0.5 + 0.5);
+        }
+    }
+    const segCount = closed ? n : n - 1;
+    for (let i = 0; i < segCount; i++) {
+        const a = i * 2, b = i * 2 + 1;
+        const c2 = ((i + 1) % n) * 2, d = c2 + 1;
+        indices.push(a, b, c2, b, d, c2);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, roadMat);
+    mesh.receiveShadow = true;
+    return mesh;
+}
+{
+    // Loop road
+    const loopPts = [];
+    for (let i = 0; i < 72; i++) {
+        const a = (i / 72) * Math.PI * 2;
+        loopPts.push({ x: Math.sin(a) * ROAD_LOOP_R, z: Math.cos(a) * ROAD_LOOP_R });
+    }
+    stage.add(buildRibbon(loopPts, ROAD_W, true));
+    // Spokes from the plaza edge out just past the loop
+    for (const a of SPOKE_ANGLES) {
+        const dx = Math.sin(a), dz = Math.cos(a);
+        const pts = [];
+        for (let t = PLAZA_R - 0.15; t <= 3.4; t += 0.3) pts.push({ x: dx * t, z: dz * t });
+        stage.add(buildRibbon(pts, ROAD_W * 0.85, false));
+    }
+    // Plaza: a stone-tiled circle at the center (terrain there is auto-leveled by its flat spot)
+    const plazaGeo = new THREE.CircleGeometry(PLAZA_R, 48);
+    plazaGeo.rotateX(-Math.PI / 2);
+    const pp = plazaGeo.attributes.position;
+    const puv = plazaGeo.attributes.uv;
+    for (let i = 0; i < pp.count; i++) {
+        const x = pp.getX(i), z = pp.getZ(i);
+        pp.setY(i, terrainHeight(x, z) + 0.012);
+        puv.setXY(i, x * 0.9, z * 0.9);
+    }
+    plazaGeo.computeVertexNormals();
+    const plaza = new THREE.Mesh(plazaGeo, new THREE.MeshStandardMaterial({ map: plazaTex, roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: -1 }));
+    plaza.receiveShadow = true;
+    stage.add(plaza);
+}
+
+// Wander destinations pets are drawn to — the plaza, points along the loop, and each spoke end —
+// so daily movement actually follows the paths instead of cutting across the meadow.
+const ROAD_NODES = [{ x: 0, z: 0 }];
+for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    ROAD_NODES.push({ x: Math.sin(a) * ROAD_LOOP_R, z: Math.cos(a) * ROAD_LOOP_R });
+}
+for (const a of SPOKE_ANGLES) ROAD_NODES.push({ x: Math.sin(a) * 3.3, z: Math.cos(a) * 3.3 });
+
 // ---- Decorations (non-blocking set dressing): instanced grass tufts, flowers and pebbles ----
 {
     const rnd = (a, b) => a + Math.random() * (b - a);
@@ -711,13 +850,14 @@ const world = {
             const r = Math.sqrt(Math.random()) * (ISLAND_R - margin);
             const x = Math.cos(a) * r, z = Math.sin(a) * r;
             if (world.isBlocked(x, z)) continue;
+            if (isOnRoad(x, z)) continue;               // keep the paths and plaza clear
             out.push({ x, z });
         }
         return out;
     };
     const dummy = new THREE.Object3D();
 
-    const tufts = spots(170, 0.45);
+    const tufts = spots(380, 0.45);
     const tuftMesh = new THREE.InstancedMesh(new THREE.ConeGeometry(0.022, 0.1, 5), M(0x5fae44), tufts.length);
     tufts.forEach((s, i) => {
         dummy.position.set(s.x, terrainHeight(s.x, s.z) + 0.04, s.z);
@@ -730,7 +870,7 @@ const world = {
     stage.add(tuftMesh);
 
     const petals = [0xff8fb3, 0xffd54f, 0xffffff, 0xb39ddb, 0xff8a65];
-    const blooms = spots(34, 0.5);
+    const blooms = spots(75, 0.5);
     const stemMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.008, 0.01, 0.09, 6), M(0x4e9a3d), blooms.length);
     const headMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.028, 10, 8), new THREE.MeshLambertMaterial({ color: 0xffffff }), blooms.length);
     blooms.forEach((s, i) => {
@@ -749,7 +889,7 @@ const world = {
     stage.add(stemMesh);
     stage.add(headMesh);
 
-    const pebbles = spots(22, 0.5);
+    const pebbles = spots(46, 0.5);
     const pebbleMesh = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.045, 0), M(0xbdb7ab), pebbles.length);
     pebbles.forEach((s, i) => {
         dummy.position.set(s.x, terrainHeight(s.x, s.z) + 0.012, s.z);
@@ -772,7 +912,7 @@ let oceanMesh = null;
 let oceanPos = null;         // live position attribute, y-animated every frame
 let oceanXZ = null;          // per-vertex [x, z, horizonFade] — precomputed once
 {
-    const inner = 2.6, outer = 40, rings = 40, segs = 112;
+    const inner = ISLAND_R * 0.81, outer = 40, rings = 40, segs = 112;
     const positions = [], indices = [];
     oceanXZ = [];
     for (let i = 0; i <= rings; i++) {
@@ -808,7 +948,7 @@ let oceanXZ = null;          // per-vertex [x, z, horizonFade] — precomputed o
 
     for (let i = 0; i < 2; i++) {
         const foam = new THREE.Mesh(
-            new THREE.RingGeometry(2.62, 2.98, 72),
+            new THREE.RingGeometry(ISLAND_R * 0.82, ISLAND_R * 0.93, 96),
             new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthWrite: false })
         );
         foam.rotation.x = -Math.PI / 2;
@@ -880,12 +1020,20 @@ function makeWanderAI() {
 }
 
 function pickTarget(from) {
-    // A handful of random mid-range hops so pets meander; give up quietly if boxed in.
+    // Meandering hops, but ~45% of destinations are drawn from the road network (plaza / loop /
+    // spoke ends) so the pets visibly travel the paths between zones; give up quietly if boxed in.
     for (let i = 0; i < 12; i++) {
-        const ang = Math.random() * Math.PI * 2;
-        const dist = 0.7 + Math.random() * 1.6;
-        const x = from.x + Math.cos(ang) * dist;
-        const z = from.z + Math.sin(ang) * dist;
+        let x, z;
+        if (Math.random() < 0.45) {
+            const node = ROAD_NODES[Math.floor(Math.random() * ROAD_NODES.length)];
+            x = node.x + (Math.random() - 0.5) * 0.7;
+            z = node.z + (Math.random() - 0.5) * 0.7;
+        } else {
+            const ang = Math.random() * Math.PI * 2;
+            const dist = 0.9 + Math.random() * 2.2;
+            x = from.x + Math.cos(ang) * dist;
+            z = from.z + Math.sin(ang) * dist;
+        }
         if (!world.isBlocked(x, z)) return { x, z };
     }
     return null;
