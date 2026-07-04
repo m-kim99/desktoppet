@@ -14,7 +14,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;   // gentle filmic rolloff — pastels stay soft
-renderer.toneMappingExposure = 1.12;
+renderer.toneMappingExposure = 1.06;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -23,7 +23,7 @@ const scene = new THREE.Scene();
 {
     const pmrem = new THREE.PMREMGenerator(renderer);
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    scene.environmentIntensity = 0.4;
+    scene.environmentIntensity = 0.25;
     pmrem.dispose();
 }
 // Sky: a vertical gradient painted onto a big inside-out dome (fog is disabled on it so the
@@ -358,6 +358,38 @@ function gradSphereGeo(r, topHex, bottomHex) {
 // ---- Stage: a floating meadow island — gently rolling vertex-colored grass over a rounded dirt
 // cliff, dressed with chubby pastel props. Pets still sense it ONLY through `world` below. ----
 const ISLAND_R = 5.2;
+// Archipelago: the main island plus two satellites reached over wooden bridges. Every land query
+// (terrain height, blocking, bridge decks) goes through the helpers below, so pets, the player,
+// particles and roads all agree on what counts as ground.
+const ISLANDS = [
+    { x: 0,     z: 0,     r: ISLAND_R },
+    { x: 8.2,   z: 4.18,  r: 2.2 },      // NE island — open ground for future features
+    { x: -8.06, z: -3.53, r: 2.0 },      // SW island
+];
+const BRIDGES = [
+    { A: { x: 4.41,  z: 2.25 },  B: { x: 6.46,  z: 3.30 },  inner: { x: 4.10,  z: 2.09 },  outer: { x: 6.73,  z: 3.43 } },
+    { A: { x: -4.53, z: -1.99 }, B: { x: -6.46, z: -2.83 }, inner: { x: -4.21, z: -1.84 }, outer: { x: -6.73, z: -2.95 } },
+];
+function islandOf(x, z) {
+    for (let i = 0; i < ISLANDS.length; i++) {
+        const s = ISLANDS[i];
+        if (Math.hypot(x - s.x, z - s.z) <= s.r - 0.3) return i;
+    }
+    return -1;
+}
+function onBridge(x, z) {
+    for (const br of BRIDGES) {
+        const dx = br.B.x - br.A.x, dz = br.B.z - br.A.z;
+        const len2 = dx * dx + dz * dz;
+        const t = ((x - br.A.x) * dx + (z - br.A.z) * dz) / len2;
+        if (t < 0 || t > 1) continue;
+        if (Math.hypot(br.A.x + dx * t - x, br.A.z + dz * t - z) < 0.34) return { br, t };
+    }
+    return null;
+}
+function bridgeDeckY(hit) {
+    return 0.05 + Math.sin(hit.t * Math.PI) * 0.22;   // gentle arch over the water
+}
 const stage = new THREE.Group();
 scene.add(stage);
 
@@ -370,33 +402,37 @@ const FLAT_SPOTS = [
     { x: -2.6, z: -2.9, r: 0.95 },  // pond basin
 ];
 function terrainHeight(x, z) {
-    const rr = Math.hypot(x, z);
-    if (rr >= ISLAND_R) return 0;
-    let h = 0.05 * Math.sin(x * 1.7 + 1.3) * Math.sin(z * 1.9 - 0.7)
-          + 0.04 * Math.sin((x + z) * 1.1 + 2.1) + 0.045;
-    h *= THREE.MathUtils.smoothstep(ISLAND_R - rr, 0, 0.9);
-    for (const s of FLAT_SPOTS) {
-        h *= THREE.MathUtils.smoothstep(Math.hypot(x - s.x, z - s.z), s.r * 0.55, s.r);
+    for (const isl of ISLANDS) {
+        const rr = Math.hypot(x - isl.x, z - isl.z);
+        if (rr >= isl.r) continue;
+        let h = 0.05 * Math.sin(x * 1.7 + 1.3) * Math.sin(z * 1.9 - 0.7)
+              + 0.04 * Math.sin((x + z) * 1.1 + 2.1) + 0.045;
+        h *= THREE.MathUtils.smoothstep(isl.r - rr, 0, 0.9);
+        for (const s of FLAT_SPOTS) {
+            h *= THREE.MathUtils.smoothstep(Math.hypot(x - s.x, z - s.z), s.r * 0.55, s.r);
+        }
+        return h;
     }
-    return h;
+    return 0;
 }
 
-// Grass top: a polar grid (26 rings × 72 segments) displaced by terrainHeight, with subtle
-// two-tone vertex-color patches so the meadow doesn't read as one flat green.
-{
-    const rings = 34, segs = 96;
+// Island meshes: every island in the archipelago gets the same treatment — a polar-grid grass top
+// displaced by terrainHeight (AC triangle texture + near-white vertex patches, resolution scaled
+// to the island's radius) over a lathed strata cliff tapering to a rounded tip.
+function buildIslandMeshes(isl) {
+    const rings = Math.max(16, Math.round(isl.r * 6.5));
+    const segs = Math.max(48, Math.round(isl.r * 18));
     const positions = [], colors = [], uvs = [], indices = [];
-    // Vertex colors are near-white multipliers over the grass texture: subtle sunny/mossy patches.
     const base = new THREE.Color(0.93, 0.95, 0.88), light = new THREE.Color(1.07, 1.1, 1.0);
     const c = new THREE.Color();
     for (let i = 0; i <= rings; i++) {
-        const r = (i / rings) * ISLAND_R;
+        const r = (i / rings) * isl.r;
         for (let j = 0; j < segs; j++) {
             const a = (j / segs) * Math.PI * 2;
-            const x = Math.cos(a) * r, z = Math.sin(a) * r;
+            const x = isl.x + Math.cos(a) * r, z = isl.z + Math.sin(a) * r;
             const y = terrainHeight(x, z);
             positions.push(x, y, z);
-            uvs.push(x * 0.8, z * 0.8);                 // planar mapping — the triangle tile repeats ~1.25u
+            uvs.push(x * 0.8, z * 0.8);                 // planar world mapping — pattern flows across islands
             const patch = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1;
             c.copy(base).lerp(light, Math.min(1, patch * 0.45 + y * 2.2));
             colors.push(c.r, c.g, c.b);
@@ -420,26 +456,25 @@ function terrainHeight(x, z) {
     const grass = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: grassTex, vertexColors: true, roughness: 1, metalness: 0 }));
     grass.receiveShadow = true;
     stage.add(grass);
-}
 
-// Cliff: a lathed, faceted dirt underside tapering to a rounded tip (the floating-island look).
-{
     const pts = [
-        new THREE.Vector2(ISLAND_R, 0.004),
-        new THREE.Vector2(ISLAND_R * 0.995, -0.12),
-        new THREE.Vector2(ISLAND_R * 0.93, -0.42),
-        new THREE.Vector2(ISLAND_R * 0.72, -0.78),
-        new THREE.Vector2(ISLAND_R * 0.42, -1.0),
+        new THREE.Vector2(isl.r, 0.004),
+        new THREE.Vector2(isl.r * 0.995, -0.12),
+        new THREE.Vector2(isl.r * 0.93, -0.42),
+        new THREE.Vector2(isl.r * 0.72, -0.78),
+        new THREE.Vector2(isl.r * 0.42, -1.0),
         new THREE.Vector2(0.05, -1.14),
     ];
     const cliff = new THREE.Mesh(
-        new THREE.LatheGeometry(pts, 72),
+        new THREE.LatheGeometry(pts, Math.max(48, Math.round(isl.r * 14))),
         new THREE.MeshStandardMaterial({ map: strataTex, roughness: 1, metalness: 0, flatShading: true })
     );
-    cliff.castShadow = true;         // the island shades the sea at low sun
+    cliff.position.set(isl.x, 0, isl.z);
+    cliff.castShadow = true;         // islands shade the sea at low sun
     cliff.receiveShadow = true;
     stage.add(cliff);
 }
+for (const isl of ISLANDS) buildIslandMeshes(isl);
 
 // Props stay a data list (type + position + blocking radius) — same swap point as before, the
 // builders are just far chubbier now. `r` is the circle collider pets steer around; the pond is
@@ -465,6 +500,11 @@ const PROPS = [
     { type: 'lamp', x: -1.48, z: -3.00, rotY: 0, r: 0.18 },
     { type: 'lamp', x: -3.33, z: -0.37, rotY: 0, r: 0.18 },
     { type: 'lamp', x: -1.85, z:  2.79, rotY: 0, r: 0.18 },
+    // Satellite islands: a tree and a lamp at each bridgehead (otherwise open feature ground)
+    { type: 'tree',  x:  8.7,  z:  3.78, rotY: 0.7, r: 0.45, big: true  },
+    { type: 'tree',  x: -8.4,  z: -3.0,  rotY: 2.9, r: 0.45, big: false },
+    { type: 'lamp', x:  6.97, z:  3.05, rotY: 0, r: 0.18 },
+    { type: 'lamp', x: -6.60, z: -3.38, rotY: 0, r: 0.18 },
 ];
 const BEDS = [];   // filled during prop placement: where pets sleep at night / lie via Ctrl
 const M = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, ...extra });
@@ -700,9 +740,19 @@ for (const p of PROPS) {
 // ---- World interface: the ONLY way pets sense the ground/space (keeps them portable) ----
 const world = {
     islandRadius: ISLAND_R,
-    groundHeightAt(x, z) { return terrainHeight(x, z); },        // rolling meadow (was flat)
+    groundHeightAt(x, z) {
+        const hit = onBridge(x, z);
+        if (hit) return bridgeDeckY(hit);                        // bridge decks count as ground
+        return terrainHeight(x, z);
+    },
     isBlocked(x, z) {
-        if (Math.hypot(x, z) > ISLAND_R - 0.35) return true;     // stay clear of the rim
+        let onLand = onBridge(x, z) !== null;
+        if (!onLand) {
+            for (const s of ISLANDS) {
+                if (Math.hypot(x - s.x, z - s.z) < s.r - 0.35) { onLand = true; break; }
+            }
+        }
+        if (!onLand) return true;                                // off every rim and off the bridges
         for (const p of PROPS) {
             if (Math.hypot(x - p.x, z - p.z) < p.r) return true; // circle collider around each prop
         }
@@ -839,6 +889,47 @@ for (let i = 0; i < 8; i++) {
     ROAD_NODES.push({ x: Math.sin(a) * ROAD_LOOP_R, z: Math.cos(a) * ROAD_LOOP_R });
 }
 for (const a of SPOKE_ANGLES) ROAD_NODES.push({ x: Math.sin(a) * 3.3, z: Math.cos(a) * 3.3 });
+for (const br of BRIDGES) ROAD_NODES.push({ ...br.inner }, { ...br.outer });
+for (let i = 1; i < ISLANDS.length; i++) ROAD_NODES.push({ x: ISLANDS[i].x, z: ISLANDS[i].z });
+
+// Wooden bridges out to the satellite islands: stepped planks over the arch, posts and rails.
+{
+    const bridgeWood = M(0xb08a60, { map: woodTex });
+    for (const br of BRIDGES) {
+        const g = new THREE.Group();
+        const dx = br.B.x - br.A.x, dz = br.B.z - br.A.z;
+        const len = Math.hypot(dx, dz);
+        const heading = Math.atan2(dx, dz);
+        const px = -dz / len, pz = dx / len;
+        const N = 10;
+        for (let i = 0; i <= N; i++) {
+            const t = i / N;
+            const plank = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.045, (len / N) * 0.82), bridgeWood);
+            plank.position.set(br.A.x + dx * t, bridgeDeckY({ t }) - 0.022, br.A.z + dz * t);
+            plank.rotation.y = heading;
+            g.add(plank);
+        }
+        for (const side of [-1, 1]) {
+            for (const t of [0.04, 0.5, 0.96]) {
+                const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, 0.3, 8), bridgeWood);
+                post.position.set(br.A.x + dx * t + px * side * 0.34, bridgeDeckY({ t }) + 0.13, br.A.z + dz * t + pz * side * 0.34);
+                g.add(post);
+                const cap = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), bridgeWood);
+                cap.position.set(post.position.x, post.position.y + 0.16, post.position.z);
+                g.add(cap);
+            }
+            for (let i = 0; i < N; i++) {
+                const t = (i + 0.5) / N;
+                const rail = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.035, len / N + 0.02), bridgeWood);
+                rail.position.set(br.A.x + dx * t + px * side * 0.34, bridgeDeckY({ t }) + 0.25, br.A.z + dz * t + pz * side * 0.34);
+                rail.rotation.y = heading;
+                g.add(rail);
+            }
+        }
+        g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+        stage.add(g);
+    }
+}
 
 // ---- Decorations (non-blocking set dressing): instanced grass tufts, flowers and pebbles ----
 {
@@ -946,15 +1037,17 @@ let oceanXZ = null;          // per-vertex [x, z, horizonFade] — precomputed o
     scene.add(oceanMesh);
     oceanPos = geo.attributes.position;
 
-    for (let i = 0; i < 2; i++) {
-        const foam = new THREE.Mesh(
-            new THREE.RingGeometry(ISLAND_R * 0.82, ISLAND_R * 0.93, 96),
-            new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthWrite: false })
-        );
-        foam.rotation.x = -Math.PI / 2;
-        foam.position.y = OCEAN_LEVEL + 0.035;
-        scene.add(foam);
-        foamRings.push(foam);
+    for (const isl of ISLANDS) {
+        for (let i = 0; i < 2; i++) {
+            const foam = new THREE.Mesh(
+                new THREE.RingGeometry(isl.r * 0.82, isl.r * 0.93, 96),
+                new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthWrite: false })
+            );
+            foam.rotation.x = -Math.PI / 2;
+            foam.position.set(isl.x, OCEAN_LEVEL + 0.035, isl.z);
+            scene.add(foam);
+            foamRings.push(foam);
+        }
     }
     updateDayNight(true);            // tint the fresh sea/foam for the current hour
 }
@@ -1069,11 +1162,17 @@ function updateWander(p, delta) {
     if (ai.state === 'player') return;                               // the keyboard controller owns it
     if (ai.state === 'busy') { pet.walking = false; return; }        // a duo director owns the pet
     if (ai.state === 'goto') {
-        // Duo approach: keeps walking even while a one-shot lingers, and gives up gracefully
-        // (arrive-anyway) when blocked or stalled so the duo director can never deadlock.
+        // Approach walk (duo/bed/meal/dip): follows its waypoint route (bridges included) and
+        // gives up gracefully (arrive-anyway) when blocked or stalled — directors never deadlock.
         ai.stall = (ai.stall || 0) + delta;
-        const res = steerToward(p, ai.target, delta);
-        if (res === 'arrived' || res === 'blocked' || ai.stall > 6) {
+        const wp = (ai.waypoints && ai.waypoints.length) ? ai.waypoints[0] : ai.target;
+        const res = steerToward(p, wp, delta);
+        if (res === 'arrived' && ai.waypoints && ai.waypoints.length > 1) {
+            ai.waypoints.shift();
+            ai.stall = 0;
+            return;
+        }
+        if (res === 'arrived' || res === 'blocked' || ai.stall > 10) {
             ai.state = 'busy';
             const done = ai.onArrive; ai.onArrive = null;
             if (done) done();
@@ -1093,18 +1192,36 @@ function updateWander(p, delta) {
                 return;
             }
             const target = pickTarget(mover.position);
-            if (target) { ai.target = target; ai.state = 'walk'; }
+            if (target) {
+                ai.target = target;
+                ai.waypoints = buildRoute(mover.position, target);
+                ai.state = 'walk';
+            }
             else ai.wait = 1 + Math.random() * 2;
         }
         return;
     }
-    const res = steerToward(p, ai.target, delta);
+    const wp = (ai.waypoints && ai.waypoints.length) ? ai.waypoints[0] : ai.target;
+    const res = steerToward(p, wp, delta);
     if (res === 'arrived') {
+        if (ai.waypoints && ai.waypoints.length > 1) { ai.waypoints.shift(); return; }
         ai.state = 'idle'; ai.wait = 2 + Math.random() * 4;
         if (Math.random() < 0.22) pet.action = { id: Math.random() < 0.5 ? 'happy' : 'think', t: 0 };  // arrival flourish
     } else if (res === 'blocked') {
         ai.state = 'idle'; ai.wait = 0.5 + Math.random();              // grazed a prop en route — re-plan
     }
+}
+
+// Cross-island trips are routed through the right bridge (each satellite has exactly one), so a
+// straight-line steer never tries to cross open water.
+function buildRoute(from, to) {
+    const a = islandOf(from.x, from.z), b = islandOf(to.x, to.z);
+    if (a === b || a === -1 || b === -1) return [{ x: to.x, z: to.z }];
+    const route = [];
+    if (a !== 0) { const br = BRIDGES[a - 1]; route.push({ ...br.outer }, { ...br.inner }); }
+    if (b !== 0) { const br = BRIDGES[b - 1]; route.push({ ...br.inner }, { ...br.outer }); }
+    route.push({ x: to.x, z: to.z });
+    return route;
 }
 
 // ---- World FX: the shared motions emit emoji/overlays through per-entity hooks; here they anchor
@@ -1307,12 +1424,17 @@ const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 let duoBusy = false;
 
 function releaseAI(p, wait = 1.5) {
-    p.ai.state = 'idle'; p.ai.wait = wait + Math.random(); p.ai.target = null; p.ai.onArrive = null;
+    p.ai.state = 'idle'; p.ai.wait = wait + Math.random();
+    p.ai.target = null; p.ai.waypoints = null; p.ai.onArrive = null;
 }
 function gotoAsync(p, x, z) {
     return new Promise((resolve) => {
         p.pet.sleeping = false;
-        p.ai.state = 'goto'; p.ai.target = { x, z }; p.ai.stall = 0; p.ai.onArrive = resolve;
+        p.ai.state = 'goto';
+        p.ai.target = { x, z };
+        p.ai.waypoints = buildRoute(p.mover.position, { x, z });   // routes over bridges if needed
+        p.ai.stall = 0;
+        p.ai.onArrive = resolve;
     });
 }
 // Points GAP apart across the midpoint of the two pets, on the line through them.
@@ -1504,27 +1626,32 @@ chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isCom
 chatBar.addEventListener('pointerdown', (e) => e.stopPropagation());
 chatSend.addEventListener('click', sendWorldChat);
 
-// ---- 💡 가로등 밝기 (bottom-right): scales the rim lamps at night; persists across sessions.
-const lampUI = document.createElement('div');
-lampUI.style.cssText = 'position:fixed; right:14px; bottom:14px; display:flex; align-items:center; gap:8px; z-index:90; background:rgba(30,32,40,0.85); padding:8px 12px; border-radius:12px; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
-const lampIcon = document.createElement('span');
-lampIcon.textContent = '💡';
-lampIcon.style.cssText = 'font-size:15px;';
-const lampSlider = document.createElement('input');
-lampSlider.type = 'range';
-lampSlider.min = '0';
-lampSlider.max = '100';
-lampSlider.value = String(Math.round(lampBrightness * 100));
-lampSlider.title = '가로등 밝기';
-lampSlider.style.cssText = 'width:110px; accent-color:#ffd54f; cursor:pointer;';
-lampSlider.addEventListener('input', () => {
-    lampBrightness = Number(lampSlider.value) / 100;
-    try { localStorage.setItem('worldLampBrightness', String(lampBrightness)); } catch (e) {}
-    updateDayNight(true);
-});
-lampUI.appendChild(lampIcon);
-lampUI.appendChild(lampSlider);
-document.body.appendChild(lampUI);
+// ---- 🔍 확대/축소 buttons (bottom-right): tap = one step, hold = glide. They steer the same
+// smoothed zoom target as the wheel. (The old 💡 slider is gone — lamp brightness now lives on the
+// lamps themselves: walk a possessed pet up to one and press Ctrl/⌘ to cycle it.)
+let heldZoom = 0;
+const zoomUI = document.createElement('div');
+zoomUI.id = 'world-zoom-ui';
+zoomUI.style.cssText = 'position:fixed; right:14px; bottom:14px; display:flex; flex-direction:column; gap:6px; z-index:90; user-select:none; -webkit-user-select:none;';
+function zoomBtn(symbol, title, dir) {
+    const b = document.createElement('div');
+    b.textContent = symbol;
+    b.title = title;
+    b.style.cssText = 'width:38px; height:38px; display:flex; align-items:center; justify-content:center; background:rgba(30,32,40,0.85); color:#fff; font-size:17px; border-radius:11px; cursor:pointer; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
+    b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        camZoom(dir < 0 ? 0.88 : 1.14);
+        heldZoom = dir;
+        try { b.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    const stop = () => { heldZoom = 0; };
+    b.addEventListener('pointerup', stop);
+    b.addEventListener('pointercancel', stop);
+    zoomUI.appendChild(b);
+}
+zoomBtn('＋', '확대', -1);
+zoomBtn('－', '축소', 1);
+document.body.appendChild(zoomUI);
 
 function pickResponder(text) {
     if (/병아리|삐약|chick/i.test(text)) return pets.find((p) => p.name === 'chick') || pets[0] || null;
@@ -1705,15 +1832,21 @@ function releasePossession() {
     possessed = null;
     airborne = false; jumpVy = 0;
     seaHop = null;
-    // The AI only lives on land — if released while swimming (or mid-air past the rim), bring the
-    // pet back to solid, unblocked ground first.
-    if (p.swimming || Math.hypot(p.mover.position.x, p.mover.position.z) > ISLAND_R - 0.45) {
+    // The AI only lives on land — if released while swimming (or off every island), bring the pet
+    // onto the nearest island's solid ground first. Standing on a bridge deck is fine as-is.
+    const rx = p.mover.position.x, rz = p.mover.position.z;
+    if (p.swimming || (islandOf(rx, rz) < 0 && !onBridge(rx, rz))) {
         const pos = p.mover.position;
-        const rr = Math.hypot(pos.x, pos.z) || 1;
-        if (rr > ISLAND_R - 0.5) {
-            const k = (ISLAND_R - 0.6) / rr;
-            pos.x *= k; pos.z *= k;
+        let best = ISLANDS[0], bd = Infinity;
+        for (const s of ISLANDS) {
+            const d = Math.hypot(pos.x - s.x, pos.z - s.z) - s.r;
+            if (d < bd) { bd = d; best = s; }
         }
+        const dx = pos.x - best.x, dz = pos.z - best.z;
+        const rr = Math.hypot(dx, dz) || 1;
+        const k = Math.min(rr, best.r - 0.6) / rr;
+        pos.x = best.x + dx * k;
+        pos.z = best.z + dz * k;
         if (world.isBlocked(pos.x, pos.z)) { pos.x = -0.5; pos.z = 0.2; }   // e.g. released in the pond
         p.swimming = false;
         p.mover.rotation.x = 0;
@@ -1741,16 +1874,22 @@ window.addEventListener('keydown', (e) => {
         e.preventDefault();
         if (possessed.swimming === 'sea') {
             const pos = possessed.mover.position;
-            const rr = Math.hypot(pos.x, pos.z);
-            if (rr < ISLAND_R + 0.6 && !seaHop) {
-                const k = (ISLAND_R - 0.5) / (rr || 1);
-                const tx = pos.x * k, tz = pos.z * k;
-                seaHop = { fx: pos.x, fy: pos.y, fz: pos.z, tx, tz, ty: world.groundHeightAt(tx, tz), t: 0 };
+            const spot = nearestClimbSpot(pos);
+            if (spot && !seaHop) {
+                seaHop = { fx: pos.x, fy: pos.y, fz: pos.z, tx: spot.tx, tz: spot.tz, ty: spot.ty, t: 0 };
             }
             return;
         }
         const bed = !possessed.bed && nearestFreeBed(possessed, 0.95);
-        if (bed) mountBed(possessed, bed);
+        if (bed) { mountBed(possessed, bed); return; }
+        if (nearestLampDist(possessed) < 1.0) {
+            // Streetlamp brightness now lives on the lamps: cycle it in steps at the lamp (persisted).
+            const steps = [0, 0.25, 0.5, 0.75, 1];
+            const idx = steps.findIndex((s) => Math.abs(s - lampBrightness) < 0.125);
+            lampBrightness = steps[(idx + 1) % steps.length];
+            try { localStorage.setItem('worldLampBrightness', String(lampBrightness)); } catch (err) {}
+            updateDayNight(true);
+        }
     }
 });
 window.addEventListener('keyup', (e) => { heldKeys.delete(e.key); });
@@ -1761,7 +1900,7 @@ window.addEventListener('blur', () => heldKeys.clear());
 // in water the pet floats half-submerged with a gentle bob, leans forward and paddles.
 const pondPropRef = PROPS.find((q) => q.type === 'pond');
 const POND_WATER_Y = terrainHeight(pondPropRef.x, pondPropRef.z) + 0.06;
-const SWIM_LEASH = ISLAND_R + 4;                 // don't let the swimmer vanish into the fog
+const SWIM_LEASH = 13;                           // roomy enough to reach the satellite islands
 let seaHop = null;                               // climb-back tween { fx,fy,fz, tx,ty,tz, t }
 
 function playerBlocked(nx, nz) {
@@ -1773,13 +1912,39 @@ function playerBlocked(nx, nz) {
     return false;                                                 // no rim fence — diving is allowed
 }
 function playerSupportY(p, x, z) {
-    if (Math.hypot(x, z) > ISLAND_R - 0.05) {
-        return { y: OCEAN_LEVEL + 0.02 - p.height * 0.45, medium: 'sea' };
-    }
     if (Math.hypot(x - pondPropRef.x, z - pondPropRef.z) < 0.55) {
         return { y: POND_WATER_Y - p.height * 0.45, medium: 'pond' };
     }
-    return { y: world.groundHeightAt(x, z), medium: 'land' };
+    const hit = onBridge(x, z);
+    if (hit) return { y: bridgeDeckY(hit), medium: 'land' };
+    for (const s of ISLANDS) {
+        if (Math.hypot(x - s.x, z - s.z) < s.r - 0.05) {
+            return { y: terrainHeight(x, z), medium: 'land' };
+        }
+    }
+    return { y: OCEAN_LEVEL + 0.02 - p.height * 0.45, medium: 'sea' };
+}
+// Closest climbable rim while swimming — works for every island in the archipelago.
+function nearestClimbSpot(pos) {
+    for (const s of ISLANDS) {
+        const dx = pos.x - s.x, dz = pos.z - s.z;
+        const rr = Math.hypot(dx, dz);
+        if (rr >= s.r - 0.05 && rr < s.r + 0.6) {
+            const k = (s.r - 0.5) / (rr || 1);
+            const tx = s.x + dx * k, tz = s.z + dz * k;
+            return { tx, tz, ty: terrainHeight(tx, tz) };
+        }
+    }
+    return null;
+}
+function nearestLampDist(p) {
+    let best = Infinity;
+    for (const q of PROPS) {
+        if (q.type !== 'lamp') continue;
+        const d = Math.hypot(p.mover.position.x - q.x, p.mover.position.z - q.z);
+        if (d < best) best = d;
+    }
+    return best;
 }
 
 function updatePlayer(delta) {
@@ -1846,11 +2011,12 @@ function updatePlayer(delta) {
     p.mover.rotation.x = p.swimming ? 0.3 : 0;    // lean into the paddle (applySwimPose counters at the head)
     // Hint: swimming shows the climb-out key near the cliff; on land, the tuck-in key near a bed.
     const petName = p.name === 'chick' ? '병아리' : '강아지';
-    const nearCliff = p.swimming === 'sea' && Math.hypot(p.mover.position.x, p.mover.position.z) < ISLAND_R + 0.6;
+    const nearCliff = p.swimming === 'sea' && !!nearestClimbSpot(p.mover.position);
     const bedNear = !p.swimming && !p.bed && nearestFreeBed(p, 0.95);
+    const lampNear = !p.swimming && !bedNear && nearestLampDist(p) < 1.0;
     const hint = p.swimming
         ? `🏊 ${petName} 수영 중 — 방향키 이동 · Space 물장구${nearCliff ? ' · Ctrl/⌘ 섬으로 올라가기' : ''} · Esc 해제`
-        : `🎮 ${petName} 조종 중 — 방향키 이동 · Space 점프${bedNear ? ' · Ctrl/⌘ 눕기' : ''} · Esc 해제`;
+        : `🎮 ${petName} 조종 중 — 방향키 이동 · Space 점프${bedNear ? ' · Ctrl/⌘ 눕기' : lampNear ? ` · Ctrl/⌘ 가로등 ${Math.round(lampBrightness * 100)}%` : ''} · Esc 해제`;
     if (controlHint.textContent !== hint) controlHint.textContent = hint;
 }
 
@@ -2258,9 +2424,9 @@ function updateCrumbs(delta) {
         c.m.position.x += c.vx * delta;
         c.m.position.y += c.vy * delta;
         c.m.position.z += c.vz * delta;
-        // Particles die on the local surface: terrain on the island, the sea beyond the rim.
-        const offIsland = Math.hypot(c.m.position.x, c.m.position.z) >= ISLAND_R;
-        const floor = offIsland ? OCEAN_LEVEL : world.groundHeightAt(c.m.position.x, c.m.position.z);
+        // Particles die on the local surface: island terrain, bridge decks, or the open sea.
+        const onGround = islandOf(c.m.position.x, c.m.position.z) >= 0 || onBridge(c.m.position.x, c.m.position.z);
+        const floor = onGround ? world.groundHeightAt(c.m.position.x, c.m.position.z) : OCEAN_LEVEL;
         if (c.m.position.y <= floor + 0.008 || c.t > 1.2) {
             scene.remove(c.m);
             crumbs.splice(i, 1);
@@ -2301,6 +2467,7 @@ function animate() {
         ballMesh.position.y += Math.sin(k * Math.PI) * ballFlight.arc;
         if (k >= 1) { const done = ballFlight.resolve; ballFlight = null; done(); }
     }
+    if (heldZoom) camZoom(Math.pow(heldZoom < 0 ? 0.45 : 2.2, delta));   // held zoom buttons glide
     // Glide the camera distance toward the wheel/button zoom target (exponential ease-out).
     const curDist = camera.position.distanceTo(controls.target);
     if (Math.abs(curDist - zoomTargetDist) > 0.001) {

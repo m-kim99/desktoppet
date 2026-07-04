@@ -6,6 +6,22 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **Archipelago: two bridge-connected satellite islands (군도·다리)**: the world becomes three
+  islands — the main one plus a NE (r2.2) and SW (r2.0) satellite, each built by the same
+  grass/cliff generator (resolution scales with radius) with its own foam rings, a tree and a
+  bridgehead lamp, otherwise left as open ground for future features. Wooden arched bridges
+  (stepped planks, posts, rails) connect them; bridge decks count as ground everywhere — terrain
+  height, blocking, particle floors, the player's support/fall logic — so anyone can walk (or
+  arch-climb from a swim onto any island's rim). Pets route cross-island trips through the right
+  bridge via a waypoint system used by both wandering and the approach walks (beds/meals/duos), and
+  bridge nodes joined the wander destinations. Swimming leash widened to reach the satellites.
+- **Lamp brightness moved onto the lamps + zoom buttons (가로등 상호작용·줌 버튼)**: the 💡 slider is
+  gone from the window — walk a possessed pet up to any streetlamp and press Ctrl/⌘ to cycle its
+  brightness (0→25→50→75→100%, shown in the hint, persisted). The bottom-right corner now hosts
+  ＋/－ zoom buttons instead (tap = one step, hold = smooth glide — same eased zoom the wheel
+  drives), for setups where scrolling is awkward. Daytime look was also toned down a notch
+  (environment 0.4→0.25, exposure 1.12→1.06) — the extra brightness had crept in with the texture
+  pass's IBL, not just the daylight.
 - **Island expansion + road network (섬 확장·도로)**: the island grows from R3.2 to R5.2 (~2.6×
   the area) to make room for the expansion wishlist. The layout is zoned — NE house yard (+bowl),
   E rest area (sunbed), S hammock nook, SW pond, W fence lawn, four trees spread around — with the
