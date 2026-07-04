@@ -2415,12 +2415,25 @@ function giveDrink(p, d) {
     removeDrink(p);
     const mesh = makeDrinkMesh(d);
     p.pet.wrap.add(mesh);
-    // wrap-local: the wrap is π-flipped, so (-x, -z) in wrap space = (+x, +z) in travel space.
-    // Rest just OUTSIDE the body using the model's measured size (pet.dims), so the chunky puppy
-    // doesn't swallow the cup.
+    // Find the ACTUAL fur surface at cup height by raycasting into the body from the side —
+    // bounding-box numbers put the cup/arm off the flank on chunky shapes. The hit point anchors
+    // the arm inside the fur and rests the cup just outside it.
     const dims = p.pet.dims;
-    mesh.position.set(-(dims.x / 2 + 0.03), dims.y * 0.34, -(dims.z / 2 + 0.03));
-    const drink = { def: d, mesh, gulps: 0, seq: null, rest: mesh.position.clone() };
+    const cupY = dims.y * 0.34;
+    const cupZ = -dims.z * 0.12;                            // beside the flank, slightly forward
+    p.pet.wrap.updateWorldMatrix(true, false);
+    const originW = p.pet.wrap.localToWorld(new THREE.Vector3(-dims.x, cupY, cupZ));
+    const towardW = p.pet.wrap.localToWorld(new THREE.Vector3(0, cupY, cupZ));
+    const rc = new THREE.Raycaster(originW, towardW.sub(originW).normalize(), 0, dims.x * 1.5);
+    const hits = rc.intersectObject(p.pet.root, true);
+    let sideX = -(dims.x / 2) * 0.8;                        // fallback if the ray misses
+    if (hits.length) sideX = p.pet.wrap.worldToLocal(hits[0].point.clone()).x;
+    mesh.position.set(sideX - 0.045, cupY, cupZ);
+    const drink = {
+        def: d, mesh, gulps: 0, seq: null,
+        rest: mesh.position.clone(),
+        anchor: new THREE.Vector3(sideX + 0.025, cupY + 0.045, cupZ + 0.01),   // inside the fur
+    };
     // 강아지 (no wings) gets a little arm + paw that stretch from the shoulder to the cup, so the
     // cup reads as held instead of floating.
     if (!p.pet.wings.length) {
@@ -2497,13 +2510,9 @@ function applyCarryPose(p, delta) {
         THREE.MathUtils.lerp(dr.rest.z, _cupTarget.z, raise)
     );
     if (dr.arm) {
-        // A short wing-length stub: anchored just behind/above the cup toward the body, so it
-        // reads as a little paw-arm holding the cup rather than a long limb from the shoulder.
-        _mouthV.copy(dr.mesh.position);
-        _mouthV.x += 0.055;                   // toward the body center
-        _mouthV.y += 0.045;
-        _mouthV.z += 0.05;
-        stretchBetween(dr.arm, _mouthV, dr.mesh.position);
+        // Short stub from the raycast fur anchor to wherever the cup is — always attached to the
+        // body, wing-length at rest, stretching naturally when the cup rises to the mouth.
+        stretchBetween(dr.arm, dr.anchor, dr.mesh.position);
         dr.paw.position.copy(dr.mesh.position);
         dr.paw.position.y += 0.014;
         dr.paw.position.x += 0.012;

@@ -5,6 +5,13 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Fixed (클릭·음료 후속 3)
+- **Drink arm attaches to the body for real**: bounding-box math put the stub arm off the flank on
+  the puppy's chunky shape. `giveDrink` now raycasts into the body at cup height to find the actual
+  fur surface — the arm anchors just inside that hit point and the cup rests just outside it, so
+  the limb is always rooted in the body regardless of shape, and stretches naturally to the mouth
+  while drinking.
+
 ### Fixed (클릭·음료 후속 2)
 - **먹기 popup opens on the pet and stays open**: on macOS the browser's contextmenu event fires on
   mouse-DOWN, so the popup opened and was instantly wiped by the pointer-up handler. All popup
