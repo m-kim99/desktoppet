@@ -5,6 +5,14 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Fixed (클릭·음료 후속 2)
+- **먹기 popup opens on the pet and stays open**: on macOS the browser's contextmenu event fires on
+  mouse-DOWN, so the popup opened and was instantly wiped by the pointer-up handler. All popup
+  logic moved into the pointerup raycast: right-click ON the drink-holding driven pet → 먹기
+  (background right-clicks show nothing, as requested); the contextmenu handler now only suppresses
+  the browser menu. The puppy's drink arm also shrank to a chick-wing-length stub anchored at the
+  cup (no more long limb from the shoulder), and the cup rests a touch closer to the body.
+
 ### Fixed (클릭·음료 후속)
 - **Right-click menus are back**: the recent mouse-button separation accidentally made pet menus
   (조종하기/모션) left-click-only — both buttons open them again like before. Right-clicking empty

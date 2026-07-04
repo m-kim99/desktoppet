@@ -1717,7 +1717,6 @@ let pressAt = null;
 renderer.domElement.addEventListener('pointerdown', (e) => {
     pressAt = { x: e.clientX, y: e.clientY, t: performance.now() };
 });
-let lastPressWasDrag = false;
 renderer.domElement.addEventListener('pointerup', (e) => {
     hideMenu();
     hideSipMenu();
@@ -1725,12 +1724,16 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     const moved = Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y);
     const held = performance.now() - pressAt.t;
     pressAt = null;
-    lastPressWasDrag = moved > 6 || held > 400;
-    if (lastPressWasDrag) return;
+    if (moved > 6 || held > 400) return;
     pointerNdc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
     raycaster.setFromCamera(pointerNdc, camera);
     for (const p of pets) {
         if (raycaster.intersectObject(p.mover, true).length) {
+            // Right-click on the drink-holding driven pet → the 먹기 popup (background clicks never).
+            if (e.button === 2 && p === possessed && p.drink && !p.drink.seq) {
+                showSipMenuAt(e.clientX, e.clientY);
+                return;
+            }
             if (p.bed && p.bed.mode === 'sit') { p.bedExit = true; return; }   // tap a sitter → gets up
             if (p.pet.sleeping) { p.pet.sleeping = false; p.pet.autoSleeping = false; return; }
             showMenu(e.clientX, e.clientY, p);
@@ -2416,7 +2419,7 @@ function giveDrink(p, d) {
     // Rest just OUTSIDE the body using the model's measured size (pet.dims), so the chunky puppy
     // doesn't swallow the cup.
     const dims = p.pet.dims;
-    mesh.position.set(-(dims.x / 2 + 0.045), dims.y * 0.32, -(dims.z / 2 + 0.04));
+    mesh.position.set(-(dims.x / 2 + 0.03), dims.y * 0.34, -(dims.z / 2 + 0.03));
     const drink = { def: d, mesh, gulps: 0, seq: null, rest: mesh.position.clone() };
     // 강아지 (no wings) gets a little arm + paw that stretch from the shoulder to the cup, so the
     // cup reads as held instead of floating.
@@ -2494,14 +2497,16 @@ function applyCarryPose(p, delta) {
         THREE.MathUtils.lerp(dr.rest.z, _cupTarget.z, raise)
     );
     if (dr.arm) {
-        // shoulder → cup arm, paw wrapped on the cup side; the shoulder sits on the body's
-        // measured flank so the limb starts at fur, not inside it
-        const dims = p.pet.dims;
-        _mouthV.set(-(dims.x / 2 - 0.015), dims.y * 0.48, -dims.z * 0.12);
+        // A short wing-length stub: anchored just behind/above the cup toward the body, so it
+        // reads as a little paw-arm holding the cup rather than a long limb from the shoulder.
+        _mouthV.copy(dr.mesh.position);
+        _mouthV.x += 0.055;                   // toward the body center
+        _mouthV.y += 0.045;
+        _mouthV.z += 0.05;
         stretchBetween(dr.arm, _mouthV, dr.mesh.position);
         dr.paw.position.copy(dr.mesh.position);
         dr.paw.position.y += 0.014;
-        dr.paw.position.x += 0.014;
+        dr.paw.position.x += 0.012;
     }
 }
 
@@ -2564,17 +2569,16 @@ sipItem.onclick = () => {
 sipMenu.appendChild(sipItem);
 document.body.appendChild(sipMenu);
 function hideSipMenu() { sipMenu.style.display = 'none'; }
-// Right-click behaves like it always did (pointerup raycast opens pet menus on either button);
-// this only adds: right-click on EMPTY ground while holding a drink → the 먹기 popup.
+function showSipMenuAt(x, y) {
+    sipMenu.style.display = 'block';
+    sipMenu.style.left = `${Math.min(x, window.innerWidth - 110)}px`;
+    sipMenu.style.top = `${Math.min(y, window.innerHeight - 50)}px`;
+}
+// The popup itself is opened from the pointerup raycast (right-click ON the drink-holding pet) —
+// this handler only suppresses the browser context menu, which on macOS fires on mouseDOWN and
+// used to close the popup the instant it appeared.
 renderer.domElement.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    if (lastPressWasDrag) return;                          // that was an orbit/pan drag
-    if (motionMenu.style.display === 'block') return;      // this right-click opened a pet menu
-    if (possessed && possessed.drink && !possessed.drink.seq) {
-        sipMenu.style.display = 'block';
-        sipMenu.style.left = `${Math.min(e.clientX, window.innerWidth - 110)}px`;
-        sipMenu.style.top = `${Math.min(e.clientY, window.innerHeight - 50)}px`;
-    }
 });
 
 function pickResponder(text) {
