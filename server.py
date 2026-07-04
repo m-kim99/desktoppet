@@ -11374,6 +11374,31 @@ mcp = FastApiMCP(
 
 mcp.mount()
 
+# ---- Pet world (월드) helpers: radio playlist + screenshot saving ----
+WORLD_MUSIC_DIR = os.path.join(base_path, "static", "music")
+WORLD_SHOT_DIR = os.path.join(base_path, "screenshots")
+
+@app.get("/api/radio_list")
+async def world_radio_list():
+    os.makedirs(WORLD_MUSIC_DIR, exist_ok=True)
+    exts = (".mp3", ".m4a", ".wav", ".ogg", ".flac", ".aac", ".webm")
+    try:
+        files = sorted(f for f in os.listdir(WORLD_MUSIC_DIR) if f.lower().endswith(exts))
+    except Exception:
+        files = []
+    return {"files": files}
+
+@app.post("/api/save_screenshot")
+async def world_save_screenshot(request: Request):
+    import time as _time
+    data = await request.json()
+    b64 = str(data.get("image", "")).split(",", 1)[-1]
+    os.makedirs(WORLD_SHOT_DIR, exist_ok=True)
+    name = f"world_{_time.strftime('%Y%m%d_%H%M%S')}.png"
+    with open(os.path.join(WORLD_SHOT_DIR, name), "wb") as f:
+        f.write(base64.b64decode(b64))
+    return {"ok": True, "file": name}
+
 app.mount("/vrm", StaticFiles(directory=DEFAULT_VRM_DIR), name="vrm")
 app.mount("/tool_temp", StaticFiles(directory=TOOL_TEMP_DIR), name="tool_temp")
 app.mount("/uploaded_files", StaticFiles(directory=UPLOAD_FILES_DIR), name="uploaded_files")

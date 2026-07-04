@@ -205,3 +205,7 @@ vts_token.txt
 # Regenerable caches / local artifacts
 tiktoken_cache/
 crash.log
+# Pet world user content
+screenshots/
+static/music/*
+!static/music/README.md

@@ -6,6 +6,17 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **Radio, screenshots, follow-cam + zoom fixes (라디오·스샷·팔로우캠)**: a little radio prop sits at
+  the plaza edge — drive a pet up and press Ctrl/⌘ to open a scrollable playlist of whatever audio
+  files you drop into `static/music/` (new `/api/radio_list` backend endpoint; picking a track
+  loops it, ⏹ stops, ✕/Esc closes). A 📷 button (top of the right-side dock) renders a fresh frame
+  and saves it through the new `/api/save_screenshot` endpoint into the `screenshots/` folder,
+  with a white flash + toast naming the file (both folders are git-ignored). While driving a pet
+  the camera now follows it — the orbit target glides after the pet and the camera slides along,
+  preserving your angle/zoom, with drag/wheel still usable mid-follow. The zoom buttons were
+  rebuilt: moved above the chat-bar row (bottom:70, z-index 95) so nothing swallows their clicks,
+  bigger steps and faster hold-glide, and keyboard +/− (numpad too) now zooms as well. Daytime
+  pastel toned down another notch (environment 0.15, exposure 1.0).
 - **Archipelago: two bridge-connected satellite islands (군도·다리)**: the world becomes three
   islands — the main one plus a NE (r2.2) and SW (r2.0) satellite, each built by the same
   grass/cliff generator (resolution scales with radius) with its own foam rings, a tree and a

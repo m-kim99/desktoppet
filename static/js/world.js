@@ -14,7 +14,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;   // gentle filmic rolloff — pastels stay soft
-renderer.toneMappingExposure = 1.06;
+renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -23,7 +23,7 @@ const scene = new THREE.Scene();
 {
     const pmrem = new THREE.PMREMGenerator(renderer);
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    scene.environmentIntensity = 0.25;
+    scene.environmentIntensity = 0.15;
     pmrem.dispose();
 }
 // Sky: a vertical gradient painted onto a big inside-out dome (fog is disabled on it so the
@@ -500,6 +500,7 @@ const PROPS = [
     { type: 'lamp', x: -1.48, z: -3.00, rotY: 0, r: 0.18 },
     { type: 'lamp', x: -3.33, z: -0.37, rotY: 0, r: 0.18 },
     { type: 'lamp', x: -1.85, z:  2.79, rotY: 0, r: 0.18 },
+    { type: 'radio', x: 0.35, z: 1.55, rotY: 2.6, r: 0.24 },   // plaza-edge radio (Ctrl/⌘로 재생)
     // Satellite islands: a tree and a lamp at each bridgehead (otherwise open feature ground)
     { type: 'tree',  x:  8.7,  z:  3.78, rotY: 0.7, r: 0.45, big: true  },
     { type: 'tree',  x: -8.4,  z: -3.0,  rotY: 2.9, r: 0.45, big: false },
@@ -703,7 +704,36 @@ function makeLamp() {
     return g;
 }
 
-const PROP_BUILDERS = { tree: makeTree, house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, lamp: makeLamp };
+function makeRadio() {
+    const g = new THREE.Group();
+    const stand = new THREE.Mesh(new RoundedBoxGeometry(0.3, 0.03, 0.16, 3, 0.012), M(0xb08a60, { map: woodTex }));
+    stand.position.y = 0.015;
+    g.add(stand);
+    const body = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.16, 0.11, 3, 0.03), M(0xef8a8a));
+    body.position.y = 0.12;
+    g.add(body);
+    const speaker = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.112, 20), M(0x5a4a42));
+    speaker.rotation.x = Math.PI / 2;
+    speaker.position.set(-0.055, 0.12, 0.002);
+    g.add(speaker);
+    const knobMat = M(0xfff1cf);
+    for (const ky of [0.145, 0.095]) {
+        const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.115, 10), knobMat);
+        knob.rotation.x = Math.PI / 2;
+        knob.position.set(0.07, ky, 0.002);
+        g.add(knob);
+    }
+    const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.24, 6), M(0x5a6a75));
+    antenna.position.set(-0.09, 0.28, -0.02);
+    antenna.rotation.z = 0.5;
+    g.add(antenna);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 6), M(0x5a6a75));
+    tip.position.set(-0.147, 0.385, -0.02);
+    g.add(tip);
+    return g;
+}
+
+const PROP_BUILDERS = { tree: makeTree, house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, lamp: makeLamp, radio: makeRadio };
 for (const p of PROPS) {
     const obj = PROP_BUILDERS[p.type](p);
     obj.position.set(p.x, terrainHeight(p.x, p.z), p.z);
@@ -1626,32 +1656,156 @@ chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isCom
 chatBar.addEventListener('pointerdown', (e) => e.stopPropagation());
 chatSend.addEventListener('click', sendWorldChat);
 
-// ---- 🔍 확대/축소 buttons (bottom-right): tap = one step, hold = glide. They steer the same
-// smoothed zoom target as the wheel. (The old 💡 slider is gone — lamp brightness now lives on the
-// lamps themselves: walk a possessed pet up to one and press Ctrl/⌘ to cycle it.)
+// ---- Right-side dock: 📷 screenshot + 🔍 zoom buttons. Sits above the chat-bar row (bottom:70)
+// with a high z-index so nothing can swallow its clicks; tap = one step, hold = glide (same eased
+// zoom target the wheel drives). Keyboard +/- (and numpad) zoom too. Lamp brightness lives on the
+// lamps themselves now: walk a possessed pet up to one and press Ctrl/⌘.
 let heldZoom = 0;
-const zoomUI = document.createElement('div');
-zoomUI.id = 'world-zoom-ui';
-zoomUI.style.cssText = 'position:fixed; right:14px; bottom:14px; display:flex; flex-direction:column; gap:6px; z-index:90; user-select:none; -webkit-user-select:none;';
-function zoomBtn(symbol, title, dir) {
+const dockUI = document.createElement('div');
+dockUI.id = 'world-dock-ui';
+dockUI.style.cssText = 'position:fixed; right:14px; bottom:70px; display:flex; flex-direction:column; gap:6px; z-index:95; user-select:none; -webkit-user-select:none;';
+function dockBtn(symbol, title) {
     const b = document.createElement('div');
     b.textContent = symbol;
     b.title = title;
-    b.style.cssText = 'width:38px; height:38px; display:flex; align-items:center; justify-content:center; background:rgba(30,32,40,0.85); color:#fff; font-size:17px; border-radius:11px; cursor:pointer; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
+    b.style.cssText = 'width:40px; height:40px; display:flex; align-items:center; justify-content:center; background:rgba(30,32,40,0.88); color:#fff; font-size:17px; border-radius:11px; cursor:pointer; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
+    dockUI.appendChild(b);
+    return b;
+}
+const shotBtn = dockBtn('📷', '스크린샷 (screenshots/ 폴더에 저장)');
+shotBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
+shotBtn.addEventListener('click', () => { takeScreenshot(); });
+function bindZoomBtn(b, dir) {
     b.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        camZoom(dir < 0 ? 0.88 : 1.14);
+        camZoom(dir < 0 ? 0.8 : 1.25);
         heldZoom = dir;
         try { b.setPointerCapture(e.pointerId); } catch (err) {}
     });
     const stop = () => { heldZoom = 0; };
     b.addEventListener('pointerup', stop);
     b.addEventListener('pointercancel', stop);
-    zoomUI.appendChild(b);
+    b.addEventListener('lostpointercapture', stop);
 }
-zoomBtn('＋', '확대', -1);
-zoomBtn('－', '축소', 1);
-document.body.appendChild(zoomUI);
+bindZoomBtn(dockBtn('＋', '확대 (키보드 + 키)'), -1);
+bindZoomBtn(dockBtn('－', '축소 (키보드 - 키)'), 1);
+document.body.appendChild(dockUI);
+// Keyboard zoom: +/- (with or without shift) and the numpad keys; ignored while typing.
+window.addEventListener('keydown', (e) => {
+    if (e.target && e.target.tagName === 'INPUT') return;
+    if (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd') { e.preventDefault(); camZoom(0.86); }
+    else if (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract') { e.preventDefault(); camZoom(1.16); }
+});
+
+// Toast: small transient notice above the chat bar (screenshot results, radio errors).
+const toastEl = document.createElement('div');
+toastEl.style.cssText = 'position:fixed; left:50%; bottom:70px; transform:translateX(-50%); display:none; background:rgba(30,32,40,0.92); color:#fff; font-size:12.5px; font-family:sans-serif; padding:8px 14px; border-radius:10px; z-index:120; box-shadow:0 4px 14px rgba(0,0,0,0.3); pointer-events:none;';
+document.body.appendChild(toastEl);
+let toastTimer = null;
+function showToast(text) {
+    toastEl.textContent = text;
+    toastEl.style.display = 'block';
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastEl.style.display = 'none'; }, 2600);
+}
+
+// Screenshot: render a fresh frame, grab the canvas, POST it to the backend which writes a PNG
+// into the screenshots/ folder. A quick white flash confirms the capture.
+async function takeScreenshot() {
+    renderer.render(scene, camera);
+    const dataURL = renderer.domElement.toDataURL('image/png');
+    const flash = document.createElement('div');
+    flash.style.cssText = 'position:fixed; inset:0; background:#fff; opacity:0.7; z-index:200; pointer-events:none; transition:opacity 0.35s;';
+    document.body.appendChild(flash);
+    requestAnimationFrame(() => { flash.style.opacity = '0'; });
+    setTimeout(() => flash.remove(), 420);
+    try {
+        const res = await fetch('/api/save_screenshot', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: dataURL }),
+        });
+        const j = await res.json();
+        showToast(j && j.ok ? `📷 저장됨 — screenshots/${j.file}` : '📷 저장 실패');
+    } catch (e) {
+        showToast('📷 저장 실패 (서버 응답 없음)');
+    }
+}
+
+// ---- 📻 Radio: Ctrl/⌘ at the radio prop opens a small scrollable playlist of the files the user
+// dropped into static/music/. Picking a track loops it; ⏹ stops; ✕ (or Esc) closes the panel.
+let radioAudio = null;
+let radioCurrent = null;
+const radioPanel = document.createElement('div');
+radioPanel.style.cssText = 'position:fixed; right:64px; bottom:70px; display:none; width:250px; background:rgba(30,32,40,0.94); border-radius:12px; padding:10px; z-index:110; box-shadow:0 6px 24px rgba(0,0,0,0.4); font-family:sans-serif;';
+radioPanel.innerHTML = '';
+const radioHeader = document.createElement('div');
+radioHeader.style.cssText = 'display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;';
+radioHeader.innerHTML = '<span style="color:#fff; font-size:13px; font-weight:700;">📻 라디오</span>';
+const radioClose = document.createElement('div');
+radioClose.textContent = '✕';
+radioClose.style.cssText = 'color:#aab; font-size:13px; cursor:pointer; padding:2px 6px;';
+radioClose.onclick = () => { radioPanel.style.display = 'none'; };
+radioHeader.appendChild(radioClose);
+radioPanel.appendChild(radioHeader);
+const radioList = document.createElement('div');
+radioList.style.cssText = 'max-height:180px; overflow-y:auto; display:flex; flex-direction:column; gap:2px;';
+radioPanel.appendChild(radioList);
+const radioStop = document.createElement('div');
+radioStop.textContent = '⏹ 끄기';
+radioStop.style.cssText = 'margin-top:8px; text-align:center; padding:7px; font-size:12.5px; color:#fff; background:rgba(255,255,255,0.08); border-radius:8px; cursor:pointer;';
+radioStop.onclick = () => { stopRadio(); renderRadioItems(radioLastFiles); };
+radioPanel.appendChild(radioStop);
+document.body.appendChild(radioPanel);
+let radioLastFiles = [];
+function renderRadioItems(files) {
+    radioLastFiles = files;
+    radioList.innerHTML = '';
+    if (!files.length) {
+        const empty = document.createElement('div');
+        empty.textContent = 'static/music 폴더에 음악 파일을 넣어주세요';
+        empty.style.cssText = 'color:#99a; font-size:12px; padding:10px 6px; line-height:1.5;';
+        radioList.appendChild(empty);
+        return;
+    }
+    for (const name of files) {
+        const item = document.createElement('div');
+        const playing = name === radioCurrent;
+        item.textContent = `${playing ? '♪ ' : ''}${name}`;
+        item.title = name;
+        item.style.cssText = `padding:6px 8px; font-size:12px; color:${playing ? '#ffd54f' : '#fff'}; border-radius:7px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:${playing ? 'rgba(255,213,79,0.12)' : 'transparent'};`;
+        item.onmouseenter = () => { if (name !== radioCurrent) item.style.background = 'rgba(255,255,255,0.1)'; };
+        item.onmouseleave = () => { if (name !== radioCurrent) item.style.background = 'transparent'; };
+        item.onclick = () => { playRadioTrack(name); renderRadioItems(files); };
+        radioList.appendChild(item);
+    }
+}
+function playRadioTrack(name) {
+    if (radioAudio) { try { radioAudio.pause(); } catch (e) {} }
+    radioAudio = new Audio(`/music/${encodeURIComponent(name)}`);
+    radioAudio.loop = true;
+    radioAudio.volume = 0.55;
+    radioAudio.play().catch(() => showToast('📻 재생 실패 — 파일 형식을 확인해주세요'));
+    radioCurrent = name;
+}
+function stopRadio() {
+    if (radioAudio) { try { radioAudio.pause(); } catch (e) {} radioAudio = null; }
+    radioCurrent = null;
+}
+async function toggleRadioPanel() {
+    if (radioPanel.style.display === 'none' || !radioPanel.style.display) {
+        radioPanel.style.display = 'block';
+        try {
+            const res = await fetch('/api/radio_list');
+            const j = await res.json();
+            renderRadioItems((j && j.files) || []);
+        } catch (e) {
+            renderRadioItems([]);
+        }
+    } else {
+        radioPanel.style.display = 'none';
+    }
+}
 
 function pickResponder(text) {
     if (/병아리|삐약|chick/i.test(text)) return pets.find((p) => p.name === 'chick') || pets[0] || null;
@@ -1861,7 +2015,7 @@ function releasePossession() {
 const ARROW_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 window.addEventListener('keydown', (e) => {
     if (e.target && e.target.tagName === 'INPUT') return;        // typing in the chat bar
-    if (e.key === 'Escape') { releasePossession(); hideMenu(); return; }
+    if (e.key === 'Escape') { releasePossession(); hideMenu(); radioPanel.style.display = 'none'; return; }
     if (!possessed) return;
     if (ARROW_KEYS.includes(e.key)) { heldKeys.add(e.key); e.preventDefault(); }
     else if (e.code === 'Space') {
@@ -1882,7 +2036,11 @@ window.addEventListener('keydown', (e) => {
         }
         const bed = !possessed.bed && nearestFreeBed(possessed, 0.95);
         if (bed) { mountBed(possessed, bed); return; }
-        if (nearestLampDist(possessed) < 1.0) {
+        if (nearestPropDist(possessed, 'radio') < 1.0) {
+            toggleRadioPanel();
+            return;
+        }
+        if (nearestPropDist(possessed, 'lamp') < 1.0) {
             // Streetlamp brightness now lives on the lamps: cycle it in steps at the lamp (persisted).
             const steps = [0, 0.25, 0.5, 0.75, 1];
             const idx = steps.findIndex((s) => Math.abs(s - lampBrightness) < 0.125);
@@ -1937,10 +2095,10 @@ function nearestClimbSpot(pos) {
     }
     return null;
 }
-function nearestLampDist(p) {
+function nearestPropDist(p, type) {
     let best = Infinity;
     for (const q of PROPS) {
-        if (q.type !== 'lamp') continue;
+        if (q.type !== type) continue;
         const d = Math.hypot(p.mover.position.x - q.x, p.mover.position.z - q.z);
         if (d < best) best = d;
     }
@@ -2013,10 +2171,11 @@ function updatePlayer(delta) {
     const petName = p.name === 'chick' ? '병아리' : '강아지';
     const nearCliff = p.swimming === 'sea' && !!nearestClimbSpot(p.mover.position);
     const bedNear = !p.swimming && !p.bed && nearestFreeBed(p, 0.95);
-    const lampNear = !p.swimming && !bedNear && nearestLampDist(p) < 1.0;
+    const radioNear = !p.swimming && !bedNear && nearestPropDist(p, 'radio') < 1.0;
+    const lampNear = !p.swimming && !bedNear && !radioNear && nearestPropDist(p, 'lamp') < 1.0;
     const hint = p.swimming
         ? `🏊 ${petName} 수영 중 — 방향키 이동 · Space 물장구${nearCliff ? ' · Ctrl/⌘ 섬으로 올라가기' : ''} · Esc 해제`
-        : `🎮 ${petName} 조종 중 — 방향키 이동 · Space 점프${bedNear ? ' · Ctrl/⌘ 눕기' : lampNear ? ` · Ctrl/⌘ 가로등 ${Math.round(lampBrightness * 100)}%` : ''} · Esc 해제`;
+        : `🎮 ${petName} 조종 중 — 방향키 이동 · Space 점프${bedNear ? ' · Ctrl/⌘ 눕기' : radioNear ? ' · Ctrl/⌘ 라디오' : lampNear ? ` · Ctrl/⌘ 가로등 ${Math.round(lampBrightness * 100)}%` : ''} · Esc 해제`;
     if (controlHint.textContent !== hint) controlHint.textContent = hint;
 }
 
@@ -2211,6 +2370,21 @@ function updateSelectRing() {
         possessed.mover.position.y + 0.012,   // rides jumps and floats on water with the pet
         possessed.mover.position.z
     );
+}
+
+// Follow cam: while driving a pet, the orbit target glides after it (camera slides along by the
+// same offset, so your chosen angle/zoom is preserved — drag/wheel still work mid-follow).
+const _followDelta = new THREE.Vector3();
+function updateFollowCam(delta) {
+    if (!possessed) return;
+    const p = possessed;
+    _followDelta.set(
+        p.mover.position.x,
+        p.mover.position.y + p.height * 0.55,
+        p.mover.position.z
+    ).sub(controls.target).multiplyScalar(Math.min(1, delta * 5));
+    controls.target.add(_followDelta);
+    camera.position.add(_followDelta);
 }
 
 // ---- 잠자리 & auto-sleep: at 22시 the pets head to bed (chick→hammock, puppy→sunbed), climb on,
@@ -2467,7 +2641,8 @@ function animate() {
         ballMesh.position.y += Math.sin(k * Math.PI) * ballFlight.arc;
         if (k >= 1) { const done = ballFlight.resolve; ballFlight = null; done(); }
     }
-    if (heldZoom) camZoom(Math.pow(heldZoom < 0 ? 0.45 : 2.2, delta));   // held zoom buttons glide
+    updateFollowCam(delta);
+    if (heldZoom) camZoom(Math.pow(heldZoom < 0 ? 0.35 : 2.8, delta));   // held zoom buttons glide
     // Glide the camera distance toward the wheel/button zoom target (exponential ease-out).
     const curDist = camera.position.distanceTo(controls.target);
     if (Math.abs(curDist - zoomTargetDist) > 0.001) {
