@@ -5,6 +5,14 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Fixed
+- **Zoom buttons actually zoom now**: the `camZoom` helper had been deleted along with the old
+  camera button panel, so the ＋/－ buttons and keyboard +/- were silently throwing on every press —
+  the function is back (steering the same smoothed distance target the wheel uses). Also the sports
+  car now spawns in the middle of the plaza (it used to clip into the new bigger house), and it can
+  cross the bridges to the satellite islands — bridge decks count as road for the car, lifting it
+  over the arch (wheels overhang the narrow planks, by popular demand).
+
 ### Added
 - **Two-story house + sports car + grass-sound fix (복층집·스포츠카)**: the little cottage became a
   walk-in two-story dollhouse — open front with porch posts so the camera sees inside, wooden floor,

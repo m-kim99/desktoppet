@@ -234,6 +234,11 @@ renderer.domElement.addEventListener('wheel', (e) => {
         controls.minDistance, controls.maxDistance
     );
 }, { passive: false });
+// The ＋/－ buttons and keyboard +/- steer the same smoothed target; animate() glides the camera.
+// (This function was lost when the old button panel was removed — the buttons silently threw.)
+function camZoom(factor) {
+    zoomTargetDist = THREE.MathUtils.clamp(zoomTargetDist * factor, controls.minDistance, controls.maxDistance);
+}
 controls.update();
 
 // ---- Hand-drawn repeat textures (동물의 숲 스타일): tiny canvas paintings tiled across the
@@ -939,11 +944,11 @@ for (const p of PROPS) {
     lamps.push({ light: indoor });
 }
 
-// ---- 🚗 스포츠카: parked on the house driveway. Ctrl/⌘ beside it hops in (a held/nearby friend
-// takes the passenger seat), arrow keys drive at 3× walking speed, Ctrl/⌘ again hops out. Main
-// island only — the bridges are too narrow. The collider entry moves with the car so wandering
-// pets steer around it, parked or not.
-const CAR = { x: 3.45, z: 3.2, heading: 2.2, vel: 0 };
+// ---- 🚗 스포츠카: parked in the middle of the plaza. Ctrl/⌘ beside it hops in (a held/nearby
+// friend takes the passenger seat), arrow keys drive at 3× walking speed, Ctrl/⌘ again hops out.
+// Bridges count as road, so you can drive to the satellite islands (wheels overhang, who cares).
+// The collider entry moves with the car so wandering pets steer around it, parked or not.
+const CAR = { x: 0, z: 0, heading: 1.05, vel: 0 };
 const carCollider = { type: 'car', x: CAR.x, z: CAR.z, rotY: 0, r: 0.55 };
 PROPS.push(carCollider);
 const carWheels = [];
@@ -983,7 +988,7 @@ carGroup.rotation.y = CAR.heading;
 carGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
 stage.add(carGroup);
 function carBlocked(nx, nz) {
-    if (islandOf(nx, nz) !== 0) return true;                       // main island only
+    if (islandOf(nx, nz) < 0 && !onBridge(nx, nz)) return true;    // stay on land or a bridge deck
     if (houseFloorY(nx, nz) !== null || houseBlocked(nx, nz)) return true;
     for (const q of PROPS) {
         if (q === carCollider || q.r <= 0) continue;
@@ -2560,7 +2565,7 @@ function updatePlayer(delta) {
         else CAR.vel = 0;
         carCollider.x = CAR.x;
         carCollider.z = CAR.z;
-        const cy = terrainHeight(CAR.x, CAR.z);
+        const cy = world.groundHeightAt(CAR.x, CAR.z);   // bridge decks lift the car over the arch
         carGroup.position.set(CAR.x, cy, CAR.z);
         carGroup.rotation.y = CAR.heading;
         for (const w of carWheels) w.rotation.x += CAR.vel * delta * 9;
