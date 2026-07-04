@@ -6,6 +6,20 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **Two-story house + sports car + grass-sound fix (복층집·스포츠카)**: the little cottage became a
+  walk-in two-story dollhouse — open front with porch posts so the camera sees inside, wooden floor,
+  plastered walls with side windows, a real stair ramp along the right wall up to a loft with a
+  railing (the loft edge line doubles as the under-loft partition), and a shingled roof + chimney.
+  The interior is part of the world heightfield (`houseFloorY`), so pets and the player walk in,
+  climb the stairs and stand on the loft; a new max-step rule stops anyone hopping ledges. Furnished
+  with a sofa (Ctrl/⌘ = 앉기 — new `sit` seat mode, tap the sitter to get them up), low table with a
+  reading lamp (tied to the lamp glow system), rug, bookshelf, and a loft bed that joins the
+  night-time sleep pool. Outside on the driveway sits a red sports car: Ctrl/⌘ boards it (a held or
+  nearby friend hops into the passenger seat 👥), arrow keys drive at 3× walking speed with
+  speed-scaled steering, a synth engine that revs with the throttle, spinning wheels, and a moving
+  collider so wanderers steer around it; Ctrl/⌘ hops out (Esc too). Cars are main-island only — the
+  bridges are too narrow. Also fixed: grass right next to a road no longer clicks like pavement
+  (footsteps now use a stricter on-road test), and house floors sound like wood.
 - **Footstep & water sounds (발소리·물소리)**: the world now sounds like somewhere. Footsteps fire
   in sync with the waddle gait (a footfall per half period of the sin(t×8) leg swing) and pick the
   right sound for the ground — grass on the meadow, concrete on the roads/plaza, wood planks on

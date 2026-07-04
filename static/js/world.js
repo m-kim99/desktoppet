@@ -390,6 +390,44 @@ function onBridge(x, z) {
 function bridgeDeckY(hit) {
     return 0.05 + Math.sin(hit.t * Math.PI) * 0.22;   // gentle arch over the water
 }
+
+// ---- 복층집 (two-story house) walk-space: the interior is part of the world's heightfield —
+// floor 1 up front, a stair ramp along the right wall, a loft over the back half. houseFloorY
+// returns the walk height inside (null outside); houseBlocked fences the walls, porch posts and
+// the loft-edge line (which doubles as the under-loft partition below and the railing above).
+const HOUSE = { x: 2.7, z: 2.05, rotY: -0.65, hw: 1.0, hd: 0.8, floorY: 0.05, loftY: 0.62 };
+const HOUSE_COS = Math.cos(HOUSE.rotY), HOUSE_SIN = Math.sin(HOUSE.rotY);
+function houseLocal(x, z) {
+    const dx = x - HOUSE.x, dz = z - HOUSE.z;
+    return { lx: dx * HOUSE_COS - dz * HOUSE_SIN, lz: dx * HOUSE_SIN + dz * HOUSE_COS };
+}
+function houseWorld(lx, lz) {
+    return {
+        x: HOUSE.x + lx * HOUSE_COS + lz * HOUSE_SIN,
+        z: HOUSE.z - lx * HOUSE_SIN + lz * HOUSE_COS,
+    };
+}
+function houseFloorY(x, z) {
+    const { lx, lz } = houseLocal(x, z);
+    if (Math.abs(lx) > HOUSE.hw || Math.abs(lz) > HOUSE.hd) return null;
+    if (lz <= -0.25) return HOUSE.loftY;                                   // loft over the back half
+    if (lx >= 0.62 && lz <= 0.55) {                                        // stair ramp along the right wall
+        const k = THREE.MathUtils.clamp((0.55 - lz) / 0.8, 0, 1);
+        return HOUSE.floorY + k * (HOUSE.loftY - HOUSE.floorY);
+    }
+    return HOUSE.floorY;
+}
+function houseBlocked(x, z) {
+    const { lx, lz } = houseLocal(x, z);
+    if (Math.abs(lx) > HOUSE.hw + 0.1 || Math.abs(lz) > HOUSE.hd + 0.1) return false;
+    if (Math.abs(lx) > HOUSE.hw - 0.06) return true;                       // side walls
+    if (lz < -(HOUSE.hd - 0.06)) return true;                              // back wall
+    if (lz > -0.31 && lz < -0.19 && lx < 0.55) return true;                // loft railing / under-loft partition
+    if (Math.hypot(lx - 0.8, lz - 0.74) < 0.09) return true;               // porch posts
+    if (Math.hypot(lx + 0.8, lz - 0.74) < 0.09) return true;
+    return false;
+}
+
 const stage = new THREE.Group();
 scene.add(stage);
 
@@ -398,7 +436,7 @@ scene.add(stage);
 // and the catch ball always agree with what you see.
 const FLAT_SPOTS = [
     { x: 0.0, z: 0.0, r: 1.7 },     // central plaza (hug point / monument to come)
-    { x: 2.9, z: 2.2, r: 1.2 },     // house pad
+    { x: 2.7, z: 2.05, r: 1.7 },    // house pad (two-story house needs a wide level base)
     { x: -2.6, z: -2.9, r: 0.95 },  // pond basin
 ];
 function terrainHeight(x, z) {
@@ -488,8 +526,8 @@ const PROPS = [
     { type: 'tree',  x:  3.6, z: -2.6, rotY: 2.1,  r: 0.45, big: false },
     { type: 'tree',  x: -1.2, z:  3.7, rotY: 4.2,  r: 0.45, big: true  },
     { type: 'tree',  x:  4.1, z:  1.0, rotY: 1.3,  r: 0.45, big: false },
-    { type: 'house', x:  2.9, z:  2.2, rotY: -0.65, r: 0.95 },
-    { type: 'bowl',  x:  1.35, z:  2.1, rotY: 0.0,  r: 0.28 },
+    { type: 'house', x:  2.7, z:  2.05, rotY: -0.65, r: 0 },   // walls/rooms block precisely (houseBlocked)
+    { type: 'bowl',  x:  1.15, z:  1.75, rotY: 0.0,  r: 0.28 },
     { type: 'fence', x: -4.1, z:  0.9, rotY: 1.05, r: 0.5 },
     { type: 'pond',  x: -2.6, z: -2.9, rotY: 0.0,  r: 0.72 },
     { type: 'sunbed',  x:  4.05, z: -0.4,  rotY: -1.35, r: 0.42 },
@@ -537,32 +575,135 @@ function makeTree(p) {
 }
 
 function makeHouse() {
+    // Two-story dollhouse: the front stays open so the camera sees inside. Geometry matches the
+    // walk-space helpers exactly — floor at 0.05, stair ramp along the right wall, loft at 0.62
+    // over the back half with a railing (gap where the stairs land).
     const g = new THREE.Group();
-    const walls = new THREE.Mesh(new RoundedBoxGeometry(0.95, 0.62, 0.8, 4, 0.05), M(0xffffff, { map: plasterTex }));
-    walls.position.y = 0.31;
-    g.add(walls);
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.84, 0.52, 4), M(0xffffff, { map: roofTex, flatShading: true }));
-    roof.position.y = 0.88;
-    roof.rotation.y = Math.PI / 4;       // align the 4-sided cone with the walls, eaves overhang
+    const plaster = M(0xffffff, { map: plasterTex });
+    const wood = M(0xb08a60, { map: woodTex });
+    const woodDark = M(0x8a6647, { map: woodTex });
+    const wallH = 1.2;
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.06, 1.6), wood);
+    floor.position.y = 0.02;
+    g.add(floor);
+    const porch = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.05, 0.24), M(0xcfcac0));
+    porch.position.set(0, 0.025, 0.9);
+    g.add(porch);
+    const wallL = new THREE.Mesh(new THREE.BoxGeometry(0.06, wallH, 1.6), plaster);
+    wallL.position.set(-1.0, wallH / 2, 0);
+    g.add(wallL);
+    const wallR = wallL.clone();
+    wallR.position.x = 1.0;
+    g.add(wallR);
+    const wallB = new THREE.Mesh(new THREE.BoxGeometry(2.06, wallH, 0.06), plaster);
+    wallB.position.set(0, wallH / 2, -0.8);
+    g.add(wallB);
+    for (const px of [-0.8, 0.8]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, wallH, 10), wood);
+        post.position.set(px, wallH / 2, 0.74);
+        g.add(post);
+    }
+    for (const sx of [-1, 1]) {
+        const frame = new THREE.Mesh(new RoundedBoxGeometry(0.06, 0.26, 0.26, 2, 0.02), M(0xffffff));
+        frame.position.set(sx * 1.01, 0.62, 0.3);
+        g.add(frame);
+        const pane = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.2, 0.2), M(0xbfe3f2));
+        pane.position.copy(frame.position);
+        g.add(pane);
+    }
+    // loft slab (top at 0.62), stairs, railing, under-loft partition
+    const loft = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.06, 0.55), wood);
+    loft.position.set(0, 0.59, -0.525);
+    g.add(loft);
+    const STEPS = 8;
+    for (let i = 0; i < STEPS; i++) {
+        const h = 0.05 + ((i + 1) / STEPS) * 0.57;
+        const stp = new THREE.Mesh(new THREE.BoxGeometry(0.34, h, 0.1), woodDark);
+        stp.position.set(0.78, h / 2, 0.55 - (i + 0.5) * 0.1);
+        g.add(stp);
+    }
+    for (let i = 0; i <= 5; i++) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.28, 8), wood);
+        post.position.set(-0.95 + i * 0.3, 0.76, -0.25);
+        g.add(post);
+    }
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.04, 0.05), wood);
+    rail.position.set(-0.2, 0.9, -0.25);
+    g.add(rail);
+    const partition = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.56, 0.05), plaster);
+    partition.position.set(-0.22, 0.33, -0.25);
+    g.add(partition);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(1.72, 0.72, 4), M(0xffffff, { map: roofTex, flatShading: true }));
+    roof.position.y = wallH + 0.36;
+    roof.rotation.y = Math.PI / 4;
     g.add(roof);
-    const chimney = new THREE.Mesh(new RoundedBoxGeometry(0.11, 0.24, 0.11, 3, 0.02), M(0xc97b6e));
-    chimney.position.set(-0.24, 0.86, -0.16);
+    const chimney = new THREE.Mesh(new RoundedBoxGeometry(0.16, 0.34, 0.16, 3, 0.02), M(0xc97b6e));
+    chimney.position.set(-0.55, wallH + 0.5, -0.35);
     g.add(chimney);
-    const door = new THREE.Mesh(new RoundedBoxGeometry(0.2, 0.34, 0.05, 3, 0.02), M(0x9c6b4f, { map: woodTex }));
-    door.position.set(0, 0.17, 0.41);
-    g.add(door);
-    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.018, 10, 8), M(0xffd54f));
-    knob.position.set(0.055, 0.17, 0.445);
-    g.add(knob);
-    const frame = new THREE.Mesh(new RoundedBoxGeometry(0.2, 0.2, 0.05, 3, 0.02), M(0xffffff));
-    frame.position.set(0.3, 0.42, 0.41);
-    g.add(frame);
-    const pane = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.056), M(0xbfe3f2));
-    pane.position.copy(frame.position);
-    g.add(pane);
-    const step = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.05, 14), M(0xcfcac0));
-    step.position.set(0, 0.025, 0.52);
-    g.add(step);
+    // ---- floor-1 furniture: sofa (sit here!), low table + reading lamp, rug, bookshelf ----
+    const sofa = new THREE.Group();
+    const seat = new THREE.Mesh(new RoundedBoxGeometry(0.3, 0.16, 0.6, 3, 0.04), M(0x8fb7e8));
+    seat.position.y = 0.13;
+    sofa.add(seat);
+    const backRest = new THREE.Mesh(new RoundedBoxGeometry(0.1, 0.3, 0.6, 3, 0.04), M(0x7aa6dc));
+    backRest.position.set(-0.12, 0.2, 0);
+    sofa.add(backRest);
+    for (const az of [-0.27, 0.27]) {
+        const arm = new THREE.Mesh(new RoundedBoxGeometry(0.28, 0.1, 0.08, 2, 0.03), M(0x7aa6dc));
+        arm.position.set(0, 0.22, az);
+        sofa.add(arm);
+    }
+    sofa.position.set(-0.68, 0.05, 0.2);
+    g.add(sofa);
+    const table = new THREE.Group();
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.035, 18), wood);
+    top.position.y = 0.16;
+    table.add(top);
+    const legT = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.15, 10), woodDark);
+    legT.position.y = 0.075;
+    table.add(legT);
+    const lampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.045, 0.1, 10), M(0x5a6a75));
+    lampBase.position.y = 0.23;
+    table.add(lampBase);
+    const shade = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.08, 12, 1, true), lampGlobeMat);
+    shade.position.y = 0.31;
+    table.add(shade);
+    table.position.set(0, 0.05, 0.15);
+    g.add(table);
+    const rug = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.012, 24), M(0xf6d7b0));
+    rug.position.set(-0.15, 0.056, 0.22);
+    g.add(rug);
+    const shelf = new THREE.Group();
+    const shelfBody = new THREE.Mesh(new RoundedBoxGeometry(0.14, 0.5, 0.34, 2, 0.02), woodDark);
+    shelfBody.position.y = 0.25;
+    shelf.add(shelfBody);
+    const bookColors = [0xef8a8a, 0x8fb7e8, 0xffd54f, 0x9fd8c9, 0xb39ddb, 0xff8a65];
+    for (let i = 0; i < 6; i++) {
+        const book = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.1, 0.035), M(bookColors[i]));
+        book.position.set(0.055, 0.32 - (i % 2) * 0.14, -0.12 + (i % 3) * 0.1);
+        shelf.add(book);
+    }
+    shelf.position.set(-0.78, 0.05, 0.52);
+    g.add(shelf);
+    // ---- loft furniture: bed (sleep here!) + nightstand ----
+    const bed = new THREE.Group();
+    const bedFrame = new THREE.Mesh(new RoundedBoxGeometry(0.44, 0.1, 0.66, 3, 0.03), woodDark);
+    bedFrame.position.y = 0.07;
+    bed.add(bedFrame);
+    const mattress = new THREE.Mesh(new RoundedBoxGeometry(0.4, 0.08, 0.6, 3, 0.03), M(0xffffff));
+    mattress.position.y = 0.14;
+    bed.add(mattress);
+    const blanket = new THREE.Mesh(new RoundedBoxGeometry(0.41, 0.05, 0.34, 3, 0.02), M(0xff8fb3));
+    blanket.position.set(0, 0.17, 0.12);
+    bed.add(blanket);
+    const pillow = new THREE.Mesh(new RoundedBoxGeometry(0.24, 0.06, 0.14, 2, 0.025), M(0xfff3e0));
+    pillow.position.set(0, 0.19, -0.2);
+    bed.add(pillow);
+    bed.position.set(-0.45, 0.62, -0.5);
+    g.add(bed);
+    const stand = new THREE.Mesh(new RoundedBoxGeometry(0.14, 0.16, 0.14, 2, 0.02), woodDark);
+    stand.position.set(0.05, 0.7, -0.62);
+    g.add(stand);
     return g;
 }
 
@@ -767,10 +908,96 @@ for (const p of PROPS) {
     }
 }
 
+// House extras: furniture colliders (collision-only entries — the meshes live inside the house
+// group), the sofa (sit) and loft bed (sleep) registered like outdoor beds, and the reading lamp.
+{
+    const fCol = (lx, lz, r) => {
+        const w = houseWorld(lx, lz);
+        PROPS.push({ type: 'furniture', x: w.x, z: w.z, rotY: 0, r });
+    };
+    fCol(-0.68, 0.2, 0.28);    // sofa
+    fCol(0, 0.15, 0.24);       // table
+    fCol(-0.78, 0.52, 0.17);   // bookshelf
+    fCol(-0.45, -0.5, 0.3);    // loft bed
+    fCol(0.05, -0.62, 0.11);   // nightstand
+    const sofaW = houseWorld(-0.68, 0.2), sofaA = houseWorld(-0.28, 0.58);
+    BEDS.push({
+        id: 'sofa', mode: 'sit', occupant: null, sway: 0,
+        lie: { x: sofaW.x, z: sofaW.z, y: HOUSE.floorY + 0.17, rotY: HOUSE.rotY + Math.PI / 2, tilt: -0.35 },
+        approach: { x: sofaA.x, z: sofaA.z },
+    });
+    const bedW = houseWorld(-0.45, -0.5), bedA = houseWorld(0.3, -0.45);
+    BEDS.push({
+        id: 'loftbed', mode: 'sleep', occupant: null, sway: 0,
+        lie: { x: bedW.x, z: bedW.z, y: HOUSE.loftY + 0.16, rotY: HOUSE.rotY, tilt: -1.2 },
+        approach: { x: bedA.x, z: bedA.z },
+    });
+    const lampW = houseWorld(0, 0.15);
+    const indoor = new THREE.PointLight(0xffd9a0, 0, 2.4, 2);
+    indoor.position.set(lampW.x, HOUSE.floorY + 0.42, lampW.z);
+    scene.add(indoor);
+    lamps.push({ light: indoor });
+}
+
+// ---- 🚗 스포츠카: parked on the house driveway. Ctrl/⌘ beside it hops in (a held/nearby friend
+// takes the passenger seat), arrow keys drive at 3× walking speed, Ctrl/⌘ again hops out. Main
+// island only — the bridges are too narrow. The collider entry moves with the car so wandering
+// pets steer around it, parked or not.
+const CAR = { x: 3.45, z: 3.2, heading: 2.2, vel: 0 };
+const carCollider = { type: 'car', x: CAR.x, z: CAR.z, rotY: 0, r: 0.55 };
+PROPS.push(carCollider);
+const carWheels = [];
+let carDrive = null;    // { driver, passenger } while someone is at the wheel
+function makeCar() {
+    const g = new THREE.Group();
+    const bodyMat = M(0xe8484f);
+    const body = new THREE.Mesh(new RoundedBoxGeometry(0.55, 0.16, 1.05, 4, 0.05), bodyMat);
+    body.position.y = 0.17;
+    g.add(body);
+    const hood = new THREE.Mesh(new RoundedBoxGeometry(0.5, 0.07, 0.34, 3, 0.03), bodyMat);
+    hood.position.set(0, 0.245, 0.32);
+    g.add(hood);
+    const cabin = new THREE.Mesh(new RoundedBoxGeometry(0.44, 0.15, 0.5, 4, 0.05), M(0xbfe3f2, { transparent: true, opacity: 0.75 }));
+    cabin.position.set(0, 0.3, -0.06);
+    g.add(cabin);
+    const spoiler = new THREE.Mesh(new RoundedBoxGeometry(0.52, 0.03, 0.12, 2, 0.012), bodyMat);
+    spoiler.position.set(0, 0.32, -0.5);
+    g.add(spoiler);
+    for (const [fx, fz] of [[-0.17, 0.53], [0.17, 0.53]]) {
+        const light = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), M(0xfff1cf, { emissive: 0xffe9a0, emissiveIntensity: 0.5 }));
+        light.position.set(fx, 0.2, fz);
+        g.add(light);
+    }
+    for (const [sx, sz] of [[-0.28, 0.34], [0.28, 0.34], [-0.28, -0.34], [0.28, -0.34]]) {
+        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.07, 14), M(0x2e2e34));
+        wheel.rotation.z = Math.PI / 2;
+        wheel.position.set(sx, 0.1, sz);
+        g.add(wheel);
+        carWheels.push(wheel);
+    }
+    return g;
+}
+const carGroup = makeCar();
+carGroup.position.set(CAR.x, terrainHeight(CAR.x, CAR.z), CAR.z);
+carGroup.rotation.y = CAR.heading;
+carGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+stage.add(carGroup);
+function carBlocked(nx, nz) {
+    if (islandOf(nx, nz) !== 0) return true;                       // main island only
+    if (houseFloorY(nx, nz) !== null || houseBlocked(nx, nz)) return true;
+    for (const q of PROPS) {
+        if (q === carCollider || q.r <= 0) continue;
+        if (Math.hypot(nx - q.x, nz - q.z) < q.r + 0.32) return true;
+    }
+    return false;
+}
+
 // ---- World interface: the ONLY way pets sense the ground/space (keeps them portable) ----
 const world = {
     islandRadius: ISLAND_R,
     groundHeightAt(x, z) {
+        const hf = houseFloorY(x, z);
+        if (hf !== null) return hf;                              // house floors / stairs / loft
         const hit = onBridge(x, z);
         if (hit) return bridgeDeckY(hit);                        // bridge decks count as ground
         return terrainHeight(x, z);
@@ -783,8 +1010,9 @@ const world = {
             }
         }
         if (!onLand) return true;                                // off every rim and off the bridges
+        if (houseBlocked(x, z)) return true;                     // walls / railing / porch posts
         for (const p of PROPS) {
-            if (Math.hypot(x - p.x, z - p.z) < p.r) return true; // circle collider around each prop
+            if (p.r > 0 && Math.hypot(x - p.x, z - p.z) < p.r) return true; // prop circle colliders
         }
         return false;
     },
@@ -798,16 +1026,18 @@ const ROAD_W = 0.55;
 const PLAZA_R = 1.45;
 const SPOKE_ANGLES = [0.92, 1.67, 3.6, 5.0];    // toward house yard / rest area / pond·hammock / west lawn
 
-function isOnRoad(x, z) {
+// `pad` widens (decorations keep their distance) or tightens (footstep sounds only count as road
+// when clearly ON the pavement) the road test.
+function isOnRoad(x, z, pad = 0.12) {
     const r = Math.hypot(x, z);
-    if (r < PLAZA_R + 0.15) return true;
-    if (Math.abs(r - ROAD_LOOP_R) < ROAD_W * 0.5 + 0.12) return true;
+    if (r < PLAZA_R + pad) return true;
+    if (Math.abs(r - ROAD_LOOP_R) < ROAD_W * 0.5 + pad) return true;
     for (const a of SPOKE_ANGLES) {
         const dx = Math.sin(a), dz = Math.cos(a);
         const t = x * dx + z * dz;
         if (t < PLAZA_R - 0.2 || t > 3.4) continue;
         const px = x - dx * t, pz = z - dz * t;
-        if (Math.hypot(px, pz) < ROAD_W * 0.5 + 0.12) return true;
+        if (Math.hypot(px, pz) < ROAD_W * 0.5 + pad) return true;
     }
     return false;
 }
@@ -972,6 +1202,7 @@ for (let i = 1; i < ISLANDS.length; i++) ROAD_NODES.push({ x: ISLANDS[i].x, z: I
             const x = Math.cos(a) * r, z = Math.sin(a) * r;
             if (world.isBlocked(x, z)) continue;
             if (isOnRoad(x, z)) continue;               // keep the paths and plaza clear
+            if (houseFloorY(x, z) !== null) continue;   // no flowers in the living room
             out.push({ x, z });
         }
         return out;
@@ -1182,7 +1413,9 @@ function steerToward(p, target, delta) {
         const nx = mover.position.x + Math.sin(mover.rotation.y) * step;
         const nz = mover.position.z + Math.cos(mover.rotation.y) * step;
         if (world.isBlocked(nx, nz)) { pet.walking = false; return 'blocked'; }
-        mover.position.set(nx, world.groundHeightAt(nx, nz), nz);
+        const gy = world.groundHeightAt(nx, nz);
+        if (Math.abs(gy - mover.position.y) > 0.26) { pet.walking = false; return 'blocked'; }   // no ledge hopping
+        mover.position.set(nx, gy, nz);
     }
     return 'moving';
 }
@@ -1441,6 +1674,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     raycaster.setFromCamera(pointerNdc, camera);
     for (const p of pets) {
         if (raycaster.intersectObject(p.mover, true).length) {
+            if (p.bed && p.bed.mode === 'sit') { p.bedExit = true; return; }   // tap a sitter → gets up
             if (p.pet.sleeping) { p.pet.sleeping = false; p.pet.autoSleeping = false; return; }
             showMenu(e.clientX, e.clientY, p);
             return;
@@ -1905,6 +2139,37 @@ function playSplashSound(x, z) {
     playBuffer(splashBuf, { vol: 0.85 * attAtPoint(x, z), rate: 0.85 + Math.random() * 0.3, filterFreq: 1100 });
 }
 
+// 🚗 engine: a low-passed saw that pitches up with speed (started on boarding, stopped on exit).
+let engineOsc = null, engineGain = null;
+function startEngine() {
+    if (audioCtx.state !== 'running' || engineOsc) return;
+    engineOsc = audioCtx.createOscillator();
+    engineOsc.type = 'sawtooth';
+    engineOsc.frequency.value = 52;
+    const f = audioCtx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 320;
+    engineGain = audioCtx.createGain();
+    engineGain.gain.value = 0;
+    engineOsc.connect(f);
+    f.connect(engineGain);
+    engineGain.connect(sfxMaster);
+    engineOsc.start();
+}
+function stopEngine() {
+    if (engineOsc) {
+        try { engineOsc.stop(); } catch (e) {}
+        engineOsc = null;
+        engineGain = null;
+    }
+}
+function engineUpdate() {
+    if (!engineOsc) { startEngine(); if (!engineOsc) return; }
+    const sp = Math.abs(CAR.vel);
+    engineOsc.frequency.setTargetAtTime(50 + sp * 55, audioCtx.currentTime, 0.08);
+    engineGain.gain.setTargetAtTime(0.09 + Math.min(0.15, sp * 0.06), audioCtx.currentTime, 0.1);
+}
+
 // Gentle looping water lap while anyone is swimming (level follows the loudest swimmer).
 let swimLoopGain = null;
 function ensureSwimLoop() {
@@ -1927,7 +2192,8 @@ function surfaceFor(p) {
     if (p.swimming) return 'water';
     const x = p.mover.position.x, z = p.mover.position.z;
     if (onBridge(x, z)) return 'wood';
-    if (isOnRoad(x, z)) return 'road';
+    if (houseFloorY(x, z) !== null) return 'wood';         // house floors are wooden
+    if (isOnRoad(x, z, -0.06)) return 'road';              // strict: only clearly ON the pavement
     return 'grass';
 }
 // Footsteps fire on the gait phase: feet swing on sin(t*8), so a footfall lands each half-period —
@@ -2143,6 +2409,7 @@ function releasePossession() {
     possessed = null;
     airborne = false; jumpVy = 0;
     seaHop = null;
+    if (carDrive) exitCar();
     releaseHandHold();
     running = false;
     snapToLand(p);
@@ -2178,6 +2445,11 @@ window.addEventListener('keydown', (e) => {
                 return;
             }
             if (handHold) releaseHandHold();
+            return;
+        }
+        if (carDrive) { exitCar(); return; }
+        if (Math.hypot(possessed.mover.position.x - CAR.x, possessed.mover.position.z - CAR.z) < 1.15) {
+            enterCar();
             return;
         }
         if (handHold) { releaseHandHold(); return; }
@@ -2221,6 +2493,8 @@ function playerSupportY(p, x, z) {
     if (Math.hypot(x - pondPropRef.x, z - pondPropRef.z) < 0.55) {
         return { y: POND_WATER_Y - p.height * 0.45, medium: 'pond' };
     }
+    const hf = houseFloorY(x, z);
+    if (hf !== null) return { y: hf, medium: 'land' };
     const hit = onBridge(x, z);
     if (hit) return { y: bridgeDeckY(hit), medium: 'land' };
     for (const s of ISLANDS) {
@@ -2269,6 +2543,47 @@ function updatePlayer(delta) {
         if (k >= 1) { seaHop = null; p.swimming = false; p.mover.rotation.x = 0; airborne = false; jumpVy = 0; }
         return;
     }
+    if (carDrive) {
+        // Driving: ↑/↓ throttle & reverse, ←/→ steer (steering authority grows with speed).
+        const maxV = p.speed * 4.5;                    // 걷기(×1.5)의 정확히 3배
+        let acc = 0;
+        if (heldKeys.has('ArrowUp')) acc += 3.4;
+        if (heldKeys.has('ArrowDown')) acc -= 2.8;
+        CAR.vel += acc * delta;
+        CAR.vel *= Math.pow(0.3, delta);               // rolling friction
+        CAR.vel = THREE.MathUtils.clamp(CAR.vel, -maxV * 0.4, maxV);
+        const steer = (heldKeys.has('ArrowLeft') ? 1 : 0) - (heldKeys.has('ArrowRight') ? 1 : 0);
+        CAR.heading += steer * delta * 2.4 * THREE.MathUtils.clamp(CAR.vel / maxV, -1, 1);
+        const nx = CAR.x + Math.sin(CAR.heading) * CAR.vel * delta;
+        const nz = CAR.z + Math.cos(CAR.heading) * CAR.vel * delta;
+        if (!carBlocked(nx, nz)) { CAR.x = nx; CAR.z = nz; }
+        else CAR.vel = 0;
+        carCollider.x = CAR.x;
+        carCollider.z = CAR.z;
+        const cy = terrainHeight(CAR.x, CAR.z);
+        carGroup.position.set(CAR.x, cy, CAR.z);
+        carGroup.rotation.y = CAR.heading;
+        for (const w of carWheels) w.rotation.x += CAR.vel * delta * 9;
+        const rX = Math.cos(CAR.heading), rZ = -Math.sin(CAR.heading);
+        const seatPet = (q, side) => {
+            q.mover.position.set(
+                CAR.x + rX * side * 0.17 - Math.sin(CAR.heading) * 0.06,
+                cy + 0.22,
+                CAR.z + rZ * side * 0.17 - Math.cos(CAR.heading) * 0.06
+            );
+            q.mover.rotation.y = CAR.heading;
+            q.mover.rotation.x = 0;
+            q.mover.rotation.z = 0;
+            q.pet.walking = false;
+            q.swimming = false;
+        };
+        seatPet(p, -1);
+        if (carDrive.passenger) seatPet(carDrive.passenger, 1);
+        engineUpdate();
+        const driveHint = `🚗 ${p.name === 'chick' ? '병아리' : '강아지'} 운전 중${carDrive.passenger ? ' 👥' : ''} — ↑↓ 가속·후진 · ←→ 핸들 · Ctrl/⌘ 내리기 · Esc 해제`;
+        if (controlHint.textContent !== driveHint) controlHint.textContent = driveHint;
+        return;
+    }
     let ix = 0, iz = 0;
     if (heldKeys.has('ArrowUp')) iz += 1;
     if (heldKeys.has('ArrowDown')) iz -= 1;
@@ -2289,7 +2604,14 @@ function updatePlayer(delta) {
             const step = p.speed * (p.swimming ? 1.05 : running ? 3.0 : 1.5) * delta;   // 달리기 = 걷기 ×2
             const nx = p.mover.position.x + dir.x * step;
             const nz = p.mover.position.z + dir.z * step;
-            if (!playerBlocked(nx, nz)) { p.mover.position.x = nx; p.mover.position.z = nz; }
+            if (!playerBlocked(nx, nz)) {
+                const stepGy = world.groundHeightAt(nx, nz);
+                const curGy = world.groundHeightAt(p.mover.position.x, p.mover.position.z);
+                if (p.swimming || airborne || Math.abs(stepGy - curGy) <= 0.26) {   // ledges need the stairs
+                    p.mover.position.x = nx;
+                    p.mover.position.z = nz;
+                }
+            }
             p.pet.walking = true;
         }
     } else {
@@ -2327,9 +2649,11 @@ function updatePlayer(delta) {
     const bedNear = !p.swimming && !handHold && !friendNear && !p.bed && nearestFreeBed(p, 0.95);
     const radioNear = !p.swimming && !handHold && !friendNear && !bedNear && nearestPropDist(p, 'radio') < 1.0;
     const lampNear = !p.swimming && !handHold && !friendNear && !bedNear && !radioNear && nearestPropDist(p, 'lamp') < 1.0;
-    const act = handHold ? ' · Ctrl/⌘ 손 놓기'
+    const carNear = !p.swimming && Math.hypot(p.mover.position.x - CAR.x, p.mover.position.z - CAR.z) < 1.15;
+    const act = carNear ? ' · Ctrl/⌘ 차 타기'
+        : handHold ? ' · Ctrl/⌘ 손 놓기'
         : friendNear ? ' · Ctrl/⌘ 손잡기'
-        : bedNear ? ' · Ctrl/⌘ 눕기'
+        : bedNear ? (bedNear.mode === 'sit' ? ' · Ctrl/⌘ 앉기' : ' · Ctrl/⌘ 눕기')
         : radioNear ? ' · Ctrl/⌘ 라디오'
         : lampNear ? ` · Ctrl/⌘ 가로등 ${Math.round(lampBrightness * 100)}%` : '';
     const hint = p.swimming
@@ -2598,6 +2922,46 @@ function releaseHandHold() {
     snapToLand(q);
     if (q.ai.state === 'held') releaseAI(q);
 }
+
+// 🚗 board / leave the sports car. A held (or standing-nearby) friend hops into the passenger seat.
+function enterCar() {
+    const driver = possessed;
+    if (!driver) return;
+    let passenger = null;
+    const friend = pets.find((q) => q !== driver);
+    const friendClose = friend && Math.hypot(friend.mover.position.x - CAR.x, friend.mover.position.z - CAR.z) < 1.4;
+    if (friend && !friend.bed && !friend.dip && !friend.pet.sleeping
+        && ((handHold && handHold.partner === friend) || (friendClose && (friend.ai.state === 'idle' || friend.ai.state === 'walk')))) {
+        if (handHold) handHold = null;                 // hand → passenger seat, no snap needed
+        releaseAI(friend);
+        friend.ai.state = 'held';
+        passenger = friend;
+    }
+    carDrive = { driver, passenger };
+    running = false;
+    startEngine();
+}
+function exitCar() {
+    if (!carDrive) return;
+    const { driver, passenger } = carDrive;
+    carDrive = null;
+    stopEngine();
+    CAR.vel = 0;
+    const rX = Math.cos(CAR.heading), rZ = -Math.sin(CAR.heading);
+    const hopOut = (q, side) => {
+        q.mover.position.x = CAR.x + rX * side * 0.85;
+        q.mover.position.z = CAR.z + rZ * side * 0.85;
+        q.mover.rotation.x = 0;
+        q.mover.rotation.z = 0;
+        q.swimming = false;
+        snapToLand(q);
+    };
+    hopOut(driver, -1);
+    if (passenger) {
+        hopOut(passenger, 1);
+        if (passenger.ai.state === 'held') releaseAI(passenger);
+    }
+}
 function updateHandHold(delta) {
     if (!handHold) return;
     const leader = possessed;
@@ -2646,7 +3010,9 @@ function updateHandHold(delta) {
 // (rotation.x) so the shared sleep animation keeps breathing on top. The hammock rocks gently.
 const BED_PREF = { chick: 'hammock', puppy: 'sunbed' };
 function freeBedFor(p) {
-    return BEDS.find((b) => b.id === BED_PREF[p.name] && !b.occupant) || BEDS.find((b) => !b.occupant) || null;
+    return BEDS.find((b) => b.id === BED_PREF[p.name] && !b.occupant)
+        || BEDS.find((b) => !b.occupant && b.mode !== 'sit')   // sofas are for sitting, not the night
+        || null;
 }
 function nearestFreeBed(p, maxDist) {
     let best = null, bestD = maxDist;
@@ -2686,11 +3052,12 @@ function updateBeds(delta) {
             while (dr < -Math.PI) dr += Math.PI * 2;
             p.mover.rotation.y = p.bedFrom.rotY + dr * e;
             p.mover.rotation.x = lie.tilt * e;
-            if (k >= 1) { p.bedPhase = 'lying'; p.bedT = 0; p.pet.sleeping = true; p.ai.state = 'busy'; }
+            if (k >= 1) { p.bedPhase = 'lying'; p.bedT = 0; p.pet.sleeping = bed.mode !== 'sit'; p.ai.state = 'busy'; }
         } else if (p.bedPhase === 'lying') {
             p.bedT += delta;
             if (bed.sway) p.mover.rotation.z = Math.sin(p.bedT * 1.1) * 0.07;
-            if (!p.pet.sleeping) dismountBed(p);                 // woken by anything → hop off
+            const wantOff = bed.mode === 'sit' ? p.bedExit : !p.pet.sleeping;
+            if (wantOff) { p.bedExit = false; dismountBed(p); }  // clicked off / woken → hop off
         } else if (p.bedPhase === 'dismount') {
             p.bedT += delta;
             const k = Math.min(1, p.bedT / 0.55);
