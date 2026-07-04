@@ -6,6 +6,15 @@ Patch notes go here — newest on top.
 ## [Unreleased]
 
 ### Added
+- **Footstep & water sounds (발소리·물소리)**: the world now sounds like somewhere. Footsteps fire
+  in sync with the waddle gait (a footfall per half period of the sin(t×8) leg swing) and pick the
+  right sound for the ground — grass on the meadow, concrete on the roads/plaza, wood planks on
+  the bridges — from the bundled Kenney "Impact Sounds" CC0 set (5 variants each, random
+  pitch/volume so nothing machine-guns). Swimming plays a soft synthesized water lap loop plus a
+  swish per stroke, splashes got a real splash sound, and landing a jump thumps. The driven pet is
+  loudest; AI pets fade with camera distance. Personal sounds (e.g. game rips for private use) go
+  in `static/sounds/custom/` with a manifest.json — that folder is git-ignored so they never reach
+  the public repo, and any missing set falls back to the defaults (or a synth burst if files fail).
 - **Run mode + hand-holding (달리기·손잡기)**: Shift toggles the driven pet between 걷기 and 달리기
   (2× walk speed; the hint header flips to 🏃 달리는 중 and shows the toggle). Walk up to the friend
   and press Ctrl/⌘ to take its hand — it parks in a dedicated `held` state and walks, runs and even

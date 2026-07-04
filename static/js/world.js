@@ -1808,6 +1808,160 @@ async function toggleRadioPanel() {
     }
 }
 
+// ---- 🔊 Footsteps & water (WebAudio). Step sets default to the Kenney CC0 files in
+// static/sounds/steps/ (grass / road=concrete / wood for bridge decks); a manifest at
+// static/sounds/custom/manifest.json overrides them per surface (that folder is git-ignored, so
+// personal sounds never reach the repo). Water sounds are synthesized noise — no files, no
+// licenses. Every one-shot gets random pitch/volume so steps never machine-gun, and AI pets'
+// steps fade with camera distance.
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const sfxMaster = audioCtx.createGain();
+sfxMaster.gain.value = 0.5;
+sfxMaster.connect(audioCtx.destination);
+document.addEventListener('pointerdown', () => {
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+}, { once: true });
+
+const STEP_FILES = {
+    grass: [0, 1, 2, 3, 4].map((i) => `/sounds/steps/footstep_grass_00${i}.ogg`),
+    road:  [0, 1, 2, 3, 4].map((i) => `/sounds/steps/footstep_concrete_00${i}.ogg`),
+    wood:  [0, 1, 2, 3, 4].map((i) => `/sounds/steps/footstep_wood_00${i}.ogg`),
+};
+const stepBuffers = { grass: [], road: [], wood: [] };
+
+function synthNoiseBuffer(dur, shape) {
+    const buf = audioCtx.createBuffer(1, Math.max(1, Math.ceil(audioCtx.sampleRate * dur)), audioCtx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) {
+        const t = i / d.length;
+        d[i] = (Math.random() * 2 - 1) * shape(t);
+    }
+    return buf;
+}
+const splashBuf = synthNoiseBuffer(0.45, (t) => Math.pow(1 - t, 2.2) * (t < 0.04 ? t / 0.04 : 1));
+const swishBuf  = synthNoiseBuffer(0.22, (t) => Math.sin(t * Math.PI) * 0.7);
+const swimLoopBuf = synthNoiseBuffer(2.6, (t) => 0.28 * (0.7 + 0.3 * Math.sin(t * Math.PI * 6)));
+
+async function loadStepBuffer(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(String(res.status));
+    return audioCtx.decodeAudioData(await res.arrayBuffer());
+}
+(async () => {
+    let files = STEP_FILES;
+    try {
+        const res = await fetch('/sounds/custom/manifest.json');
+        if (res.ok) {
+            const m = await res.json();
+            files = {
+                grass: (m.grass && m.grass.length) ? m.grass.map((f) => `/sounds/custom/${f}`) : STEP_FILES.grass,
+                road:  (m.road && m.road.length)  ? m.road.map((f) => `/sounds/custom/${f}`)  : STEP_FILES.road,
+                wood:  (m.wood && m.wood.length)  ? m.wood.map((f) => `/sounds/custom/${f}`)  : STEP_FILES.wood,
+            };
+        }
+    } catch (e) { /* no custom manifest — defaults */ }
+    for (const key of Object.keys(stepBuffers)) {
+        for (const url of files[key] || []) {
+            try { stepBuffers[key].push(await loadStepBuffer(url)); } catch (e) { /* skip missing */ }
+        }
+        if (!stepBuffers[key].length) {
+            // Synth fallback so surfaces always make SOME sound even without files.
+            stepBuffers[key].push(synthNoiseBuffer(key === 'grass' ? 0.16 : 0.11, (t) => Math.pow(1 - t, key === 'road' ? 3 : 2)));
+        }
+    }
+})();
+
+function playBuffer(buf, { vol = 1, rate = 1, filterFreq = 0 } = {}) {
+    if (!buf || audioCtx.state !== 'running') return;
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = rate;
+    const g = audioCtx.createGain();
+    g.gain.value = vol;
+    if (filterFreq) {
+        const f = audioCtx.createBiquadFilter();
+        f.type = 'lowpass';
+        f.frequency.value = filterFreq;
+        src.connect(f);
+        f.connect(g);
+    } else {
+        src.connect(g);
+    }
+    g.connect(sfxMaster);
+    src.start();
+}
+function playStep(surface, vol) {
+    const set = stepBuffers[surface] || stepBuffers.grass;
+    if (!set || !set.length) return;
+    const buf = set[Math.floor(Math.random() * set.length)];
+    const filt = surface === 'grass' ? 2600 : surface === 'wood' ? 2000 : 0;
+    playBuffer(buf, { vol: vol * (0.85 + Math.random() * 0.3), rate: 0.9 + Math.random() * 0.2, filterFreq: filt });
+}
+function attAtPoint(x, z) {
+    const d = Math.hypot(camera.position.x - x, camera.position.z - z);
+    return THREE.MathUtils.clamp(1 - d / 14, 0, 1);
+}
+function playSplashSound(x, z) {
+    playBuffer(splashBuf, { vol: 0.85 * attAtPoint(x, z), rate: 0.85 + Math.random() * 0.3, filterFreq: 1100 });
+}
+
+// Gentle looping water lap while anyone is swimming (level follows the loudest swimmer).
+let swimLoopGain = null;
+function ensureSwimLoop() {
+    if (swimLoopGain || audioCtx.state !== 'running') return;
+    const src = audioCtx.createBufferSource();
+    src.buffer = swimLoopBuf;
+    src.loop = true;
+    const f = audioCtx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 700;
+    swimLoopGain = audioCtx.createGain();
+    swimLoopGain.gain.value = 0;
+    src.connect(f);
+    f.connect(swimLoopGain);
+    swimLoopGain.connect(sfxMaster);
+    src.start();
+}
+
+function surfaceFor(p) {
+    if (p.swimming) return 'water';
+    const x = p.mover.position.x, z = p.mover.position.z;
+    if (onBridge(x, z)) return 'wood';
+    if (isOnRoad(x, z)) return 'road';
+    return 'grass';
+}
+// Footsteps fire on the gait phase: feet swing on sin(t*8), so a footfall lands each half-period —
+// perfectly synced to the waddle. Swim strokes use the stroke cadence from applySwimPose.
+function updateSfx() {
+    ensureSwimLoop();
+    let swimLevel = 0;
+    for (const p of pets) {
+        const att = attAtPoint(p.mover.position.x, p.mover.position.z);
+        const isLeader = p === possessed;
+        const vol = att * (isLeader ? 0.9 : 0.45);
+        const surf = surfaceFor(p);
+        if (surf === 'water') {
+            swimLevel = Math.max(swimLevel, att * (p.pet.walking ? 0.55 : 0.28));
+            const ph = Math.floor(p.pet.t * (p.pet.walking ? 5.2 : 3.4) / Math.PI);
+            if (p._strokePh !== undefined && ph !== p._strokePh && p.pet.walking) {
+                playBuffer(swishBuf, { vol: vol * 0.5, rate: 0.9 + Math.random() * 0.25, filterFreq: 1000 });
+            }
+            p._strokePh = ph;
+            p._stepPh = undefined;
+            continue;
+        }
+        const inAir = (isLeader && airborne) || p.dipAir;
+        const moving = p.pet.walking && p.pet.walkAmt > 0.45 && !inAir;
+        const ph = Math.floor(p.pet.t * 8 / Math.PI);
+        if (moving && p._stepPh !== undefined && ph !== p._stepPh) {
+            playStep(surf, vol * (isLeader && running ? 1.2 : 1));
+        }
+        p._stepPh = ph;
+        p._strokePh = undefined;
+    }
+    if (swimLoopGain) swimLoopGain.gain.setTargetAtTime(swimLevel * 0.5, audioCtx.currentTime, 0.18);
+}
+
 function pickResponder(text) {
     if (/병아리|삐약|chick/i.test(text)) return pets.find((p) => p.name === 'chick') || pets[0] || null;
     if (/강아지|멍멍|댕댕|puppy/i.test(text)) return pets.find((p) => p.name === 'puppy') || pets[0] || null;
@@ -2153,6 +2307,8 @@ function updatePlayer(delta) {
             airborne = false; jumpVy = 0;
             if (sup.medium !== 'land') {
                 spawnSplash(p.mover.position.x, sup.y + p.height * 0.42, p.mover.position.z);
+            } else {
+                playStep(surfaceFor(p), 1.1);                     // landing thump
             }
             p.swimming = sup.medium === 'land' ? false : sup.medium;
         }
@@ -2678,6 +2834,7 @@ function spawnFoodCrumb(p) {
 // Water splash shares the crumb particle system — a puff of pale-blue droplets on entry/hops.
 const splashMat = M(0xaadcf2);
 function spawnSplash(x, y, z) {
+    playSplashSound(x, z);
     for (let i = 0; i < 9; i++) {
         const m = new THREE.Mesh(crumbGeo, splashMat);
         m.position.set(x + (Math.random() - 0.5) * 0.12, y, z + (Math.random() - 0.5) * 0.12);
@@ -2727,6 +2884,7 @@ function animate() {
     updateMeals();
     updateCrumbs(delta);
     updateSelectRing();
+    updateSfx();
     updateChatBubble();
     cloudSpin.rotation.y += delta * 0.012;   // lazy cloud drift
     updateDayNight();                        // throttled inside (repaints ~2×/min)

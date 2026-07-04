@@ -209,3 +209,5 @@ crash.log
 screenshots/
 static/music/*
 !static/music/README.md
+static/sounds/custom/*
+!static/sounds/custom/README.md
