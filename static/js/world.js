@@ -1761,7 +1761,7 @@ function showMenu(x, y, p) {
     motionMenu.style.left = `${Math.min(x, window.innerWidth - 170)}px`;
     motionMenu.style.top = `${Math.min(y, window.innerHeight - 240)}px`;
 }
-function hideMenu() { motionMenu.style.display = 'none'; menuPet = null; }
+function hideMenu() { motionMenu.style.display = 'none'; menuPet = null; hideSipMenu(); }   // the two travel together
 
 // Click = short, unmoved pointer press (otherwise it was an orbit drag). Clicking a sleeping pet
 // wakes it (like the pet window); clicking an awake pet opens the motion menu.
@@ -1783,15 +1783,17 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     raycaster.setFromCamera(pointerNdc, camera);
     for (const p of pets) {
         if (raycaster.intersectObject(p.mover, true).length) {
-            // Right-click on the snacking/drinking driven pet → the 먹기 popup (never on background).
-            if (e.button === 2 && p === possessed
-                && ((p.drink && !p.drink.seq) || (p.food && !p.food.seq))) {
-                showSipMenuAt(e.clientX, e.clientY);
-                return;
-            }
+            if (e.button !== 2) return;   // pet menus/interactions are RIGHT-click only (left = camera)
             if (p.bed && p.bed.mode === 'sit') { p.bedExit = true; return; }   // tap a sitter → gets up
             if (p.pet.sleeping) { p.pet.sleeping = false; p.pet.autoSleeping = false; return; }
             showMenu(e.clientX, e.clientY, p);
+            // Holding a drink/snack? Show the 먹기 chooser right beside the motion menu.
+            if (p === possessed && ((p.drink && !p.drink.seq) || (p.food && !p.food.seq))) {
+                const motionLeft = Math.min(e.clientX, window.innerWidth - 170);
+                let sipX = motionLeft - 190;
+                if (sipX < 8) sipX = motionLeft + 175;   // no room on the left → put it on the right
+                showSipMenuAt(sipX, e.clientY);
+            }
             return;
         }
     }
@@ -2913,7 +2915,7 @@ function showSipMenuAt(x, y) {
         item.style.cssText = 'padding:8px 16px; font-size:13px; color:#fff; border-radius:7px; cursor:pointer; white-space:nowrap;';
         item.onmouseenter = () => { item.style.background = 'rgba(255,255,255,0.14)'; };
         item.onmouseleave = () => { item.style.background = 'transparent'; };
-        item.onclick = () => { hideSipMenu(); fn(); };
+        item.onclick = () => { hideMenu(); fn(); };   // hideMenu closes both panels
         sipMenu.appendChild(item);
     };
     const dr = possessed && possessed.drink;
@@ -2923,7 +2925,7 @@ function showSipMenuAt(x, y) {
     if (fd && !busy) addItem(`🍞 ${fd.def.name} 먹기`, () => { fd.seq = { count: 2 + Math.round(Math.random()), t: 0, played: -1 }; });
     if (!sipMenu.children.length) return;
     sipMenu.style.display = 'block';
-    sipMenu.style.left = `${Math.min(x, window.innerWidth - 170)}px`;
+    sipMenu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - 175))}px`;
     sipMenu.style.top = `${Math.min(y, window.innerHeight - 80)}px`;
 }
 // The popup itself is opened from the pointerup raycast (right-click ON the drink-holding pet) —

@@ -5,6 +5,13 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Changed (클릭·메뉴)
+- **Pet menus are right-click only**: clicking a pet with the left button used to open the
+  motion/control menu, which clashed with left-drag camera moves. The motion/control menu (and
+  wake/stand-up taps) now only respond to right-click; left-click is camera-only. Holding a
+  drink/snack, right-clicking the pet opens the motion menu with the 먹기 chooser shown right
+  beside it (both close together) instead of replacing it.
+
 ### Added
 - **Snack booth + two-handed food (🍞 간식 부스)**: a mint-striped snack stand (griddle, display
   snacks, SNACK sign) joins the plaza beside the coffee booth. Ctrl/⌘ opens a 3×3 menu of nine
