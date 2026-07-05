@@ -5,6 +5,19 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Changed (월드 렌더링 — 게임식 전환)
+- **Post chain replaced by bake & fake**: the GTAO→bloom→SMAA composer re-rendered the whole
+  scene each frame just for normals and pushed ~19 fullscreen half-float passes — the most
+  expensive possible shape on Apple's tile-based GPUs, and why the world still heated MacBooks
+  after the 1.5x/60fps taming below. The world now draws ONE forward pass per frame, the way
+  production games handle a mostly-static scene: contact shading is baked at load as soft blob
+  discs under the props, sun/moon/lamp halos are additive glow sprites (golden-hour tint and
+  the 💡 slider still apply), AA went back to canvas MSAA (near-free on tile-based GPUs) at
+  full retina 2x, and the ACES look is unchanged.
+- **Adaptive pacing**: 60fps only while the window is focused and on mains power; 30fps when
+  the world sits unfocused beside other work, when ⚡ 절전 is on (now: 30fps + 1.5x pixels,
+  persisted), or automatically on battery.
+
 ### Fixed (월드 발열)
 - **MacBook heat after the quality pass**: the post chain (≈15 fullscreen passes) was running
   at retina 2x AND at 120fps on ProMotion panels — several times the old GPU load. Now: pixel

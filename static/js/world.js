@@ -6,18 +6,12 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory } from './glb-pet-entity.js';
 import { ISLAND_R, ISLANDS, BRIDGES, HOUSE, FLAT_SPOTS, PROPS } from './world-layout.js';
 import { kitProp } from './world-kit.js';
 
-const renderer = new THREE.WebGLRenderer({ antialias: false });   // AA comes from SMAA at the end of the post chain — canvas MSAA would be pure waste
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));   // retina-lite: the post chain multiplies EVERY pixel by ~15 fullscreen passes; 1.5x + SMAA reads crisp at half the heat of 2x
+const renderer = new THREE.WebGLRenderer({ antialias: true });   // MSAA — near-free on Apple's tile-based GPU, all the AA a single forward pass needs
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));    // full retina again: without the ~19-pass chain, 2x + MSAA costs less than 1.5x did with it
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -114,29 +108,61 @@ const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerH
 camera.position.set(0, 3.0, 8.2);
 camera.lookAt(0, 0.4, 0);
 
-// ---- Post chain: GTAO (contact shading that grounds the low-poly props) → soft bloom (sun,
-// lamp globes and the moon get a gentle halo) → tone-mapped output → SMAA on the final LDR
-// frame. Kept subtle on purpose — the pastel palette should read "storybook", not "filter". ----
-const composer = new EffectComposer(renderer);
-composer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-composer.addPass(new RenderPass(scene, camera));
-const gtaoPass = new GTAOPass(scene, camera, window.innerWidth, window.innerHeight);
-gtaoPass.updateGtaoMaterial({ radius: 0.12, distanceExponent: 1, thickness: 1, scale: 1, samples: 8, distanceFallOff: 1, screenSpaceRadius: false });
-gtaoPass.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 4, radiusExponent: 1, rings: 2, samples: 6 });
-gtaoPass.blendIntensity = 0.9;
-composer.addPass(gtaoPass);
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.22, 0.55, 0.9);
-composer.addPass(bloomPass);
-composer.addPass(new OutputPass());
-composer.addPass(new SMAAPass());
+// ---- Game-style shading (게임식 — no post chain): the old GTAO→bloom→SMAA composer re-rendered
+// the scene a second time for normals and pushed ~19 fullscreen half-float passes per frame — the
+// most expensive possible shape on Apple's tile-based GPUs. Production playbook instead: bake what
+// never moves, fake what's cheap to fake. Contact shading became load-time blob shadows (see the
+// PROPS loop); halos are additive glow sprites below; AA is canvas MSAA; ACES tone mapping already
+// lives on the renderer. One forward render per frame, storybook look intact. ----
+const glowTex = (() => {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 128;
+    const ctx = cv.getContext('2d');
+    const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, 'rgba(255,255,255,0.85)');
+    g.addColorStop(0.4, 'rgba(255,255,255,0.28)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(cv);
+})();
+function glowSprite(color, size, opacity) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: glowTex, color, opacity, transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+    }));
+    sp.scale.setScalar(size);
+    return sp;
+}
+const sunGlow = glowSprite(0xffdf8a, 5.2, 0.75);   // the warm halo the bloom pass used to paint
+sunMesh.add(sunGlow);
+moonMesh.add(glowSprite(0xbcd2ff, 3.2, 0.5));
 
-// ♡ laptop-friendly rendering: the post chain is the world's dominant GPU cost. The ⚡ dock
-// button flips 절전 mode (plain forward render, persisted), and the frame cap in animate()
-// keeps ProMotion panels from driving the whole sim+render at 120fps.
-let postEnabled = localStorage.getItem('world-eco') !== '1';
+// ♡ laptop-friendly pacing: one forward pass is already cheap, so 절전 is now about *when* we
+// draw, not how. Watched + plugged in → 60fps at full retina; window unfocused (the world usually
+// sits beside real work) → 30fps; ⚡ eco (persisted) or on battery → 30fps at 1.5x pixels.
+let ecoMode = localStorage.getItem('world-eco') === '1';
+let onBattery = false;
+let winFocused = document.hasFocus();
+window.addEventListener('focus', () => { winFocused = true; });
+window.addEventListener('blur', () => { winFocused = false; });
+const ecoActive = () => ecoMode || onBattery;
+function applyPixelRatio() {
+    const pr = Math.min(window.devicePixelRatio, ecoActive() ? 1.5 : 2);
+    if (renderer.getPixelRatio() !== pr) {
+        renderer.setPixelRatio(pr);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+}
+if (navigator.getBattery) {
+    navigator.getBattery().then((b) => {
+        const sync = () => { onBattery = !b.charging; applyPixelRatio(); };
+        b.addEventListener('chargingchange', sync);
+        sync();
+    }).catch(() => {});
+}
 function renderFrame() {
-    if (postEnabled) composer.render();
-    else renderer.render(scene, camera);
+    renderer.render(scene, camera);
 }
 
 // Lights: hemisphere fill (sky blue above, grass green below) + a shadow-casting sun
@@ -226,10 +252,11 @@ function updateDayNight(force = false) {
     hemiLight.groundColor.set(0x233524).lerp(new THREE.Color(0x8fca62), dayF);
     hemiLight.intensity = 0.4 + 0.45 * dayF;
 
-    // Streetlamps fade up through dusk; the 💡 slider scales both the light and the globe glow.
+    // Streetlamps fade up through dusk; the 💡 slider scales the light, globe and halo together.
     const lampGlow = (1 - dayF) * lampBrightness;
     lampGlobeMat.emissiveIntensity = 0.05 + 1.3 * lampGlow;
-    for (const l of lamps) l.light.intensity = 6 * lampGlow;
+    for (const l of lamps) { l.light.intensity = 6 * lampGlow; if (l.glow) l.glow.opacity = 0.9 * lampGlow; }   // the indoor reading lamp has no halo
+    sunGlow.material.color.set(0xffdf8a).lerp(new THREE.Color(0xff9d5c), glow * 0.7);   // golden-hour halo
 
     // Night dresses the clouds and reveals the stars.
     cloudMat.color.set(0x6c7ea6).lerp(new THREE.Color(0xffffff), dayF);
@@ -973,6 +1000,24 @@ function makeFoodBooth() {
 }
 
 const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth };
+// Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
+// look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
+// The fence (thin posts) and pond (a water hole) read better without one.
+const blobTex = (() => {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 128;
+    const ctx = cv.getContext('2d');
+    const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, 'rgba(18,26,16,0.34)');
+    g.addColorStop(0.55, 'rgba(18,26,16,0.15)');
+    g.addColorStop(1, 'rgba(18,26,16,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(cv);
+})();
+const blobGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+const BLOB_SIZE = { tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0 };
 for (const p of PROPS) {
     const obj = PROP_BUILDERS[p.type](p);
     obj.position.set(p.x, terrainHeight(p.x, p.z), p.z);
@@ -980,11 +1025,22 @@ for (const p of PROPS) {
     if (p.scale) obj.scale.setScalar(p.scale);   // layout data may size a prop (kit variants etc.)
     obj.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     stage.add(obj);
+    if (BLOB_SIZE[p.type] || p.type === 'house') {
+        const blob = new THREE.Mesh(blobGeo, blobMat);
+        if (p.type === 'house') blob.scale.set(2.4, 1, 2.0);   // shade peeking out around the slab rim
+        else blob.scale.setScalar(BLOB_SIZE[p.type]);
+        blob.rotation.y = p.rotY || 0;
+        blob.position.set(p.x, terrainHeight(p.x, p.z) + 0.012, p.z);
+        stage.add(blob);
+    }
     if (p.type === 'lamp') {
         const light = new THREE.PointLight(0xffd9a0, 0, 4.5, 2);
         light.position.set(p.x, terrainHeight(p.x, p.z) + 0.95, p.z);
         scene.add(light);
-        lamps.push({ light });
+        const halo = glowSprite(0xffc978, 0.55, 0);   // night halo around the globe, driven with the light
+        halo.position.copy(light.position);
+        scene.add(halo);
+        lamps.push({ light, glow: halo.material });
     }
     // Beds register a lying spot (on the furniture, with a lean-back tilt + heading) and an
     // approach point just outside their collider that the pet walks to before climbing on.
@@ -2020,15 +2076,16 @@ function dockBtn(symbol, title) {
 const shotBtn = dockBtn('📷', '스크린샷 (screenshots/ 폴더에 저장)');
 shotBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
 shotBtn.addEventListener('click', () => { takeScreenshot(); });
-const ecoBtn = dockBtn('⚡', '절전 모드 — 포스트 이펙트 끄기/켜기 (발열 줄임)');
-const syncEcoBtn = () => { ecoBtn.style.opacity = postEnabled ? '1' : '0.5'; };
+const ecoBtn = dockBtn('⚡', '절전 모드 — 30fps·1.5x 해상도 (배터리에선 자동)');
+const syncEcoBtn = () => { ecoBtn.style.opacity = ecoMode ? '0.5' : '1'; };
 syncEcoBtn();
 ecoBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
 ecoBtn.addEventListener('click', () => {
-    postEnabled = !postEnabled;
-    localStorage.setItem('world-eco', postEnabled ? '0' : '1');
+    ecoMode = !ecoMode;
+    localStorage.setItem('world-eco', ecoMode ? '1' : '0');
+    applyPixelRatio();
     syncEcoBtn();
-    showToast(postEnabled ? '✨ 고품질 모드 — 포스트 이펙트 켜짐' : '⚡ 절전 모드 — 포스트 이펙트 꺼짐');
+    showToast(ecoMode ? '⚡ 절전 모드 — 30fps · 1.5x 해상도' : '✨ 고품질 모드 — 60fps · 풀 해상도');
 });
 function bindZoomBtn(b, dir) {
     b.addEventListener('pointerdown', (e) => {
@@ -3988,16 +4045,17 @@ window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
-    composer.setSize(window.innerWidth, window.innerHeight);
+    applyPixelRatio();   // dpr can change when the window moves between displays
 });
 
 const clock = new THREE.Clock();
 let lastFrameMs = 0;
 function animate() {
-    // 60fps cap: ProMotion MacBooks drive rAF at 120Hz, which silently doubled the whole
-    // sim+render cost. 15.5ms threshold — safely under a 60Hz frame, so normal panels skip nothing.
+    // Adaptive pacing: 60fps while watched (focused, on mains), 30fps ambient — unfocused beside
+    // real work, ⚡ eco, or on battery. Thresholds sit safely under whole ticks of both 120Hz
+    // ProMotion (8.3ms) and 60Hz (16.7ms) panels, so no panel skips more than intended.
     const nowMs = performance.now();
-    if (nowMs - lastFrameMs < 15.5) return;
+    if (nowMs - lastFrameMs < (winFocused && !ecoActive() ? 15.5 : 31)) return;
     lastFrameMs = nowMs;
     const delta = Math.min(clock.getDelta(), 0.1);   // clamp huge deltas after the window was hidden
     for (const p of pets) {
