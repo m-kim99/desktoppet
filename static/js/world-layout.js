@@ -34,15 +34,18 @@ export const FLAT_SPOTS = [
 
 // Props: type + position + blocking radius (`r` is the circle collider pets steer around; the
 // pond blocks too — pets shouldn't wade). The bowl doubles as the Eat-motion spot.
+// Trees/rocks carry a CC0 kit model in `variant` (+ `kitScale`, tuned so heights sit near the
+// old procedural trees ~1.1–1.3) — drop the variant field and a tree reverts to the procedural
+// fluffy look. Kit models live in /models/world-kit (Kenney Nature Kit, CC0).
 // Zoned layout on the bigger island: NE = house yard (+bowl), E = rest area (sunbed), S = hammock
 // nook, SW = pond, W = fence lawn, plus four trees spread around. The center stays an open plaza
 // (hug point / monument land later) and the N/NW meadows are reserved for future features
 // (텃밭·커피 스탠드·도서관·전망대). Six lamps line the loop road.
 export const PROPS = [
-    { type: 'tree',  x: -3.4, z: -1.9, rotY: 0.0,  r: 0.45, big: true  },
-    { type: 'tree',  x:  3.6, z: -2.6, rotY: 2.1,  r: 0.45, big: false },
-    { type: 'tree',  x: -1.2, z:  3.7, rotY: 4.2,  r: 0.45, big: true  },
-    { type: 'tree',  x:  4.1, z:  1.0, rotY: 1.3,  r: 0.45, big: false },
+    { type: 'tree',  x: -3.4, z: -1.9, rotY: 0.0,  r: 0.45, big: true,  variant: 'tree_detailed', kitScale: 0.95 },
+    { type: 'tree',  x:  3.6, z: -2.6, rotY: 2.1,  r: 0.45, big: false, variant: 'tree_fat',      kitScale: 1.0  },
+    { type: 'tree',  x: -1.2, z:  3.7, rotY: 4.2,  r: 0.45, big: true,  variant: 'tree_default',  kitScale: 0.75 },
+    { type: 'tree',  x:  4.1, z:  1.0, rotY: 1.3,  r: 0.45, big: false, variant: 'tree_oak',      kitScale: 0.9  },
     { type: 'house', x:  2.7, z:  2.05, rotY: -0.65, r: 0 },   // walls/rooms block precisely (houseBlocked)
     { type: 'bowl',  x:  1.15, z:  1.75, rotY: 0.0,  r: 0.28 },
     { type: 'fence', x: -4.1, z:  0.9, rotY: 1.05, r: 0.5 },
@@ -58,9 +61,17 @@ export const PROPS = [
     { type: 'radio', x: 0.35, z: 1.55, rotY: 2.6, r: 0.24 },   // plaza-edge radio (Ctrl/⌘로 재생)
     { type: 'coffee', x: -1.5, z: 1.1, rotY: 2.2, r: 0.5 },    // 커피 부스 (Ctrl/⌘로 주문)
     { type: 'food', x: -0.85, z: 1.95, rotY: 2.73, r: 0.5 },   // 간식 부스 (Ctrl/⌘로 주문)
+    // Rocks (kit models): island-rim accents + one per satellite island
+    { type: 'rock', x: -4.35, z: -0.6,  rotY: 0.7, r: 0.32, variant: 'rock_largeA',     kitScale: 0.6  },
+    { type: 'rock', x:  1.95, z:  4.05, rotY: 2.4, r: 0.30, variant: 'rock_largeB',     kitScale: 0.55 },
+    { type: 'rock', x:  0.85, z: -4.5,  rotY: 1.1, r: 0.16, variant: 'rock_smallA',     kitScale: 0.9  },
+    { type: 'rock', x: -3.6,  z:  3.1,  rotY: 3.6, r: 0.16, variant: 'rock_smallC',     kitScale: 0.9  },
+    { type: 'rock', x:  3.3,  z: -3.55, rotY: 0.3, r: 0.20, variant: 'rock_smallFlatA', kitScale: 0.9  },
     // Satellite islands: a tree and a lamp at each bridgehead (otherwise open feature ground)
-    { type: 'tree',  x:  8.7,  z:  3.78, rotY: 0.7, r: 0.45, big: true  },
-    { type: 'tree',  x: -8.4,  z: -3.0,  rotY: 2.9, r: 0.45, big: false },
+    { type: 'tree',  x:  8.7,  z:  3.78, rotY: 0.7, r: 0.45, big: true,  variant: 'tree_default', kitScale: 0.8  },
+    { type: 'tree',  x: -8.4,  z: -3.0,  rotY: 2.9, r: 0.45, big: false, variant: 'tree_fat',     kitScale: 1.05 },
     { type: 'lamp', x:  6.97, z:  3.05, rotY: 0, r: 0.18 },
     { type: 'lamp', x: -6.60, z: -3.38, rotY: 0, r: 0.18 },
+    { type: 'rock', x:  7.6,  z:  5.0,  rotY: 1.9, r: 0.30, variant: 'rock_largeC', kitScale: 0.6 },
+    { type: 'rock', x: -7.5,  z: -4.1,  rotY: 2.8, r: 0.16, variant: 'rock_smallB', kitScale: 0.9 },
 ];
