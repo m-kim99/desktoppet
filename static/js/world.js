@@ -6,10 +6,17 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory } from './glb-pet-entity.js';
+import { ISLAND_R, ISLANDS, BRIDGES, HOUSE, FLAT_SPOTS, PROPS } from './world-layout.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));   // retina capped — the post chain renders every pixel
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -105,6 +112,22 @@ try {
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.position.set(0, 3.0, 8.2);
 camera.lookAt(0, 0.4, 0);
+
+// ---- Post chain: GTAO (contact shading that grounds the low-poly props) → soft bloom (sun,
+// lamp globes and the moon get a gentle halo) → tone-mapped output → SMAA on the final LDR
+// frame. Kept subtle on purpose — the pastel palette should read "storybook", not "filter". ----
+const composer = new EffectComposer(renderer);
+composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+composer.addPass(new RenderPass(scene, camera));
+const gtaoPass = new GTAOPass(scene, camera, window.innerWidth, window.innerHeight);
+gtaoPass.updateGtaoMaterial({ radius: 0.12, distanceExponent: 1, thickness: 1, scale: 1, samples: 12, distanceFallOff: 1, screenSpaceRadius: false });
+gtaoPass.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 4, radiusExponent: 1, rings: 2, samples: 8 });
+gtaoPass.blendIntensity = 0.9;
+composer.addPass(gtaoPass);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.22, 0.55, 0.9);
+composer.addPass(bloomPass);
+composer.addPass(new OutputPass());
+composer.addPass(new SMAAPass());
 
 // Lights: hemisphere fill (sky blue above, grass green below) + a shadow-casting sun
 const hemiLight = new THREE.HemisphereLight(0xcfe6ff, 0x8fca62, 0.85);
@@ -361,20 +384,9 @@ function gradSphereGeo(r, topHex, bottomHex) {
 }
 
 // ---- Stage: a floating meadow island — gently rolling vertex-colored grass over a rounded dirt
-// cliff, dressed with chubby pastel props. Pets still sense it ONLY through `world` below. ----
-const ISLAND_R = 5.2;
-// Archipelago: the main island plus two satellites reached over wooden bridges. Every land query
-// (terrain height, blocking, bridge decks) goes through the helpers below, so pets, the player,
-// particles and roads all agree on what counts as ground.
-const ISLANDS = [
-    { x: 0,     z: 0,     r: ISLAND_R },
-    { x: 8.2,   z: 4.18,  r: 2.2 },      // NE island — open ground for future features
-    { x: -8.06, z: -3.53, r: 2.0 },      // SW island
-];
-const BRIDGES = [
-    { A: { x: 4.41,  z: 2.25 },  B: { x: 6.46,  z: 3.30 },  inner: { x: 4.10,  z: 2.09 },  outer: { x: 6.73,  z: 3.43 } },
-    { A: { x: -4.53, z: -1.99 }, B: { x: -6.46, z: -2.83 }, inner: { x: -4.21, z: -1.84 }, outer: { x: -6.73, z: -2.95 } },
-];
+// cliff, dressed with chubby pastel props. Pets still sense it ONLY through `world` below.
+// WHERE everything sits (islands, bridges, house, flat pads, props) lives in world-layout.js —
+// this file only knows HOW to build and simulate it. ----
 function islandOf(x, z) {
     for (let i = 0; i < ISLANDS.length; i++) {
         const s = ISLANDS[i];
@@ -400,7 +412,6 @@ function bridgeDeckY(hit) {
 // floor 1 up front, a stair ramp along the right wall, a loft over the back half. houseFloorY
 // returns the walk height inside (null outside); houseBlocked fences the walls, porch posts and
 // the loft-edge line (which doubles as the under-loft partition below and the railing above).
-const HOUSE = { x: 2.7, z: 2.05, rotY: -0.65, hw: 1.0, hd: 0.8, floorY: 0.05, loftY: 0.62 };
 const HOUSE_COS = Math.cos(HOUSE.rotY), HOUSE_SIN = Math.sin(HOUSE.rotY);
 function houseLocal(x, z) {
     const dx = x - HOUSE.x, dz = z - HOUSE.z;
@@ -436,14 +447,9 @@ function houseBlocked(x, z) {
 const stage = new THREE.Group();
 scene.add(stage);
 
-// Terrain: soft rolling bumps that settle flat at the rim and under the house/pond pads. This ONE
+// Terrain: soft rolling bumps that settle flat at the rim and under the FLAT_SPOTS pads. This ONE
 // function feeds both the visible mesh and world.groundHeightAt, so feet, props, the select ring
 // and the catch ball always agree with what you see.
-const FLAT_SPOTS = [
-    { x: 0.0, z: 0.0, r: 1.7 },     // central plaza (hug point / monument to come)
-    { x: 2.7, z: 2.05, r: 1.7 },    // house pad (two-story house needs a wide level base)
-    { x: -2.6, z: -2.9, r: 0.95 },  // pond basin
-];
 function terrainHeight(x, z) {
     for (const isl of ISLANDS) {
         const rr = Math.hypot(x - isl.x, z - isl.z);
@@ -519,39 +525,7 @@ function buildIslandMeshes(isl) {
 }
 for (const isl of ISLANDS) buildIslandMeshes(isl);
 
-// Props stay a data list (type + position + blocking radius) — same swap point as before, the
-// builders are just far chubbier now. `r` is the circle collider pets steer around; the pond is
-// blocking too (pets shouldn't wade). The bowl doubles as the Eat-motion spot later.
-// Zoned layout on the bigger island: NE = house yard (+bowl), E = rest area (sunbed), S = hammock
-// nook, SW = pond, W = fence lawn, plus four trees spread around. The center stays an open plaza
-// (hug point / monument land later) and the N/NW meadows are reserved for future features
-// (텃밭·커피 스탠드·도서관·전망대). Six lamps line the loop road.
-const PROPS = [
-    { type: 'tree',  x: -3.4, z: -1.9, rotY: 0.0,  r: 0.45, big: true  },
-    { type: 'tree',  x:  3.6, z: -2.6, rotY: 2.1,  r: 0.45, big: false },
-    { type: 'tree',  x: -1.2, z:  3.7, rotY: 4.2,  r: 0.45, big: true  },
-    { type: 'tree',  x:  4.1, z:  1.0, rotY: 1.3,  r: 0.45, big: false },
-    { type: 'house', x:  2.7, z:  2.05, rotY: -0.65, r: 0 },   // walls/rooms block precisely (houseBlocked)
-    { type: 'bowl',  x:  1.15, z:  1.75, rotY: 0.0,  r: 0.28 },
-    { type: 'fence', x: -4.1, z:  0.9, rotY: 1.05, r: 0.5 },
-    { type: 'pond',  x: -2.6, z: -2.9, rotY: 0.0,  r: 0.72 },
-    { type: 'sunbed',  x:  4.05, z: -0.4,  rotY: -1.35, r: 0.42 },
-    { type: 'hammock', x: -0.9,  z: -4.15, rotY: 0.35,  r: 0.55 },
-    { type: 'lamp', x:  1.30, z:  3.09, rotY: 0, r: 0.18 },
-    { type: 'lamp', x:  3.34, z:  0.24, rotY: 0, r: 0.18 },
-    { type: 'lamp', x:  2.00, z: -2.68, rotY: 0, r: 0.18 },
-    { type: 'lamp', x: -1.48, z: -3.00, rotY: 0, r: 0.18 },
-    { type: 'lamp', x: -3.33, z: -0.37, rotY: 0, r: 0.18 },
-    { type: 'lamp', x: -1.85, z:  2.79, rotY: 0, r: 0.18 },
-    { type: 'radio', x: 0.35, z: 1.55, rotY: 2.6, r: 0.24 },   // plaza-edge radio (Ctrl/⌘로 재생)
-    { type: 'coffee', x: -1.5, z: 1.1, rotY: 2.2, r: 0.5 },    // 커피 부스 (Ctrl/⌘로 주문)
-    { type: 'food', x: -0.85, z: 1.95, rotY: 2.73, r: 0.5 },   // 간식 부스 (Ctrl/⌘로 주문)
-    // Satellite islands: a tree and a lamp at each bridgehead (otherwise open feature ground)
-    { type: 'tree',  x:  8.7,  z:  3.78, rotY: 0.7, r: 0.45, big: true  },
-    { type: 'tree',  x: -8.4,  z: -3.0,  rotY: 2.9, r: 0.45, big: false },
-    { type: 'lamp', x:  6.97, z:  3.05, rotY: 0, r: 0.18 },
-    { type: 'lamp', x: -6.60, z: -3.38, rotY: 0, r: 0.18 },
-];
+// Props are placed from the world-layout.js data list — the builders below are the HOW.
 const BEDS = [];   // filled during prop placement: where pets sleep at night / lie via Ctrl
 const M = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, ...extra });
 const leafMatGrad = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
@@ -987,6 +961,7 @@ for (const p of PROPS) {
     const obj = PROP_BUILDERS[p.type](p);
     obj.position.set(p.x, terrainHeight(p.x, p.z), p.z);
     obj.rotation.y = p.rotY || 0;
+    if (p.scale) obj.scale.setScalar(p.scale);   // layout data may size a prop (kit variants etc.)
     obj.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     stage.add(obj);
     if (p.type === 'lamp') {
@@ -2066,7 +2041,7 @@ function showToast(text) {
 // Screenshot: render a fresh frame, grab the canvas, POST it to the backend which writes a PNG
 // into the screenshots/ folder. A quick white flash confirms the capture.
 async function takeScreenshot() {
-    renderer.render(scene, camera);
+    composer.render();   // fresh frame through the full post chain — capture matches the screen
     const dataURL = renderer.domElement.toDataURL('image/png');
     const flash = document.createElement('div');
     flash.style.cssText = 'position:fixed; inset:0; background:#fff; opacity:0.7; z-index:200; pointer-events:none; transition:opacity 0.35s;';
@@ -3987,6 +3962,7 @@ window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
 });
 
 const clock = new THREE.Clock();
@@ -4029,6 +4005,6 @@ function animate() {
         camera.position.copy(controls.target).add(off);
     }
     controls.update();
-    renderer.render(scene, camera);
+    composer.render();
 }
 renderer.setAnimationLoop(animate);
