@@ -564,6 +564,9 @@ for (const isl of ISLANDS) buildIslandMeshes(isl);
 
 // Props are placed from the world-layout.js data list — the builders below are the HOW.
 const BEDS = [];   // filled during prop placement: where pets sleep at night / lie via Ctrl
+const SWINGS = []; // swing seats (also pushed into BEDS so mount/⌘ reuse works) — each is a pendulum
+const SEESAWS = [];        // seesaw seats (in BEDS too); two per plank share one tilting body
+const SEESAW_BODIES = [];  // the tilting planks — one shared angle drives both of its seats
 const M = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, ...extra });
 const leafMatGrad = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
 
@@ -851,6 +854,89 @@ function makeHammock() {
     return g;
 }
 
+// 그네 (2-seat A-frame swing): one top bar on two A-frame supports, two seats hung side by side.
+// Geometry lives here; SWING gives the shared numbers the seat registration + pendulum both read
+// so the visual plank and the riding pet stay locked to the same arc.
+const SWING = { barY: 0.98, span: 1.36, seatX: 0.31, ropeL: 0.62, sitLift: 0.05, approach: 0.66, rideMs: 600000 };
+function makeSwing() {
+    const g = new THREE.Group();
+    const wood = M(0xb08a60, { map: woodTex });
+    const half = SWING.span / 2;
+    const legSplay = 0.44, legLen = Math.hypot(SWING.barY, legSplay), legAng = Math.atan2(legSplay, SWING.barY);
+    for (const side of [-1, 1]) {                       // two A-frame supports (an inverted V each)
+        for (const dz of [-1, 1]) {
+            const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.038, legLen, 8), wood);
+            leg.position.set(side * half, SWING.barY / 2, dz * legSplay / 2);
+            leg.rotation.x = -dz * legAng;
+            g.add(leg);
+        }
+        const brace = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, legSplay * 0.9, 6), wood);
+        brace.position.set(side * half, SWING.barY * 0.4, 0);
+        brace.rotation.x = Math.PI / 2;
+        g.add(brace);
+    }
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, SWING.span + 0.18, 10), wood);
+    bar.rotation.z = Math.PI / 2;
+    bar.position.y = SWING.barY;
+    g.add(bar);
+    const cord = M(0x7a6248);
+    const seatCols = [0xf6c560, 0xa9c7e8];              // 병아리 노랑 · 강아지 파랑 (각자 자리)
+    const seats = [];
+    [-SWING.seatX, SWING.seatX].forEach((ox, i) => {
+        const sg = new THREE.Group();
+        sg.position.set(ox, SWING.barY, 0);             // pivot ON the bar; rotation.x swings the seat
+        for (const rx of [-0.11, 0.11]) {
+            const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, SWING.ropeL, 6), cord);
+            rope.position.set(rx, -SWING.ropeL / 2, 0);
+            sg.add(rope);
+        }
+        const plank = new THREE.Mesh(new RoundedBoxGeometry(0.3, 0.05, 0.17, 3, 0.02), M(seatCols[i]));
+        plank.position.y = -SWING.ropeL;
+        sg.add(plank);
+        g.add(sg);
+        seats.push(sg);
+    });
+    g.userData.seats = seats;
+    return g;
+}
+
+// 시소 (seesaw / teeter-totter): one plank pivots on a central fulcrum; a seat at each end rides the
+// same tilt so one goes up as the other goes down. SEESAW holds the shared numbers; the plank group
+// (userData.plank) tilts each frame and carries its seat meshes, so riders stay locked to the ends.
+const SEESAW = { fulcrumH: 0.32, armLen: 0.74, lift: 0.06 };
+function makeSeesaw() {
+    const g = new THREE.Group();
+    const wood = M(0xb08a60, { map: woodTex });
+    const strutLen = Math.hypot(SEESAW.fulcrumH, 0.2), strutAng = Math.atan2(0.2, SEESAW.fulcrumH);
+    for (const dz of [-1, 1]) {                          // fulcrum: two slanted struts meeting at the axle
+        const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, strutLen, 8), wood);
+        strut.position.set(0, SEESAW.fulcrumH / 2, dz * 0.1);
+        strut.rotation.x = -dz * strutAng;
+        g.add(strut);
+    }
+    const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.26, 10), M(0xC98A4E));
+    axle.rotation.z = Math.PI / 2;                       // axle runs along local X (the tilt axis)
+    axle.position.y = SEESAW.fulcrumH;
+    g.add(axle);
+    const plank = new THREE.Group();                     // pivots about the axle; tilt = plank.rotation.x
+    plank.position.y = SEESAW.fulcrumH;
+    const beam = new THREE.Mesh(new RoundedBoxGeometry(0.2, 0.05, SEESAW.armLen * 2 + 0.14, 3, 0.02), M(0xeab94e));
+    plank.add(beam);
+    const seatCols = [0xf6c560, 0xa9c7e8];               // 병아리 노랑 · 강아지 파랑 (양 끝 각자 자리)
+    [1, -1].forEach((e, i) => {
+        const seat = new THREE.Mesh(new RoundedBoxGeometry(0.22, 0.04, 0.2, 3, 0.02), M(seatCols[i]));
+        seat.position.set(0, 0.045, e * SEESAW.armLen);
+        plank.add(seat);
+        const grip = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.012, 6, 14), wood);
+        grip.position.set(0, 0.14, e * (SEESAW.armLen - 0.16));
+        grip.rotation.x = Math.PI / 2;
+        plank.add(grip);
+    });
+    g.add(plank);
+    g.userData.plank = plank;
+    return g;
+}
+
 function makeLamp() {
     const g = new THREE.Group();
     const metal = M(0x5a6a75);
@@ -999,7 +1085,7 @@ function makeFoodBooth() {
     return g;
 }
 
-const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth };
+const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -1017,7 +1103,7 @@ const blobTex = (() => {
 })();
 const blobGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-const BLOB_SIZE = { tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0 };
+const BLOB_SIZE = { tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0 };
 for (const p of PROPS) {
     const obj = PROP_BUILDERS[p.type](p);
     obj.position.set(p.x, terrainHeight(p.x, p.z), p.z);
@@ -1060,6 +1146,46 @@ for (const p of PROPS) {
                 approach: { x: p.x + sy * 0.7, z: p.z + cy * 0.7 },
             });
         }
+    }
+    // 그네 seats: two pendulum seats hung from the bar. Registered as BEDS so nearestFreeBed / mountBed
+    // (the ⌘ interaction) and the approach→mount→dismount tweens all work unchanged; updateSwings drives
+    // the pendulum + 10-min auto-dismount. Pivot/axis are baked to world space from the prop transform.
+    if (p.type === 'swing') {
+        const rotY = p.rotY || 0, sy = Math.sin(rotY), cy = Math.cos(rotY);
+        const baseY = terrainHeight(p.x, p.z);
+        const seats = obj.userData.seats || [];
+        [-SWING.seatX, SWING.seatX].forEach((ox, i) => {
+            const pivot = { x: p.x + ox * cy, z: p.z - ox * sy, y: baseY + SWING.barY };
+            const axis = { x: sy, z: cy };                      // world direction the seat swings along (local +Z)
+            const entry = {
+                id: 'swing', mode: 'swing', occupant: null, sway: 0,
+                seat: seats[i] || null, pivot, axis, L: SWING.ropeL, headY: rotY, angle: 0, vel: 0, mountedAt: 0,
+                lie: { x: pivot.x, z: pivot.z, y: pivot.y - SWING.ropeL + SWING.sitLift, rotY, tilt: 0 },
+                approach: { x: pivot.x + axis.x * SWING.approach, z: pivot.z + axis.z * SWING.approach },
+            };
+            SWINGS.push(entry);
+            BEDS.push(entry);
+        });
+    }
+    // 시소 seats: two seats on one pivoting plank (a shared SEESAW_BODIES entry). Registered as BEDS so
+    // ⌘/mount/dismount reuse works; updateSeesaws tilts the plank + places both riders on the same arc.
+    if (p.type === 'seesaw') {
+        const rotY = p.rotY || 0, sy = Math.sin(rotY), cy = Math.cos(rotY);
+        const axis = { x: sy, z: cy };                     // world direction along the plank length
+        const pivot = { x: p.x, z: p.z, y: terrainHeight(p.x, p.z) + SEESAW.fulcrumH };
+        const body = { plank: obj.userData.plank || null, pivot, axis, armLen: SEESAW.armLen, angle: 0, vel: 0, t: 0, seats: [] };
+        [1, -1].forEach((e) => {
+            const headY = Math.atan2(-e * axis.x, -e * axis.z);   // face the partner across the pivot
+            const entry = {
+                id: 'seesaw', mode: 'seesaw', occupant: null, sway: 0, body, end: e, headY, mountedAt: 0,
+                lie: { x: pivot.x + axis.x * e * SEESAW.armLen, z: pivot.z + axis.z * e * SEESAW.armLen, y: pivot.y + SEESAW.lift, rotY: headY, tilt: 0 },
+                approach: { x: pivot.x + axis.x * e * (SEESAW.armLen + 0.5), z: pivot.z + axis.z * e * (SEESAW.armLen + 0.5) },
+            };
+            body.seats.push(entry);
+            SEESAWS.push(entry);
+            BEDS.push(entry);
+        });
+        SEESAW_BODIES.push(body);
     }
 }
 
@@ -1609,6 +1735,15 @@ function updateWander(p, delta) {
                 p.nextDipAt = Date.now() + 150000 + Math.random() * 150000;
                 startDip(p);
                 return;
+            }
+            // …or amble over to a free swing / seesaw and hop on (daytime, on its own cooldown).
+            if (!isSleepTime(currentHour()) && Date.now() > (p.nextSwingAt || 0) && Math.random() < 0.14) {
+                const seat = SWINGS.find((b) => !b.occupant) || SEESAWS.find((b) => !b.occupant);
+                if (seat) {
+                    p.nextSwingAt = Date.now() + 180000 + Math.random() * 180000;
+                    mountBed(p, seat);
+                    return;
+                }
             }
             const target = pickTarget(mover.position);
             if (target) {
@@ -3447,7 +3582,7 @@ function updatePlayer(delta) {
     const act = carNear ? ' · Ctrl/⌘ 차 타기'
         : handHold ? ' · Ctrl/⌘ 손 놓기'
         : friendNear ? ' · Ctrl/⌘ 손잡기'
-        : bedNear ? (bedNear.mode === 'sit' ? ' · Ctrl/⌘ 앉기' : ' · Ctrl/⌘ 눕기')
+        : bedNear ? (bedNear.mode === 'swing' ? ' · Ctrl/⌘ 그네 타기' : bedNear.mode === 'seesaw' ? ' · Ctrl/⌘ 시소 타기' : bedNear.mode === 'sit' ? ' · Ctrl/⌘ 앉기' : ' · Ctrl/⌘ 눕기')
         : coffeeNear ? ' · Ctrl/⌘ 커피 주문'
         : foodNear ? ' · Ctrl/⌘ 간식 주문'
         : radioNear ? ' · Ctrl/⌘ 라디오'
@@ -3807,7 +3942,7 @@ function updateHandHold(delta) {
 const BED_PREF = { chick: 'hammock', puppy: 'sunbed' };
 function freeBedFor(p) {
     return BEDS.find((b) => b.id === BED_PREF[p.name] && !b.occupant)
-        || BEDS.find((b) => !b.occupant && b.mode !== 'sit')   // sofas are for sitting, not the night
+        || BEDS.find((b) => !b.occupant && b.mode !== 'sit' && b.mode !== 'swing' && b.mode !== 'seesaw')   // sofas/rides aren't night beds
         || null;
 }
 function nearestFreeBed(p, maxDist) {
@@ -3865,12 +4000,22 @@ function updateBeds(delta) {
             while (dr < -Math.PI) dr += Math.PI * 2;
             p.mover.rotation.y = p.bedFrom.rotY + dr * e;
             p.mover.rotation.x = lie.tilt * e;
-            if (k >= 1) { p.bedPhase = 'lying'; p.bedT = 0; p.pet.sleeping = bed.mode !== 'sit'; p.ai.state = 'busy'; }
+            if (k >= 1) {
+                p.bedPhase = 'lying'; p.bedT = 0;
+                p.pet.sleeping = bed.mode !== 'sit' && bed.mode !== 'swing' && bed.mode !== 'seesaw';   // swings/seesaws sit awake
+                p.ai.state = 'busy';
+                if (bed.mode === 'swing') { bed.angle = 0; bed.vel = 1.9; bed.mountedAt = Date.now(); }  // first push
+                else if (bed.mode === 'seesaw') { bed.mountedAt = Date.now(); bed.body.vel += -1.0 * bed.end; }  // dip the new rider's end
+            }
         } else if (p.bedPhase === 'lying') {
             p.bedT += delta;
-            if (bed.sway) p.mover.rotation.z = Math.sin(p.bedT * 1.1) * 0.07;
-            const wantOff = bed.mode === 'sit' ? p.bedExit : !p.pet.sleeping;
-            if (wantOff) { p.bedExit = false; dismountBed(p); }  // clicked off / woken → hop off
+            if (bed.mode === 'swing' || bed.mode === 'seesaw') {
+                if (p.bedExit) { p.bedExit = false; dismountBed(p); }   // pose owned by updateSwings / updateSeesaws
+            } else {
+                if (bed.sway) p.mover.rotation.z = Math.sin(p.bedT * 1.1) * 0.07;
+                const wantOff = bed.mode === 'sit' ? p.bedExit : !p.pet.sleeping;
+                if (wantOff) { p.bedExit = false; dismountBed(p); }  // clicked off / woken → hop off
+            }
         } else if (p.bedPhase === 'dismount') {
             p.bedT += delta;
             const k = Math.min(1, p.bedT / 0.55);
@@ -3888,6 +4033,69 @@ function updateBeds(delta) {
                 releaseAI(p);
             }
         }
+    }
+}
+
+// 그네 pendulum: drives every swing seat each frame. An occupied seat (rider fully 'lying') is a
+// lightly-damped driven pendulum — gravity restoring + a small pump at the bottom sustains a gentle
+// arc, and the rider is glued to the seat along that same arc; after 10분 it flags a hop-off. An empty
+// seat eases back to rest. The visual seat group rotates with the angle so plank/ropes/rider stay locked.
+const SWING_GL = 8.2;   // effective g/L — sets the ~2.2s period
+function updateSwings(delta) {
+    for (const s of SWINGS) {
+        const rider = s.occupant;
+        const active = rider && rider.bed === s && rider.bedPhase === 'lying';
+        if (active) {
+            s.vel += (-SWING_GL * Math.sin(s.angle) - 0.28 * s.vel) * delta;
+            if (Math.abs(s.angle) < 0.16) s.vel += Math.sign(s.vel || 1) * 1.0 * delta;   // pump at the bottom
+            s.angle += s.vel * delta;
+            rider.mover.position.set(
+                s.pivot.x + s.axis.x * s.L * Math.sin(s.angle),
+                s.pivot.y - s.L * Math.cos(s.angle) + SWING.sitLift,
+                s.pivot.z + s.axis.z * s.L * Math.sin(s.angle),
+            );
+            rider.mover.rotation.x = -s.angle;      // lean with the swing
+            rider.mover.rotation.y = s.headY;        // face forward (perpendicular to the bar)
+            rider.mover.rotation.z = 0;
+            if (Date.now() - s.mountedAt > SWING.rideMs) rider.bedExit = true;   // 10분 → hop off (updateBeds tweens down)
+        } else {
+            s.vel += (-SWING_GL * Math.sin(s.angle) - 1.6 * s.vel) * delta;   // empty: settle to rest
+            s.angle += s.vel * delta;
+            if (Math.abs(s.angle) < 0.002 && Math.abs(s.vel) < 0.01) { s.angle = 0; s.vel = 0; }
+        }
+        if (s.seat) s.seat.rotation.x = -s.angle;
+    }
+}
+
+// 시소 rock: one shared tilt per plank. With ≥1 rider it rocks (driven + pumped through level, lightly
+// damped); empty it settles level. Both ends ride the same angle in opposite directions, and each
+// rider hops off after 10분. The plank mesh tilts by -angle, carrying its seat meshes with the riders.
+const SEESAW_K = 7;
+function updateSeesaws(delta) {
+    for (const b of SEESAW_BODIES) {
+        const riders = b.seats.filter((s) => s.occupant && s.occupant.bed === s && s.occupant.bedPhase === 'lying');
+        if (riders.length) {
+            b.vel += (-SEESAW_K * b.angle - 0.5 * b.vel) * delta;
+            if (Math.abs(b.angle) < 0.14) b.vel += Math.sign(b.vel || -riders[0].end) * 0.8 * delta;   // pump through level
+            b.angle += b.vel * delta;
+            for (const s of riders) {
+                const e = s.end, c = Math.cos(b.angle), sn = Math.sin(b.angle);
+                s.occupant.mover.position.set(
+                    b.pivot.x + b.axis.x * e * b.armLen * c,
+                    b.pivot.y + e * b.armLen * sn + SEESAW.lift,
+                    b.pivot.z + b.axis.z * e * b.armLen * c,
+                );
+                s.occupant.mover.rotation.x = -b.angle;   // rigid plank → both riders share the tilt
+                s.occupant.mover.rotation.y = s.headY;
+                s.occupant.mover.rotation.z = 0;
+                if (Date.now() - s.mountedAt > SWING.rideMs) s.occupant.bedExit = true;   // 10분 → hop off
+            }
+        } else {
+            b.vel += (-SEESAW_K * b.angle - 2.2 * b.vel) * delta;   // empty: settle level
+            b.angle += b.vel * delta;
+            if (Math.abs(b.angle) < 0.002 && Math.abs(b.vel) < 0.01) { b.angle = 0; b.vel = 0; }
+        }
+        if (b.plank) b.plank.rotation.x = -b.angle;
     }
 }
 
@@ -4068,6 +4276,8 @@ function animate() {
     updatePlayer(delta);
     updateHandHold(delta);
     updateBeds(delta);
+    updateSwings(delta);
+    updateSeesaws(delta);
     updateDips(delta);
     updateAutoSleep();
     updateMeals();

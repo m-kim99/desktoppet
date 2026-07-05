@@ -5,6 +5,20 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Added (월드 놀이기구 — 그네·시소)
+- **2인 그네 (NE 위성섬)**: A자 프레임에 좌석 두 개가 나란히 매달린 그네를 다리 건너 NE 섬에
+  놓았다. 조종 중인 펫을 그네 옆으로 데려가 ⌘(상호작용)를 누르면 올라타고, 한 자리가 차 있으면
+  다른 펫은 남은 자리에 앉는다. 좌석은 진자 물리로 앞뒤로 흔들리며(바닥에서 펌핑 + 가벼운 감쇠로
+  잔잔한 진폭 유지), 탄 지 10분이면 스스로 내려오고, 배회하던 펫이 가끔 알아서 타러 오기도 한다.
+  밤 취침 자리로는 선택되지 않는다.
+- **2인 시소 (NE 위성섬)**: 그네 옆에 중앙 받침점에서 기우는 널판 시소를 추가했다. 양 끝 좌석이
+  하나의 기울기를 반대로 타서 한쪽이 내려가면 반대쪽이 올라가고 두 펫이 마주본다. 탑승 방식·10분
+  하차·가끔 자동 탑승은 그네와 동일하다.
+- **재사용 구조**: 두 놀이기구 모두 기존 침대(BEDS) mount 시스템 위에 얹어 ⌘ 상호작용·근접 힌트·
+  다리 경유 이동(gotoAsync)·approach→mount→dismount 트윈·자동 하차를 그대로 공유한다(신규 하위
+  시스템 없음). 전용 코드는 진자(updateSwings)·시소 틸트(updateSeesaws) 두 함수뿐이고, 배치는
+  `world-layout.js`에 데이터 두 줄 + 평탄화 패드로 끝난다.
+
 ### Changed (월드 렌더링 — 게임식 전환)
 - **Post chain replaced by bake & fake**: the GTAO→bloom→SMAA composer re-rendered the whole
   scene each frame just for normals and pushed ~19 fullscreen half-float passes — the most

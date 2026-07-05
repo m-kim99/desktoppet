@@ -30,6 +30,8 @@ export const FLAT_SPOTS = [
     { x: 0.0, z: 0.0, r: 1.7 },     // central plaza (hug point / monument to come)
     { x: 2.7, z: 2.05, r: 1.7 },    // house pad (two-story house needs a wide level base)
     { x: -2.6, z: -2.9, r: 0.95 },  // pond basin
+    { x: 8.2, z: 4.85, r: 1.0 },    // NE island swing pad (level ground under the A-frame legs)
+    { x: 9.3, z: 4.0, r: 1.0 },     // NE island seesaw pad (level ground under the fulcrum + plank)
 ];
 
 // Props: type + position + blocking radius (`r` is the circle collider pets steer around; the
@@ -66,4 +68,6 @@ export const PROPS = [
     { type: 'tree',  x: -8.4,  z: -3.0,  rotY: 2.9, r: 0.45, big: false },
     { type: 'lamp', x:  6.97, z:  3.05, rotY: 0, r: 0.18 },
     { type: 'lamp', x: -6.60, z: -3.38, rotY: 0, r: 0.18 },
+    { type: 'swing', x: 8.2, z: 4.85, rotY: 3.14, r: 0.55 },   // NE 섬 그네 (2인 A자, 앞자리 섬 안쪽 향함)
+    { type: 'seesaw', x: 9.3, z: 4.0, rotY: 0, r: 0.62 },      // NE 섬 시소 (플랭크 남북 방향, 양끝 마주봄)
 ];
