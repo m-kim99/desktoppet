@@ -1,5 +1,7 @@
-// CC0 asset-kit props (Kenney "Nature Kit" — https://kenney.nl/assets/nature-kit). The GLBs are
-// vendored under /models/world-kit (tiny, 3–30KB each; license file sits beside them).
+// CC0 asset-kit prop loader — the hook for piloting model packs (Kenney/Quaternius etc.).
+// Vendor GLBs under static/models/world-kit/ and reference them from world-layout.js entries
+// via `variant` + `kitScale`. (The 2026-07 Kenney Nature Kit pilot was reverted — the angular
+// kit look didn't match the chubby pastel world — so no GLBs ship right now.)
 // kitProp() is builder-compatible with world.js PROP_BUILDERS: it returns a Group immediately
 // and fills it when the GLB arrives — colliders and placement never wait on the network. If a
 // model is missing or fails, the optional procedural fallback builder keeps the world whole.

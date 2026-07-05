@@ -9,12 +9,12 @@ Patch notes go here — newest on top.
 - **Render-quality pass**: the world now draws through a post chain — GTAO contact shading,
   a subtle bloom on the sun/lamps/moon, tone-mapped output and SMAA. Screenshots go through
   the same chain; pixel ratio is capped at 2.
-- **CC0 asset-kit pilot (Kenney Nature Kit)**: the six trees switched to kit models
-  (`tree_detailed/fat/default/oak`, height-matched to the old ~1.1–1.3), and seven rocks now
-  accent the island rims and satellites. GLBs are vendored under `static/models/world-kit/`
-  (116KB, license included) and load through the new `world-kit.js` (cached, cloned,
-  shadow-enabled, with the procedural tree as offline fallback — remove a layout `variant`
-  to revert any tree). Pets (병아리/강아지) are untouched.
+- **CC0 asset-kit pilot (Kenney Nature Kit) — tried and reverted**: the six trees briefly ran
+  as kit models with seven kit rocks added, but the angular kit style clashed with the chubby
+  pastel world, so trees/rocks are back to the procedural look and the vendored GLBs were
+  dropped. The plumbing stays for a better-matching pack later: `world-kit.js` (cached GLB
+  prop loader with procedural fallback) plus `variant`/`kitScale` fields on layout entries.
+  Pets (병아리/강아지) were never touched.
 - **Layout data module**: islands, bridges, the house anchor, flat pads and all prop
   placements moved to `static/js/world-layout.js` — growing the world is now a data edit
   (props accept optional `scale`, `variant`, `kitScale`).
