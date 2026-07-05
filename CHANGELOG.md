@@ -5,6 +5,18 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Added
+- **Snack booth + two-handed food (🍞 간식 부스)**: a mint-striped snack stand (griddle, display
+  snacks, SNACK sign) joins the plaza beside the coffee booth. Ctrl/⌘ opens a 3×3 menu of nine
+  snacks — 토스트, 오므라이스, 부리또, 핫도그, 도넛, 붕어빵, 삼각김밥, 츄러스, 컵케이크 — each a
+  canvas icon plus a little 3D model. The snack goes in the pet's OTHER paw/wing, so a pet can hold
+  a drink and a snack at once (양손 자유도); the puppy grows a matching arm+paw on that side too,
+  raycast-anchored to the fur like the drink hand. Right-clicking the pet now lists whatever it's
+  holding (마시기 / 먹기); picking food runs a 2~3-bite 우적우적 sequence with a munch sound, the
+  snack shrinking per bite until it's gone after ~6 bites (then a happy hop). And drinks/snacks
+  ride every motion — dance, cheer, wave all work while holding, cup and snack bobbing along.
+  Beds put both hands' items down before climbing in.
+
 ### Fixed (클릭·음료 후속 3)
 - **Cup rim meets the beak**: while drinking, the cup group's origin (its bottom) was placed at the
   mouth, floating the whole cup above the chick's beak. Each drink now knows its rim height and the
