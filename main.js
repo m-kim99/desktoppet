@@ -800,6 +800,11 @@ app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.whenReady().then(async () => {
   try {
 
+    // macOS: the bare dev Electron binary shows the default atom icon in the Dock — swap in the
+    // party icon (the desktop launcher applet is a Dock-less LSUIElement, so only this one shows).
+    if (isMac && app.dock) {
+      try { app.dock.setIcon(path.join(__dirname, 'static/source/icon.png')); } catch (e) { console.error('Dock 아이콘 설정 실패:', e); }
+    }
 
     const partySession = session.fromPartition('persist:party-browser-session');
 

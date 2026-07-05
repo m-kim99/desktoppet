@@ -1758,7 +1758,9 @@ function showMenu(x, y, p) {
         el.textContent = (p.pet.accessory && p.pet.accessory.id === acc.id) ? `${acc.label} 벗기` : acc.label;
     }
     motionMenu.style.display = 'block';
-    motionMenu.style.left = `${Math.min(x, window.innerWidth - 170)}px`;
+    // Open to the RIGHT of the click point (the click lands on the pet — an offset keeps the
+    // menu from covering the character; clamped to the window edge).
+    motionMenu.style.left = `${Math.min(x + 80, window.innerWidth - 170)}px`;
     motionMenu.style.top = `${Math.min(y, window.innerHeight - 240)}px`;
 }
 function hideMenu() { motionMenu.style.display = 'none'; menuPet = null; hideSipMenu(); }   // the two travel together
@@ -1787,12 +1789,11 @@ renderer.domElement.addEventListener('pointerup', (e) => {
             if (p.bed && p.bed.mode === 'sit') { p.bedExit = true; return; }   // tap a sitter → gets up
             if (p.pet.sleeping) { p.pet.sleeping = false; p.pet.autoSleeping = false; return; }
             showMenu(e.clientX, e.clientY, p);
-            // Holding a drink/snack? Show the 먹기 chooser right beside the motion menu.
+            // Holding a drink/snack? Stack the 먹기 chooser right ABOVE the motion menu
+            // (same left edge), so neither panel sits on top of the pet.
             if (p === possessed && ((p.drink && !p.drink.seq) || (p.food && !p.food.seq))) {
-                const motionLeft = Math.min(e.clientX, window.innerWidth - 170);
-                let sipX = motionLeft - 190;
-                if (sipX < 8) sipX = motionLeft + 175;   // no room on the left → put it on the right
-                showSipMenuAt(sipX, e.clientY);
+                const mRect = motionMenu.getBoundingClientRect();
+                showSipMenuAt(mRect.left, mRect.top, true);
             }
             return;
         }
@@ -2907,7 +2908,8 @@ sipMenu.style.cssText = 'position:fixed; display:none; z-index:120; background:r
 document.body.appendChild(sipMenu);
 function hideSipMenu() { sipMenu.style.display = 'none'; }
 // Built per open: one entry per held item (both hands can be full at once).
-function showSipMenuAt(x, y) {
+// `above` anchors the menu's BOTTOM at y (used to stack it on top of the motion menu).
+function showSipMenuAt(x, y, above = false) {
     sipMenu.innerHTML = '';
     const addItem = (label, fn) => {
         const item = document.createElement('div');
@@ -2926,7 +2928,8 @@ function showSipMenuAt(x, y) {
     if (!sipMenu.children.length) return;
     sipMenu.style.display = 'block';
     sipMenu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - 175))}px`;
-    sipMenu.style.top = `${Math.min(y, window.innerHeight - 80)}px`;
+    const top = above ? Math.max(8, y - sipMenu.offsetHeight - 8) : Math.min(y, window.innerHeight - 80);
+    sipMenu.style.top = `${top}px`;
 }
 // The popup itself is opened from the pointerup raycast (right-click ON the drink-holding pet) —
 // this handler only suppresses the browser context menu, which on macOS fires on mouseDOWN and

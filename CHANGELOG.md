@@ -5,6 +5,15 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Changed (Dock·월드 메뉴 배치)
+- **Single Dock icon**: the dev Electron binary now sets the party icon on the macOS Dock via
+  `app.dock.setIcon` (was the default atom icon), and the desktop launcher applet is marked
+  `LSUIElement` so it never occupies the Dock — launching shows exactly one icon.
+- **World pet menus no longer cover the pet**: the right-click motion/control menu opens ~80px
+  to the right of the click point (clamped to the window edge), and the 먹기/마시기 chooser now
+  stacks directly ABOVE the motion menu (same left edge, bottom-anchored) instead of sitting to
+  its left over the character.
+
 ### Fixed (실행 안정성)
 - **Blank-white windows / zombie app on launch**: launching could leave nothing but white
   sheets on screen (empty 펫 월드 window included), and re-clicking the desktop launcher then
