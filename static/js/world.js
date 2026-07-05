@@ -16,8 +16,8 @@ import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, s
 import { ISLAND_R, ISLANDS, BRIDGES, HOUSE, FLAT_SPOTS, PROPS } from './world-layout.js';
 import { kitProp } from './world-kit.js';
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));   // retina capped — the post chain renders every pixel
+const renderer = new THREE.WebGLRenderer({ antialias: false });   // AA comes from SMAA at the end of the post chain — canvas MSAA would be pure waste
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));   // retina-lite: the post chain multiplies EVERY pixel by ~15 fullscreen passes; 1.5x + SMAA reads crisp at half the heat of 2x
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -118,17 +118,26 @@ camera.lookAt(0, 0.4, 0);
 // lamp globes and the moon get a gentle halo) → tone-mapped output → SMAA on the final LDR
 // frame. Kept subtle on purpose — the pastel palette should read "storybook", not "filter". ----
 const composer = new EffectComposer(renderer);
-composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+composer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 composer.addPass(new RenderPass(scene, camera));
 const gtaoPass = new GTAOPass(scene, camera, window.innerWidth, window.innerHeight);
-gtaoPass.updateGtaoMaterial({ radius: 0.12, distanceExponent: 1, thickness: 1, scale: 1, samples: 12, distanceFallOff: 1, screenSpaceRadius: false });
-gtaoPass.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 4, radiusExponent: 1, rings: 2, samples: 8 });
+gtaoPass.updateGtaoMaterial({ radius: 0.12, distanceExponent: 1, thickness: 1, scale: 1, samples: 8, distanceFallOff: 1, screenSpaceRadius: false });
+gtaoPass.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 4, radiusExponent: 1, rings: 2, samples: 6 });
 gtaoPass.blendIntensity = 0.9;
 composer.addPass(gtaoPass);
 const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.22, 0.55, 0.9);
 composer.addPass(bloomPass);
 composer.addPass(new OutputPass());
 composer.addPass(new SMAAPass());
+
+// ♡ laptop-friendly rendering: the post chain is the world's dominant GPU cost. The ⚡ dock
+// button flips 절전 mode (plain forward render, persisted), and the frame cap in animate()
+// keeps ProMotion panels from driving the whole sim+render at 120fps.
+let postEnabled = localStorage.getItem('world-eco') !== '1';
+function renderFrame() {
+    if (postEnabled) composer.render();
+    else renderer.render(scene, camera);
+}
 
 // Lights: hemisphere fill (sky blue above, grass green below) + a shadow-casting sun
 const hemiLight = new THREE.HemisphereLight(0xcfe6ff, 0x8fca62, 0.85);
@@ -2011,6 +2020,16 @@ function dockBtn(symbol, title) {
 const shotBtn = dockBtn('📷', '스크린샷 (screenshots/ 폴더에 저장)');
 shotBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
 shotBtn.addEventListener('click', () => { takeScreenshot(); });
+const ecoBtn = dockBtn('⚡', '절전 모드 — 포스트 이펙트 끄기/켜기 (발열 줄임)');
+const syncEcoBtn = () => { ecoBtn.style.opacity = postEnabled ? '1' : '0.5'; };
+syncEcoBtn();
+ecoBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
+ecoBtn.addEventListener('click', () => {
+    postEnabled = !postEnabled;
+    localStorage.setItem('world-eco', postEnabled ? '0' : '1');
+    syncEcoBtn();
+    showToast(postEnabled ? '✨ 고품질 모드 — 포스트 이펙트 켜짐' : '⚡ 절전 모드 — 포스트 이펙트 꺼짐');
+});
 function bindZoomBtn(b, dir) {
     b.addEventListener('pointerdown', (e) => {
         e.preventDefault();
@@ -2048,7 +2067,7 @@ function showToast(text) {
 // Screenshot: render a fresh frame, grab the canvas, POST it to the backend which writes a PNG
 // into the screenshots/ folder. A quick white flash confirms the capture.
 async function takeScreenshot() {
-    composer.render();   // fresh frame through the full post chain — capture matches the screen
+    renderFrame();   // fresh frame through the current render path — capture matches the screen
     const dataURL = renderer.domElement.toDataURL('image/png');
     const flash = document.createElement('div');
     flash.style.cssText = 'position:fixed; inset:0; background:#fff; opacity:0.7; z-index:200; pointer-events:none; transition:opacity 0.35s;';
@@ -3973,7 +3992,13 @@ window.addEventListener('resize', () => {
 });
 
 const clock = new THREE.Clock();
+let lastFrameMs = 0;
 function animate() {
+    // 60fps cap: ProMotion MacBooks drive rAF at 120Hz, which silently doubled the whole
+    // sim+render cost. 15.5ms threshold — safely under a 60Hz frame, so normal panels skip nothing.
+    const nowMs = performance.now();
+    if (nowMs - lastFrameMs < 15.5) return;
+    lastFrameMs = nowMs;
     const delta = Math.min(clock.getDelta(), 0.1);   // clamp huge deltas after the window was hidden
     for (const p of pets) {
         updateWander(p, delta);
@@ -4012,6 +4037,6 @@ function animate() {
         camera.position.copy(controls.target).add(off);
     }
     controls.update();
-    composer.render();
+    renderFrame();
 }
 renderer.setAnimationLoop(animate);

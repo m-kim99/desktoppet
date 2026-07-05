@@ -5,6 +5,13 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Fixed (월드 발열)
+- **MacBook heat after the quality pass**: the post chain (≈15 fullscreen passes) was running
+  at retina 2x AND at 120fps on ProMotion panels — several times the old GPU load. Now: pixel
+  ratio capped at 1.5 (SMAA keeps it crisp), GTAO trimmed to 8/6 samples, canvas MSAA dropped
+  (redundant behind SMAA), the sim+render loop capped at 60fps, and a ⚡ dock button toggles
+  절전 mode (plain forward render, persisted) for hot days.
+
 ### Changed (월드 그래픽)
 - **Render-quality pass**: the world now draws through a post chain — GTAO contact shading,
   a subtle bloom on the sun/lamps/moon, tone-mapped output and SMAA. Screenshots go through
