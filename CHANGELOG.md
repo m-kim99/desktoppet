@@ -5,6 +5,16 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Fixed (실행 안정성)
+- **Blank-white windows / zombie app on launch**: launching could leave nothing but white
+  sheets on screen (empty 펫 월드 window included), and re-clicking the desktop launcher then
+  did nothing. Three `main.js` fixes: (1) a crashed renderer (e.g. Chromium's network service
+  dying at startup) now auto-reloads its window, max 3 times/min, instead of staying a blank
+  sheet; (2) `before-quit` no longer awaits `executeJavaScript` on a dead renderer — that hang
+  used to leave a zombie Electron holding the single-instance lock so later launches were
+  silently swallowed; (3) the pet-world/VRM windows retry `loadURL` while the backend is still
+  coming up instead of failing once with `ERR_CONNECTION_REFUSED` plus an unhandled rejection.
+
 ### Changed (클릭·메뉴)
 - **Pet menus are right-click only**: clicking a pet with the left button used to open the
   motion/control menu, which clashed with left-drag camera moves. The motion/control menu (and

@@ -414,6 +414,23 @@ async function findAvailablePort(startPort = DEFAULT_PORT, maxAttempts = 20000) 
 }
 
 
+// Load a URL into a window, retrying while the backend comes up. loadURL rejects with
+// ERR_CONNECTION_REFUSED if the Python server isn't listening yet — an unhandled rejection
+// here used to leave a blank white window behind (e.g. the pet-world window).
+async function loadUrlWithRetry(win, url, attempts = 10, delayMs = 1500) {
+  for (let i = 0; i < attempts; i++) {
+    if (!win || win.isDestroyed()) return false;
+    try {
+      await win.loadURL(url);
+      return true;
+    } catch (e) {
+      console.error(`加载 ${url} 失败 (第 ${i + 1}/${attempts} 次):`, e.message || e);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+  return false;
+}
+
 // Create the splash-screen window
 function createSkeletonWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize
@@ -1083,7 +1100,7 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
       if (windowConfig.modelId) {
         vrmUrl += `?model=${encodeURIComponent(windowConfig.modelId)}&friend=1`;
       }
-      await vrmWindow.loadURL(vrmUrl);
+      await loadUrlWithRetry(vrmWindow, vrmUrl);
       // Default settings (no passthrough, interactive)
       vrmWindow.setIgnoreMouseEvents(false);
       vrmWindow.setAlwaysOnTop(true);
@@ -1143,7 +1160,7 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
         }
       });
       worldWindow.on('closed', () => { worldWindow = null; });
-      await worldWindow.loadURL(`http://${HOST}:${PORT}/world.html`);
+      await loadUrlWithRetry(worldWindow, `http://${HOST}:${PORT}/world.html`);
     }
     openWorldRef = openWorldWindow;
 
@@ -2209,12 +2226,17 @@ app.on('before-quit', async (event) => {
     const mainWindow = BrowserWindow.getAllWindows()[0];
     
     // 1. Stop the frontend bots (keeps your original logic)
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      await mainWindow.webContents.executeJavaScript(`
-        if (window.stopDiscordBotHandler) window.stopDiscordBotHandler();
-        if (window.stopTelegramBotHandler) window.stopTelegramBotHandler();
-        if (window.stopSlackBotHandler) window.stopSlackBotHandler();
-      `);
+    // Guarded: executeJavaScript on a crashed renderer never resolves, which used to leave a
+    // zombie Electron holding the single-instance lock — skip dead webContents and cap the wait.
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isCrashed()) {
+      await Promise.race([
+        mainWindow.webContents.executeJavaScript(`
+          if (window.stopDiscordBotHandler) window.stopDiscordBotHandler();
+          if (window.stopTelegramBotHandler) window.stopTelegramBotHandler();
+          if (window.stopSlackBotHandler) window.stopSlackBotHandler();
+        `).catch(() => {}),
+        new Promise(resolve => setTimeout(resolve, 3000))
+      ]);
       // Give the frontend a moment to clean up
       await new Promise(resolve => setTimeout(resolve, 500));
     }
@@ -2270,11 +2292,23 @@ app.on('window-all-closed', () => {
 })
 
 // Handle renderer-process crashes
+const rendererCrashReloads = new WeakMap(); // webContents -> recent reload timestamps
 app.on('render-process-gone', (event, webContents, details) => {
   console.error('渲染进程崩溃:', details);
   console.error('退出代码:', details.exitCode, '原因:', details.reason);
   // Write the details to a file for later analysis
   fs.appendFileSync('crash.log', JSON.stringify(details) + '\n');
+  // Self-heal: a crashed renderer used to leave its window stuck as a blank white sheet
+  // (e.g. when Chromium's network service dies at startup). Reload it, at most 3 times/min.
+  try {
+    if (webContents.isDestroyed()) return;
+    const now = Date.now();
+    const recent = (rendererCrashReloads.get(webContents) || []).filter(t => now - t < 60000);
+    if (recent.length >= 3) return;
+    recent.push(now);
+    rendererCrashReloads.set(webContents, recent);
+    setTimeout(() => { if (!webContents.isDestroyed()) webContents.reload(); }, 1000);
+  } catch (e) { console.error('渲染进程重载失败:', e); }
 });
 // Handle uncaught exceptions in the main process
 process.on('uncaughtException', (err) => {
