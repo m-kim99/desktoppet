@@ -243,7 +243,7 @@ const SKY_DUSK  = ['#33518f', '#6f68b0', '#ee9a6e', '#ffc98a'].map((c) => new TH
 // ---- Weather state (날씨): clear ↔ rain/snow episodes on the real clock — snow takes the 11~2월
 // shift. wxF is the eased overcast factor (0 clear → 1 wet); updateDayNight composites it over the
 // day/night palette, and the particles / rainbow / rain hiss live with the live systems below.
-// Preview (locks the scheduler): world.html?weather=rain|snow|clear|rainbow ----
+// Preview (locks the scheduler): world.html?weather=rain|snow|storm|clear|rainbow ----
 const WEATHER_OVERRIDE = (new URLSearchParams(window.location.search).get('weather') || '').toLowerCase() || null;
 const SKY_GLOOM = ['#6b7684', '#93a0ad', '#b8c2cc', '#ccd4da'].map((c) => new THREE.Color(c));
 const _gloomStop = new THREE.Color();
@@ -252,11 +252,14 @@ try {
     const saved = JSON.parse(localStorage.getItem('world-weather'));
     if (saved && saved.until > Date.now() && (saved.type === 'rain' || saved.type === 'snow')) wx = saved;
 } catch (e) {}
-if (WEATHER_OVERRIDE) wx = { type: (WEATHER_OVERRIDE === 'rain' || WEATHER_OVERRIDE === 'snow') ? WEATHER_OVERRIDE : 'clear', until: Infinity };
+if (WEATHER_OVERRIDE) wx = { type: (WEATHER_OVERRIDE === 'rain' || WEATHER_OVERRIDE === 'snow' || WEATHER_OVERRIDE === 'storm') ? WEATHER_OVERRIDE : 'clear', until: Infinity };
 // 수동 날씨 (독의 🌦️ 날씨 설정 버튼): 고르면 자동 스케줄러 대신 그 날씨가 유지된다. 새 날씨는 여기에 추가.
 const WEATHER_CHOICES = [
-    { id: null,   icon: '🔄', label: '자동', toast: '🔄 날씨 자동 모드' },
-    { id: 'rain', icon: '🌧️', label: '비',  toast: '🌧️ 비가 내려요' },
+    { id: null,    icon: '🔄', label: '자동',     toast: '🔄 날씨 자동 모드' },
+    { id: 'clear', icon: '☀️', label: '맑음',     toast: '☀️ 하늘이 활짝 개었어요' },
+    { id: 'rain',  icon: '🌧️', label: '비',      toast: '🌧️ 비가 내려요' },
+    { id: 'snow',  icon: '❄️', label: '눈',      toast: '❄️ 눈이 내려요' },
+    { id: 'storm', icon: '⛈️', label: '천둥번개', toast: '⛈️ 천둥번개가 몰려와요' },
 ];
 let manualWx = null;
 try {
@@ -265,6 +268,7 @@ try {
 } catch (e) {}
 if (manualWx && !WEATHER_OVERRIDE) wx = { type: manualWx, until: Infinity };
 let wxF = wx.type === 'clear' ? 0 : 1;   // restored mid-episode → start already wet, no fake fade-in
+let stormF = wx.type === 'storm' ? 1 : 0;   // ⛈️ 뇌우 계수: 비보다 한 단계 더 어둡게 누르는 추가 감쇠 (updateWeather가 이진다)
 let lastDayF = 1;                        // rainbow needs to know if the sun is out when rain ends
 
 function currentHour() {
@@ -306,14 +310,14 @@ function updateDayNight(force = false) {
     const grad = skyCtx.createLinearGradient(0, 0, 0, 256);
     for (let i = 0; i < SKY_STOPS.length; i++) {
         _skyStop.copy(SKY_NIGHT[i]).lerp(SKY_DAY[i], dayF).lerp(SKY_DUSK[i], glow * 0.8);
-        if (wxF > 0) _skyStop.lerp(_gloomStop.copy(SKY_GLOOM[i]).multiplyScalar(0.3 + 0.7 * dayF), wxF * 0.8);
+        if (wxF > 0) _skyStop.lerp(_gloomStop.copy(SKY_GLOOM[i]).multiplyScalar((0.3 + 0.7 * dayF) * (1 - 0.55 * stormF)), wxF * 0.8);
         grad.addColorStop(SKY_STOPS[i], `#${_skyStop.getHexString()}`);
     }
     skyCtx.fillStyle = grad;
     skyCtx.fillRect(0, 0, 1, 256);
     skyTex.needsUpdate = true;
     _skyStop.copy(SKY_NIGHT[3]).lerp(SKY_DAY[3], dayF).lerp(SKY_DUSK[3], glow * 0.8);
-    if (wxF > 0) _skyStop.lerp(_gloomStop.copy(SKY_GLOOM[3]).multiplyScalar(0.3 + 0.7 * dayF), wxF * 0.8);
+    if (wxF > 0) _skyStop.lerp(_gloomStop.copy(SKY_GLOOM[3]).multiplyScalar((0.3 + 0.7 * dayF) * (1 - 0.55 * stormF)), wxF * 0.8);
     scene.fog.color.copy(_skyStop);
     scene.background.copy(_skyStop);
     scene.fog.near = 14 - 5.5 * wxF;   // the wet front pulls the haze in close
@@ -328,10 +332,10 @@ function updateDayNight(force = false) {
     // The one shadow light plays sun by day and moon by night; overcast flattens and grays it.
     sunLight.position.copy(dayF >= 0.5 ? sunMesh.position : moonMesh.position);
     sunLight.color.copy(new THREE.Color(0x9db8e8).lerp(new THREE.Color(0xfff4e0), dayF).lerp(new THREE.Color(0xffb37a), glow * 0.55).lerp(new THREE.Color(0x9aa4b2), wxF * 0.5));
-    sunLight.intensity = (0.62 + 1.1 * dayF) * (1 - 0.45 * wxF);
+    sunLight.intensity = (0.62 + 1.1 * dayF) * (1 - 0.45 * wxF) * (1 - 0.3 * stormF);
     hemiLight.color.set(0x1d2b52).lerp(new THREE.Color(0xcfe6ff), dayF);
     hemiLight.groundColor.set(0x233524).lerp(new THREE.Color(0x8fca62), dayF);
-    hemiLight.intensity = (0.4 + 0.45 * dayF) * (1 - 0.22 * wxF);
+    hemiLight.intensity = (0.4 + 0.45 * dayF) * (1 - 0.22 * wxF) * (1 - 0.25 * stormF);
 
     // Streetlamps fade up through dusk — and glow softly through a daytime rain (아늑함).
     const lampGlow = Math.max(1 - dayF, wxF * 0.45) * lampBrightness;
@@ -1820,9 +1824,58 @@ function setRainHiss(vol) {
     } catch (e) {}
 }
 
+// ⛈️ 번개: 씨의 순간광(그림자 없는 DirectionalLight) + 화면 오버레이 섬광을 이중 플래시 봉투로 트고,
+// 0.25~1.8초 뒤 거리감 있는 천둥(합성 노이즈, 파일 없음)이 따라온다. 스톰 중 3~11초 간격.
+const lightningLight = new THREE.DirectionalLight(0xdfe8ff, 0);
+lightningLight.position.set(6, 12, -4);
+scene.add(lightningLight);
+const lightningFlashEl = document.createElement('div');
+lightningFlashEl.style.cssText = 'position:fixed; inset:0; background:linear-gradient(rgba(215,228,255,0.95), rgba(180,200,245,0.5)); opacity:0; pointer-events:none; z-index:60;';
+document.body.appendChild(lightningFlashEl);
+let thunderBuf = null;
+function playThunder(vol) {
+    try {
+        if (!thunderBuf) thunderBuf = synthNoiseBuffer(2.6, (t) => (t < 0.05 ? t / 0.05 : Math.pow(1 - t, 1.7)) * (0.72 + 0.28 * Math.sin(t * 43 + Math.sin(t * 12) * 2.5)));
+        const src = audioCtx.createBufferSource();
+        src.buffer = thunderBuf;
+        src.playbackRate.value = 0.72 + Math.random() * 0.45;   // 낮을수록 멀리서 울리는 느낌
+        const lp = audioCtx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = 220 + Math.random() * 180;
+        const g = audioCtx.createGain();
+        g.gain.value = vol;
+        src.connect(lp); lp.connect(g); g.connect(sfxMaster);
+        src.start();
+    } catch (e) {}
+}
+let boltTimer = 4, boltT = -1;
+function updateLightning(delta) {
+    if (wx.type === 'storm' && wxF > 0.55) {
+        boltTimer -= delta;
+        if (boltTimer <= 0 && boltT < 0) {
+            boltT = 0;
+            boltTimer = 3 + Math.random() * 8;
+            lightningLight.position.set((Math.random() - 0.5) * 24, 10 + Math.random() * 4, (Math.random() - 0.5) * 24);
+            const away = 0.25 + Math.random() * 1.55;   // 초 — 섬광→천둥 딜레이, 멀수록 작게
+            setTimeout(() => playThunder(0.5 / (0.8 + away)), away * 1000);
+        }
+    }
+    if (boltT >= 0) {
+        boltT += delta;
+        const t = boltT;
+        const k = t < 0.07 ? t / 0.07
+              : t < 0.15 ? 1 - ((t - 0.07) / 0.08) * 0.65
+              : t < 0.24 ? 0.35 + ((t - 0.15) / 0.09) * 0.65
+              : Math.max(0, 1 - (t - 0.24) / 0.32);
+        lightningLight.intensity = 2.4 * k;
+        lightningFlashEl.style.opacity = (0.34 * k * Math.min(1, wxF * 1.5)).toFixed(3);
+        if (t >= 0.56) { boltT = -1; lightningLight.intensity = 0; lightningFlashEl.style.opacity = '0'; }
+    }
+}
+
 // Scheduler: 맑음 10~25분 ↔ 강수 3~8분 on the real clock; persisted so reopening the window
 // continues the same weather. Snow replaces rain through 11~2월.
-let wxKind = wx.type === 'snow' ? 'snow' : 'rain';   // which particle set the current/last front uses
+let wxKind = wx.type === 'clear' ? 'rain' : wx.type;   // which particle set the current/last front uses (storm은 비 입자 공유)
 function rollWeather() {
     if (WEATHER_OVERRIDE || manualWx) return;
     const now = Date.now();
@@ -1847,16 +1900,19 @@ function setManualWeather(type) {
         if (type) localStorage.setItem('world-weather-manual', type);
         else localStorage.removeItem('world-weather-manual');
     } catch (e) {}
-    if (type) {
+    if (type && type !== 'clear') {
         wx = { type, until: Infinity };
-        logWorldEvent(type === 'snow' ? '주인이 눈을 내리게 했다 ❄️' : '주인이 비를 내리게 했다 🌧️');
-    } else if (wx.type !== 'clear') {
-        const gotRainbow = wx.type === 'rain' && lastDayF > 0.35;
-        if (gotRainbow) { rainbowT = 75; rainbowAge = 0; }
-        wx = { type: 'clear', until: Date.now() + (10 + Math.random() * 15) * 60000 };
-        logWorldEvent(gotRainbow ? '비가 그치고 바다 위에 무지개가 떴다' : '날이 개었다');
-        try { localStorage.setItem('world-weather', JSON.stringify(wx)); } catch (e) {}
+        logWorldEvent(type === 'snow' ? '주인이 눈을 내리게 했다 ❄️' : type === 'storm' ? '주인이 천둥번개를 불러왔다 ⛈️' : '주인이 비를 내리게 했다 🌧️');
+        return;
     }
+    // 맑음 고정('clear') 또는 자동 복귀(null): 내리던 강수는 즉시 개고, 낮 비/뇌우 뒤엔 무지개.
+    if (wx.type !== 'clear') {
+        const gotRainbow = (wx.type === 'rain' || wx.type === 'storm') && lastDayF > 0.35;
+        if (gotRainbow) { rainbowT = 75; rainbowAge = 0; }
+        logWorldEvent(gotRainbow ? '비가 그치고 바다 위에 무지개가 떴다' : '날이 개었다');
+    }
+    wx = { type: 'clear', until: type === 'clear' ? Infinity : Date.now() + (10 + Math.random() * 15) * 60000 };
+    try { localStorage.setItem('world-weather', JSON.stringify(wx)); } catch (e) {}
 }
 function updateWeather(delta) {
     rollWeather();
@@ -1866,12 +1922,19 @@ function updateWeather(delta) {
         wxF = THREE.MathUtils.clamp(wxF + Math.sign(target - wxF) * delta / 9, 0, 1);   // ~9s soft front
         updateDayNight(true);   // recomposite sky/light while the front moves through
     }
+    const stormTarget = wx.type === 'storm' ? 1 : 0;
+    if (stormF !== stormTarget) {
+        stormF = THREE.MathUtils.clamp(stormF + Math.sign(stormTarget - stormF) * delta / 4, 0, 1);   // 뇌우는 ~4s로 빠르게 내려앉는다
+        updateDayNight(true);
+    }
     wxTime.value += delta;
-    rainPts.visible = wxKind === 'rain' && wxF > 0.02;
+    const rainy = wxKind === 'rain' || wxKind === 'storm';
+    rainPts.visible = rainy && wxF > 0.02;
     snowPts.visible = wxKind === 'snow' && wxF > 0.02;
-    rainPts.material.opacity = 0.55 * wxF;
+    rainPts.material.opacity = (0.55 + 0.25 * stormF) * wxF;   // 뇌우엔 빗발이 좀 더 굵다
     snowPts.material.opacity = 0.9 * wxF;
-    setRainHiss(wxKind === 'rain' ? 0.06 * wxF : 0);
+    setRainHiss(rainy ? (0.06 + 0.045 * stormF) * wxF : 0);
+    updateLightning(delta);
     if (rainbowT > 0) {
         rainbowT -= delta;
         rainbowAge += delta;
@@ -2497,7 +2560,7 @@ function buildWorldSnapshot(me) {
     const month = d.getMonth() + 1;
     const season = month === 12 || month <= 2 ? '겨울' : month <= 5 ? '봄' : month <= 8 ? '여름' : '가을';
     const daypart = h < 6 ? '새벽' : h < 12 ? '아침' : h < 18 ? '낮' : h < 22 ? '저녁' : '밤';
-    const wxKo = wx.type === 'rain' ? '비가 내리는 중' : wx.type === 'snow' ? '눈이 내리는 중'
+    const wxKo = wx.type === 'storm' ? '천둥번개가 치는 중' : wx.type === 'rain' ? '비가 내리는 중' : wx.type === 'snow' ? '눈이 내리는 중'
         : rainbowT > 0 ? '맑음 (무지개가 떠 있음!)' : '맑음';
     const lines = [
         `시각: ${month}월 ${d.getDate()}일 (${dayName}) ${hh}:${mm} — ${season}, ${daypart}`,
