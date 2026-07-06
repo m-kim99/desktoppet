@@ -2462,6 +2462,7 @@ function playWorldMotion(p, id) {
         (id === 'hug' ? worldHug : worldPlay)(p);
         return;
     }
+    if (id === 'wave') petVoice(p);                       // 인사엔 목소리도 함께
     p.pet.action = { id, t: 0 };
 }
 
@@ -3205,6 +3206,56 @@ sfxMaster.connect(audioCtx.destination);
 document.addEventListener('pointerdown', () => {
     if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
 }, { once: true });
+
+// 🐤/🐶 울음소리 — 다른 효과음처럼 파일 없이 합성한다. 병아리는 높은 사인 두 음의 짹짹,
+// 강아지는 톱니파 피치 하강 두 번의 멍멍. 채팅 대답과 인사(Wave) 모션에서 운다.
+let lastVoiceAt = 0;
+function petVoice(p) {
+    if (!p || audioCtx.state === 'suspended') return;
+    const now = performance.now();
+    if (now - lastVoiceAt < 350) return;                  // 연타·중복 호출 방지
+    lastVoiceAt = now;
+    const t0 = audioCtx.currentTime;
+    if (p.name === 'chick') {
+        for (let i = 0; i < 2; i++) {                     // 짹, 짹
+            const t = t0 + i * 0.16;
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.type = 'sine';
+            o.frequency.setValueAtTime(2600, t);
+            o.frequency.exponentialRampToValueAtTime(3600, t + 0.05);
+            o.frequency.exponentialRampToValueAtTime(2200, t + 0.11);
+            g.gain.setValueAtTime(0.0001, t);
+            g.gain.exponentialRampToValueAtTime(0.22, t + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+            o.connect(g);
+            g.connect(sfxMaster);
+            o.start(t);
+            o.stop(t + 0.15);
+        }
+    } else {
+        for (let i = 0; i < 2; i++) {                     // 멍, 멍
+            const t = t0 + i * 0.22;
+            const o = audioCtx.createOscillator();
+            const f = audioCtx.createBiquadFilter();
+            const g = audioCtx.createGain();
+            o.type = 'sawtooth';
+            o.frequency.setValueAtTime(520, t);
+            o.frequency.exponentialRampToValueAtTime(170, t + 0.12);
+            f.type = 'lowpass';
+            f.frequency.setValueAtTime(1200, t);
+            f.frequency.exponentialRampToValueAtTime(400, t + 0.12);
+            g.gain.setValueAtTime(0.0001, t);
+            g.gain.exponentialRampToValueAtTime(0.3, t + 0.015);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+            o.connect(f);
+            f.connect(g);
+            g.connect(sfxMaster);
+            o.start(t);
+            o.stop(t + 0.18);
+        }
+    }
+}
 
 const STEP_FILES = {
     grass: [0, 1, 2, 3, 4].map((i) => `/sounds/steps/footstep_grass_00${i}.ogg`),
@@ -4095,6 +4146,7 @@ async function runWorldActions(p, actions) {
                     p.pet.sleeping = false;
                     await waitFor(() => !p.pet.action, 4000);      // let a running motion finish first
                     if (gen !== scriptGen) return;
+                    if (a.id === 'wave') petVoice(p);     // 태그로 시킨 인사에도 목소리
                     p.pet.action = { id: a.id, t: 0 };
                     await waitFor(() => !p.pet.action, 7000);
                 }
@@ -4173,6 +4225,7 @@ async function requestWorldChat(pet, text) {
     const { speech, actions } = parseWorldReply(reply);
     stopWaiting(true, actions.length === 0);       // 행동이 이어지면 해피 홉 생략 — 행동이 곧 리액션이니까
     if (speech) {
+        petVoice(pet);                                    // 말풍선과 함께 짹짹/멍멍
         showBubbleTyped(speech);
         pushChatLog(petKo(pet), speech);
     }
