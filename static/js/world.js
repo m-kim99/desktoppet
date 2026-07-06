@@ -10,6 +10,44 @@ import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, s
 import { ISLAND_R, ISLANDS, BRIDGES, HOUSE, FLAT_SPOTS, PROPS } from './world-layout.js';
 import { kitProp } from './world-kit.js';
 
+// ---- 🔨 공사모드 저장 레이아웃: 씬을 짓기 "전에" PROPS/HOUSE/FLAT_SPOTS에 덮어쓴다. 지형 패드·
+// 침대 좌표·블롭 그림자·집 내부가 전부 빌드 시점의 p.x/z에서 파생되므로, 여기서 바꿔두면 아래의
+// 모든 빌더가 저절로 새 위치 기준으로 굽는다. 저장은 서버(/api/world_layout — 폰·데스크톱 공유)
+// 우선, 없으면(정적 서버 등) localStorage 폴백. id는 "타입-등장순번"(tree-1, lamp-3…) — 같은
+// 타입의 새 프롭은 world-layout.js 목록의 끝에 추가해야 저장된 배치가 어긋나지 않는다.
+const savedLayout = await (async () => {
+    try {
+        const r = await fetch('/api/world_layout', { signal: AbortSignal.timeout(1500) });
+        if (r.ok) {
+            const j = await r.json();
+            if (j && j.layout && typeof j.layout === 'object') return j.layout;
+        }
+    } catch (err) {}
+    try { return JSON.parse(localStorage.getItem('world-layout')) || {}; } catch (err) { return {}; }
+})();
+// 이동 가능한 타입 (연못=지형 함몰이라 고정, furniture=집 내부 파생이라 집을 따라감)
+const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house']);
+{
+    const counts = {};
+    for (const p of PROPS) {
+        p.layoutId = `${p.type}-${counts[p.type] = (counts[p.type] || 0) + 1}`;
+        p.def = { x: p.x, z: p.z, rotY: p.rotY || 0 };            // "전부 원위치"용 원본 좌표
+        const o = MOVABLE_TYPES.has(p.type) ? savedLayout[p.layoutId] : null;
+        if (o && Number.isFinite(o.x) && Number.isFinite(o.z)) {
+            p.x = o.x; p.z = o.z;
+            if (Number.isFinite(o.rotY)) p.rotY = o.rotY;
+        }
+    }
+    const h = PROPS.find((p) => p.type === 'house');
+    if (h) { HOUSE.x = h.x; HOUSE.z = h.z; HOUSE.rotY = h.rotY; } // houseWorld/houseBlocked의 앵커 동기화
+    // 지형 평탄화 패드가 주인 프롭을 따라간다 (다음 로드부터 새 위치가 평평해짐)
+    for (const s of FLAT_SPOTS) {
+        if (!s.follow) continue;
+        const p = PROPS.find((q) => q.layoutId === s.follow);
+        if (p) { s.x = p.x; s.z = p.z; }
+    }
+}
+
 const renderer = new THREE.WebGLRenderer({ antialias: true });   // MSAA — near-free on Apple's tile-based GPU, all the AA a single forward pass needs
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));    // full retina again: without the ~19-pass chain, 2x + MSAA costs less than 1.5x did with it
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -1781,9 +1819,12 @@ function rollWeather() {
     if (wx.type === 'clear') {
         const month = new Date().getMonth() + 1;
         wx = { type: (month >= 11 || month <= 2) ? 'snow' : 'rain', until: now + (3 + Math.random() * 5) * 60000 };
+        logWorldEvent(wx.type === 'snow' ? '눈이 내리기 시작했다' : '비가 내리기 시작했다');
     } else {
-        if (wx.type === 'rain' && lastDayF > 0.35) { rainbowT = 75; rainbowAge = 0; }   // sun comes back out
+        const gotRainbow = wx.type === 'rain' && lastDayF > 0.35;
+        if (gotRainbow) { rainbowT = 75; rainbowAge = 0; }   // sun comes back out
         wx = { type: 'clear', until: now + (10 + Math.random() * 15) * 60000 };
+        logWorldEvent(gotRainbow ? '비가 그치고 바다 위에 무지개가 떴다' : '날이 개었다');
     }
     try { localStorage.setItem('world-weather', JSON.stringify(wx)); } catch (e) {}
 }
@@ -2276,6 +2317,7 @@ async function worldHug(initiator) {
         // direction so they read as one embrace instead of a collision.
         initiator.pet.action = { id: 'hug', t: 0, role: 'initiator', dir: 1 };
         partner.pet.action   = { id: 'hug', t: 0, role: 'partner',   dir: -1 };
+        logWorldEvent('병아리와 강아지가 포옹했다 💕');
         await sleepMs(3100);                                   // hug DUR is 3.0s
     } finally {
         duoBusy = false; releaseAI(initiator); releaseAI(partner);
@@ -2335,52 +2377,114 @@ async function worldPlay(initiator) {
         if (last.pet.action && last.pet.action.id === 'play') { last.pet.action.cue = 'finish'; last.pet.action.cueT = 0; }
         await sleepMs(900);
         initiator.pet.action = null; partner.pet.action = null;
+        logWorldEvent('병아리와 강아지가 공놀이를 했다');
     } finally {
         ballMesh.visible = false; ballFlight = null;
         duoBusy = false; releaseAI(initiator); releaseAI(partner);
     }
 }
 
-// ---- Chat (채팅): the world talks through the same backend pipeline as the pet windows ----
-// Outgoing: the control socket `/ws` (`set_user_input` then `trigger_send_message` drives the
-// main-UI agent, exactly like the pet window's bubble input). Incoming: the `/ws/vrm` broadcast —
-// ordered TTS chunks carrying their text (+audio blobs), silence chunks and started/stop commands.
-// The world only consumes chunks while it is waiting on a conversation IT started, so chats typed
-// in the main UI or spoken to a pet window don't echo here. The responder (the pet you name in the
-// message, else the chick) ponders (Think) while the agent generates, then speaks via a bubble +
-// audio above its head and finishes with a happy hop.
-let chatWs = null;
-function initChatWs() {
-    if (chatWs && (chatWs.readyState === WebSocket.OPEN || chatWs.readyState === WebSocket.CONNECTING)) return;
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    chatWs = new WebSocket(`${proto}//${window.location.host}/ws`);
-    chatWs.onclose = () => setTimeout(initChatWs, 3000);
-}
-initChatWs();
+// ---- Chat (채팅) — 월드 전용 세션 (P1/P2): the world talks to its OWN backend session
+// (/api/world_chat), fully separate from the main-UI agent. Each turn ships a Korean snapshot of
+// the live world state plus recent world events, so the pets genuinely KNOW their day; per-pet
+// history, persona and a rolling summary live on the server. Replies are bubble-only for now
+// (TTS는 나중에) and may carry inline action tags the executor below runs (<motion=..> <goto=..>
+// <mount=..> <drink=..> <snack=..> <hat=..>). The responder Think-poses while the LLM generates.
 
-let vrmWs = null;
-function initVrmWs() {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    vrmWs = new WebSocket(`${proto}//${window.location.host}/ws/vrm`);
-    vrmWs.binaryType = 'arraybuffer';
-    vrmWs.onmessage = onVrmWsMessage;
-    vrmWs.onclose = () => setTimeout(initVrmWs, 3000);
+// World event log (P1): notable happenings, timestamped, sent to the LLM as "최근 있었던 일".
+// Ring buffer persisted across window reopens so "아까 뭐 했어?" still works after a relaunch.
+const worldEvents = [];
+try {
+    const savedEv = JSON.parse(localStorage.getItem('world-events'));
+    if (Array.isArray(savedEv)) worldEvents.push(...savedEv.filter((e) => e && e.t && e.text).slice(-40));
+} catch (e) {}
+function petKo(p) { return p.name === 'chick' ? '병아리' : '강아지'; }
+function logWorldEvent(text) {
+    worldEvents.push({ t: Date.now(), text });
+    if (worldEvents.length > 40) worldEvents.splice(0, worldEvents.length - 40);
+    try { localStorage.setItem('world-events', JSON.stringify(worldEvents)); } catch (e) {}
 }
-initVrmWs();
+function recentEventsText() {
+    const now = Date.now();
+    return worldEvents
+        .filter((e) => now - e.t < 6 * 3600000)
+        .slice(-8)
+        .map((e) => {
+            const min = Math.round((now - e.t) / 60000);
+            const when = min < 1 ? '방금' : min < 60 ? `${min}분 전` : `${Math.round(min / 60)}시간 전`;
+            return `- (${when}) ${e.text}`;
+        })
+        .join('\n');
+}
 
-// Reply state: a miniature of the pet window's sort buffer — chunks can arrive out of order, so
-// they are sequenced by chunkIndex; a drain timer decides when the streamed reply is really over.
+// Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
+const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소' };
+function describeSpot(x, z) {
+    const hf = houseFloorY(x, z);
+    if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
+    if (onBridge(x, z)) return '다리 위';
+    let best = null, bestD = Infinity;
+    for (const q of PROPS) {
+        const d = Math.hypot(x - q.x, z - q.z) - q.r;
+        if (d < bestD) { bestD = d; best = q; }
+    }
+    if (best && bestD < 0.8) return `${PROP_KO[best.type] || best.type} 근처`;
+    if (Math.hypot(x, z) < 1.8) return '중앙 광장';
+    const idx = islandOf(x, z);
+    if (idx === 0) return '본섬 풀밭';
+    if (idx === 1) return '북동섬';
+    if (idx === 2) return '남서섬';
+    return '바다';
+}
+const BED_KO = { sunbed: '선베드', hammock: '해먹', swing: '그네', seesaw: '시소', sofa: '소파', loftbed: '2층 침대' };
+function petStatusLine(p) {
+    const pos = p.mover.position;
+    const parts = [`위치: ${describeSpot(pos.x, pos.z)}`];
+    if (carDrive && carDrive.driver === p) parts.push('스포츠카 운전 중');
+    else if (carDrive && carDrive.passenger === p) parts.push('스포츠카 조수석에 타는 중');
+    else if (p.bed && p.bedPhase === 'lying') {
+        const ko = BED_KO[p.bed.id] || p.bed.id;
+        parts.push(p.bed.mode === 'swing' || p.bed.mode === 'seesaw' ? `${ko} 타는 중`
+            : p.bed.mode === 'sit' ? `${ko}에 앉아 있음` : `${ko}에 누워 있음`);
+    }
+    else if (p.swimming) parts.push(p.swimming === 'pond' ? '연못에서 수영 중' : '바다에서 수영 중');
+    else if (p.dip) parts.push('물놀이 하러 가는 중');
+    else if (p.eatSpot) parts.push('밥그릇에서 밥 먹는 중');
+    if (p.pet.sleeping) parts.push('잠자는 중');
+    if (p === possessed) parts.push('주인이 직접 조종하는 중');
+    if (handHold && (handHold.partner === p || possessed === p)) parts.push('둘이 손잡고 있음');
+    if (p.drink) parts.push(`${p.drink.def.name} 들고 있음`);
+    if (p.food) parts.push(`${p.food.def.name} 들고 있음`);
+    if (p.pet.accessory) parts.push('산타모자 착용 중');
+    if (parts.length === 1) parts.push(p.ai.state === 'walk' || p.ai.state === 'goto' ? '산책 중' : '한가로이 쉬는 중');
+    return parts.join(', ');
+}
+function buildWorldSnapshot(me) {
+    const d = new Date();
+    const h = currentHour();
+    const dayName = ['일', '월', '화', '수', '목', '금', '토'][d.getDay()];
+    const hh = Math.floor(h), mm = String(Math.floor((h - hh) * 60)).padStart(2, '0');
+    const month = d.getMonth() + 1;
+    const season = month === 12 || month <= 2 ? '겨울' : month <= 5 ? '봄' : month <= 8 ? '여름' : '가을';
+    const daypart = h < 6 ? '새벽' : h < 12 ? '아침' : h < 18 ? '낮' : h < 22 ? '저녁' : '밤';
+    const wxKo = wx.type === 'rain' ? '비가 내리는 중' : wx.type === 'snow' ? '눈이 내리는 중'
+        : rainbowT > 0 ? '맑음 (무지개가 떠 있음!)' : '맑음';
+    const lines = [
+        `시각: ${month}월 ${d.getDate()}일 (${dayName}) ${hh}:${mm} — ${season}, ${daypart}`,
+        `날씨: ${wxKo}`,
+    ];
+    for (const p of pets) lines.push(`${petKo(p)}${p === me ? ' (나)' : ' (절친)'} — ${petStatusLine(p)}`);
+    lines.push(`주인: ${possessed ? `${petKo(possessed)}를 직접 조종하며 함께 노는 중` : '화면 밖에서 지켜보는 중'}`);
+    return lines.join('\n');
+}
+
+// Reply/bubble state — one conversation in flight at a time; the pet Think-poses while waiting.
 let responder = null;
 let waitingReply = false;
-let waitTimer = null;          // give up if the agent never answers
+let waitTimer = null;          // give up if the LLM never answers
 let thinkTimer = null;         // keeps re-posing Think while waiting
-let finishTimer = null;        // queue stayed drained → the reply is over
 let bubbleHideTimer = null;
-const chunkBuffer = new Map();
-let nextChunkIndex = 0;
-const playQueue = [];
-let playing = false;
-let currentAudio = null;
+let typeTimer = null;          // typewriter reveal
 
 const bubbleEl = document.createElement('div');
 bubbleEl.id = 'world-chat-bubble';
@@ -2390,6 +2494,20 @@ function showBubble(text) {
     if (bubbleHideTimer) { clearTimeout(bubbleHideTimer); bubbleHideTimer = null; }
     bubbleEl.textContent = text;
     bubbleEl.style.display = 'block';
+}
+function showBubbleTyped(text) {
+    if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
+    showBubble('');
+    let i = 0;
+    typeTimer = setInterval(() => {
+        i += 1;
+        bubbleEl.textContent = text.slice(0, i);
+        if (i >= text.length) {
+            clearInterval(typeTimer);
+            typeTimer = null;
+            hideBubbleSoon(Math.min(10000, 2600 + text.length * 55));
+        }
+    }, 26);
 }
 function hideBubbleSoon(ms = 2400) {
     if (bubbleHideTimer) clearTimeout(bubbleHideTimer);
@@ -2453,6 +2571,53 @@ ecoBtn.addEventListener('click', () => {
     syncEcoBtn();
     showToast(ecoMode ? '⚡ 절전 모드 — 30fps · 1.5x 해상도' : '✨ 고품질 모드 — 60fps · 풀 해상도');
 });
+// 💬 대화 기록 패널: 이 세션의 월드 대화 로그 + 펫별 서버 기억 초기화. 독 왼쪽에 뜬다.
+const chatLogPanel = document.createElement('div');
+chatLogPanel.style.cssText = 'position:fixed; right:calc(70px + env(safe-area-inset-right, 0px)); bottom:calc(70px + env(safe-area-inset-bottom, 0px)); display:none; z-index:94; width:min(300px, calc(100vw - 100px)); max-height:46vh; background:rgba(30,32,40,0.93); border-radius:14px; box-shadow:0 8px 28px rgba(0,0,0,0.4); font-family:sans-serif; color:#fff; flex-direction:column; overflow:hidden;';
+const chatLogHead = document.createElement('div');
+chatLogHead.style.cssText = 'display:flex; align-items:center; gap:6px; padding:8px 10px; font-size:12px; background:rgba(255,255,255,0.06);';
+const chatLogTitle = document.createElement('span');
+chatLogTitle.textContent = '💬 월드 대화';
+chatLogTitle.style.cssText = 'flex:1;';
+chatLogHead.appendChild(chatLogTitle);
+function memResetBtn(petId, label) {
+    const b = document.createElement('button');
+    b.textContent = `🧹 ${label}`;
+    b.title = `${label}의 대화 기억(서버 세션)을 초기화`;
+    b.style.cssText = 'border:none; border-radius:8px; background:rgba(255,255,255,0.12); color:#fff; font-size:11px; padding:4px 8px; cursor:pointer;';
+    b.onclick = async () => {
+        if (!confirm(`${label}가 지금까지의 대화를 전부 잊어버려요. 계속할까요?`)) return;
+        try {
+            await fetch('/api/world_chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pet: petId, reset: true }) });
+            showToast(`🧹 ${label}의 기억을 비웠어요`);
+        } catch (e) { showToast('초기화 실패 — 백엔드 연결을 확인해줘'); }
+    };
+    return b;
+}
+chatLogHead.appendChild(memResetBtn('chick', '병아리'));
+chatLogHead.appendChild(memResetBtn('puppy', '강아지'));
+chatLogPanel.appendChild(chatLogHead);
+const chatLogBody = document.createElement('div');
+chatLogBody.style.cssText = 'overflow-y:auto; padding:8px 10px; display:flex; flex-direction:column; gap:6px; font-size:12px; line-height:1.45;';
+chatLogPanel.appendChild(chatLogBody);
+document.body.appendChild(chatLogPanel);
+chatLogPanel.addEventListener('pointerdown', (e) => e.stopPropagation());
+function pushChatLog(who, text) {
+    const row = document.createElement('div');
+    const mine = who === '주인';
+    row.style.cssText = `max-width:92%; padding:6px 9px; border-radius:10px; white-space:pre-wrap; word-break:break-word; align-self:${mine ? 'flex-end' : 'flex-start'}; background:${mine ? '#5b8def' : 'rgba(255,255,255,0.1)'};`;
+    row.textContent = mine ? text : `${who}: ${text}`;
+    chatLogBody.appendChild(row);
+    while (chatLogBody.children.length > 60) chatLogBody.removeChild(chatLogBody.firstChild);
+    chatLogBody.scrollTop = chatLogBody.scrollHeight;
+}
+const logBtn = dockBtn('💬', '월드 대화 기록 · 기억 초기화');
+logBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
+logBtn.addEventListener('click', () => {
+    const open = chatLogPanel.style.display === 'none';
+    chatLogPanel.style.display = open ? 'flex' : 'none';
+    if (open) chatLogBody.scrollTop = chatLogBody.scrollHeight;
+});
 function bindZoomBtn(b, dir) {
     b.addEventListener('pointerdown', (e) => {
         e.preventDefault();
@@ -2491,6 +2656,7 @@ function showToast(text) {
 // into the screenshots/ folder. A quick white flash confirms the capture.
 async function takeScreenshot() {
     renderFrame();   // fresh frame through the current render path — capture matches the screen
+    logWorldEvent('주인이 월드 사진을 찍었다 📷');
     const dataURL = renderer.domElement.toDataURL('image/png');
     const flash = document.createElement('div');
     flash.style.cssText = 'position:fixed; inset:0; background:#fff; opacity:0.7; z-index:200; pointer-events:none; transition:opacity 0.35s;';
@@ -3130,6 +3296,7 @@ function giveDrink(p, d) {
         p.pet.wrap.add(drink.paw);
     }
     p.drink = drink;
+    logWorldEvent(`${petKo(p)}가 커피 부스에서 ${d.name}를 받았다`);
     showToast(`☕ ${d.name} 나왔습니다!`);
 }
 function giveFood(p, f) {
@@ -3154,6 +3321,7 @@ function giveFood(p, f) {
         p.pet.wrap.add(food.paw);
     }
     p.food = food;
+    logWorldEvent(`${petKo(p)}가 간식 부스에서 ${f.name}를 받았다`);
     showToast(`🍞 ${f.name} 나왔습니다!`);
 }
 // The cup's "mouth slot": read the pet's actual mouth node (beak for the chick, tongue for the
@@ -3365,138 +3533,200 @@ renderer.domElement.addEventListener('contextmenu', (e) => {
 function pickResponder(text) {
     if (/병아리|삐약|chick/i.test(text)) return pets.find((p) => p.name === 'chick') || pets[0] || null;
     if (/강아지|멍멍|댕댕|puppy/i.test(text)) return pets.find((p) => p.name === 'puppy') || pets[0] || null;
-    return pets.find((p) => p.name === 'chick') || pets[0] || null;
+    // 이름을 안 부르면 직전 대화 상대가 이어받는다 (대화 연속성) — 첫 대화만 병아리.
+    return responder || pets.find((p) => p.name === 'chick') || pets[0] || null;
 }
 
-function sendWorldChat() {
+// ---- P2 액션 태그: the reply may carry <motion=..> <goto=..> <mount=..> <drink=..> <snack=..>
+// <hat=..> tags. They are whitelisted against what actually exists in the world, capped at 4,
+// stripped from the bubble text and run strictly in order by runWorldActions below. ----
+const ACTION_RE = /<\s*(motion|goto|mount|drink|snack|hat)\s*[=:]\s*([a-z0-9-]+)\s*\/?\s*>/gi;
+const ACTION_IDS = {
+    motion: new Set(GLB_MOTIONS.map((m) => m.id)),
+    goto: new Set(['plaza', 'house', 'pond', 'bowl', 'coffee', 'snack', 'radio', 'swing', 'seesaw', 'sunbed', 'hammock', 'friend']),
+    mount: new Set(['swing', 'seesaw', 'sofa', 'sunbed', 'hammock', 'loftbed']),
+    drink: new Set(DRINKS.map((d) => d.id)),
+    snack: new Set(FOODS.map((f) => f.id)),
+    hat: new Set([...GLB_ACCESSORIES.map((a) => a.id), 'off']),
+};
+function parseWorldReply(raw) {
+    const actions = [];
+    const speech = raw.replace(ACTION_RE, (all, kind, id) => {
+        kind = kind.toLowerCase();
+        id = id.toLowerCase();
+        if (actions.length < 4 && ACTION_IDS[kind] && ACTION_IDS[kind].has(id)) actions.push({ kind, id });
+        return '';
+    }).replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    return { speech, actions };
+}
+
+// ---- P2 실행기: one action script at a time; a newer chat or taking manual control (조종)
+// bumps scriptGen and the old script quietly stops between steps. Movement-class actions yield
+// while the pet is player-driven or hand-held; everything reuses the existing systems (gotoAsync,
+// mountBed, giveDrink/giveFood, worldHug/worldPlay) so 기존 안전장치들도 그대로 따라온다. ----
+let scriptGen = 0;
+function waitFor(cond, ms) {
+    return new Promise((resolve) => {
+        const t0 = Date.now();
+        const iv = setInterval(() => {
+            if (cond() || Date.now() - t0 > ms) { clearInterval(iv); resolve(); }
+        }, 120);
+    });
+}
+// 침대/물놀이/식사 대기 등 무엇을 하고 있었든 부드럽게 내려놓는다 (possessPet과 같은 순서).
+async function freeForScript(p) {
+    if (p.dip) endDip(p);
+    if (p.bed && p.bedPhase === 'lying') {
+        p.pet.sleeping = false;
+        p.bedExit = true;
+        await waitFor(() => !p.bed, 3500);
+    }
+    if (p.bed) forceEndBed(p);
+    if (p.ai.onArrive) { const done = p.ai.onArrive; p.ai.onArrive = null; done(); }
+    p.eatSpot = null;
+    p.pet.sleeping = false;
+    p.pet.autoSleeping = false;
+}
+const GOTO_PROP_TYPE = { pond: 'pond', bowl: 'bowl', coffee: 'coffee', snack: 'food', radio: 'radio', swing: 'swing', seesaw: 'seesaw', sunbed: 'sunbed', hammock: 'hammock' };
+function resolveGotoSpot(p, id) {
+    if (id === 'plaza') return { x: 0.4, z: 0.4 };
+    if (id === 'house') { const w = houseWorld(0, 1.3); return { x: w.x, z: w.z }; }
+    if (id === 'friend') {
+        const q = pets.find((o) => o !== p);
+        return q ? { x: q.mover.position.x + 0.45, z: q.mover.position.z } : null;
+    }
+    const prop = PROPS.find((q) => q.type === GOTO_PROP_TYPE[id]);
+    if (!prop) return null;
+    const dx = p.mover.position.x - prop.x, dz = p.mover.position.z - prop.z;
+    const d = Math.hypot(dx, dz) || 1;
+    const k = (prop.r + 0.4) / d;
+    return { x: prop.x + dx * k, z: prop.z + dz * k };   // prop edge on the pet's side
+}
+function nearestOpenSpot(x, z) {
+    if (!world.isBlocked(x, z)) return { x, z };
+    for (let i = 0; i < 12; i++) {
+        const a = Math.random() * Math.PI * 2, r = 0.25 + i * 0.09;
+        const nx = x + Math.sin(a) * r, nz = z + Math.cos(a) * r;
+        if (!world.isBlocked(nx, nz)) return { x: nx, z: nz };
+    }
+    return null;
+}
+async function actGoto(p, id, gen) {
+    const want = resolveGotoSpot(p, id);
+    if (!want) return;
+    const spot = nearestOpenSpot(want.x, want.z);
+    if (!spot) return;
+    await freeForScript(p);
+    if (gen !== scriptGen || p === possessed) return;
+    await Promise.race([gotoAsync(p, spot.x, spot.z), sleepMs(25000)]);
+}
+async function runWorldActions(p, actions) {
+    const gen = ++scriptGen;
+    for (const a of actions) {
+        if (gen !== scriptGen) return;                            // superseded by a newer script
+        const moves = a.kind !== 'motion' && a.kind !== 'hat';
+        if (moves && (p === possessed || p.ai.state === 'held')) continue;   // 주인이 잡고 있으면 이동류는 양보
+        try {
+            if (a.kind === 'motion') {
+                if (a.id === 'hug') { if (!duoBusy && p !== possessed) await worldHug(p); }
+                else if (a.id === 'play') { if (!duoBusy && p !== possessed) await worldPlay(p); }
+                else if (a.id === 'sleep') {
+                    if (!p.dip && p !== possessed) { p.pet.sleeping = true; logWorldEvent(`${petKo(p)}가 잠들었다`); }
+                } else {
+                    p.pet.sleeping = false;
+                    await waitFor(() => !p.pet.action, 4000);      // let a running motion finish first
+                    if (gen !== scriptGen) return;
+                    p.pet.action = { id: a.id, t: 0 };
+                    await waitFor(() => !p.pet.action, 7000);
+                }
+            } else if (a.kind === 'goto') {
+                await actGoto(p, a.id, gen);
+            } else if (a.kind === 'mount') {
+                const bed = BEDS.find((b) => b.id === a.id && !b.occupant);
+                if (!bed || (p.bed && p.bed.id === a.id)) continue;
+                await freeForScript(p);
+                if (gen !== scriptGen || p === possessed) continue;
+                mountBed(p, bed);
+                await waitFor(() => p.bedPhase === 'lying' || !p.bed, 25000);
+            } else if (a.kind === 'drink' || a.kind === 'snack') {
+                await actGoto(p, a.kind === 'drink' ? 'coffee' : 'snack', gen);
+                if (gen !== scriptGen || p === possessed) continue;
+                if (a.kind === 'drink') { const d = DRINKS.find((x) => x.id === a.id); if (d) giveDrink(p, d); }
+                else { const f = FOODS.find((x) => x.id === a.id); if (f) giveFood(p, f); }
+                await sleepMs(600);
+            } else if (a.kind === 'hat') {
+                setGlbPetAccessory(p.pet, a.id === 'off' ? null : a.id);
+                logWorldEvent(`${petKo(p)}가 산타모자를 ${a.id === 'off' ? '벗었다' : '썼다'}`);
+                await sleepMs(400);
+            }
+        } catch (e) { console.error('[World] action failed', a, e); }
+    }
+    if (gen === scriptGen && !p.pet.action && !p.pet.sleeping && !p.bed && !p.dip && p !== possessed
+        && (p.ai.state === 'goto' || p.ai.state === 'busy')) releaseAI(p, 1);
+}
+
+async function sendWorldChat() {
     const text = chatInput.value.trim();
     if (!text) return;
-    if (!chatWs || chatWs.readyState !== WebSocket.OPEN) { initChatWs(); return; }
-    chatWs.send(JSON.stringify({ type: 'set_user_input', data: { text } }));
-    setTimeout(() => { try { chatWs.send(JSON.stringify({ type: 'trigger_send_message', data: {} })); } catch (e) {} }, 300);
+    if (waitingReply) { showToast('아직 대답을 생각하는 중…'); return; }
     chatInput.value = '';
     responder = pickResponder(text);
+    if (!responder) return;
+    pushChatLog('주인', text);
     startWaiting();
+    let reply = null;
+    try {
+        const res = await fetch('/api/world_chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                pet: responder.name,
+                text,
+                snapshot: buildWorldSnapshot(responder),
+                events: recentEventsText(),
+            }),
+        });
+        if (res.ok) reply = (await res.json()).reply;
+        else console.error('[World] chat http', res.status, await res.text().catch(() => ''));
+    } catch (e) { console.error('[World] chat failed', e); }
+    if (!waitingReply) return;                                    // timed out / cancelled meanwhile
+    if (!reply) {
+        stopWaiting(false);
+        showBubbleTyped('으엥, 대답이 안 나와… 메인 모델 설정을 확인해줘! 💦');
+        return;
+    }
+    const { speech, actions } = parseWorldReply(reply);
+    stopWaiting(true, actions.length === 0);       // 행동이 이어지면 해피 홉 생략 — 행동이 곧 리액션이니까
+    if (speech) {
+        showBubbleTyped(speech);
+        pushChatLog(petKo(responder), speech);
+    }
+    if (actions.length) runWorldActions(responder, actions);
 }
 
 function startWaiting() {
-    resetReplyQueue();
     waitingReply = true;
     if (responder) { responder.pet.sleeping = false; responder.pet.autoSleeping = false; }
     if (waitTimer) clearTimeout(waitTimer);
-    waitTimer = setTimeout(() => stopWaiting(false), 45000);
+    waitTimer = setTimeout(() => stopWaiting(false), 60000);
     if (thinkTimer) clearInterval(thinkTimer);
     thinkTimer = setInterval(() => {
-        if (!waitingReply || playing || !responder) return;
+        if (!waitingReply || !responder) return;
         const free = !responder.pet.action && !responder.pet.sleeping
             && responder.ai.state !== 'goto' && responder.ai.state !== 'busy';
         if (free) responder.pet.action = { id: 'think', t: 0 };
     }, 400);
 }
 
-function stopWaiting(success) {
+function stopWaiting(success, hop = success) {
     waitingReply = false;
     if (waitTimer) { clearTimeout(waitTimer); waitTimer = null; }
     if (thinkTimer) { clearInterval(thinkTimer); thinkTimer = null; }
-    if (finishTimer) { clearTimeout(finishTimer); finishTimer = null; }
     if (responder) {
         if (responder.pet.action && responder.pet.action.id === 'think') responder.pet.action = null;
-        if (success && !responder.pet.action) responder.pet.action = { id: 'happy', t: 0 };
+        if (hop && !responder.pet.action) responder.pet.action = { id: 'happy', t: 0 };
     }
-    hideBubbleSoon();
-}
-
-function resetReplyQueue() {
-    chunkBuffer.clear();
-    playQueue.length = 0;
-    nextChunkIndex = 0;
-    if (currentAudio) { try { currentAudio.pause(); } catch (e) {} currentAudio = null; }
-    playing = false;
-    if (finishTimer) { clearTimeout(finishTimer); finishTimer = null; }
-}
-
-function enqueueChunk(task) {
-    if (finishTimer) { clearTimeout(finishTimer); finishTimer = null; }
-    chunkBuffer.set(task.chunkIndex, task);
-    while (chunkBuffer.has(nextChunkIndex)) {
-        playQueue.push(chunkBuffer.get(nextChunkIndex));
-        chunkBuffer.delete(nextChunkIndex);
-        nextChunkIndex++;
-    }
-    if (!playing && playQueue.length > 0) processReplyQueue();
-}
-
-function playAudio(url) {
-    return new Promise((resolve) => {
-        const a = new Audio(url);
-        currentAudio = a;
-        a.onended = resolve;
-        a.onerror = resolve;
-        a.play().catch(resolve);
-    });
-}
-
-async function processReplyQueue() {
-    if (playQueue.length === 0) {
-        playing = false;
-        // Drained — if nothing new arrives shortly, the streamed reply is over.
-        if (waitingReply && !finishTimer) finishTimer = setTimeout(() => stopWaiting(true), 2500);
-        return;
-    }
-    playing = true;
-    // Reply is speaking: stop pondering and stand still while talking.
-    if (responder) {
-        if (responder.pet.action && responder.pet.action.id === 'think') responder.pet.action = null;
-        if (responder.ai.state !== 'goto' && responder.ai.state !== 'busy') releaseAI(responder, 6);
-    }
-    const task = playQueue.shift();
-    if (task.text) showBubble(task.text);
-    if (task.silence) {
-        await sleepMs(600);
-    } else if (task.url) {
-        await playAudio(task.url);
-        URL.revokeObjectURL(task.url);
-        currentAudio = null;
-    }
-    processReplyQueue();
-}
-
-function onVrmWsMessage(event) {
-    if (event.data instanceof ArrayBuffer) {
-        if (!waitingReply) return;                     // not a conversation the world started
-        try {
-            const view = new DataView(event.data);
-            const jsonLen = view.getUint32(0, true);
-            const metadata = JSON.parse(new TextDecoder().decode(new Uint8Array(event.data, 4, jsonLen)));
-            const audioBytes = new Uint8Array(event.data, 4 + jsonLen);
-            if (metadata.type === 'audio_chunk') {
-                enqueueChunk({
-                    chunkIndex: metadata.chunkIndex,
-                    text: metadata.text,
-                    url: URL.createObjectURL(new Blob([audioBytes], { type: metadata.mimeType })),
-                });
-            } else if (metadata.type === 'omni_chunk') {
-                // Omni streams raw PCM tuned for the pet-window pipeline; the world shows the
-                // streamed text and lets the drain timer close the reply.
-                if (metadata.text) showBubble(metadata.text);
-                if (finishTimer) clearTimeout(finishTimer);
-                finishTimer = setTimeout(() => stopWaiting(true), 1800);
-            }
-        } catch (e) { console.error('[World] vrm chunk parse failed', e); }
-        return;
-    }
-    try {
-        const msg = JSON.parse(event.data);
-        if (!waitingReply) return;
-        if (msg.type === 'ttsStarted') {
-            resetReplyQueue();
-        } else if (msg.type === 'stopSpeaking') {
-            resetReplyQueue();
-            stopWaiting(false);
-        } else if (msg.type === 'startSpeaking' && msg.data && msg.data.voice === 'silence') {
-            enqueueChunk({ chunkIndex: msg.data.chunkIndex, text: msg.data.text, silence: true });
-        }
-    } catch (e) { /* non-JSON command — ignore */ }
+    if (!success) hideBubbleSoon();
 }
 
 // Camera-relative basis for the keyboard pet controller. (Camera moves are all mouse-driven now:
@@ -3615,6 +3845,8 @@ function possessPet(p) {
     }
     releasePossession();
     possessed = p;
+    scriptGen++;                                                  // cancel any running action script
+    logWorldEvent(`주인이 ${petKo(p)}를 직접 조종하기 시작했다`);
     p.pet.sleeping = false; p.pet.autoSleeping = false;
     p.ai.state = 'player';
     p.pet.walking = false;
@@ -3636,6 +3868,7 @@ function releasePossession() {
     running = false;
     snapToLand(p);
     if (p.ai.state === 'player') { p.ai.state = 'idle'; releaseAI(p); }
+    logWorldEvent(`주인이 ${petKo(p)} 조종을 마쳤다`);
     heldKeys.clear();
     resetTouchStick();
     selectRing.visible = false;
@@ -4031,6 +4264,7 @@ async function startDip(p) {
         if (!world.isBlocked(x, z)) entry = { x, z, a };
     }
     if (!entry) return;
+    logWorldEvent(`${petKo(p)}가 ${kind === 'pond' ? '연못' : '바다'}로 물놀이를 하러 갔다`);
     p.dip = {
         kind, phase: 'approach', swimLeft: 9 + Math.random() * 9, waypoint: null,
         waterPt: kind === 'pond'
@@ -4173,6 +4407,7 @@ function tryGrabHand() {
     const relZ = q.mover.position.z - possessed.mover.position.z;
     const side = (relX * Math.cos(h) - relZ * Math.sin(h)) >= 0 ? 1 : -1;   // which side it was grabbed on
     handHold = { partner: q, side, heartT: 0.6 };
+    logWorldEvent(`주인이 조종하는 ${petKo(possessed)}가 ${petKo(q)}의 손을 잡았다`);
     return true;
 }
 function releaseHandHold() {
@@ -4201,6 +4436,7 @@ function enterCar() {
     }
     carDrive = { driver, passenger };
     running = false;
+    logWorldEvent(`${petKo(driver)}가 스포츠카 드라이브를 시작했다${passenger ? ' (절친도 조수석에!)' : ''}`);
     startEngine();
 }
 function exitCar() {
@@ -4290,6 +4526,9 @@ async function mountBed(p, bed) {
     removeDrink(p);                                   // put the cup/snack down before climbing in
     removeFood(p);
     bed.occupant = p; p.bed = bed; p.bedPhase = 'approach';
+    const bedKo = BED_KO[bed.id] || bed.id;
+    logWorldEvent(bed.mode === 'swing' || bed.mode === 'seesaw' ? `${petKo(p)}가 ${bedKo}를 타러 갔다`
+        : bed.mode === 'sit' ? `${petKo(p)}가 ${bedKo}에 앉으러 갔다` : `${petKo(p)}가 ${bedKo}에 누우러 갔다`);
     await gotoAsync(p, bed.approach.x, bed.approach.z);
     if (p.bed !== bed) return;
     p.bedPhase = 'mount'; p.bedT = 0;
@@ -4443,6 +4682,7 @@ function updateAutoSleep() {
         if (!sleepy && p.pet.sleeping && p.autoSlept) {          // 6시 — morning wake (beds dismount above)
             p.pet.sleeping = false;
             p.autoSlept = false;
+            logWorldEvent(`${petKo(p)}가 아침에 일어났다`);
             continue;
         }
         if (p.bed) continue;
@@ -4453,7 +4693,7 @@ function updateAutoSleep() {
         const bed = freeBedFor(p);
         p.autoSlept = true;
         if (bed) mountBed(p, bed);
-        else p.pet.sleeping = true;                              // both beds taken — nap on the grass
+        else { p.pet.sleeping = true; logWorldEvent(`${petKo(p)}가 풀밭에서 잠들었다`); }   // both beds taken — nap on the grass
     }
 }
 
@@ -4481,6 +4721,7 @@ async function haveMeal(p) {
     await gotoAsync(p, p.eatSpot.x, p.eatSpot.z);
     if (p.bed || p.ai.state !== 'busy') { p.eatSpot = null; return; }   // hijacked en route (hug/bed)
     p.mover.rotation.y = Math.atan2(bowlProp.x - p.mover.position.x, bowlProp.z - p.mover.position.z);
+    logWorldEvent(`${petKo(p)}가 밥그릇에서 밥을 먹었다`);
     for (let i = 0; i < 2; i++) {
         if (p.bed || p.pet.sleeping || p.ai.state !== 'busy') break;
         if (p.pet.action && p.pet.action.id !== 'eat') break;           // pulled into a hug mid-bite

@@ -11399,6 +11399,189 @@ async def world_save_screenshot(request: Request):
         f.write(base64.b64decode(b64))
     return {"ok": True, "file": name}
 
+# ---- 월드 채팅 (P1/P2): a dedicated LLM session for the pet world, fully separate from the main
+# chat pipeline. Per-pet history + a rolling summary live in USER_DATA_DIR/world_chat/{pet}.json.
+# Each turn the world client sends a Korean world-state snapshot + recent world events; the reply
+# may carry inline action tags (<motion=..> <goto=..> <mount=..> <drink=..> <snack=..> <hat=..>)
+# which the world parses, strips from the bubble and executes. Personas + the action spec live
+# here so the world stays a thin client; the LLM is whatever main model the app is configured for.
+WORLD_CHAT_DIR = os.path.join(USER_DATA_DIR, "world_chat")
+WORLD_CHAT_KEEP = 30          # messages kept verbatim in the prompt window file
+WORLD_CHAT_SEND = 16          # most recent messages actually sent to the LLM
+
+WORLD_LORE = """[세계]
+너는 하늘에 떠 있는 작은 군도 '병아리동산'에 사는 펫이다. 본섬에는 중앙 광장, 복층 주택(1층 소파·2층 침대), 연못, 밥그릇, 커피 부스, 간식 부스, 라디오, 가로등, 빨간 스포츠카가 있고, 나무다리 건너 북동섬에 그네와 시소, 남서섬에 빈 풀밭이 있다. 섬 둘레는 바다라 절벽에서 다이빙해 수영할 수 있다.
+[하루]
+6시 해가 뜨고 18시에 진다. 8시·12시·18시는 밥때라 밥그릇으로 가서 먹는다. 22시가 되면 잠자리에 들고 6시에 일어난다. 가끔 비나 눈이 오고, 비가 그친 낮에는 무지개가 뜬다.
+[관계]
+'주인'은 화면 밖에서 너희를 지켜보고, 가끔 펫을 직접 조종해 함께 놀아준다. 너와 다른 펫 한 마리는 둘도 없는 절친이다."""
+
+WORLD_PERSONAS = {
+    "chick": """[너 = 병아리 🐤]
+성격: 호기심 대장에 텐션이 높다. 새로운 것을 보면 일단 달려가고, 신나면 폴짝폴짝 뛴다. 씩씩하지만 가끔 덜렁댄다.
+말투: 밝은 반말. 짧고 통통 튀게. 가끔 문장 끝에 "삐약!"을 붙인다.
+좋아하는 것: 연못 다이빙과 수영, 그네, 춤추기, 붕어빵, 딸기라떼.
+절친: 강아지 — 느긋한 강아지를 잘 끌고 다닌다.""",
+    "puppy": """[너 = 강아지 🐶]
+성격: 느긋하고 다정한 맏형 스타일. 잘 놀라지 않고, 병아리가 사고 치면 허허 웃으며 챙긴다. 낮잠과 간식에 진심.
+말투: 순한 반말. 여유롭고 따뜻하게. 가끔 문장 끝에 "멍!"을 붙인다.
+좋아하는 것: 선베드 낮잠, 핫도그, 스포츠카 드라이브, 시소, 카페라떼.
+절친: 병아리 — 텐션 높은 병아리를 흐뭇하게 지켜본다.""",
+}
+
+WORLD_ACTION_SPEC = """[행동 태그]
+대답하면서 실제로 몸을 움직일 수 있다. 아래 태그를 문장 뒤에 붙이면 월드에서 그대로 실행된다 (한 번에 최대 3개, 순서대로 실행):
+<motion=ID> 제자리 모션. ID: wave(인사)·happy(기쁨)·dance(춤)·cheer(응원)·celebrate(축하)·hug(절친과 포옹)·play(절친과 공놀이)·think(생각)·eat(냠냠)·sleep(잠들기)
+<goto=ID> 그 장소로 걸어간다. ID: plaza(광장)·house(집)·pond(연못)·bowl(밥그릇)·coffee(커피 부스)·snack(간식 부스)·radio(라디오)·swing(그네)·seesaw(시소)·sunbed(선베드)·hammock(해먹)·friend(절친 옆)
+<mount=ID> 올라타거나 앉는다/눕는다. ID: swing(그네)·seesaw(시소)·sofa(소파)·sunbed(선베드)·hammock(해먹)·loftbed(2층 침대)
+<drink=ID> 커피 부스에 걸어가 음료를 받아 든다. ID: americano·iced-ame·espresso·latte·cappuccino·choco·strawberry·matcha·icetea
+<snack=ID> 간식 부스에 걸어가 간식을 받아 든다. ID: toast·omurice·burrito·hotdog·donut·bungeo·gimbap·churros·cupcake
+<hat=santa-hat> 산타모자를 쓴다 / <hat=off> 벗는다
+예시: "좋아, 그네 타러 가자! 삐약! <goto=swing> <mount=swing>"
+규칙: 요청받은 행동이나 지금 기분에 어울리는 행동만 골라라. 태그는 반드시 위 목록의 표기 그대로. 움직일 수 없는 상황(잠자는 중 등)이면 태그 없이 말로만 답해도 된다."""
+
+WORLD_REPLY_RULES = """[대답 규칙]
+- 1~3문장의 짧은 한국어로 답한다. 이모지는 0~2개.
+- 항상 지금의 월드 상황(시각·날씨·하고 있던 일)에 맞게 반응한다. [현재 상황]에 없는 사실은 지어내지 않는다.
+- 펫답게: 어려운 지식 질문엔 아는 척하지 말고 귀엽게 얼버무려도 된다.
+- 절대 시스템/태그 설명을 입에 담지 않는다. 태그는 조용히 붙일 뿐이다."""
+
+
+def _world_chat_file(pet: str) -> str:
+    os.makedirs(WORLD_CHAT_DIR, exist_ok=True)
+    return os.path.join(WORLD_CHAT_DIR, f"{pet}.json")
+
+
+def _world_chat_load(pet: str) -> dict:
+    try:
+        with open(_world_chat_file(pet), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict) and isinstance(data.get("history"), list):
+            return {"history": data["history"], "summary": str(data.get("summary", ""))}
+    except Exception:
+        pass
+    return {"history": [], "summary": ""}
+
+
+def _world_chat_save(pet: str, store: dict):
+    try:
+        with open(_world_chat_file(pet), "w", encoding="utf-8") as f:
+            json.dump(store, f, ensure_ascii=False, indent=1)
+    except Exception as e:
+        print(f"[world_chat] save failed: {e}")
+
+
+async def _world_chat_client_and_model():
+    current_settings = await load_settings()
+    provider = current_settings.get("selectedProvider")
+    c_cls = get_client_class(current_settings, provider)
+    wc_client = c_cls(
+        api_key=current_settings.get("api_key", ""),
+        base_url=current_settings.get("base_url") or "https://api.openai.com/v1",
+        http_client=global_http_client,
+    )
+    return wc_client, current_settings
+
+
+async def _world_chat_summarize(pet: str):
+    # Rolling memory (Generative-Agents-lite): once the verbatim window overflows, fold the oldest
+    # half into a short Korean summary so long-running relationships survive without a fat prompt.
+    try:
+        store = _world_chat_load(pet)
+        if len(store["history"]) <= WORLD_CHAT_KEEP:
+            return
+        old = store["history"][:-WORLD_CHAT_SEND]
+        keep = store["history"][-WORLD_CHAT_SEND:]
+        lines = []
+        if store["summary"]:
+            lines.append(f"(기존 요약) {store['summary']}")
+        for m in old:
+            who = "주인" if m.get("role") == "user" else "나"
+            lines.append(f"{who}: {m.get('content', '')}")
+        wc_client, current_settings = await _world_chat_client_and_model()
+        resp = await wc_client.chat.completions.create(
+            model=current_settings["model"],
+            messages=[
+                {"role": "system", "content": "다음은 펫과 주인의 대화 기록이다. 펫이 나중에 기억해야 할 내용(주인에 대해 알게 된 것, 약속, 별명, 자주 하는 놀이, 감정의 흐름)을 한국어 350자 이내로 요약하라. 요약문만 출력한다."},
+                {"role": "user", "content": "\n".join(lines)},
+            ],
+            temperature=0.3,
+            max_tokens=400,
+        )
+        summary = (resp.choices[0].message.content or "").strip()
+        if summary:
+            store = _world_chat_load(pet)          # reload — a new turn may have landed meanwhile
+            store["summary"] = summary[:600]
+            store["history"] = store["history"][-len(keep):]
+            _world_chat_save(pet, store)
+    except Exception as e:
+        print(f"[world_chat] summarize failed: {e}")
+
+
+@app.post("/api/world_chat")
+async def world_chat(request: Request):
+    data = await request.json()
+    pet = str(data.get("pet", "chick"))
+    if pet not in WORLD_PERSONAS:
+        pet = "chick"
+    if data.get("reset"):
+        try:
+            os.remove(_world_chat_file(pet))
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            print(f"[world_chat] reset failed: {e}")
+        return {"ok": True}
+    text = str(data.get("text", "")).strip()
+    if not text:
+        return JSONResponse({"error": "empty text"}, status_code=400)
+    snapshot = str(data.get("snapshot", "")).strip()
+    events = str(data.get("events", "")).strip()
+
+    try:
+        wc_client, current_settings = await _world_chat_client_and_model()
+        user_name = (current_settings.get("memorySettings", {}) or {}).get("userName", "").strip()
+        owner_line = f"주인의 이름은 '{user_name}'이다." if user_name else "주인의 이름은 아직 모른다."
+
+        store = _world_chat_load(pet)
+        system_prompt = "\n\n".join([
+            WORLD_PERSONAS[pet],
+            WORLD_LORE,
+            owner_line,
+            WORLD_REPLY_RULES,
+            WORLD_ACTION_SPEC,
+        ])
+        messages = [{"role": "system", "content": system_prompt}]
+        if store["summary"]:
+            messages.append({"role": "system", "content": f"[지난 대화에서 기억하는 것]\n{store['summary']}"})
+        messages.extend(store["history"][-WORLD_CHAT_SEND:])
+        situation = f"[현재 상황]\n{snapshot}" if snapshot else "[현재 상황]\n(정보 없음)"
+        if events:
+            situation += f"\n\n[최근 월드에서 있었던 일]\n{events}"
+        messages.append({"role": "system", "content": situation})
+        messages.append({"role": "user", "content": text})
+
+        resp = await wc_client.chat.completions.create(
+            model=current_settings["model"],
+            messages=messages,
+            temperature=0.85,
+            max_tokens=500,
+        )
+        reply = (resp.choices[0].message.content or "").strip()
+    except Exception as e:
+        print(f"[world_chat] LLM call failed: {e}")
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+    store["history"].append({"role": "user", "content": text})
+    store["history"].append({"role": "assistant", "content": reply})
+    if len(store["history"]) > 120:
+        store["history"] = store["history"][-120:]
+    _world_chat_save(pet, store)
+    if len(store["history"]) > WORLD_CHAT_KEEP:
+        asyncio.create_task(_world_chat_summarize(pet))
+    return {"reply": reply}
+
+
 app.mount("/vrm", StaticFiles(directory=DEFAULT_VRM_DIR), name="vrm")
 app.mount("/tool_temp", StaticFiles(directory=TOOL_TEMP_DIR), name="tool_temp")
 app.mount("/uploaded_files", StaticFiles(directory=UPLOAD_FILES_DIR), name="uploaded_files")
