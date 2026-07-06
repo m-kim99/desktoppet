@@ -247,11 +247,10 @@ const SKY_DUSK  = ['#33518f', '#6f68b0', '#ee9a6e', '#ffc98a'].map((c) => new TH
 const WEATHER_OVERRIDE = (new URLSearchParams(window.location.search).get('weather') || '').toLowerCase() || null;
 const SKY_GLOOM = ['#6b7684', '#93a0ad', '#b8c2cc', '#ccd4da'].map((c) => new THREE.Color(c));
 const _gloomStop = new THREE.Color();
-let wx = { type: 'clear', until: 0 };
-try {
-    const saved = JSON.parse(localStorage.getItem('world-weather'));
-    if (saved && saved.until > Date.now() && (saved.type === 'rain' || saved.type === 'snow')) wx = saved;
-} catch (e) {}
+// 켜면 항상 맑음: 첫 강수는 이 첫 맑음 에피소드(10~25분)가 끝난 뒤에야 온다. 날씨는 세션
+// 한정이라 창을 다시 열면 늘 맑은 하늘+자동 모드로 시작한다 (?weather= 미리보기만 예외).
+let wx = { type: 'clear', until: Date.now() + (10 + Math.random() * 15) * 60000 };
+try { localStorage.removeItem('world-weather'); localStorage.removeItem('world-weather-manual'); } catch (e) {}   // pre-"켜면 맑음" persisted keys
 if (WEATHER_OVERRIDE) wx = { type: (WEATHER_OVERRIDE === 'rain' || WEATHER_OVERRIDE === 'snow' || WEATHER_OVERRIDE === 'storm') ? WEATHER_OVERRIDE : 'clear', until: Infinity };
 // 수동 날씨 (독의 🌦️ 날씨 설정 버튼): 고르면 자동 스케줄러 대신 그 날씨가 유지된다. 새 날씨는 여기에 추가.
 const WEATHER_CHOICES = [
@@ -261,12 +260,7 @@ const WEATHER_CHOICES = [
     { id: 'snow',  icon: '❄️', label: '눈',      toast: '❄️ 눈이 내려요' },
     { id: 'storm', icon: '⛈️', label: '천둥번개', toast: '⛈️ 천둥번개가 몰려와요' },
 ];
-let manualWx = null;
-try {
-    const m = localStorage.getItem('world-weather-manual');
-    if (WEATHER_CHOICES.some((c) => c.id === m)) manualWx = m;
-} catch (e) {}
-if (manualWx && !WEATHER_OVERRIDE) wx = { type: manualWx, until: Infinity };
+let manualWx = null;   // 세션 한정 — 다시 열면 자동 모드로 (켜면 맑음 원칙)
 let wxF = wx.type === 'clear' ? 0 : 1;   // restored mid-episode → start already wet, no fake fade-in
 let stormF = wx.type === 'storm' ? 1 : 0;   // ⛈️ 뇌우 계수: 비보다 한 단계 더 어둡게 누르는 추가 감쇠 (updateWeather가 이진다)
 let lastDayF = 1;                        // rainbow needs to know if the sun is out when rain ends
@@ -1930,8 +1924,8 @@ function updateLightning(delta) {
     }
 }
 
-// Scheduler: 맑음 10~25분 ↔ 강수 3~8분 on the real clock; persisted so reopening the window
-// continues the same weather. Snow replaces rain through 11~2월.
+// Scheduler: 맑음 10~25분 ↔ 강수 3~8분 on the real clock, session-only — every window open
+// starts from a fresh clear episode (켜면 맑음). Snow replaces rain through 11~2월.
 let wxKind = wx.type === 'clear' ? 'rain' : wx.type;   // which particle set the current/last front uses (storm은 비 입자 공유)
 function rollWeather() {
     if (WEATHER_OVERRIDE || manualWx) return;
@@ -1949,16 +1943,11 @@ function rollWeather() {
         logWorldEvent(gotRainbow ? '비가 그치고 바다 위에 무지개가 떴다' : '날이 개었다');
         if (gotRainbow) maybeProactive(pets.find((q) => q.name === 'chick'), '방금 비가 그치고 바다 위에 무지개가 떴다!');
     }
-    try { localStorage.setItem('world-weather', JSON.stringify(wx)); } catch (e) {}
 }
 // 날씨 설정 버튼에서 호출: type 고정(예: 'rain'), null이면 즉시 개고 자동 스케줄러 복귀.
 function setManualWeather(type) {
     if (manualWx === type) return;
     manualWx = type;
-    try {
-        if (type) localStorage.setItem('world-weather-manual', type);
-        else localStorage.removeItem('world-weather-manual');
-    } catch (e) {}
     if (type && type !== 'clear') {
         wx = { type, until: Infinity };
         logWorldEvent(type === 'snow' ? '주인이 눈을 내리게 했다 ❄️' : type === 'storm' ? '주인이 천둥번개를 불러왔다 ⛈️' : '주인이 비를 내리게 했다 🌧️');
@@ -1972,7 +1961,6 @@ function setManualWeather(type) {
         logWorldEvent(gotRainbow ? '비가 그치고 바다 위에 무지개가 떴다' : '날이 개었다');
     }
     wx = { type: 'clear', until: type === 'clear' ? Infinity : Date.now() + (10 + Math.random() * 15) * 60000 };
-    try { localStorage.setItem('world-weather', JSON.stringify(wx)); } catch (e) {}
 }
 function updateWeather(delta) {
     rollWeather();
