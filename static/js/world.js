@@ -138,10 +138,18 @@ const sunGlow = glowSprite(0xffdf8a, 5.2, 0.75);   // the warm halo the bloom pa
 sunMesh.add(sunGlow);
 moonMesh.add(glowSprite(0xbcd2ff, 3.2, 0.5));
 
+// 📱 터치 기기 감지: UI 크기·가상 조이스틱 표시·절전 기본값 같은 "화면 구성"에만 쓴다. 입력
+// 분기는 이 플래그가 아니라 각 이벤트의 pointerType으로 판정해서, 터치스크린 노트북에서도
+// 마우스 동작이 그대로 유지되게 한다.
+const IS_TOUCH = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || navigator.maxTouchPoints > 0;
+
 // ♡ laptop-friendly pacing: one forward pass is already cheap, so 절전 is now about *when* we
 // draw, not how. Watched + plugged in → 60fps at full retina; window unfocused (the world usually
 // sits beside real work) → 30fps; ⚡ eco (persisted) or on battery → 30fps at 1.5x pixels.
-let ecoMode = localStorage.getItem('world-eco') === '1';
+// 📱 폰/태블릿은 절전이 기본(30fps·1.5x — 발열·배터리). 사용자가 ⚡ 버튼으로 명시적으로 껐다면
+// localStorage에 '0'이 남아 있으니 그 선택을 존중한다.
+const savedEco = localStorage.getItem('world-eco');
+let ecoMode = savedEco === null ? IS_TOUCH : savedEco === '1';
 let onBattery = false;
 let winFocused = document.hasFocus();
 window.addEventListener('focus', () => { winFocused = true; });
@@ -161,6 +169,9 @@ if (navigator.getBattery) {
         sync();
     }).catch(() => {});
 }
+// 시작 시 한 번 적용: getBattery가 없는 브라우저(iOS/macOS Safari)에선 위 sync가 안 돌아서,
+// 저장된/기본 절전 모드가 리사이즈 전까지 픽셀비에 반영되지 않던 갭을 메운다.
+applyPixelRatio();
 function renderFrame() {
     renderer.render(scene, camera);
 }
@@ -309,6 +320,11 @@ controls.maxPolarAngle = Math.PI * 0.49;
 // Wheel zoom: OrbitControls dollies in hard steps per wheel tick, which feels stiff. Disable it and
 // glide toward a target distance in animate() instead (the ＋/－ buttons steer the same target).
 controls.enableZoom = false;
+// 📱 두 손가락 제스처는 커스텀 핀치줌(캔버스 pointerdown 쪽)이 전담한다. OrbitControls의 기본
+// 두-손가락 팬은 조종 팔로우캠(updateFollowCam)과 타겟을 두고 싸우고, 관람 중엔 섬을 화면
+// 밖으로 밀어낼 수 있어 통째로 끈다(-1 → onTouchStart switch가 default: NONE). 마우스
+// 우클릭-드래그 팬은 별개 경로라 데스크톱은 그대로.
+controls.touches.TWO = -1;
 let zoomTargetDist = camera.position.distanceTo(controls.target);
 renderer.domElement.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -2064,12 +2080,15 @@ function wireWorldFx(p) {
 // ---- Click a pet → the same motion menu the pet windows use (data-driven from GLB_MOTIONS) ----
 const motionMenu = document.createElement('div');
 motionMenu.id = 'world-motion-menu';
-motionMenu.style.cssText = 'position:fixed; display:none; z-index:100; background:rgba(30,32,40,0.92); border-radius:10px; padding:6px; box-shadow:0 6px 24px rgba(0,0,0,0.35); max-height:230px; overflow-y:auto; min-width:150px; font-family:sans-serif;';
+// 📱 터치는 행 간격·글자를 손가락 기준으로 키운다(44px 탭 타깃 가이드라인 근처).
+const menuPad = IS_TOUCH ? '12px 14px' : '7px 12px';
+const menuFont = IS_TOUCH ? 15 : 13;
+motionMenu.style.cssText = `position:fixed; display:none; z-index:100; background:rgba(30,32,40,0.92); border-radius:10px; padding:6px; box-shadow:0 6px 24px rgba(0,0,0,0.35); max-height:${IS_TOUCH ? 'min(340px, 55vh)' : '230px'}; overflow-y:auto; min-width:${IS_TOUCH ? 170 : 150}px; font-family:sans-serif;`;
 document.body.appendChild(motionMenu);
 let menuPet = null;
 // 🎮 control entry pinned above the motions: possess this pet (or release it) for keyboard control.
 const controlItem = document.createElement('div');
-controlItem.style.cssText = 'padding:7px 12px; font-size:13px; color:#ffd54f; border-radius:7px; cursor:pointer; white-space:nowrap; border-bottom:1px solid rgba(255,255,255,0.12); margin-bottom:4px;';
+controlItem.style.cssText = `padding:${menuPad}; font-size:${menuFont}px; color:#ffd54f; border-radius:7px; cursor:pointer; white-space:nowrap; border-bottom:1px solid rgba(255,255,255,0.12); margin-bottom:4px;`;
 controlItem.onmouseenter = () => { controlItem.style.background = 'rgba(255,255,255,0.14)'; };
 controlItem.onmouseleave = () => { controlItem.style.background = 'transparent'; };
 controlItem.onclick = () => {
@@ -2083,7 +2102,7 @@ motionMenu.appendChild(controlItem);
 for (const m of GLB_MOTIONS) {
     const item = document.createElement('div');
     item.textContent = m.label;
-    item.style.cssText = 'padding:7px 12px; font-size:13px; color:#fff; border-radius:7px; cursor:pointer; white-space:nowrap;';
+    item.style.cssText = `padding:${menuPad}; font-size:${menuFont}px; color:#fff; border-radius:7px; cursor:pointer; white-space:nowrap;`;
     item.onmouseenter = () => { item.style.background = 'rgba(255,255,255,0.14)'; };
     item.onmouseleave = () => { item.style.background = 'transparent'; };
     item.onclick = () => { const p = menuPet; hideMenu(); if (p) playWorldMotion(p, m.id); };
@@ -2094,7 +2113,7 @@ const accessoryItems = [];
 for (let i = 0; i < GLB_ACCESSORIES.length; i++) {
     const a = GLB_ACCESSORIES[i];
     const item = document.createElement('div');
-    item.style.cssText = 'padding:7px 12px; font-size:13px; color:#ffd7e0; border-radius:7px; cursor:pointer; white-space:nowrap;' + (i === 0 ? 'border-top:1px solid rgba(255,255,255,0.12); margin-top:4px;' : '');
+    item.style.cssText = `padding:${menuPad}; font-size:${menuFont}px; color:#ffd7e0; border-radius:7px; cursor:pointer; white-space:nowrap;` + (i === 0 ? 'border-top:1px solid rgba(255,255,255,0.12); margin-top:4px;' : '');
     item.onmouseenter = () => { item.style.background = 'rgba(255,255,255,0.14)'; };
     item.onmouseleave = () => { item.style.background = 'transparent'; };
     item.onclick = () => {
@@ -2113,9 +2132,11 @@ function showMenu(x, y, p) {
     }
     motionMenu.style.display = 'block';
     // Open to the RIGHT of the click point (the click lands on the pet — an offset keeps the
-    // menu from covering the character; clamped to the window edge).
-    motionMenu.style.left = `${Math.min(x + 80, window.innerWidth - 170)}px`;
-    motionMenu.style.top = `${Math.min(y, window.innerHeight - 240)}px`;
+    // menu from covering the character; clamped to the window edge). 하드코딩 치수 대신 실측:
+    // 터치 확대로 메뉴가 커져도, 좁은 폰 화면에서도 밖으로 나가지 않는다.
+    const mw = motionMenu.offsetWidth + 12, mh = motionMenu.offsetHeight + 12;
+    motionMenu.style.left = `${Math.max(6, Math.min(x + 80, window.innerWidth - mw))}px`;
+    motionMenu.style.top = `${Math.max(6, Math.min(y, window.innerHeight - mh))}px`;
 }
 function hideMenu() { motionMenu.style.display = 'none'; menuPet = null; hideSipMenu(); }   // the two travel together
 
@@ -2124,9 +2145,43 @@ function hideMenu() { motionMenu.style.display = 'none'; menuPet = null; hideSip
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
 let pressAt = null;
+// 📱 핀치 줌: 터치 포인터를 직접 추적해 두 손가락 벌림/오므림을 휠과 같은 줌 경로(camZoom —
+// min/max 클램프와 animate()의 글라이드 재사용)로 흘려보낸다. move/up 리스너는 window에 건다:
+// OrbitControls가 첫 포인터만 캔버스에 캡처하고 두 번째는 캡처가 없어서, 손가락이 떠 있는
+// UI 위로 미끄러지면 캔버스 리스너는 그 뒤 이벤트를 놓치기 때문.
+const activeTouches = new Map();   // pointerId → {x, y}
+let pinchDist = 0;
 renderer.domElement.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch') {
+        activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (activeTouches.size === 2) {
+            pressAt = null;   // 두 번째 손가락 = 핀치 시작: 진행 중이던 탭 후보는 무효
+            const [a, b] = [...activeTouches.values()];
+            pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+            return;
+        }
+        if (activeTouches.size > 2) return;
+    }
     pressAt = { x: e.clientX, y: e.clientY, t: performance.now() };
 });
+window.addEventListener('pointermove', (e) => {
+    const t = activeTouches.get(e.pointerId);
+    if (!t) return;
+    t.x = e.clientX; t.y = e.clientY;
+    if (activeTouches.size === 2) {
+        const [a, b] = [...activeTouches.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinchDist > 0 && d > 0) camZoom(pinchDist / d);   // 벌리면 <1 → 줌 인
+        pinchDist = d;
+    }
+});
+const endTouch = (e) => {
+    if (!activeTouches.delete(e.pointerId)) return;
+    pinchDist = 0;
+    if (e.type === 'pointercancel') pressAt = null;   // iOS가 제스처를 가로채면 탭 후보도 폐기
+};
+window.addEventListener('pointerup', endTouch);
+window.addEventListener('pointercancel', endTouch);
 renderer.domElement.addEventListener('pointerup', (e) => {
     hideMenu();
     hideSipMenu();
@@ -2134,12 +2189,13 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     const moved = Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y);
     const held = performance.now() - pressAt.t;
     pressAt = null;
-    if (moved > 6 || held > 400) return;
+    const slop = e.pointerType === 'touch' ? 13 : 6;   // 손가락은 마우스보다 떨림이 커서 탭 판정을 넉넉히
+    if (moved > slop || held > 400) return;
     pointerNdc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
     raycaster.setFromCamera(pointerNdc, camera);
     for (const p of pets) {
         if (raycaster.intersectObject(p.mover, true).length) {
-            if (e.button !== 2) return;   // pet menus/interactions are RIGHT-click only (left = camera)
+            if (e.button !== 2 && e.pointerType !== 'touch') return;   // 마우스는 RIGHT-click 전용 (left = camera) · 터치는 탭이 곧 상호작용
             if (p.bed && p.bed.mode === 'sit') { p.bedExit = true; return; }   // tap a sitter → gets up
             if (p.pet.sleeping) { p.pet.sleeping = false; p.pet.autoSleeping = false; return; }
             showMenu(e.clientX, e.clientY, p);
@@ -2349,11 +2405,11 @@ function updateChatBubble() {
 // Chat bar (bottom center). Enter respects Korean IME composition; clicks don't reach the canvas.
 const chatBar = document.createElement('div');
 chatBar.id = 'world-chat-bar';
-chatBar.style.cssText = 'position:fixed; left:50%; bottom:14px; transform:translateX(-50%); display:flex; gap:6px; z-index:90; width:min(480px, calc(100% - 32px));';
+chatBar.style.cssText = 'position:fixed; left:50%; bottom:calc(14px + env(safe-area-inset-bottom, 0px)); transform:translateX(-50%); display:flex; gap:6px; z-index:90; width:min(480px, calc(100% - 32px));';
 const chatInput = document.createElement('input');
 chatInput.type = 'text';
 chatInput.placeholder = '펫에게 말 걸기… (병아리/강아지를 부르면 그 펫이 대답해요)';
-chatInput.style.cssText = 'flex:1; padding:10px 14px; border:none; border-radius:20px; background:rgba(30,32,40,0.85); color:#fff; font-size:13px; outline:none; box-shadow:0 4px 14px rgba(0,0,0,0.25);';
+chatInput.style.cssText = `flex:1; padding:10px 14px; border:none; border-radius:20px; background:rgba(30,32,40,0.85); color:#fff; font-size:${IS_TOUCH ? 16 : 13}px; outline:none; box-shadow:0 4px 14px rgba(0,0,0,0.25);`;   // 16px 미만이면 iOS가 포커스 시 페이지를 확대한다
 const chatSend = document.createElement('button');
 chatSend.textContent = '보내기';
 chatSend.style.cssText = 'padding:10px 16px; border:none; border-radius:20px; background:#5b8def; color:#fff; font-size:13px; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,0.25);';
@@ -2361,6 +2417,8 @@ chatBar.appendChild(chatInput);
 chatBar.appendChild(chatSend);
 document.body.appendChild(chatBar);
 chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) sendWorldChat(); e.stopPropagation(); });
+// 📱 iOS: 화면 키보드가 닫힐 때 페이지가 밀려 올라간 채로 남는 일이 있어 원점으로 되돌린다.
+if (IS_TOUCH) chatInput.addEventListener('blur', () => window.scrollTo(0, 0));
 chatBar.addEventListener('pointerdown', (e) => e.stopPropagation());
 chatSend.addEventListener('click', sendWorldChat);
 
@@ -2371,12 +2429,13 @@ chatSend.addEventListener('click', sendWorldChat);
 let heldZoom = 0;
 const dockUI = document.createElement('div');
 dockUI.id = 'world-dock-ui';
-dockUI.style.cssText = 'position:fixed; right:14px; bottom:70px; display:flex; flex-direction:column; gap:6px; z-index:95; user-select:none; -webkit-user-select:none;';
+dockUI.style.cssText = 'position:fixed; right:14px; bottom:calc(70px + env(safe-area-inset-bottom, 0px)); display:flex; flex-direction:column; gap:6px; z-index:95; user-select:none; -webkit-user-select:none;';
 function dockBtn(symbol, title) {
     const b = document.createElement('div');
     b.textContent = symbol;
     b.title = title;
-    b.style.cssText = 'width:40px; height:40px; display:flex; align-items:center; justify-content:center; background:rgba(30,32,40,0.88); color:#fff; font-size:17px; border-radius:11px; cursor:pointer; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
+    const sz = IS_TOUCH ? 48 : 40;   // 손가락 탭 타깃
+    b.style.cssText = `width:${sz}px; height:${sz}px; display:flex; align-items:center; justify-content:center; background:rgba(30,32,40,0.88); color:#fff; font-size:${IS_TOUCH ? 20 : 17}px; border-radius:11px; cursor:pointer; box-shadow:0 3px 10px rgba(0,0,0,0.3);`;
     dockUI.appendChild(b);
     return b;
 }
@@ -2418,7 +2477,7 @@ window.addEventListener('keydown', (e) => {
 
 // Toast: small transient notice above the chat bar (screenshot results, radio errors).
 const toastEl = document.createElement('div');
-toastEl.style.cssText = 'position:fixed; left:50%; bottom:70px; transform:translateX(-50%); display:none; background:rgba(30,32,40,0.92); color:#fff; font-size:12.5px; font-family:sans-serif; padding:8px 14px; border-radius:10px; z-index:120; box-shadow:0 4px 14px rgba(0,0,0,0.3); pointer-events:none;';
+toastEl.style.cssText = 'position:fixed; left:50%; bottom:calc(70px + env(safe-area-inset-bottom, 0px)); transform:translateX(-50%); display:none; background:rgba(30,32,40,0.92); color:#fff; font-size:12.5px; font-family:sans-serif; padding:8px 14px; border-radius:10px; z-index:120; box-shadow:0 4px 14px rgba(0,0,0,0.3); pointer-events:none;';
 document.body.appendChild(toastEl);
 let toastTimer = null;
 function showToast(text) {
@@ -2456,7 +2515,7 @@ async function takeScreenshot() {
 let radioAudio = null;
 let radioCurrent = null;
 const radioPanel = document.createElement('div');
-radioPanel.style.cssText = 'position:fixed; right:64px; bottom:70px; display:none; width:250px; background:rgba(30,32,40,0.94); border-radius:12px; padding:10px; z-index:110; box-shadow:0 6px 24px rgba(0,0,0,0.4); font-family:sans-serif;';
+radioPanel.style.cssText = 'position:fixed; right:64px; bottom:calc(70px + env(safe-area-inset-bottom, 0px)); display:none; width:min(250px, calc(100vw - 90px)); background:rgba(30,32,40,0.94); border-radius:12px; padding:10px; z-index:110; box-shadow:0 6px 24px rgba(0,0,0,0.4); font-family:sans-serif;';
 radioPanel.innerHTML = '';
 const radioHeader = document.createElement('div');
 radioHeader.style.cssText = 'display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;';
@@ -3188,7 +3247,7 @@ function applyCarryPose(p, delta) {
 
 // ☕ order panel: 3×3 grid of drawn icons.
 const coffeePanel = document.createElement('div');
-coffeePanel.style.cssText = 'position:fixed; right:64px; bottom:70px; display:none; width:264px; background:rgba(30,32,40,0.94); border-radius:12px; padding:10px; z-index:110; box-shadow:0 6px 24px rgba(0,0,0,0.4); font-family:sans-serif;';
+coffeePanel.style.cssText = 'position:fixed; right:64px; bottom:calc(70px + env(safe-area-inset-bottom, 0px)); display:none; width:min(264px, calc(100vw - 90px)); background:rgba(30,32,40,0.94); border-radius:12px; padding:10px; z-index:110; box-shadow:0 6px 24px rgba(0,0,0,0.4); font-family:sans-serif;';
 const coffeeHeader = document.createElement('div');
 coffeeHeader.style.cssText = 'display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;';
 coffeeHeader.innerHTML = '<span style="color:#fff; font-size:13px; font-weight:700;">☕ 커피 테이크아웃</span>';
@@ -3228,7 +3287,7 @@ function toggleCoffeePanel() {
 
 // 🍞 snack order panel — same 3×3 layout as the coffee menu.
 const foodPanel = document.createElement('div');
-foodPanel.style.cssText = 'position:fixed; right:64px; bottom:70px; display:none; width:264px; background:rgba(30,32,40,0.94); border-radius:12px; padding:10px; z-index:110; box-shadow:0 6px 24px rgba(0,0,0,0.4); font-family:sans-serif;';
+foodPanel.style.cssText = 'position:fixed; right:64px; bottom:calc(70px + env(safe-area-inset-bottom, 0px)); display:none; width:min(264px, calc(100vw - 90px)); background:rgba(30,32,40,0.94); border-radius:12px; padding:10px; z-index:110; box-shadow:0 6px 24px rgba(0,0,0,0.4); font-family:sans-serif;';
 const foodHeader = document.createElement('div');
 foodHeader.style.cssText = 'display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;';
 foodHeader.innerHTML = '<span style="color:#fff; font-size:13px; font-weight:700;">🍞 간식 부스</span>';
@@ -3279,7 +3338,7 @@ function showSipMenuAt(x, y, above = false) {
     const addItem = (label, fn) => {
         const item = document.createElement('div');
         item.textContent = label;
-        item.style.cssText = 'padding:8px 16px; font-size:13px; color:#fff; border-radius:7px; cursor:pointer; white-space:nowrap;';
+        item.style.cssText = `padding:${IS_TOUCH ? '12px 18px' : '8px 16px'}; font-size:${menuFont}px; color:#fff; border-radius:7px; cursor:pointer; white-space:nowrap;`;
         item.onmouseenter = () => { item.style.background = 'rgba(255,255,255,0.14)'; };
         item.onmouseleave = () => { item.style.background = 'transparent'; };
         item.onclick = () => { hideMenu(); fn(); };   // hideMenu closes both panels
@@ -3463,8 +3522,77 @@ selectRing.visible = false;
 scene.add(selectRing);
 
 const controlHint = document.createElement('div');
-controlHint.style.cssText = 'position:fixed; left:14px; bottom:14px; display:none; z-index:90; background:rgba(30,32,40,0.85); color:#fff; font-size:12px; font-family:sans-serif; padding:8px 12px; border-radius:10px; box-shadow:0 3px 10px rgba(0,0,0,0.3); pointer-events:none;';
+// 📱 터치에선 좌하단이 조이스틱 자리라 힌트를 좌상단으로 올린다.
+controlHint.style.cssText = `position:fixed; left:14px; ${IS_TOUCH ? 'top:calc(14px + env(safe-area-inset-top, 0px));' : 'bottom:14px;'} display:none; z-index:90; background:rgba(30,32,40,0.85); color:#fff; font-size:12px; font-family:sans-serif; padding:8px 12px; border-radius:10px; box-shadow:0 3px 10px rgba(0,0,0,0.3); pointer-events:none;`;
 document.body.appendChild(controlHint);
+
+// 📱 마인크래프트 모바일식 조종 UI: 좌하단 가상 조이스틱(민 방향으로 이동, 70% 넘게 밀면
+// 달리기) + 우하단 액션 버튼(🦘 점프 · ✋ 상호작용 · ✕ 해제). 터치 기기에서 조종 중일 때만
+// 보인다. 조이스틱은 자기 엘리먼트에 setPointerCapture를 걸어 손가락이 원 밖으로 미끄러져도
+// 놓치지 않고, 캔버스(카메라 드래그)와 이벤트가 섞이지 않는다 — 왼엄지 이동 + 오른엄지 시점
+// 회전이 동시에 된다.
+const touchMove = { x: 0, z: 0, mag: 0, active: false };
+let touchUI = null;
+let resetTouchStick = () => {};
+if (IS_TOUCH) {
+    touchUI = document.createElement('div');
+    touchUI.id = 'world-touch-ui';
+    touchUI.style.cssText = 'position:fixed; inset:0; display:none; z-index:94; pointer-events:none;';
+    const stickBase = document.createElement('div');
+    stickBase.style.cssText = 'position:absolute; left:20px; bottom:calc(88px + env(safe-area-inset-bottom, 0px)); width:124px; height:124px; border-radius:50%; background:rgba(30,32,40,0.35); border:2px solid rgba(255,255,255,0.4); pointer-events:auto; touch-action:none;';
+    const stickKnob = document.createElement('div');
+    stickKnob.style.cssText = 'position:absolute; left:50%; top:50%; width:54px; height:54px; border-radius:50%; background:rgba(255,255,255,0.78); box-shadow:0 2px 8px rgba(0,0,0,0.35); transform:translate(-50%,-50%);';
+    stickBase.appendChild(stickKnob);
+    touchUI.appendChild(stickBase);
+    let stickId = null;
+    const STICK_R = 44;                                           // 노브 이동 반경(px)
+    const setStick = (e) => {
+        const r = stickBase.getBoundingClientRect();
+        let dx = e.clientX - (r.left + r.width / 2);
+        let dy = e.clientY - (r.top + r.height / 2);
+        const len = Math.hypot(dx, dy);
+        if (len > STICK_R) { dx *= STICK_R / len; dy *= STICK_R / len; }
+        stickKnob.style.transform = `translate(calc(${Math.round(dx)}px - 50%), calc(${Math.round(dy)}px - 50%))`;
+        const mag = Math.min(1, len / STICK_R);
+        if (mag < 0.15) { touchMove.active = false; touchMove.x = touchMove.z = touchMove.mag = 0; return; }   // 데드존
+        touchMove.active = true;
+        touchMove.mag = mag;
+        touchMove.x = dx / STICK_R;
+        touchMove.z = -dy / STICK_R;                              // 화면 위쪽 = 카메라 기준 앞
+    };
+    resetTouchStick = () => {
+        stickId = null;
+        touchMove.active = false; touchMove.x = touchMove.z = touchMove.mag = 0;
+        stickKnob.style.transform = 'translate(-50%,-50%)';
+    };
+    stickBase.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        stickId = e.pointerId;
+        try { stickBase.setPointerCapture(e.pointerId); } catch (err) {}
+        setStick(e);
+    });
+    stickBase.addEventListener('pointermove', (e) => { if (e.pointerId === stickId) setStick(e); });
+    const stickEnd = (e) => { if (e.pointerId === stickId) resetTouchStick(); };
+    stickBase.addEventListener('pointerup', stickEnd);
+    stickBase.addEventListener('pointercancel', stickEnd);
+    stickBase.addEventListener('lostpointercapture', stickEnd);
+
+    const btnCol = document.createElement('div');
+    btnCol.style.cssText = 'position:absolute; right:78px; bottom:calc(88px + env(safe-area-inset-bottom, 0px)); display:flex; flex-direction:column; align-items:center; gap:14px;';
+    const actionBtn = (label, size, onPress) => {
+        const b = document.createElement('div');
+        b.textContent = label;
+        b.style.cssText = `width:${size}px; height:${size}px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:rgba(30,32,40,0.55); border:2px solid rgba(255,255,255,0.4); color:#fff; font-size:${Math.round(size * 0.44)}px; pointer-events:auto; touch-action:none; user-select:none; -webkit-user-select:none;`;
+        b.addEventListener('pointerdown', (e) => { e.preventDefault(); onPress(); });
+        btnCol.appendChild(b);
+        return b;
+    };
+    actionBtn('✕', 44, () => escapeAction());                     // Esc
+    actionBtn('✋', 48, () => doInteract());                      // Ctrl/⌘ — 독(📷) 버튼과 같은 크기
+    actionBtn('🦘', 48, () => doJump());                          // Space
+    touchUI.appendChild(btnCol);
+    document.body.appendChild(touchUI);
+}
 
 function possessPet(p) {
     // 조종은 무조건 성공: whatever the pet was doing gets cleanly taken over. Bed/seat → instant
@@ -3491,8 +3619,11 @@ function possessPet(p) {
     p.ai.state = 'player';
     p.pet.walking = false;
     selectRing.visible = true;
-    controlHint.textContent = `🎮 ${p.name === 'chick' ? '병아리' : '강아지'} 조종 중 — 방향키 이동 · Space 점프 · Esc 해제`;
+    controlHint.textContent = IS_TOUCH
+        ? `🎮 ${p.name === 'chick' ? '병아리' : '강아지'} 조종 중 — 조이스틱 이동(끝까지 밀면 달리기) · 🦘 점프 · ✋ 상호작용 · ✕ 해제`
+        : `🎮 ${p.name === 'chick' ? '병아리' : '강아지'} 조종 중 — 방향키 이동 · Space 점프 · Esc 해제`;
     controlHint.style.display = 'block';
+    if (touchUI) touchUI.style.display = 'block';
 }
 function releasePossession() {
     if (!possessed) return;
@@ -3506,71 +3637,86 @@ function releasePossession() {
     snapToLand(p);
     if (p.ai.state === 'player') { p.ai.state = 'idle'; releaseAI(p); }
     heldKeys.clear();
+    resetTouchStick();
     selectRing.visible = false;
     controlHint.style.display = 'none';
+    if (touchUI) touchUI.style.display = 'none';
 }
 
 const ARROW_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+// 조종 액션 3종 — 키보드(Space·Ctrl/⌘·Esc)와 터치 버튼(🦘·✋·✕)이 같은 함수를 부른다.
+function doJump() {
+    if (!possessed || airborne) return;
+    airborne = true;
+    jumpVy = possessed.swimming ? 1.7 : 2.5;                      // splash-hop in water
+}
+function escapeAction() {
+    releasePossession();
+    hideMenu();
+    radioPanel.style.display = 'none';
+    coffeePanel.style.display = 'none';
+    foodPanel.style.display = 'none';
+    hideSipMenu();
+}
+function doInteract() {
+    // Interaction (Ctrl/⌘ or ✋): climb out of the sea near a cliff; take/release the friend's
+    // hand; enter/exit the car; tuck into a bed; open the coffee/food/radio panels; or cycle a
+    // streetlamp — in that priority order.
+    if (!possessed) return;
+    if (possessed.swimming === 'sea') {
+        const pos = possessed.mover.position;
+        const spot = nearestClimbSpot(pos);
+        if (spot && !seaHop) {
+            seaHop = { fx: pos.x, fy: pos.y, fz: pos.z, tx: spot.tx, tz: spot.tz, ty: spot.ty, t: 0 };
+            return;
+        }
+        if (handHold) releaseHandHold();
+        return;
+    }
+    if (carDrive) { exitCar(); return; }
+    if (Math.hypot(possessed.mover.position.x - CAR.x, possessed.mover.position.z - CAR.z) < 1.15) {
+        enterCar();
+        return;
+    }
+    if (handHold) { releaseHandHold(); return; }
+    if (tryGrabHand()) return;
+    const bed = !possessed.bed && nearestFreeBed(possessed, 0.95);
+    if (bed) { mountBed(possessed, bed); return; }
+    if (nearestPropDist(possessed, 'coffee') < 1.1) {
+        toggleCoffeePanel();
+        return;
+    }
+    if (nearestPropDist(possessed, 'food') < 1.1) {
+        toggleFoodPanel();
+        return;
+    }
+    if (nearestPropDist(possessed, 'radio') < 1.0) {
+        toggleRadioPanel();
+        return;
+    }
+    if (nearestPropDist(possessed, 'lamp') < 1.0) {
+        // Streetlamp brightness now lives on the lamps: cycle it in steps at the lamp (persisted).
+        const steps = [0, 0.25, 0.5, 0.75, 1];
+        const idx = steps.findIndex((s) => Math.abs(s - lampBrightness) < 0.125);
+        lampBrightness = steps[(idx + 1) % steps.length];
+        try { localStorage.setItem('worldLampBrightness', String(lampBrightness)); } catch (err) {}
+        updateDayNight(true);
+    }
+}
 window.addEventListener('keydown', (e) => {
     if (e.target && e.target.tagName === 'INPUT') return;        // typing in the chat bar
-    if (e.key === 'Escape') { releasePossession(); hideMenu(); radioPanel.style.display = 'none'; coffeePanel.style.display = 'none'; foodPanel.style.display = 'none'; hideSipMenu(); return; }
+    if (e.key === 'Escape') { escapeAction(); return; }
     if (!possessed) return;
     if (ARROW_KEYS.includes(e.key)) { heldKeys.add(e.key); e.preventDefault(); }
-    else if (e.code === 'Space') {
-        e.preventDefault();
-        if (!airborne) { airborne = true; jumpVy = possessed.swimming ? 1.7 : 2.5; }   // splash-hop in water
-    }
+    else if (e.code === 'Space') { e.preventDefault(); doJump(); }
     else if (e.key === 'Shift') {
         e.preventDefault();
         running = !running;                                       // 🚶 ↔ 🏃
     }
-    else if (e.key === 'Control' || e.key === 'Meta') {
-        // Interaction key (Ctrl or ⌘): climb out of the sea near a cliff; take/release the friend's
-        // hand; tuck into a bed; open the radio; or cycle a streetlamp — in that priority order.
-        e.preventDefault();
-        if (possessed.swimming === 'sea') {
-            const pos = possessed.mover.position;
-            const spot = nearestClimbSpot(pos);
-            if (spot && !seaHop) {
-                seaHop = { fx: pos.x, fy: pos.y, fz: pos.z, tx: spot.tx, tz: spot.tz, ty: spot.ty, t: 0 };
-                return;
-            }
-            if (handHold) releaseHandHold();
-            return;
-        }
-        if (carDrive) { exitCar(); return; }
-        if (Math.hypot(possessed.mover.position.x - CAR.x, possessed.mover.position.z - CAR.z) < 1.15) {
-            enterCar();
-            return;
-        }
-        if (handHold) { releaseHandHold(); return; }
-        if (tryGrabHand()) return;
-        const bed = !possessed.bed && nearestFreeBed(possessed, 0.95);
-        if (bed) { mountBed(possessed, bed); return; }
-        if (nearestPropDist(possessed, 'coffee') < 1.1) {
-            toggleCoffeePanel();
-            return;
-        }
-        if (nearestPropDist(possessed, 'food') < 1.1) {
-            toggleFoodPanel();
-            return;
-        }
-        if (nearestPropDist(possessed, 'radio') < 1.0) {
-            toggleRadioPanel();
-            return;
-        }
-        if (nearestPropDist(possessed, 'lamp') < 1.0) {
-            // Streetlamp brightness now lives on the lamps: cycle it in steps at the lamp (persisted).
-            const steps = [0, 0.25, 0.5, 0.75, 1];
-            const idx = steps.findIndex((s) => Math.abs(s - lampBrightness) < 0.125);
-            lampBrightness = steps[(idx + 1) % steps.length];
-            try { localStorage.setItem('worldLampBrightness', String(lampBrightness)); } catch (err) {}
-            updateDayNight(true);
-        }
-    }
+    else if (e.key === 'Control' || e.key === 'Meta') { e.preventDefault(); doInteract(); }
 });
 window.addEventListener('keyup', (e) => { heldKeys.delete(e.key); });
-window.addEventListener('blur', () => heldKeys.clear());
+window.addEventListener('blur', () => { heldKeys.clear(); resetTouchStick(); });   // 앱 전환 시 스틱도 초기화
 
 // Swimming (조종 전용): the player pet may wade into the pond or dive off the rim into the sea —
 // the wander AI never does (world.isBlocked still fences it). Support height decides the medium;
@@ -3648,10 +3794,12 @@ function updatePlayer(delta) {
         let acc = 0;
         if (heldKeys.has('ArrowUp')) acc += 3.4;
         if (heldKeys.has('ArrowDown')) acc -= 2.8;
+        if (touchMove.active) acc += 3.4 * Math.max(0, touchMove.z) - 2.8 * Math.max(0, -touchMove.z);   // 📱 스틱 전후 = 가속·후진
         CAR.vel += acc * delta;
         CAR.vel *= Math.pow(0.3, delta);               // rolling friction
         CAR.vel = THREE.MathUtils.clamp(CAR.vel, -maxV * 0.4, maxV);
-        const steer = (heldKeys.has('ArrowLeft') ? 1 : 0) - (heldKeys.has('ArrowRight') ? 1 : 0);
+        let steer = (heldKeys.has('ArrowLeft') ? 1 : 0) - (heldKeys.has('ArrowRight') ? 1 : 0);
+        if (touchMove.active) steer = THREE.MathUtils.clamp(steer - touchMove.x, -1, 1);   // 📱 스틱 좌우 = 핸들
         CAR.heading += steer * delta * 2.4 * THREE.MathUtils.clamp(CAR.vel / maxV, -1, 1);
         const nx = CAR.x + Math.sin(CAR.heading) * CAR.vel * delta;
         const nz = CAR.z + Math.cos(CAR.heading) * CAR.vel * delta;
@@ -3679,7 +3827,9 @@ function updatePlayer(delta) {
         seatPet(p, -1);
         if (carDrive.passenger) seatPet(carDrive.passenger, 1);
         engineUpdate();
-        const driveHint = `🚗 ${p.name === 'chick' ? '병아리' : '강아지'} 운전 중${carDrive.passenger ? ' 👥' : ''} — ↑↓ 가속·후진 · ←→ 핸들 · Ctrl/⌘ 내리기 · Esc 해제`;
+        const driveHint = IS_TOUCH
+            ? `🚗 ${p.name === 'chick' ? '병아리' : '강아지'} 운전 중${carDrive.passenger ? ' 👥' : ''} — 스틱 가속·핸들 · ✋ 내리기 · ✕ 해제`
+            : `🚗 ${p.name === 'chick' ? '병아리' : '강아지'} 운전 중${carDrive.passenger ? ' 👥' : ''} — ↑↓ 가속·후진 · ←→ 핸들 · Ctrl/⌘ 내리기 · Esc 해제`;
         if (controlHint.textContent !== driveHint) controlHint.textContent = driveHint;
         return;
     }
@@ -3688,6 +3838,7 @@ function updatePlayer(delta) {
     if (heldKeys.has('ArrowDown')) iz -= 1;
     if (heldKeys.has('ArrowLeft')) ix -= 1;
     if (heldKeys.has('ArrowRight')) ix += 1;
+    if (touchMove.active) { ix = touchMove.x; iz = touchMove.z; }   // 📱 가상 조이스틱이 방향키를 대신한다
     if (ix !== 0 || iz !== 0) {
         const fwd = new THREE.Vector3();
         camera.getWorldDirection(fwd); fwd.y = 0;
@@ -3700,7 +3851,8 @@ function updatePlayer(delta) {
             while (diff > Math.PI) diff -= Math.PI * 2;
             while (diff < -Math.PI) diff += Math.PI * 2;
             p.mover.rotation.y += THREE.MathUtils.clamp(diff, -delta * 7, delta * 7);
-            const step = p.speed * (p.swimming ? 1.05 : running ? 3.0 : 1.5) * delta;   // 달리기 = 걷기 ×2
+            const run = running || (touchMove.active && touchMove.mag > 0.7);   // 📱 스틱을 70% 넘게 밀면 달리기
+            const step = p.speed * (p.swimming ? 1.05 : run ? 3.0 : 1.5) * delta;   // 달리기 = 걷기 ×2
             const nx = p.mover.position.x + dir.x * step;
             const nz = p.mover.position.z + dir.z * step;
             if (!playerBlocked(nx, nz)) {
@@ -3751,17 +3903,24 @@ function updatePlayer(delta) {
     const radioNear = !p.swimming && !handHold && !friendNear && !bedNear && !coffeeNear && !foodNear && nearestPropDist(p, 'radio') < 1.0;
     const lampNear = !p.swimming && !handHold && !friendNear && !bedNear && !coffeeNear && !foodNear && !radioNear && nearestPropDist(p, 'lamp') < 1.0;
     const carNear = !p.swimming && Math.hypot(p.mover.position.x - CAR.x, p.mover.position.z - CAR.z) < 1.15;
-    const act = carNear ? ' · Ctrl/⌘ 차 타기'
-        : handHold ? ' · Ctrl/⌘ 손 놓기'
-        : friendNear ? ' · Ctrl/⌘ 손잡기'
-        : bedNear ? (bedNear.mode === 'swing' ? ' · Ctrl/⌘ 그네 타기' : bedNear.mode === 'seesaw' ? ' · Ctrl/⌘ 시소 타기' : bedNear.mode === 'sit' ? ' · Ctrl/⌘ 앉기' : ' · Ctrl/⌘ 눕기')
-        : coffeeNear ? ' · Ctrl/⌘ 커피 주문'
-        : foodNear ? ' · Ctrl/⌘ 간식 주문'
-        : radioNear ? ' · Ctrl/⌘ 라디오'
-        : lampNear ? ` · Ctrl/⌘ 가로등 ${Math.round(lampBrightness * 100)}%` : '';
+    // 📱 터치에선 키 이름 대신 화면 버튼 아이콘으로 안내한다.
+    const IKEY = IS_TOUCH ? '✋' : 'Ctrl/⌘';
+    const MOVEK = IS_TOUCH ? '조이스틱' : '방향키';
+    const JUMPK = IS_TOUCH ? '🦘' : 'Space';
+    const RELK = IS_TOUCH ? '✕' : 'Esc';
+    const runNow = running || (touchMove.active && touchMove.mag > 0.7);
+    const act = carNear ? ` · ${IKEY} 차 타기`
+        : handHold ? ` · ${IKEY} 손 놓기`
+        : friendNear ? ` · ${IKEY} 손잡기`
+        : bedNear ? (bedNear.mode === 'swing' ? ` · ${IKEY} 그네 타기` : bedNear.mode === 'seesaw' ? ` · ${IKEY} 시소 타기` : bedNear.mode === 'sit' ? ` · ${IKEY} 앉기` : ` · ${IKEY} 눕기`)
+        : coffeeNear ? ` · ${IKEY} 커피 주문`
+        : foodNear ? ` · ${IKEY} 간식 주문`
+        : radioNear ? ` · ${IKEY} 라디오`
+        : lampNear ? ` · ${IKEY} 가로등 ${Math.round(lampBrightness * 100)}%` : '';
+    const shiftSeg = IS_TOUCH ? '' : ` · Shift ${running ? '걷기' : '달리기'}`;
     const hint = p.swimming
-        ? `🏊 ${petName} 수영 중${handHold ? ' 🤝' : ''} — 방향키 이동 · Space 물장구${nearCliff ? ' · Ctrl/⌘ 섬으로 올라가기' : handHold ? ' · Ctrl/⌘ 손 놓기' : ''} · Esc 해제`
-        : `${running ? '🏃' : '🎮'} ${petName} ${running ? '달리는 중' : '조종 중'}${handHold ? ' 🤝' : ''} — 방향키 이동 · Shift ${running ? '걷기' : '달리기'} · Space 점프${act} · Esc 해제`;
+        ? `🏊 ${petName} 수영 중${handHold ? ' 🤝' : ''} — ${MOVEK} 이동 · ${JUMPK} 물장구${nearCliff ? ` · ${IKEY} 섬으로 올라가기` : handHold ? ` · ${IKEY} 손 놓기` : ''} · ${RELK} 해제`
+        : `${runNow ? '🏃' : '🎮'} ${petName} ${runNow ? '달리는 중' : '조종 중'}${handHold ? ' 🤝' : ''} — ${MOVEK} 이동${shiftSeg} · ${JUMPK} 점프${act} · ${RELK} 해제`;
     if (controlHint.textContent !== hint) controlHint.textContent = hint;
 }
 
