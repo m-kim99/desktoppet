@@ -259,6 +259,7 @@ const WEATHER_CHOICES = [
     { id: 'rain',  icon: '🌧️', label: '비',      toast: '🌧️ 비가 내려요' },
     { id: 'snow',  icon: '❄️', label: '눈',      toast: '❄️ 눈이 내려요' },
     { id: 'storm', icon: '⛈️', label: '천둥번개', toast: '⛈️ 천둥번개가 몰려와요' },
+    { id: 'aurora', icon: '🌌', label: '오로라',  toast: '🌌 오로라 — 밤이 되면 하늘에 일렁여요' },
 ];
 let manualWx = null;   // 세션 한정 — 다시 열면 자동 모드로 (켜면 맑음 원칙)
 let wxF = wx.type === 'clear' ? 0 : 1;   // restored mid-episode → start already wet, no fake fade-in
@@ -2059,6 +2060,76 @@ const rainbow = (() => {
 let rainbowT = WEATHER_OVERRIDE === 'rainbow' ? 1e9 : 0;
 let rainbowAge = 10;   // seconds since it appeared (starts past the fade-in for the preview)
 
+// ---- Aurora (오로라): two shader curtains over the northern night sky — the world's first custom
+// shader. The vertex stage bends each flat plane into an arc behind the island and sways it on the
+// shared weather clock; the fragment stage layers sine "rays" over a green→violet ramp, additive
+// so the stars keep shining through. Night + clear skies only: a rare treat in auto mode, or
+// pinned from the 🌦️ panel. Heat budget: two draw calls, a few hundred verts, no fullscreen work.
+function auroraCurtain(radius, baseY, height, phase, strength) {
+    const geo = new THREE.PlaneGeometry(28, height, 72, 6);
+    const mat = new THREE.ShaderMaterial({
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        uniforms: { uT: wxTime, uOpacity: { value: 0 }, uPhase: { value: phase }, uR: { value: radius } },
+        vertexShader: `
+            uniform float uT; uniform float uPhase; uniform float uR;
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                float ang = position.x / uR;
+                float sway = sin(ang * 6.0 + uT * 0.22 + uPhase) + 0.55 * sin(ang * 13.0 - uT * 0.15 + uPhase * 1.7);
+                vec3 p = vec3(sin(ang) * uR + sway * 0.4, position.y + sway * 0.5, -cos(ang) * uR);
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+            }`,
+        fragmentShader: `
+            uniform float uT; uniform float uOpacity; uniform float uPhase;
+            varying vec2 vUv;
+            void main() {
+                float n = 0.5 * sin(vUv.x * 16.0 + uT * 0.33 + uPhase)
+                        + 0.3 * sin(vUv.x * 37.0 - uT * 0.21 + uPhase * 2.3)
+                        + 0.2 * sin(vUv.x * 85.0 + uT * 0.12);
+                float rays = 0.55 + 0.45 * n;
+                float shape = smoothstep(0.0, 0.14, vUv.y) * pow(1.0 - vUv.y, 1.3) * 1.15;
+                vec3 col = mix(vec3(0.30, 1.0, 0.55), vec3(0.55, 0.38, 1.0), clamp(vUv.y * 1.25 + 0.18 * n, 0.0, 1.0)) * 1.55;
+                gl_FragColor = vec4(col, uOpacity * rays * shape);
+            }`,
+    });
+    const m = new THREE.Mesh(geo, mat);
+    m.position.y = baseY;
+    m.frustumCulled = false;   // the shader bends the flat plane into an arc
+    m.visible = false;
+    m.userData.strength = strength;
+    scene.add(m);
+    return m;
+}
+const auroraCurtains = [auroraCurtain(30, 5.6, 6.5, 0, 1), auroraCurtain(33.5, 7.0, 5.5, 2.1, 0.55)];   // 수평선에서 피어오르는 높이 — 기본 카메라에도 하단이 담긴다
+let auroraUntil = 0;        // auto-mode episode end (ms)
+let auroraNextRoll = 0;     // next auto lottery draw
+let auroraF = WEATHER_OVERRIDE === 'aurora' ? 1 : 0;   // eased on/off — 미리보기는 켜진 채 시작
+let auroraVis = 0;          // final visibility this frame — the chat snapshot reads it
+function updateAurora(delta) {
+    // Auto lottery: clear auto-mode nights only, drawn every ~8 minutes — a sometimes-treat.
+    const now = Date.now();
+    if (!manualWx && !WEATHER_OVERRIDE && wx.type === 'clear' && now > auroraNextRoll) {
+        auroraNextRoll = now + 8 * 60000;
+        if (dayFactor(currentHour()) < 0.05 && now > auroraUntil && Math.random() < 0.14) {
+            auroraUntil = now + (6 + Math.random() * 5) * 60000;
+            logWorldEvent('밤하늘에 오로라가 떴다 🌌');
+            maybeProactive(pets.find((q) => q.name === 'puppy'), '방금 밤하늘에 오로라가 떴다! 초록 커튼이 일렁인다.');
+        }
+    }
+    const active = manualWx === 'aurora' || WEATHER_OVERRIDE === 'aurora' || now < auroraUntil;
+    auroraF = THREE.MathUtils.clamp(auroraF + (active ? 1 : -1) * delta / 6, 0, 1);
+    const nightF = 1 - dayFactor(currentHour());
+    auroraVis = auroraF * THREE.MathUtils.clamp((nightF - 0.25) / 0.75, 0, 1) * (1 - wxF);   // 밤 + 맑음에서만
+    for (const c of auroraCurtains) {
+        c.material.uniforms.uOpacity.value = 0.78 * auroraVis * c.userData.strength;   // 0.78×1.15×ray≈0.7 — 가산 클램프(백화) 직전
+        c.visible = auroraVis > 0.01;
+    }
+}
+
 // Rain hiss: looped synthesized noise through a lowpass, faded with wxF. Snow stays silent.
 let rainHiss = null;
 function setRainHiss(vol) {
@@ -2152,6 +2223,12 @@ function rollWeather() {
 function setManualWeather(type) {
     if (manualWx === type) return;
     manualWx = type;
+    if (type === 'aurora') {
+        wx = { type: 'clear', until: Infinity };   // 오로라는 맑은 밤하늘 위에 — updateAurora가 페이드를 맡는다
+        logWorldEvent('주인이 밤하늘에 오로라를 불러왔다 🌌');
+        maybeProactive(null, '주인이 방금 오로라를 불러왔다! 밤하늘에 초록 커튼이 일렁인다.');
+        return;
+    }
     if (type && type !== 'clear') {
         wx = { type, until: Infinity };
         logWorldEvent(type === 'snow' ? '주인이 눈을 내리게 했다 ❄️' : type === 'storm' ? '주인이 천둥번개를 불러왔다 ⛈️' : '주인이 비를 내리게 했다 🌧️');
@@ -2187,6 +2264,7 @@ function updateWeather(delta) {
     snowPts.material.opacity = 0.9 * wxF;
     setRainHiss(rainy ? (0.06 + 0.045 * stormF) * wxF : 0);
     updateLightning(delta);
+    updateAurora(delta);
     if (rainbowT > 0) {
         rainbowT -= delta;
         rainbowAge += delta;
@@ -2825,7 +2903,7 @@ function buildWorldSnapshot(me) {
     const seasonKo = SEASONS[worldSeason()].ko;   // 수동 계절 반영 — 펫도 지금 계절을 안다
     const daypart = h < 6 ? '새벽' : h < 12 ? '아침' : h < 18 ? '낮' : h < 22 ? '저녁' : '밤';
     const wxKo = wx.type === 'storm' ? '천둥번개가 치는 중' : wx.type === 'rain' ? '비가 내리는 중' : wx.type === 'snow' ? '눈이 내리는 중'
-        : rainbowT > 0 ? '맑음 (무지개가 떠 있음!)' : '맑음';
+        : auroraVis > 0.05 ? '맑음 (밤하늘에 오로라가 일렁임!)' : rainbowT > 0 ? '맑음 (무지개가 떠 있음!)' : '맑음';
     const lines = [
         `시각: ${month}월 ${d.getDate()}일 (${dayName}) ${hh}:${mm} — ${seasonKo}, ${daypart}`,
         `날씨: ${wxKo}`,
@@ -2920,11 +2998,11 @@ shotBtn.addEventListener('click', () => { takeScreenshot(); });
 // 🌦️ 날씨 설정 (카메라 아래): 패널에서 고르면 그 날씨로 고정 — WEATHER_CHOICES에 추가하면 메뉴에 뜬다.
 const weatherBtn = dockBtn('🌦️', '날씨 설정');
 const weatherPanel = document.createElement('div');
-weatherPanel.style.cssText = 'position:fixed; right:calc(70px + env(safe-area-inset-right, 0px)); display:none; z-index:96; background:rgba(30,32,40,0.93); border-radius:12px; box-shadow:0 8px 28px rgba(0,0,0,0.4); font-family:sans-serif; padding:6px; flex-direction:column; gap:4px;';
+weatherPanel.style.cssText = 'position:fixed; right:calc(70px + env(safe-area-inset-right, 0px)); display:none; z-index:96; background:rgba(30,32,40,0.93); border-radius:12px; box-shadow:0 8px 28px rgba(0,0,0,0.4); font-family:sans-serif; padding:5px; flex-direction:column; gap:3px; max-height:min(62vh, 430px); overflow-y:auto; overscroll-behavior:contain;';
 const weatherRows = WEATHER_CHOICES.map((c) => {
     const row = document.createElement('button');
     row.textContent = `${c.icon} ${c.label}`;
-    row.style.cssText = `border:none; border-radius:8px; color:#fff; font-size:${IS_TOUCH ? 14 : 12.5}px; padding:${IS_TOUCH ? 9 : 7}px 16px; cursor:pointer; text-align:left; white-space:nowrap; background:rgba(255,255,255,0.08);`;
+    row.style.cssText = `border:none; border-radius:8px; color:#fff; font-size:${IS_TOUCH ? 13.5 : 12}px; padding:${IS_TOUCH ? 7 : 5}px 12px; cursor:pointer; text-align:left; white-space:nowrap; flex-shrink:0; background:rgba(255,255,255,0.08);`;
     row.addEventListener('click', () => {
         setManualWeather(c.id);
         syncWeatherRows();
@@ -2947,7 +3025,7 @@ const SEASON_CHOICES = [{ id: null, icon: '🔄', label: '계절 자동' }].conc
 const seasonRows = SEASON_CHOICES.map((c) => {
     const row = document.createElement('button');
     row.textContent = `${c.icon} ${c.label}`;
-    row.style.cssText = `border:none; border-radius:8px; color:#fff; font-size:${IS_TOUCH ? 14 : 12.5}px; padding:${IS_TOUCH ? 9 : 7}px 16px; cursor:pointer; text-align:left; white-space:nowrap; background:rgba(255,255,255,0.08);`;
+    row.style.cssText = `border:none; border-radius:8px; color:#fff; font-size:${IS_TOUCH ? 13.5 : 12}px; padding:${IS_TOUCH ? 7 : 5}px 12px; cursor:pointer; text-align:left; white-space:nowrap; flex-shrink:0; background:rgba(255,255,255,0.08);`;
     row.addEventListener('click', () => {
         setManualSeason(c.id);
         syncSeasonRows();
@@ -2966,7 +3044,9 @@ weatherBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
 weatherBtn.addEventListener('click', () => {
     const open = weatherPanel.style.display === 'none';
     if (open) {
-        weatherPanel.style.bottom = `${Math.max(8, window.innerHeight - weatherBtn.getBoundingClientRect().bottom)}px`;
+        const btnBottom = weatherBtn.getBoundingClientRect().bottom;
+        weatherPanel.style.bottom = `${Math.max(8, window.innerHeight - btnBottom)}px`;
+        weatherPanel.style.maxHeight = `${Math.max(160, btnBottom - 12)}px`;   // 창 천장을 뚫지 않게 — 넘치면 스크롤
         syncWeatherRows();
         syncSeasonRows();
     }
