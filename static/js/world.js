@@ -265,21 +265,65 @@ let wxF = wx.type === 'clear' ? 0 : 1;   // restored mid-episode → start alrea
 let stormF = wx.type === 'storm' ? 1 : 0;   // ⛈️ 뇌우 계수: 비보다 한 단계 더 어둡게 누르는 추가 감쇠 (updateWeather가 이진다)
 let lastDayF = 1;                        // rainbow needs to know if the sun is out when rain ends
 
+// ---- Season state (계절): 자동 = 실제 달력(3-5 봄 / 6-8 여름 / 9-11 가을 / 12-2 겨울), 수동 =
+// 🌦️ 패널에서 고정(계절은 에피소드가 아니라 모드라서 저장된다). 여름이 원본 룩 — 봄/가을은
+// 잎·잔디를 되칠하고 겨울은 설원 텍스처+눈모자를 얹는다(applySeason — 월드가 다 지어진 뒤 정의).
+// 낮 길이도 계절을 따른다: 여름 해가 길고 겨울 해가 짧다. 미리보기: world.html?season=winter 등
+const SEASON_OVERRIDE = (new URLSearchParams(window.location.search).get('season') || '').toLowerCase() || null;
+const SEASONS = {
+    spring: { ko: '봄',   icon: '🌸', sunrise: 6.0, sunset: 18.8 },
+    summer: { ko: '여름', icon: '🌿', sunrise: 5.3, sunset: 19.6 },
+    autumn: { ko: '가을', icon: '🍂', sunrise: 6.4, sunset: 18.1 },
+    winter: { ko: '겨울', icon: '⛄', sunrise: 7.3, sunset: 17.4 },
+};
+function calendarSeason() {
+    const m = new Date().getMonth() + 1;
+    return m >= 3 && m <= 5 ? 'spring' : m >= 6 && m <= 8 ? 'summer' : m >= 9 && m <= 11 ? 'autumn' : 'winter';
+}
+let manualSeason = null;
+try {
+    const s = localStorage.getItem('world-season');
+    if (SEASONS[s]) manualSeason = s;
+} catch (e) {}
+if (SEASON_OVERRIDE && SEASONS[SEASON_OVERRIDE]) manualSeason = SEASON_OVERRIDE;
+const worldSeason = () => manualSeason || calendarSeason();
+let season = worldSeason();   // the season currently painted onto the scene
+let seasonBlend = null;       // in-flight 2.5s crossfade, advanced by updateSeasonBlend()
+// Season palettes (여름 = 원본). Leaf pairs are [top, bottom] for the baked lobe gradients.
+const LEAF_AUTUMN = [[0xffc95e, 0xc07a28], [0xff9448, 0xbb5a22], [0xe8654e, 0xa03a28]];   // 금빛/주황/빨강 — 나무마다 하나
+const CHERRY_LEAF = { spring: [0xffc9de, 0xf095bb], summer: [0x8bd678, 0x4a9345], autumn: [0xff9a66, 0xc25a35], winter: [0xd3ccda, 0x968ea2] };
+const GRASS_TINT  = { spring: [0.97, 1.03, 0.9], summer: [1, 1, 1], autumn: [1.28, 0.92, 0.48], winter: [1, 1, 1] };
+const TUFT_COLOR  = { spring: 0x63bb46, summer: 0x5fae44, autumn: 0xb99a3e, winter: 0x5fae44 };
+const SEA_TINT    = { spring: null, summer: null, autumn: [0x4d7a86, 0.18], winter: [0x2e5f83, 0.35] };
+const HEMI_GROUND = { spring: [0x233524, 0x8fca62], summer: [0x233524, 0x8fca62], autumn: [0x30291a, 0xb0a05e], winter: [0x2a3140, 0xdde6f0] };
+const _seasonSea = new THREE.Color();
+// Registries filled while the world is built; applySeason() repaints them.
+const seasonGrass = [];      // island grass meshes — winter swaps their texture to snow
+const seasonLeaves = [];     // { geo, orig: [top, bottom], cherry, treeNo, li } per canopy lobe
+const seasonSnowCaps = [];   // white caps on canopies + the house roof — winter only
+const seasonFall = [];       // { pts, when } falling particles: 벚꽃잎(spring) / 낙엽(autumn)
+let seasonDecor = null;      // { tuftMesh, stemMesh, headMesh, pebbleMesh } once decorations exist
+const snowCapMat = new THREE.MeshStandardMaterial({ color: 0xf2f7ff, roughness: 1, metalness: 0, transparent: true, opacity: 0 });
+const wxTime = { value: 0 };   // shared clock uniform for every falling-particle shader (비/눈/꽃잎/낙엽)
+
 function currentHour() {
     if (!Number.isNaN(HOUR_OVERRIDE)) return ((HOUR_OVERRIDE % 24) + 24) % 24;
     const d = new Date();
     return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
 }
-// 1 = full day, 0 = full night; ramps over 5→7시 (sunrise) and 17→19시 (sunset).
+// 1 = full day, 0 = full night; ramps over sunrise±1h and sunset±1h. The season sets the hours
+// (여름 해가 길고 겨울 해가 짧다) so lamps, the sun arc and dusk glow all follow along.
 function dayFactor(h) {
-    if (h < 5 || h >= 19) return 0;
-    if (h < 7) return THREE.MathUtils.smoothstep(h, 5, 7);
-    if (h < 17) return 1;
-    return 1 - THREE.MathUtils.smoothstep(h, 17, 19);
+    const { sunrise, sunset } = SEASONS[season];
+    if (h < sunrise - 1 || h >= sunset + 1) return 0;
+    if (h < sunrise + 1) return THREE.MathUtils.smoothstep(h, sunrise - 1, sunrise + 1);
+    if (h < sunset - 1) return 1;
+    return 1 - THREE.MathUtils.smoothstep(h, sunset - 1, sunset + 1);
 }
-// Golden-hour glow peaking exactly at 6시 and 18시.
+// Golden-hour glow peaking exactly at the season's sunrise and sunset.
 function duskGlow(h) {
-    return Math.min(1, Math.max(0, 1 - Math.abs(h - 6) / 1.3) + Math.max(0, 1 - Math.abs(h - 18) / 1.3));
+    const { sunrise, sunset } = SEASONS[season];
+    return Math.min(1, Math.max(0, 1 - Math.abs(h - sunrise) / 1.3) + Math.max(0, 1 - Math.abs(h - sunset) / 1.3));
 }
 // t: 0 = rising in the east → 1 = setting in the west, along an arc behind the island.
 function arcPos(t, height, out) {
@@ -293,6 +337,10 @@ function updateDayNight(force = false) {
     const stamp = Math.floor(Date.now() / 30000);
     if (!force && stamp === lastSkyStamp) return;
     lastSkyStamp = stamp;
+
+    // 달력이 계절을 넘기면(자동 모드) 30초 스탬프 주기로 알아채고 크로스페이드로 갈아입힌다.
+    const liveSeason = worldSeason();
+    if (liveSeason !== season && !seasonBlend) applySeason(liveSeason, true);
 
     const h = currentHour();
     const dayF = dayFactor(h);
@@ -317,18 +365,19 @@ function updateDayNight(force = false) {
     scene.fog.near = 14 - 5.5 * wxF;   // the wet front pulls the haze in close
     scene.fog.far = 34 - 9 * wxF;
 
-    // Sun & moon ride their arcs; each only shows around its own shift.
-    arcPos(THREE.MathUtils.clamp((h - 6) / 12, 0, 1), 11, sunMesh.position);
-    arcPos(THREE.MathUtils.clamp(((h + 6) % 24) / 12, 0, 1), 9, moonMesh.position);
-    sunMesh.visible = h > 5.4 && h < 18.6 && wxF < 0.55;   // overcast swallows the sun/moon discs
-    moonMesh.visible = (h > 17.4 || h < 6.6) && wxF < 0.55;
+    // Sun & moon ride their arcs across the season's daylight window; each shows around its shift.
+    const { sunrise, sunset } = SEASONS[season];
+    arcPos(THREE.MathUtils.clamp((h - sunrise) / (sunset - sunrise), 0, 1), 11, sunMesh.position);
+    arcPos(THREE.MathUtils.clamp(((h - sunset + 24) % 24) / (24 - sunset + sunrise), 0, 1), 9, moonMesh.position);
+    sunMesh.visible = h > sunrise - 0.6 && h < sunset + 0.6 && wxF < 0.55;   // overcast swallows the discs
+    moonMesh.visible = (h > sunset - 0.6 || h < sunrise + 0.6) && wxF < 0.55;
 
     // The one shadow light plays sun by day and moon by night; overcast flattens and grays it.
     sunLight.position.copy(dayF >= 0.5 ? sunMesh.position : moonMesh.position);
     sunLight.color.copy(new THREE.Color(0x9db8e8).lerp(new THREE.Color(0xfff4e0), dayF).lerp(new THREE.Color(0xffb37a), glow * 0.55).lerp(new THREE.Color(0x9aa4b2), wxF * 0.5));
     sunLight.intensity = (0.62 + 1.1 * dayF) * (1 - 0.45 * wxF) * (1 - 0.3 * stormF);
     hemiLight.color.set(0x1d2b52).lerp(new THREE.Color(0xcfe6ff), dayF);
-    hemiLight.groundColor.set(0x233524).lerp(new THREE.Color(0x8fca62), dayF);
+    hemiLight.groundColor.set(HEMI_GROUND[season][0]).lerp(new THREE.Color(HEMI_GROUND[season][1]), dayF);   // 겨울엔 설원 반사광
     hemiLight.intensity = (0.4 + 0.45 * dayF) * (1 - 0.22 * wxF) * (1 - 0.25 * stormF);
 
     // Streetlamps fade up through dusk — and glow softly through a daytime rain (아늑함).
@@ -347,6 +396,8 @@ function updateDayNight(force = false) {
     // The sea darkens after sunset, warms a touch at golden hour, grays under rain.
     if (seaMat) {
         seaMat.color.set(0x16345c).lerp(new THREE.Color(0x3fa9d0), dayF).lerp(new THREE.Color(0x5a79b0), glow * 0.35).lerp(new THREE.Color(0x51707e), wxF * 0.45);
+        const st = SEA_TINT[season];
+        if (st) seaMat.color.lerp(_seasonSea.set(st[0]), st[1]);   // 계절 물빛 — 가을 차분, 겨울 차가움
         for (const foam of foamRings) {
             foam.material.color.set(0x9fb8d8).lerp(new THREE.Color(0xffffff), dayF);
         }
@@ -421,6 +472,32 @@ const grassTex = canvasTex(128, 1, 1, (ctx, s) => {
         }
     }
 });
+const snowGroundTex = canvasTex(128, 1, 1, (ctx, s) => {   // 겨울 설원 — grassTex와 같은 AC 삼각 패턴의 눈 팔레트판
+    ctx.fillStyle = '#eef3fb';
+    ctx.fillRect(0, 0, s, s);
+    const cell = s / 8;
+    for (let r = 0; r < 8; r++) {
+        for (let q = 0; q < 8; q++) {
+            const x = q * cell + (r % 2 ? cell / 2 : 0);
+            const y = r * cell;
+            ctx.fillStyle = (r + q) % 3 ? 'rgba(255,255,255,0.55)' : 'rgba(150,172,208,0.16)';
+            ctx.beginPath();
+            ctx.moveTo(x + cell * 0.5, y + cell * 0.2);
+            ctx.lineTo(x + cell * 0.8, y + cell * 0.64);
+            ctx.lineTo(x + cell * 0.2, y + cell * 0.64);
+            ctx.closePath();
+            ctx.fill();
+        }
+    }
+});
+const petalTex = canvasTex(32, 1, 1, (ctx) => {   // 벚꽃잎 스프라이트 — 봄의 벚나무가 흩날린다
+    const g = ctx.createRadialGradient(16, 15, 0, 16, 15, 13);
+    g.addColorStop(0, 'rgba(255,214,231,0.95)');
+    g.addColorStop(0.6, 'rgba(255,182,213,0.8)');
+    g.addColorStop(1, 'rgba(255,182,213,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(16, 15, 13, 0, Math.PI * 2); ctx.fill();
+});
 const woodTex = canvasTex(64, 1, 1, (ctx, s) => {
     ctx.fillStyle = '#cfae7f';
     ctx.fillRect(0, 0, s, s);
@@ -493,17 +570,22 @@ const sandTex = canvasTex(64, 2, 2, (ctx, s) => {
 });
 // Tree crowns get a vertical shade gradient baked into vertex colors (dark under, lit on top) —
 // the classic Animal Crossing foliage read.
-function gradSphereGeo(r, topHex, bottomHex) {
-    const g = new THREE.SphereGeometry(r, 18, 14);
-    const pos = g.attributes.position;
-    const cT = new THREE.Color(topHex), cB = new THREE.Color(bottomHex), c = new THREE.Color();
-    const cols = [];
+// Baked top-lit gradient colors for a sphere geometry — split out so the season system can
+// recompute a lobe's palette in place (top/bottom accept hex or THREE.Color).
+function gradColors(g, top, bottom) {
+    const pos = g.attributes.position, r = g.parameters.radius;
+    const cT = new THREE.Color(top), cB = new THREE.Color(bottom), c = new THREE.Color();
+    const cols = new Float32Array(pos.count * 3);
     for (let i = 0; i < pos.count; i++) {
         const t = THREE.MathUtils.clamp(pos.getY(i) / r * 0.5 + 0.5, 0, 1);
         c.copy(cB).lerp(cT, t);
-        cols.push(c.r, c.g, c.b);
+        cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b;
     }
-    g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    return cols;
+}
+function gradSphereGeo(r, topHex, bottomHex) {
+    const g = new THREE.SphereGeometry(r, 18, 14);
+    g.setAttribute('color', new THREE.Float32BufferAttribute(gradColors(g, topHex, bottomHex), 3));
     return g;
 }
 
@@ -629,6 +711,7 @@ function buildIslandMeshes(isl) {
     const grass = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: grassTex, vertexColors: true, roughness: 1, metalness: 0 }));
     grass.receiveShadow = true;
     stage.add(grass);
+    seasonGrass.push(grass);   // the season system re-tints this (and snow-swaps its texture)
 
     const pts = [
         new THREE.Vector2(isl.r, 0.004),
@@ -663,27 +746,44 @@ function makeTree(p) {
     if (p && p.variant) return kitProp(p.variant, { scale: p.kitScale || 1, fallback: () => makeProceduralTree(p) });
     return makeProceduralTree(p);
 }
+let seasonTreeNo = 0;   // stable per-tree pick from the autumn palette trio
 function makeProceduralTree(p) {
     const g = new THREE.Group();
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.095, 0.46, 10), M(0x9a6a45, { map: woodTex }));
+    const cherry = !!(p && p.cherry);
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.095, 0.46, 10), M(cherry ? 0x8a5a48 : 0x9a6a45, { map: woodTex }));
     trunk.position.y = 0.23;
     g.add(trunk);
-    // Fluffy crown: overlapping spheres with a baked top-lit gradient; the big tree gets berries.
+    // Fluffy crown: overlapping spheres with a baked top-lit gradient; the big (non-cherry) tree
+    // gets berries. Every lobe registers with the season system — 잎 리베이크 + 겨울 눈모자 — and
+    // a cherry tree carries its own falling-petal cloud (spring only), tree-local so it follows
+    // the tree when construction mode moves it.
     const lobes = p && p.big
         ? [[0, 0.72, 0, 0.34, 0x7fd06c, 0x3f8f3a], [0.22, 0.6, 0.1, 0.26, 0x8fdc7a, 0x4da045], [-0.24, 0.62, -0.06, 0.27, 0x8fdc7a, 0x4da045], [0.02, 0.92, -0.02, 0.24, 0x8fdc7a, 0x4da045], [0.05, 0.55, 0.24, 0.22, 0x7fd06c, 0x3f8f3a]]
         : [[0, 0.62, 0, 0.28, 0x7fd06c, 0x3f8f3a], [0.18, 0.52, 0.08, 0.2, 0x8fdc7a, 0x4da045], [-0.18, 0.55, -0.05, 0.21, 0x8fdc7a, 0x4da045], [0, 0.78, 0, 0.18, 0x8fdc7a, 0x4da045]];
-    for (const [x, y, z, r, top, bottom] of lobes) {
-        const s = new THREE.Mesh(gradSphereGeo(r, top, bottom), leafMatGrad);
+    const treeNo = seasonTreeNo++;
+    lobes.forEach(([x, y, z, r, top, bottom], li) => {
+        const geo = gradSphereGeo(r, top, bottom);
+        const s = new THREE.Mesh(geo, leafMatGrad);
         s.position.set(x, y, z);
         g.add(s);
-    }
-    if (p && p.big) {
+        seasonLeaves.push({ geo, orig: [top, bottom], cherry, treeNo, li });
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(r * 1.045, 16, 6, 0, Math.PI * 2, 0, Math.PI * 0.4), snowCapMat);
+        cap.position.set(x, y, z);
+        cap.visible = false;
+        g.add(cap);
+        seasonSnowCaps.push(cap);
+    });
+    if (p && p.big && !cherry) {
         const berry = M(0xff6b6b);
         for (const [x, y, z] of [[0.2, 0.78, 0.18], [-0.25, 0.7, 0.14], [0.05, 0.98, 0.12], [0.3, 0.58, -0.1]]) {
             const b = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), berry);
             b.position.set(x, y, z);
             g.add(b);
         }
+    }
+    if (cherry) {
+        const petals = precipPoints(90, petalTex, 0.055, 0.2, 0.4, 0.3, 1.05, 1.4, 1.5, g);
+        seasonFall.push({ pts: petals, when: 'spring' });
     }
     return g;
 }
@@ -751,6 +851,12 @@ function makeHouse() {
     roof.position.y = wallH + 0.36;
     roof.rotation.y = Math.PI / 4;
     g.add(roof);
+    const roofSnow = new THREE.Mesh(new THREE.ConeGeometry(1.25, 0.46, 4), snowCapMat);   // 겨울 지붕 눈이불 — 지붕보다 완만한 경사라 어디서나 살짝 도드라진다
+    roofSnow.position.y = wallH + 0.53;
+    roofSnow.rotation.y = Math.PI / 4;
+    roofSnow.visible = false;
+    g.add(roofSnow);
+    seasonSnowCaps.push(roofSnow);
     const chimney = new THREE.Mesh(new RoundedBoxGeometry(0.16, 0.34, 0.16, 3, 0.02), M(0xc97b6e));
     chimney.position.set(-0.55, wallH + 0.5, -0.35);
     g.add(chimney);
@@ -1677,6 +1783,92 @@ for (let i = 1; i < ISLANDS.length; i++) ROAD_NODES.push({ x: ISLANDS[i].x, z: I
     });
     pebbleMesh.receiveShadow = true;
     stage.add(pebbleMesh);
+    seasonDecor = { tuftMesh, stemMesh, headMesh, pebbleMesh };   // 계절이 데코를 되칠한다 (겨울엔 꽃·풀이 눈 밑으로)
+}
+
+// ---- Season painting (계절 칠하기): 여름이 원본. applySeason은 잎 버텍스 컬러를 리베이크하고
+// (가을은 나무마다 금빛/주황/빨강 중 하나), 잔디를 틴트하고(겨울엔 즉시 설원 텍스처 스왑 —
+// "눈이 쌓였다"의 순간), 눈모자·꽃잎·낙엽·데코를 2.5초 크로스페이드로 갈아입힌다. 하늘·바다·
+// 낮길이 축은 updateDayNight가 SEASONS/SEA_TINT/HEMI_GROUND 테이블에서 매번 읽는다. ----
+const _white = new THREE.Color(0xfff6e8), _fresh = new THREE.Color(0xd6ffbe), _frost = new THREE.Color(0xa8c0b2);
+function leafPair(e, s) {
+    if (e.cherry) {
+        const [t, b] = CHERRY_LEAF[s];
+        const top = new THREE.Color(t), bottom = new THREE.Color(b);
+        if (e.li % 2) { top.lerp(_white, 0.1); bottom.lerp(_white, 0.1); }
+        return [top, bottom];
+    }
+    const top = new THREE.Color(e.orig[0]), bottom = new THREE.Color(e.orig[1]);
+    if (s === 'spring') { top.lerp(_fresh, 0.22); bottom.lerp(_fresh, 0.16); }
+    else if (s === 'winter') { top.lerp(_frost, 0.55); bottom.lerp(_frost, 0.5); }
+    else if (s === 'autumn') {
+        const [t, b] = LEAF_AUTUMN[e.treeNo % LEAF_AUTUMN.length];
+        top.set(t); bottom.set(b);
+        if (e.li % 2) { top.lerp(_white, 0.14); bottom.lerp(_white, 0.1); }
+    }
+    return [top, bottom];
+}
+function applySeason(next, animate = true) {
+    season = next;
+    const winter = next === 'winter';
+    const lobes = seasonLeaves.map((e) => {
+        const [top, bottom] = leafPair(e, next);
+        return { attr: e.geo.attributes.color, from: e.geo.attributes.color.array.slice(), to: gradColors(e.geo, top, bottom) };
+    });
+    const cols = [], nums = [];
+    const gt = GRASS_TINT[next];
+    for (const grass of seasonGrass) {
+        grass.material.map = winter ? snowGroundTex : grassTex;   // instant swap — 눈 쌓임/눈 녹음의 순간
+        cols.push({ ref: grass.material.color, from: grass.material.color.clone(), to: new THREE.Color(gt[0], gt[1], gt[2]) });
+    }
+    if (seasonDecor) {
+        const { tuftMesh, stemMesh, headMesh, pebbleMesh } = seasonDecor;
+        tuftMesh.visible = !winter; stemMesh.visible = !winter; headMesh.visible = !winter;
+        cols.push({ ref: tuftMesh.material.color, from: tuftMesh.material.color.clone(), to: new THREE.Color(TUFT_COLOR[next]) });
+        cols.push({ ref: headMesh.material.color, from: headMesh.material.color.clone(), to: new THREE.Color(next === 'autumn' ? 0xf0d8c0 : 0xffffff) });
+        cols.push({ ref: pebbleMesh.material.color, from: pebbleMesh.material.color.clone(), to: new THREE.Color(winter ? 0xe6ebf2 : 0xbdb7ab) });
+    }
+    for (const cap of seasonSnowCaps) cap.visible = true;   // fade via the shared opacity; hidden at blend end unless winter
+    nums.push({ obj: snowCapMat, key: 'opacity', from: snowCapMat.opacity, to: winter ? 1 : 0 });
+    for (const f of seasonFall) {
+        f.pts.visible = true;
+        nums.push({ obj: f.pts.material, key: 'opacity', from: f.pts.material.opacity, to: next === f.when ? 0.9 : 0 });
+    }
+    nums.push({ obj: blobMat, key: 'opacity', from: blobMat.opacity, to: winter ? 0.55 : 1 });   // 눈 위 접지 그림자는 옅게
+    seasonBlend = { t: 0, dur: animate ? 2.5 : 0.0001, lobes, cols, nums };
+    if (!animate) updateSeasonBlend(1);
+    updateDayNight(true);   // 낮길이 창이 바뀌었다 — 즉시 하늘 재합성
+}
+function updateSeasonBlend(delta) {
+    if (!seasonBlend) return;
+    const b = seasonBlend;
+    b.t = Math.min(1, b.t + delta / b.dur);
+    const k = THREE.MathUtils.smoothstep(b.t, 0, 1);
+    for (const L of b.lobes) {
+        const a = L.attr.array;
+        for (let i = 0; i < a.length; i++) a[i] = L.from[i] + (L.to[i] - L.from[i]) * k;
+        L.attr.needsUpdate = true;
+    }
+    for (const c of b.cols) c.ref.copy(c.from).lerp(c.to, k);
+    for (const n of b.nums) n.obj[n.key] = n.from + (n.to - n.from) * k;
+    if (b.t >= 1) {
+        if (season !== 'winter') for (const cap of seasonSnowCaps) cap.visible = false;
+        for (const f of seasonFall) f.pts.visible = season === f.when;
+        seasonBlend = null;
+    }
+}
+// 🌦️ 패널의 계절 줄에서 호출: id 고정(예: 'winter'), null = 달력 자동.
+function setManualSeason(id) {
+    manualSeason = id;
+    try {
+        if (id) localStorage.setItem('world-season', id);
+        else localStorage.removeItem('world-season');
+    } catch (e) {}
+    const next = worldSeason();
+    if (next === season) return;
+    applySeason(next, true);
+    logWorldEvent(`주인이 계절을 ${SEASONS[next].ko}로 바꿨다 ${SEASONS[next].icon}`);
+    maybeProactive(null, `주인이 방금 계절을 ${SEASONS[next].ko}(으)로 바꿨다!`);
 }
 
 // ---- Ocean (바다): an animated sea ringing the floating island. A polar grid with geometric ring
@@ -1773,7 +1965,6 @@ function updateOcean(delta) {
 // sprites, snow = flakes on a sine drift. A rainbow rises over the sea when rain ends in daylight,
 // and the rain hiss is synthesized noise through the sfx chain — no files, same as the water. ----
 const WX_AREA_R = 12.5, WX_TOP = 8.5, WX_H = 9.5;   // drop cylinder: covers all three islands
-const wxTime = { value: 0 };
 function precipTexture(draw) {
     const cv = document.createElement('canvas');
     cv.width = cv.height = 32;
@@ -1796,12 +1987,15 @@ const snowTex = precipTexture((ctx) => {
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.arc(16, 16, 14, 0, Math.PI * 2); ctx.fill();
 });
-function precipPoints(count, tex, size, speedLo, speedHi, sway) {
+// Falling-particle cloud: one draw call, zero per-frame CPU — the vertex shader wraps each point
+// down its column on the shared wxTime uniform. Weather uses the world-sized defaults; the season
+// system passes a small area + a parent for tree-local clouds (벚꽃잎이 나무를 따라다닌다).
+function precipPoints(count, tex, size, speedLo, speedHi, sway, areaR = WX_AREA_R, top = WX_TOP, fallH = WX_H, parent = scene) {
     const pos = new Float32Array(count * 3), spd = new Float32Array(count), ph = new Float32Array(count);
     for (let i = 0; i < count; i++) {
-        const a = Math.random() * Math.PI * 2, r = WX_AREA_R * Math.sqrt(Math.random());
+        const a = Math.random() * Math.PI * 2, r = areaR * Math.sqrt(Math.random());
         pos[i * 3] = Math.cos(a) * r;
-        pos[i * 3 + 1] = WX_TOP - Math.random() * WX_H;
+        pos[i * 3 + 1] = top - Math.random() * fallH;
         pos[i * 3 + 2] = Math.sin(a) * r;
         spd[i] = speedLo + Math.random() * (speedHi - speedLo);
         ph[i] = Math.random() * Math.PI * 2;
@@ -1816,7 +2010,7 @@ function precipPoints(count, tex, size, speedLo, speedHi, sway) {
         sh.vertexShader = 'uniform float uWxT;\nattribute float aSpeed;\nattribute float aPhase;\n' + sh.vertexShader.replace(
             '#include <begin_vertex>',
             '#include <begin_vertex>\n'
-            + `transformed.y = ${WX_TOP.toFixed(1)} - mod(${WX_TOP.toFixed(1)} - transformed.y + uWxT * aSpeed, ${WX_H.toFixed(1)});\n`
+            + `transformed.y = ${top.toFixed(2)} - mod(${top.toFixed(2)} - transformed.y + uWxT * aSpeed, ${fallH.toFixed(2)});\n`
             + `transformed.x += sin(uWxT * 0.8 + aPhase) * ${sway.toFixed(2)};\n`
             + `transformed.z += cos(uWxT * 0.63 + aPhase * 1.7) * ${sway.toFixed(2)};`
         );
@@ -1824,10 +2018,21 @@ function precipPoints(count, tex, size, speedLo, speedHi, sway) {
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;   // the shader slides drops outside the static bounds
     pts.visible = false;
-    scene.add(pts);
+    parent.add(pts);
     return pts;
 }
 const rainPts = precipPoints(2000, rainTex, 0.2, 6.5, 9.5, 0.05);
+const leafFallTex = precipTexture((ctx) => {   // 가을 낙엽 — 말랑한 잎사귀 실루엣
+    const g = ctx.createRadialGradient(16, 16, 0, 16, 16, 13);
+    g.addColorStop(0, 'rgba(255,190,120,0.95)');
+    g.addColorStop(0.7, 'rgba(230,140,70,0.85)');
+    g.addColorStop(1, 'rgba(230,140,70,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(16, 16, 12, 8, 0.6, 0, Math.PI * 2); ctx.fill();
+});
+const autumnLeafPts = precipPoints(320, leafFallTex, 0.06, 0.45, 0.85, 0.55);   // 가을에만 — applySeason이 켠다
+seasonFall.push({ pts: autumnLeafPts, when: 'autumn' });
+applySeason(season, false);   // 부팅 계절 즉시 칠하기 (여름이면 사실상 no-op)
 const snowPts = precipPoints(850, snowTex, 0.075, 0.55, 1.05, 0.4);
 
 // Rainbow (무지개): a half ring standing in the sea behind the island; UVs rewritten radially so
@@ -1932,8 +2137,7 @@ function rollWeather() {
     const now = Date.now();
     if (now < wx.until) return;
     if (wx.type === 'clear') {
-        const month = new Date().getMonth() + 1;
-        wx = { type: (month >= 11 || month <= 2) ? 'snow' : 'rain', until: now + (3 + Math.random() * 5) * 60000 };
+        wx = { type: worldSeason() === 'winter' ? 'snow' : 'rain', until: now + (3 + Math.random() * 5) * 60000 };   // 겨울(수동 포함)엔 비 대신 눈
         logWorldEvent(wx.type === 'snow' ? '눈이 내리기 시작했다' : '비가 내리기 시작했다');
         maybeProactive(null, wx.type === 'snow' ? '방금 눈이 내리기 시작했다!' : '방금 비가 내리기 시작했다!');
     } else {
@@ -2618,12 +2822,12 @@ function buildWorldSnapshot(me) {
     const dayName = ['일', '월', '화', '수', '목', '금', '토'][d.getDay()];
     const hh = Math.floor(h), mm = String(Math.floor((h - hh) * 60)).padStart(2, '0');
     const month = d.getMonth() + 1;
-    const season = month === 12 || month <= 2 ? '겨울' : month <= 5 ? '봄' : month <= 8 ? '여름' : '가을';
+    const seasonKo = SEASONS[worldSeason()].ko;   // 수동 계절 반영 — 펫도 지금 계절을 안다
     const daypart = h < 6 ? '새벽' : h < 12 ? '아침' : h < 18 ? '낮' : h < 22 ? '저녁' : '밤';
     const wxKo = wx.type === 'storm' ? '천둥번개가 치는 중' : wx.type === 'rain' ? '비가 내리는 중' : wx.type === 'snow' ? '눈이 내리는 중'
         : rainbowT > 0 ? '맑음 (무지개가 떠 있음!)' : '맑음';
     const lines = [
-        `시각: ${month}월 ${d.getDate()}일 (${dayName}) ${hh}:${mm} — ${season}, ${daypart}`,
+        `시각: ${month}월 ${d.getDate()}일 (${dayName}) ${hh}:${mm} — ${seasonKo}, ${daypart}`,
         `날씨: ${wxKo}`,
     ];
     for (const p of pets) lines.push(`${petKo(p)}${p === me ? ' (나)' : ' (절친)'} — ${petStatusLine(p)}`);
@@ -2733,6 +2937,29 @@ const weatherRows = WEATHER_CHOICES.map((c) => {
 function syncWeatherRows() {
     WEATHER_CHOICES.forEach((c, i) => { weatherRows[i].style.background = manualWx === c.id ? '#5b8def' : 'rgba(255,255,255,0.08)'; });
 }
+// 계절 줄 (같은 패널, 구분선 아래): 자동(달력) 또는 수동 고정 — 고르면 2.5초 크로스페이드.
+const seasonDivider = document.createElement('div');
+seasonDivider.style.cssText = 'height:1px; background:rgba(255,255,255,0.16); margin:3px 4px;';
+weatherPanel.appendChild(seasonDivider);
+const SEASON_CHOICES = [{ id: null, icon: '🔄', label: '계절 자동' }].concat(
+    Object.keys(SEASONS).map((id) => ({ id, icon: SEASONS[id].icon, label: SEASONS[id].ko }))
+);
+const seasonRows = SEASON_CHOICES.map((c) => {
+    const row = document.createElement('button');
+    row.textContent = `${c.icon} ${c.label}`;
+    row.style.cssText = `border:none; border-radius:8px; color:#fff; font-size:${IS_TOUCH ? 14 : 12.5}px; padding:${IS_TOUCH ? 9 : 7}px 16px; cursor:pointer; text-align:left; white-space:nowrap; background:rgba(255,255,255,0.08);`;
+    row.addEventListener('click', () => {
+        setManualSeason(c.id);
+        syncSeasonRows();
+        showToast(c.id ? `${c.icon} 계절: ${c.label}` : '🔄 계절 자동 — 달력을 따라가요');
+        weatherPanel.style.display = 'none';
+    });
+    weatherPanel.appendChild(row);
+    return row;
+});
+function syncSeasonRows() {
+    SEASON_CHOICES.forEach((c, i) => { seasonRows[i].style.background = manualSeason === c.id ? '#5b8def' : 'rgba(255,255,255,0.08)'; });
+}
 document.body.appendChild(weatherPanel);
 weatherPanel.addEventListener('pointerdown', (e) => e.stopPropagation());
 weatherBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
@@ -2741,6 +2968,7 @@ weatherBtn.addEventListener('click', () => {
     if (open) {
         weatherPanel.style.bottom = `${Math.max(8, window.innerHeight - weatherBtn.getBoundingClientRect().bottom)}px`;
         syncWeatherRows();
+        syncSeasonRows();
     }
     weatherPanel.style.display = open ? 'flex' : 'none';
 });
@@ -5503,6 +5731,7 @@ function animate() {
     updateChatBubble();
     cloudSpin.rotation.y += delta * 0.012;   // lazy cloud drift
     updateWeather(delta);                    // eases fronts, slides the drops, times the rainbow
+    updateSeasonBlend(delta);                // 계절 크로스페이드 — 전환 중에만 일한다
     updateDayNight();                        // throttled inside (repaints ~2×/min)
     updateOcean(delta);
     if (ballFlight) {
