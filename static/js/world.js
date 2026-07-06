@@ -191,6 +191,22 @@ const SKY_DAY   = ['#4f9fe0', '#a5d5f5', '#e4f4ff', '#ffeef2'].map((c) => new TH
 const SKY_NIGHT = ['#0a1430', '#13214a', '#1c2e5c', '#2c3c6a'].map((c) => new THREE.Color(c));
 const SKY_DUSK  = ['#33518f', '#6f68b0', '#ee9a6e', '#ffc98a'].map((c) => new THREE.Color(c));
 
+// ---- Weather state (날씨): clear ↔ rain/snow episodes on the real clock — snow takes the 11~2월
+// shift. wxF is the eased overcast factor (0 clear → 1 wet); updateDayNight composites it over the
+// day/night palette, and the particles / rainbow / rain hiss live with the live systems below.
+// Preview (locks the scheduler): world.html?weather=rain|snow|clear|rainbow ----
+const WEATHER_OVERRIDE = (new URLSearchParams(window.location.search).get('weather') || '').toLowerCase() || null;
+const SKY_GLOOM = ['#6b7684', '#93a0ad', '#b8c2cc', '#ccd4da'].map((c) => new THREE.Color(c));
+const _gloomStop = new THREE.Color();
+let wx = { type: 'clear', until: 0 };
+try {
+    const saved = JSON.parse(localStorage.getItem('world-weather'));
+    if (saved && saved.until > Date.now() && (saved.type === 'rain' || saved.type === 'snow')) wx = saved;
+} catch (e) {}
+if (WEATHER_OVERRIDE) wx = { type: (WEATHER_OVERRIDE === 'rain' || WEATHER_OVERRIDE === 'snow') ? WEATHER_OVERRIDE : 'clear', until: Infinity };
+let wxF = wx.type === 'clear' ? 0 : 1;   // restored mid-episode → start already wet, no fake fade-in
+let lastDayF = 1;                        // rainbow needs to know if the sun is out when rain ends
+
 function currentHour() {
     if (!Number.isNaN(HOUR_OVERRIDE)) return ((HOUR_OVERRIDE % 24) + 24) % 24;
     const d = new Date();
@@ -225,51 +241,59 @@ function updateDayNight(force = false) {
     const glow = duskGlow(h);
     const nightF = 1 - dayF;
 
-    // Sky gradient; fog + background follow the blended horizon color.
+    // Sky gradient; fog + background follow the blended horizon color. Overcast (wxF) drags every
+    // stop toward a gray ramp — dimmed to charcoal at night so rain never brightens the dark.
     const grad = skyCtx.createLinearGradient(0, 0, 0, 256);
     for (let i = 0; i < SKY_STOPS.length; i++) {
         _skyStop.copy(SKY_NIGHT[i]).lerp(SKY_DAY[i], dayF).lerp(SKY_DUSK[i], glow * 0.8);
+        if (wxF > 0) _skyStop.lerp(_gloomStop.copy(SKY_GLOOM[i]).multiplyScalar(0.3 + 0.7 * dayF), wxF * 0.8);
         grad.addColorStop(SKY_STOPS[i], `#${_skyStop.getHexString()}`);
     }
     skyCtx.fillStyle = grad;
     skyCtx.fillRect(0, 0, 1, 256);
     skyTex.needsUpdate = true;
     _skyStop.copy(SKY_NIGHT[3]).lerp(SKY_DAY[3], dayF).lerp(SKY_DUSK[3], glow * 0.8);
+    if (wxF > 0) _skyStop.lerp(_gloomStop.copy(SKY_GLOOM[3]).multiplyScalar(0.3 + 0.7 * dayF), wxF * 0.8);
     scene.fog.color.copy(_skyStop);
     scene.background.copy(_skyStop);
+    scene.fog.near = 14 - 5.5 * wxF;   // the wet front pulls the haze in close
+    scene.fog.far = 34 - 9 * wxF;
 
     // Sun & moon ride their arcs; each only shows around its own shift.
     arcPos(THREE.MathUtils.clamp((h - 6) / 12, 0, 1), 11, sunMesh.position);
     arcPos(THREE.MathUtils.clamp(((h + 6) % 24) / 12, 0, 1), 9, moonMesh.position);
-    sunMesh.visible = h > 5.4 && h < 18.6;
-    moonMesh.visible = h > 17.4 || h < 6.6;
+    sunMesh.visible = h > 5.4 && h < 18.6 && wxF < 0.55;   // overcast swallows the sun/moon discs
+    moonMesh.visible = (h > 17.4 || h < 6.6) && wxF < 0.55;
 
-    // The one shadow light plays sun by day and moon by night.
+    // The one shadow light plays sun by day and moon by night; overcast flattens and grays it.
     sunLight.position.copy(dayF >= 0.5 ? sunMesh.position : moonMesh.position);
-    sunLight.color.copy(new THREE.Color(0x9db8e8).lerp(new THREE.Color(0xfff4e0), dayF).lerp(new THREE.Color(0xffb37a), glow * 0.55));
-    sunLight.intensity = 0.62 + 1.1 * dayF;
+    sunLight.color.copy(new THREE.Color(0x9db8e8).lerp(new THREE.Color(0xfff4e0), dayF).lerp(new THREE.Color(0xffb37a), glow * 0.55).lerp(new THREE.Color(0x9aa4b2), wxF * 0.5));
+    sunLight.intensity = (0.62 + 1.1 * dayF) * (1 - 0.45 * wxF);
     hemiLight.color.set(0x1d2b52).lerp(new THREE.Color(0xcfe6ff), dayF);
     hemiLight.groundColor.set(0x233524).lerp(new THREE.Color(0x8fca62), dayF);
-    hemiLight.intensity = 0.4 + 0.45 * dayF;
+    hemiLight.intensity = (0.4 + 0.45 * dayF) * (1 - 0.22 * wxF);
 
-    // Streetlamps fade up through dusk; the 💡 slider scales the light, globe and halo together.
-    const lampGlow = (1 - dayF) * lampBrightness;
+    // Streetlamps fade up through dusk — and glow softly through a daytime rain (아늑함).
+    const lampGlow = Math.max(1 - dayF, wxF * 0.45) * lampBrightness;
     lampGlobeMat.emissiveIntensity = 0.05 + 1.3 * lampGlow;
     for (const l of lamps) { l.light.intensity = 6 * lampGlow; if (l.glow) l.glow.opacity = 0.9 * lampGlow; }   // the indoor reading lamp has no halo
     sunGlow.material.color.set(0xffdf8a).lerp(new THREE.Color(0xff9d5c), glow * 0.7);   // golden-hour halo
+    sunGlow.material.opacity = 0.75 * (1 - 0.85 * wxF);
 
-    // Night dresses the clouds and reveals the stars.
-    cloudMat.color.set(0x6c7ea6).lerp(new THREE.Color(0xffffff), dayF);
-    cloudMat.emissiveIntensity = 0.12 + 0.23 * dayF;
-    starMat.opacity = nightF * (0.35 + 0.55 * THREE.MathUtils.smoothstep(nightF, 0.6, 1));
+    // Night dresses the clouds and reveals the stars; overcast turns the clouds to slate and
+    // hides the stars entirely.
+    cloudMat.color.set(0x6c7ea6).lerp(new THREE.Color(0xffffff), dayF).lerp(new THREE.Color(0x66707c), wxF * 0.75);
+    cloudMat.emissiveIntensity = (0.12 + 0.23 * dayF) * (1 - 0.5 * wxF);
+    starMat.opacity = nightF * (0.35 + 0.55 * THREE.MathUtils.smoothstep(nightF, 0.6, 1)) * (1 - wxF);
 
-    // The sea darkens after sunset and warms a touch at golden hour; foam dims with it.
+    // The sea darkens after sunset, warms a touch at golden hour, grays under rain.
     if (seaMat) {
-        seaMat.color.set(0x16345c).lerp(new THREE.Color(0x3fa9d0), dayF).lerp(new THREE.Color(0x5a79b0), glow * 0.35);
+        seaMat.color.set(0x16345c).lerp(new THREE.Color(0x3fa9d0), dayF).lerp(new THREE.Color(0x5a79b0), glow * 0.35).lerp(new THREE.Color(0x51707e), wxF * 0.45);
         for (const foam of foamRings) {
             foam.material.color.set(0x9fb8d8).lerp(new THREE.Color(0xffffff), dayF);
         }
     }
+    lastDayF = dayF;
 }
 updateDayNight(true);
 
@@ -1621,6 +1645,154 @@ function updateOcean(delta) {
         foam.material.opacity = (1 - ph) * (1 - ph) * 0.42;
         foam.position.y = OCEAN_LEVEL + 0.035 + Math.sin(t * 1.4 + i * 2.6) * 0.012;
     });
+}
+
+// ---- Weather systems (날씨): precipitation is ONE Points draw call per kind — a vertex-shader
+// patch wraps each drop down its column on a time uniform, so the CPU writes nothing per frame
+// (heat budget: the world stays a single forward pass + two tiny point clouds). Rain = streak
+// sprites, snow = flakes on a sine drift. A rainbow rises over the sea when rain ends in daylight,
+// and the rain hiss is synthesized noise through the sfx chain — no files, same as the water. ----
+const WX_AREA_R = 12.5, WX_TOP = 8.5, WX_H = 9.5;   // drop cylinder: covers all three islands
+const wxTime = { value: 0 };
+function precipTexture(draw) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 32;
+    draw(cv.getContext('2d'));
+    return new THREE.CanvasTexture(cv);
+}
+const rainTex = precipTexture((ctx) => {
+    const g = ctx.createLinearGradient(0, 0, 0, 32);
+    g.addColorStop(0, 'rgba(205,225,255,0)');
+    g.addColorStop(0.25, 'rgba(205,225,255,0.9)');
+    g.addColorStop(1, 'rgba(205,225,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(14, 0, 4, 32);
+});
+const snowTex = precipTexture((ctx) => {
+    const g = ctx.createRadialGradient(16, 16, 0, 16, 16, 14);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.55, 'rgba(255,255,255,0.85)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(16, 16, 14, 0, Math.PI * 2); ctx.fill();
+});
+function precipPoints(count, tex, size, speedLo, speedHi, sway) {
+    const pos = new Float32Array(count * 3), spd = new Float32Array(count), ph = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+        const a = Math.random() * Math.PI * 2, r = WX_AREA_R * Math.sqrt(Math.random());
+        pos[i * 3] = Math.cos(a) * r;
+        pos[i * 3 + 1] = WX_TOP - Math.random() * WX_H;
+        pos[i * 3 + 2] = Math.sin(a) * r;
+        spd[i] = speedLo + Math.random() * (speedHi - speedLo);
+        ph[i] = Math.random() * Math.PI * 2;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('aSpeed', new THREE.BufferAttribute(spd, 1));
+    geo.setAttribute('aPhase', new THREE.BufferAttribute(ph, 1));
+    const mat = new THREE.PointsMaterial({ map: tex, size, transparent: true, opacity: 0, depthWrite: false });
+    mat.onBeforeCompile = (sh) => {
+        sh.uniforms.uWxT = wxTime;
+        sh.vertexShader = 'uniform float uWxT;\nattribute float aSpeed;\nattribute float aPhase;\n' + sh.vertexShader.replace(
+            '#include <begin_vertex>',
+            '#include <begin_vertex>\n'
+            + `transformed.y = ${WX_TOP.toFixed(1)} - mod(${WX_TOP.toFixed(1)} - transformed.y + uWxT * aSpeed, ${WX_H.toFixed(1)});\n`
+            + `transformed.x += sin(uWxT * 0.8 + aPhase) * ${sway.toFixed(2)};\n`
+            + `transformed.z += cos(uWxT * 0.63 + aPhase * 1.7) * ${sway.toFixed(2)};`
+        );
+    };
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;   // the shader slides drops outside the static bounds
+    pts.visible = false;
+    scene.add(pts);
+    return pts;
+}
+const rainPts = precipPoints(2000, rainTex, 0.2, 6.5, 9.5, 0.05);
+const snowPts = precipPoints(850, snowTex, 0.075, 0.55, 1.05, 0.4);
+
+// Rainbow (무지개): a half ring standing in the sea behind the island; UVs rewritten radially so
+// the 1D band texture paints arcs.
+const rainbow = (() => {
+    const inner = 7.2, outer = 9.0;
+    const geo = new THREE.RingGeometry(inner, outer, 72, 1, 0, Math.PI);
+    const pos = geo.attributes.position, uv = geo.attributes.uv;
+    for (let i = 0; i < pos.count; i++) uv.setXY(i, (Math.hypot(pos.getX(i), pos.getY(i)) - inner) / (outer - inner), 0.5);
+    const cv = document.createElement('canvas');
+    cv.width = 64; cv.height = 1;
+    const ctx = cv.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, 64, 0);
+    [['#ff5f5f', 0.06], ['#ffab4e', 0.22], ['#ffe45e', 0.38], ['#7ed86f', 0.54], ['#5fb7ff', 0.7], ['#7f7bff', 0.86]].forEach(([c, s]) => g.addColorStop(s, c));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 64, 1);
+    const mat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false, fog: false });
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(-2.5, -0.45, -13);   // feet in the sea, offset from the sun's arc
+    m.visible = false;
+    scene.add(m);
+    return m;
+})();
+let rainbowT = WEATHER_OVERRIDE === 'rainbow' ? 1e9 : 0;
+let rainbowAge = 10;   // seconds since it appeared (starts past the fade-in for the preview)
+
+// Rain hiss: looped synthesized noise through a lowpass, faded with wxF. Snow stays silent.
+let rainHiss = null;
+function setRainHiss(vol) {
+    try {
+        if (vol > 0.001 && !rainHiss) {
+            const src = audioCtx.createBufferSource();
+            src.buffer = synthNoiseBuffer(2.4, () => 0.5);
+            src.loop = true;
+            const lp = audioCtx.createBiquadFilter();
+            lp.type = 'lowpass';
+            lp.frequency.value = 1100;
+            const gain = audioCtx.createGain();
+            gain.gain.value = 0;
+            src.connect(lp); lp.connect(gain); gain.connect(sfxMaster);
+            src.start();
+            rainHiss = gain;
+        }
+        if (rainHiss) rainHiss.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.6);
+    } catch (e) {}
+}
+
+// Scheduler: 맑음 10~25분 ↔ 강수 3~8분 on the real clock; persisted so reopening the window
+// continues the same weather. Snow replaces rain through 11~2월.
+let wxKind = wx.type === 'snow' ? 'snow' : 'rain';   // which particle set the current/last front uses
+function rollWeather() {
+    if (WEATHER_OVERRIDE) return;
+    const now = Date.now();
+    if (now < wx.until) return;
+    if (wx.type === 'clear') {
+        const month = new Date().getMonth() + 1;
+        wx = { type: (month >= 11 || month <= 2) ? 'snow' : 'rain', until: now + (3 + Math.random() * 5) * 60000 };
+    } else {
+        if (wx.type === 'rain' && lastDayF > 0.35) { rainbowT = 75; rainbowAge = 0; }   // sun comes back out
+        wx = { type: 'clear', until: now + (10 + Math.random() * 15) * 60000 };
+    }
+    try { localStorage.setItem('world-weather', JSON.stringify(wx)); } catch (e) {}
+}
+function updateWeather(delta) {
+    rollWeather();
+    const target = wx.type === 'clear' ? 0 : 1;
+    if (wx.type !== 'clear') wxKind = wx.type;
+    if (wxF !== target) {
+        wxF = THREE.MathUtils.clamp(wxF + Math.sign(target - wxF) * delta / 9, 0, 1);   // ~9s soft front
+        updateDayNight(true);   // recomposite sky/light while the front moves through
+    }
+    wxTime.value += delta;
+    rainPts.visible = wxKind === 'rain' && wxF > 0.02;
+    snowPts.visible = wxKind === 'snow' && wxF > 0.02;
+    rainPts.material.opacity = 0.55 * wxF;
+    snowPts.material.opacity = 0.9 * wxF;
+    setRainHiss(wxKind === 'rain' ? 0.06 * wxF : 0);
+    if (rainbowT > 0) {
+        rainbowT -= delta;
+        rainbowAge += delta;
+        rainbow.material.opacity = Math.max(0, Math.min(rainbowAge / 3, 1, rainbowT / 20)) * 0.5 * lastDayF;
+        rainbow.visible = rainbow.material.opacity > 0.01;
+    } else if (rainbow.visible) {
+        rainbow.visible = false;
+    }
 }
 
 // ---- Pets: both GLB pets live in this one scene (separate instances from the desktop windows) ----
@@ -4286,6 +4458,7 @@ function animate() {
     updateSfx();
     updateChatBubble();
     cloudSpin.rotation.y += delta * 0.012;   // lazy cloud drift
+    updateWeather(delta);                    // eases fronts, slides the drops, times the rainbow
     updateDayNight();                        // throttled inside (repaints ~2×/min)
     updateOcean(delta);
     if (ballFlight) {
