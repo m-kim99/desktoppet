@@ -3209,50 +3209,120 @@ document.addEventListener('pointerdown', () => {
 
 // 🐤/🐶 울음소리 — 다른 효과음처럼 파일 없이 합성한다. 병아리는 높은 사인 두 음의 짹짹,
 // 강아지는 톱니파 피치 하강 두 번의 멍멍. 채팅 대답과 인사(Wave) 모션에서 운다.
+// 실제 녹음이 있으면 그걸 최우선으로 쓴다: static/sounds/voice/{chick|puppy}_{0..2}.(ogg|mp3)
+// 파일을 넣어두면 자동 감지해 재생(발소리와 같은 방식, 재생마다 피치를 살짝 흔들어 반복 티 제거).
+// 없으면 아래 합성 울음으로 폴백.
+const voiceBuffers = { chick: [], puppy: [] };
+for (const petName of ['chick', 'puppy']) {
+    for (let i = 0; i < 3; i++) {
+        for (const ext of ['ogg', 'mp3']) {
+            fetch(`/sounds/voice/${petName}_${i}.${ext}`)
+                .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject()))
+                .then((ab) => audioCtx.decodeAudioData(ab))
+                .then((buf) => voiceBuffers[petName].push(buf))
+                .catch(() => {});
+        }
+    }
+}
 let lastVoiceAt = 0;
 function petVoice(p) {
     if (!p || audioCtx.state === 'suspended') return;
     const now = performance.now();
     if (now - lastVoiceAt < 350) return;                  // 연타·중복 호출 방지
     lastVoiceAt = now;
-    const t0 = audioCtx.currentTime;
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    const real = voiceBuffers[p.name];
+    if (real && real.length) {
+        const src = audioCtx.createBufferSource();
+        src.buffer = real[Math.floor(Math.random() * real.length)];
+        src.playbackRate.value = rnd(0.94, 1.06);
+        const g = audioCtx.createGain();
+        g.gain.value = 0.8;
+        src.connect(g);
+        g.connect(sfxMaster);
+        src.start();
+        return;
+    }
+    const t0 = audioCtx.currentTime + 0.01;
     if (p.name === 'chick') {
-        for (let i = 0; i < 2; i++) {                     // 짹, 짹
-            const t = t0 + i * 0.16;
+        // 삐약: 트라이앵글 캐리어에 빠른 FM 트릴(새소리의 씨앗) + 몸통 공명(밴드패스),
+        // 2~3연음이 매번 살짝 다른 음높이·간격으로 — 반복이 똑같지 않아야 생물 같다.
+        const n = Math.random() < 0.4 ? 3 : 2;
+        let t = t0;
+        for (let i = 0; i < n; i++) {
+            const f0 = 3000 * rnd(0.92, 1.1);
+            const dur = rnd(0.09, 0.13);
             const o = audioCtx.createOscillator();
+            o.type = 'triangle';
+            o.frequency.setValueAtTime(f0 * 0.75, t);
+            o.frequency.exponentialRampToValueAtTime(f0 * 1.25, t + dur * 0.35);
+            o.frequency.exponentialRampToValueAtTime(f0 * 0.7, t + dur);
+            const mod = audioCtx.createOscillator();
+            mod.frequency.value = rnd(55, 85);
+            const modG = audioCtx.createGain();
+            modG.gain.value = f0 * 0.12;
+            mod.connect(modG);
+            modG.connect(o.frequency);
+            const bp = audioCtx.createBiquadFilter();
+            bp.type = 'bandpass';
+            bp.frequency.value = f0;
+            bp.Q.value = 2.5;
             const g = audioCtx.createGain();
-            o.type = 'sine';
-            o.frequency.setValueAtTime(2600, t);
-            o.frequency.exponentialRampToValueAtTime(3600, t + 0.05);
-            o.frequency.exponentialRampToValueAtTime(2200, t + 0.11);
             g.gain.setValueAtTime(0.0001, t);
-            g.gain.exponentialRampToValueAtTime(0.22, t + 0.02);
-            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
-            o.connect(g);
+            g.gain.exponentialRampToValueAtTime(0.55, t + 0.015);
+            g.gain.setTargetAtTime(0.0001, t + dur * 0.55, dur * 0.16);
+            o.connect(bp);
+            bp.connect(g);
             g.connect(sfxMaster);
-            o.start(t);
-            o.stop(t + 0.15);
+            o.start(t); o.stop(t + dur + 0.05);
+            mod.start(t); mod.stop(t + dur + 0.05);
+            t += dur + rnd(0.06, 0.13);
         }
     } else {
-        for (let i = 0; i < 2; i++) {                     // 멍, 멍
-            const t = t0 + i * 0.22;
+        // 멍: 톱니 성대 → 두 포먼트 밴드패스('아' 모음 성도) + 밴드패스 노이즈 숨소리 —
+        // "왕!"의 입모양 울림. 1~2회, 피치·길이 랜덤.
+        const n = Math.random() < 0.5 ? 2 : 1;
+        let t = t0;
+        for (let i = 0; i < n; i++) {
+            const f0 = 240 * rnd(0.9, 1.12);
+            const dur = rnd(0.1, 0.14);
             const o = audioCtx.createOscillator();
-            const f = audioCtx.createBiquadFilter();
-            const g = audioCtx.createGain();
             o.type = 'sawtooth';
-            o.frequency.setValueAtTime(520, t);
-            o.frequency.exponentialRampToValueAtTime(170, t + 0.12);
-            f.type = 'lowpass';
-            f.frequency.setValueAtTime(1200, t);
-            f.frequency.exponentialRampToValueAtTime(400, t + 0.12);
+            o.frequency.setValueAtTime(f0 * 1.6, t);
+            o.frequency.exponentialRampToValueAtTime(f0, t + dur * 0.5);
+            o.frequency.exponentialRampToValueAtTime(f0 * 0.72, t + dur);
+            const f1 = audioCtx.createBiquadFilter();
+            f1.type = 'bandpass';
+            f1.Q.value = 4;
+            f1.frequency.setValueAtTime(820, t);
+            f1.frequency.exponentialRampToValueAtTime(560, t + dur);
+            const f2 = audioCtx.createBiquadFilter();
+            f2.type = 'bandpass';
+            f2.Q.value = 5;
+            f2.frequency.value = 1500;
+            const g = audioCtx.createGain();
             g.gain.setValueAtTime(0.0001, t);
-            g.gain.exponentialRampToValueAtTime(0.3, t + 0.015);
-            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-            o.connect(f);
-            f.connect(g);
+            g.gain.exponentialRampToValueAtTime(0.9, t + 0.012);
+            g.gain.setTargetAtTime(0.0001, t + dur * 0.5, dur * 0.13);
+            o.connect(f1);
+            o.connect(f2);
+            f1.connect(g);
+            f2.connect(g);
+            const nb = audioCtx.createBufferSource();
+            nb.buffer = synthNoiseBuffer(dur, (x) => Math.exp(-x * 7));
+            const nf = audioCtx.createBiquadFilter();
+            nf.type = 'bandpass';
+            nf.frequency.value = 1100;
+            nf.Q.value = 0.8;
+            const ng = audioCtx.createGain();
+            ng.gain.value = 0.25;
+            nb.connect(nf);
+            nf.connect(ng);
+            ng.connect(g);
             g.connect(sfxMaster);
-            o.start(t);
-            o.stop(t + 0.18);
+            o.start(t); o.stop(t + dur + 0.05);
+            nb.start(t);
+            t += dur + rnd(0.15, 0.24);
         }
     }
 }
