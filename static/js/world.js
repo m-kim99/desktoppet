@@ -253,6 +253,17 @@ try {
     if (saved && saved.until > Date.now() && (saved.type === 'rain' || saved.type === 'snow')) wx = saved;
 } catch (e) {}
 if (WEATHER_OVERRIDE) wx = { type: (WEATHER_OVERRIDE === 'rain' || WEATHER_OVERRIDE === 'snow') ? WEATHER_OVERRIDE : 'clear', until: Infinity };
+// 수동 날씨 (독의 🌦️ 날씨 설정 버튼): 고르면 자동 스케줄러 대신 그 날씨가 유지된다. 새 날씨는 여기에 추가.
+const WEATHER_CHOICES = [
+    { id: null,   icon: '🔄', label: '자동', toast: '🔄 날씨 자동 모드' },
+    { id: 'rain', icon: '🌧️', label: '비',  toast: '🌧️ 비가 내려요' },
+];
+let manualWx = null;
+try {
+    const m = localStorage.getItem('world-weather-manual');
+    if (WEATHER_CHOICES.some((c) => c.id === m)) manualWx = m;
+} catch (e) {}
+if (manualWx && !WEATHER_OVERRIDE) wx = { type: manualWx, until: Infinity };
 let wxF = wx.type === 'clear' ? 0 : 1;   // restored mid-episode → start already wet, no fake fade-in
 let lastDayF = 1;                        // rainbow needs to know if the sun is out when rain ends
 
@@ -1813,7 +1824,7 @@ function setRainHiss(vol) {
 // continues the same weather. Snow replaces rain through 11~2월.
 let wxKind = wx.type === 'snow' ? 'snow' : 'rain';   // which particle set the current/last front uses
 function rollWeather() {
-    if (WEATHER_OVERRIDE) return;
+    if (WEATHER_OVERRIDE || manualWx) return;
     const now = Date.now();
     if (now < wx.until) return;
     if (wx.type === 'clear') {
@@ -1827,6 +1838,25 @@ function rollWeather() {
         logWorldEvent(gotRainbow ? '비가 그치고 바다 위에 무지개가 떴다' : '날이 개었다');
     }
     try { localStorage.setItem('world-weather', JSON.stringify(wx)); } catch (e) {}
+}
+// 날씨 설정 버튼에서 호출: type 고정(예: 'rain'), null이면 즉시 개고 자동 스케줄러 복귀.
+function setManualWeather(type) {
+    if (manualWx === type) return;
+    manualWx = type;
+    try {
+        if (type) localStorage.setItem('world-weather-manual', type);
+        else localStorage.removeItem('world-weather-manual');
+    } catch (e) {}
+    if (type) {
+        wx = { type, until: Infinity };
+        logWorldEvent(type === 'snow' ? '주인이 눈을 내리게 했다 ❄️' : '주인이 비를 내리게 했다 🌧️');
+    } else if (wx.type !== 'clear') {
+        const gotRainbow = wx.type === 'rain' && lastDayF > 0.35;
+        if (gotRainbow) { rainbowT = 75; rainbowAge = 0; }
+        wx = { type: 'clear', until: Date.now() + (10 + Math.random() * 15) * 60000 };
+        logWorldEvent(gotRainbow ? '비가 그치고 바다 위에 무지개가 떴다' : '날이 개었다');
+        try { localStorage.setItem('world-weather', JSON.stringify(wx)); } catch (e) {}
+    }
 }
 function updateWeather(delta) {
     rollWeather();
@@ -2560,6 +2590,37 @@ function dockBtn(symbol, title) {
 const shotBtn = dockBtn('📷', '스크린샷 (screenshots/ 폴더에 저장)');
 shotBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
 shotBtn.addEventListener('click', () => { takeScreenshot(); });
+// 🌦️ 날씨 설정 (카메라 아래): 패널에서 고르면 그 날씨로 고정 — WEATHER_CHOICES에 추가하면 메뉴에 뜬다.
+const weatherBtn = dockBtn('🌦️', '날씨 설정');
+const weatherPanel = document.createElement('div');
+weatherPanel.style.cssText = 'position:fixed; right:calc(70px + env(safe-area-inset-right, 0px)); display:none; z-index:96; background:rgba(30,32,40,0.93); border-radius:12px; box-shadow:0 8px 28px rgba(0,0,0,0.4); font-family:sans-serif; padding:6px; flex-direction:column; gap:4px;';
+const weatherRows = WEATHER_CHOICES.map((c) => {
+    const row = document.createElement('button');
+    row.textContent = `${c.icon} ${c.label}`;
+    row.style.cssText = `border:none; border-radius:8px; color:#fff; font-size:${IS_TOUCH ? 14 : 12.5}px; padding:${IS_TOUCH ? 9 : 7}px 16px; cursor:pointer; text-align:left; white-space:nowrap; background:rgba(255,255,255,0.08);`;
+    row.addEventListener('click', () => {
+        setManualWeather(c.id);
+        syncWeatherRows();
+        showToast(c.toast);
+        weatherPanel.style.display = 'none';
+    });
+    weatherPanel.appendChild(row);
+    return row;
+});
+function syncWeatherRows() {
+    WEATHER_CHOICES.forEach((c, i) => { weatherRows[i].style.background = manualWx === c.id ? '#5b8def' : 'rgba(255,255,255,0.08)'; });
+}
+document.body.appendChild(weatherPanel);
+weatherPanel.addEventListener('pointerdown', (e) => e.stopPropagation());
+weatherBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
+weatherBtn.addEventListener('click', () => {
+    const open = weatherPanel.style.display === 'none';
+    if (open) {
+        weatherPanel.style.bottom = `${Math.max(8, window.innerHeight - weatherBtn.getBoundingClientRect().bottom)}px`;
+        syncWeatherRows();
+    }
+    weatherPanel.style.display = open ? 'flex' : 'none';
+});
 const ecoBtn = dockBtn('⚡', '절전 모드 — 30fps·1.5x 해상도 (배터리에선 자동)');
 const syncEcoBtn = () => { ecoBtn.style.opacity = ecoMode ? '0.5' : '1'; };
 syncEcoBtn();
