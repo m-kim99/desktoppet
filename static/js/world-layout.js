@@ -26,12 +26,13 @@ export const BRIDGES = [
 export const HOUSE = { x: 2.7, z: 2.05, rotY: -0.65, hw: 1.0, hd: 0.8, floorY: 0.05, loftY: 0.62 };
 
 // Terrain flattening pads — the rolling bumps settle flat inside these circles.
+// `follow`: 공사모드로 그 프롭이 이사가면 패드도 다음 로드부터 따라가는 연결 (world.js가 시작 시 동기화).
 export const FLAT_SPOTS = [
     { x: 0.0, z: 0.0, r: 1.7 },     // central plaza (hug point / monument to come)
-    { x: 2.7, z: 2.05, r: 1.7 },    // house pad (two-story house needs a wide level base)
-    { x: -2.6, z: -2.9, r: 0.95 },  // pond basin
-    { x: 8.2, z: 4.85, r: 1.0 },    // NE island swing pad (level ground under the A-frame legs)
-    { x: 9.3, z: 4.0, r: 1.0 },     // NE island seesaw pad (level ground under the fulcrum + plank)
+    { x: 2.7, z: 2.05, r: 1.7, follow: 'house-1' },    // house pad (two-story house needs a wide level base)
+    { x: -2.6, z: -2.9, r: 0.95 },  // pond basin (연못은 이동 불가 — 지형 함몰)
+    { x: 8.2, z: 4.85, r: 1.0, follow: 'swing-1' },    // NE island swing pad (level ground under the A-frame legs)
+    { x: 9.3, z: 4.0, r: 1.0, follow: 'seesaw-1' },    // NE island seesaw pad (level ground under the fulcrum + plank)
 ];
 
 // Props: type + position + blocking radius (`r` is the circle collider pets steer around; the

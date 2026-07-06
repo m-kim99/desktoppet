@@ -1197,8 +1197,89 @@ const blobTex = (() => {
 const blobGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
 const BLOB_SIZE = { tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0 };
+// Beds register a lying spot (on the furniture, with a lean-back tilt + heading) and an
+// approach point just outside their collider that the pet walks to before climbing on.
+// 🔨 함수로 분리: 로드 시 프롭 루프가 굽고, 공사모드에서 프롭이 이사하면 unbake→bake로 다시
+// 굽는다 — 좌표 파생 공식이 한 곳에만 산다.
+function bakePropBeds(p) {
+    const obj = p.obj;
+    if (p.type === 'sunbed' || p.type === 'hammock') {
+        const sy = Math.sin(p.rotY || 0), cy = Math.cos(p.rotY || 0);
+        const baseY = terrainHeight(p.x, p.z);
+        const entry = (p.type === 'sunbed')
+            ? {
+                id: 'sunbed', occupant: null, sway: 0,
+                lie: { x: p.x + sy * 0.05, z: p.z + cy * 0.05, y: baseY + 0.18, rotY: p.rotY || 0, tilt: -1.05 },
+                approach: { x: p.x + sy * 0.75, z: p.z + cy * 0.75 },
+            }
+            : {
+                id: 'hammock', occupant: null, sway: 1,
+                lie: { x: p.x, z: p.z, y: baseY + 0.4, rotY: (p.rotY || 0) + Math.PI / 2, tilt: -1.25 },
+                approach: { x: p.x + sy * 0.7, z: p.z + cy * 0.7 },
+            };
+        BEDS.push(entry);
+        p.bedEntries = [entry];
+    }
+    // 그네 seats: two pendulum seats hung from the bar. Registered as BEDS so nearestFreeBed / mountBed
+    // (the ⌘ interaction) and the approach→mount→dismount tweens all work unchanged; updateSwings drives
+    // the pendulum + 10-min auto-dismount. Pivot/axis are baked to world space from the prop transform.
+    if (p.type === 'swing') {
+        const rotY = p.rotY || 0, sy = Math.sin(rotY), cy = Math.cos(rotY);
+        const baseY = terrainHeight(p.x, p.z);
+        const seats = obj.userData.seats || [];
+        p.bedEntries = [];
+        [-SWING.seatX, SWING.seatX].forEach((ox, i) => {
+            const pivot = { x: p.x + ox * cy, z: p.z - ox * sy, y: baseY + SWING.barY };
+            const axis = { x: sy, z: cy };                      // world direction the seat swings along (local +Z)
+            const entry = {
+                id: 'swing', mode: 'swing', occupant: null, sway: 0,
+                seat: seats[i] || null, pivot, axis, L: SWING.ropeL, headY: rotY, angle: 0, vel: 0, mountedAt: 0,
+                lie: { x: pivot.x, z: pivot.z, y: pivot.y - SWING.ropeL + SWING.sitLift, rotY, tilt: 0 },
+                approach: { x: pivot.x + axis.x * SWING.approach, z: pivot.z + axis.z * SWING.approach },
+            };
+            SWINGS.push(entry);
+            BEDS.push(entry);
+            p.bedEntries.push(entry);
+        });
+    }
+    // 시소 seats: two seats on one pivoting plank (a shared SEESAW_BODIES entry). Registered as BEDS so
+    // ⌘/mount/dismount reuse works; updateSeesaws tilts the plank + places both riders on the same arc.
+    if (p.type === 'seesaw') {
+        const rotY = p.rotY || 0, sy = Math.sin(rotY), cy = Math.cos(rotY);
+        const axis = { x: sy, z: cy };                     // world direction along the plank length
+        const pivot = { x: p.x, z: p.z, y: terrainHeight(p.x, p.z) + SEESAW.fulcrumH };
+        const body = { plank: obj.userData.plank || null, pivot, axis, armLen: SEESAW.armLen, angle: 0, vel: 0, t: 0, seats: [] };
+        p.bedEntries = [];
+        [1, -1].forEach((e) => {
+            const headY = Math.atan2(-e * axis.x, -e * axis.z);   // face the partner across the pivot
+            const entry = {
+                id: 'seesaw', mode: 'seesaw', occupant: null, sway: 0, body, end: e, headY, mountedAt: 0,
+                lie: { x: pivot.x + axis.x * e * SEESAW.armLen, z: pivot.z + axis.z * e * SEESAW.armLen, y: pivot.y + SEESAW.lift, rotY: headY, tilt: 0 },
+                approach: { x: pivot.x + axis.x * e * (SEESAW.armLen + 0.5), z: pivot.z + axis.z * e * (SEESAW.armLen + 0.5) },
+            };
+            body.seats.push(entry);
+            SEESAWS.push(entry);
+            BEDS.push(entry);
+            p.bedEntries.push(entry);
+        });
+        SEESAW_BODIES.push(body);
+        p.bedBody = body;
+    }
+}
+function unbakePropBeds(p) {
+    if (!p.bedEntries) return;
+    const rm = (arr, e) => { const i = arr.indexOf(e); if (i >= 0) arr.splice(i, 1); };
+    for (const e of p.bedEntries) {
+        if (e.occupant) forceEndBed(e.occupant);   // 안전망 — 공사모드 진입 시 이미 전부 하차시킨다
+        rm(BEDS, e); rm(SWINGS, e); rm(SEESAWS, e);
+    }
+    if (p.bedBody) rm(SEESAW_BODIES, p.bedBody);
+    p.bedEntries = null;
+    p.bedBody = null;
+}
 for (const p of PROPS) {
     const obj = PROP_BUILDERS[p.type](p);
+    p.obj = obj;                                     // 🔨 공사모드가 이 그룹을 집어 옮긴다
     obj.position.set(p.x, terrainHeight(p.x, p.z), p.z);
     obj.rotation.y = p.rotY || 0;
     if (p.scale) obj.scale.setScalar(p.scale);   // layout data may size a prop (kit variants etc.)
@@ -1211,6 +1292,7 @@ for (const p of PROPS) {
         blob.rotation.y = p.rotY || 0;
         blob.position.set(p.x, terrainHeight(p.x, p.z) + 0.012, p.z);
         stage.add(blob);
+        p.blob = blob;
     }
     if (p.type === 'lamp') {
         const light = new THREE.PointLight(0xffd9a0, 0, 4.5, 2);
@@ -1220,74 +1302,23 @@ for (const p of PROPS) {
         halo.position.copy(light.position);
         scene.add(halo);
         lamps.push({ light, glow: halo.material });
+        p.lampLight = light;
+        p.lampHalo = halo;
     }
-    // Beds register a lying spot (on the furniture, with a lean-back tilt + heading) and an
-    // approach point just outside their collider that the pet walks to before climbing on.
-    if (p.type === 'sunbed' || p.type === 'hammock') {
-        const sy = Math.sin(p.rotY || 0), cy = Math.cos(p.rotY || 0);
-        const baseY = terrainHeight(p.x, p.z);
-        if (p.type === 'sunbed') {
-            BEDS.push({
-                id: 'sunbed', occupant: null, sway: 0,
-                lie: { x: p.x + sy * 0.05, z: p.z + cy * 0.05, y: baseY + 0.18, rotY: p.rotY || 0, tilt: -1.05 },
-                approach: { x: p.x + sy * 0.75, z: p.z + cy * 0.75 },
-            });
-        } else {
-            BEDS.push({
-                id: 'hammock', occupant: null, sway: 1,
-                lie: { x: p.x, z: p.z, y: baseY + 0.4, rotY: (p.rotY || 0) + Math.PI / 2, tilt: -1.25 },
-                approach: { x: p.x + sy * 0.7, z: p.z + cy * 0.7 },
-            });
-        }
-    }
-    // 그네 seats: two pendulum seats hung from the bar. Registered as BEDS so nearestFreeBed / mountBed
-    // (the ⌘ interaction) and the approach→mount→dismount tweens all work unchanged; updateSwings drives
-    // the pendulum + 10-min auto-dismount. Pivot/axis are baked to world space from the prop transform.
-    if (p.type === 'swing') {
-        const rotY = p.rotY || 0, sy = Math.sin(rotY), cy = Math.cos(rotY);
-        const baseY = terrainHeight(p.x, p.z);
-        const seats = obj.userData.seats || [];
-        [-SWING.seatX, SWING.seatX].forEach((ox, i) => {
-            const pivot = { x: p.x + ox * cy, z: p.z - ox * sy, y: baseY + SWING.barY };
-            const axis = { x: sy, z: cy };                      // world direction the seat swings along (local +Z)
-            const entry = {
-                id: 'swing', mode: 'swing', occupant: null, sway: 0,
-                seat: seats[i] || null, pivot, axis, L: SWING.ropeL, headY: rotY, angle: 0, vel: 0, mountedAt: 0,
-                lie: { x: pivot.x, z: pivot.z, y: pivot.y - SWING.ropeL + SWING.sitLift, rotY, tilt: 0 },
-                approach: { x: pivot.x + axis.x * SWING.approach, z: pivot.z + axis.z * SWING.approach },
-            };
-            SWINGS.push(entry);
-            BEDS.push(entry);
-        });
-    }
-    // 시소 seats: two seats on one pivoting plank (a shared SEESAW_BODIES entry). Registered as BEDS so
-    // ⌘/mount/dismount reuse works; updateSeesaws tilts the plank + places both riders on the same arc.
-    if (p.type === 'seesaw') {
-        const rotY = p.rotY || 0, sy = Math.sin(rotY), cy = Math.cos(rotY);
-        const axis = { x: sy, z: cy };                     // world direction along the plank length
-        const pivot = { x: p.x, z: p.z, y: terrainHeight(p.x, p.z) + SEESAW.fulcrumH };
-        const body = { plank: obj.userData.plank || null, pivot, axis, armLen: SEESAW.armLen, angle: 0, vel: 0, t: 0, seats: [] };
-        [1, -1].forEach((e) => {
-            const headY = Math.atan2(-e * axis.x, -e * axis.z);   // face the partner across the pivot
-            const entry = {
-                id: 'seesaw', mode: 'seesaw', occupant: null, sway: 0, body, end: e, headY, mountedAt: 0,
-                lie: { x: pivot.x + axis.x * e * SEESAW.armLen, z: pivot.z + axis.z * e * SEESAW.armLen, y: pivot.y + SEESAW.lift, rotY: headY, tilt: 0 },
-                approach: { x: pivot.x + axis.x * e * (SEESAW.armLen + 0.5), z: pivot.z + axis.z * e * (SEESAW.armLen + 0.5) },
-            };
-            body.seats.push(entry);
-            SEESAWS.push(entry);
-            BEDS.push(entry);
-        });
-        SEESAW_BODIES.push(body);
-    }
+    bakePropBeds(p);
 }
 
 // House extras: furniture colliders (collision-only entries — the meshes live inside the house
 // group), the sofa (sit) and loft bed (sleep) registered like outdoor beds, and the reading lamp.
+// 🔨 집이 이사하면(공사모드 — 이동만, 회전은 HOUSE_COS/SIN이 로드 시 상수라 불가) 이 파생
+// 좌표들을 houseWorld로 다시 계산한다 — 로컬 좌표와 참조를 붙들어 둔다.
+const HOUSE_DERIVED = { cols: [], beds: [], light: null };
 {
     const fCol = (lx, lz, r) => {
         const w = houseWorld(lx, lz);
-        PROPS.push({ type: 'furniture', x: w.x, z: w.z, rotY: 0, r });
+        const entry = { type: 'furniture', x: w.x, z: w.z, rotY: 0, r };
+        PROPS.push(entry);
+        HOUSE_DERIVED.cols.push({ entry, lx, lz });
     };
     fCol(-0.68, 0.2, 0.28);    // sofa
     fCol(0, 0.15, 0.24);       // table
@@ -1295,22 +1326,40 @@ for (const p of PROPS) {
     fCol(-0.45, -0.5, 0.3);    // loft bed
     fCol(0.05, -0.62, 0.11);   // nightstand
     const sofaW = houseWorld(-0.68, 0.2), sofaA = houseWorld(-0.28, 0.58);
-    BEDS.push({
+    const sofa = {
         id: 'sofa', mode: 'sit', occupant: null, sway: 0,
         lie: { x: sofaW.x, z: sofaW.z, y: HOUSE.floorY + 0.17, rotY: HOUSE.rotY + Math.PI / 2, tilt: -0.35 },
         approach: { x: sofaA.x, z: sofaA.z },
-    });
+    };
+    BEDS.push(sofa);
+    HOUSE_DERIVED.beds.push({ entry: sofa, lx: -0.68, lz: 0.2, alx: -0.28, alz: 0.58 });
     const bedW = houseWorld(-0.45, -0.5), bedA = houseWorld(0.3, -0.45);
-    BEDS.push({
+    const loftbed = {
         id: 'loftbed', mode: 'sleep', occupant: null, sway: 0,
         lie: { x: bedW.x, z: bedW.z, y: HOUSE.loftY + 0.16, rotY: HOUSE.rotY, tilt: -1.2 },
         approach: { x: bedA.x, z: bedA.z },
-    });
+    };
+    BEDS.push(loftbed);
+    HOUSE_DERIVED.beds.push({ entry: loftbed, lx: -0.45, lz: -0.5, alx: 0.3, alz: -0.45 });
     const lampW = houseWorld(0, 0.15);
     const indoor = new THREE.PointLight(0xffd9a0, 0, 2.4, 2);
     indoor.position.set(lampW.x, HOUSE.floorY + 0.42, lampW.z);
     scene.add(indoor);
     lamps.push({ light: indoor });
+    HOUSE_DERIVED.light = indoor;
+}
+function refreshHouseDerived() {
+    for (const c of HOUSE_DERIVED.cols) {
+        const w = houseWorld(c.lx, c.lz);
+        c.entry.x = w.x; c.entry.z = w.z;
+    }
+    for (const b of HOUSE_DERIVED.beds) {
+        const w = houseWorld(b.lx, b.lz), a = houseWorld(b.alx, b.alz);
+        b.entry.lie.x = w.x; b.entry.lie.z = w.z;
+        b.entry.approach.x = a.x; b.entry.approach.z = a.z;
+    }
+    const lampW = houseWorld(0, 0.15);
+    HOUSE_DERIVED.light.position.set(lampW.x, HOUSE.floorY + 0.42, lampW.z);
 }
 
 // ---- 🚗 스포츠카: parked in the middle of the plaza. Ctrl/⌘ beside it hops in (a held/nearby
@@ -1318,7 +1367,14 @@ for (const p of PROPS) {
 // Bridges count as road, so you can drive to the satellite islands (wheels overhang, who cares).
 // The collider entry moves with the car so wandering pets steer around it, parked or not.
 const CAR = { x: 0, z: 0, heading: 1.05, vel: 0 };
-const carCollider = { type: 'car', x: CAR.x, z: CAR.z, rotY: 0, r: 0.55 };
+{   // 🔨 저장된 주차 위치 — 차는 PROPS 루프 밖에서 만들어져 여기서 따로 적용한다
+    const o = savedLayout['car-1'];
+    if (o && Number.isFinite(o.x) && Number.isFinite(o.z)) {
+        CAR.x = o.x; CAR.z = o.z;
+        if (Number.isFinite(o.rotY)) CAR.heading = o.rotY;
+    }
+}
+const carCollider = { type: 'car', layoutId: 'car-1', x: CAR.x, z: CAR.z, rotY: 0, r: 0.55, def: { x: 0, z: 0, rotY: 1.05 } };
 PROPS.push(carCollider);
 const carWheels = [];
 let carDrive = null;    // { driver, passenger } while someone is at the wheel
@@ -1352,6 +1408,7 @@ function makeCar() {
     return g;
 }
 const carGroup = makeCar();
+carCollider.obj = carGroup;                        // 🔨 공사모드 드래그 대상
 carGroup.position.set(CAR.x, terrainHeight(CAR.x, CAR.z), CAR.z);
 carGroup.rotation.y = CAR.heading;
 carGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
@@ -2279,6 +2336,11 @@ function hideMenu() { motionMenu.style.display = 'none'; menuPet = null; hideSip
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
 let pressAt = null;
+// 🔨 공사모드 상태 — 본체(버튼·링·드래그 로직)는 독 UI 아래에 있고, 여기 포인터 핸들러들은
+// 모드가 켜져 있으면 펫 상호작용 대신 사물 선택/드래그로 분기한다.
+let buildMode = false;
+let buildSel = null;    // 선택된 PROPS 엔트리
+let buildDrag = null;   // { id(pointerId), p, planeY, dx, dz, fromX, fromZ, rot }
 // 📱 핀치 줌: 터치 포인터를 직접 추적해 두 손가락 벌림/오므림을 휠과 같은 줌 경로(camZoom —
 // min/max 클램프와 animate()의 글라이드 재사용)로 흘려보낸다. move/up 리스너는 window에 건다:
 // OrbitControls가 첫 포인터만 캔버스에 캡처하고 두 번째는 캡처가 없어서, 손가락이 떠 있는
@@ -2290,11 +2352,16 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
         activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (activeTouches.size === 2) {
             pressAt = null;   // 두 번째 손가락 = 핀치 시작: 진행 중이던 탭 후보는 무효
+            if (buildDrag) endBuildDrag(true);   // 🔨 드래그 중 핀치가 시작되면 그 자리에 내려놓는다
             const [a, b] = [...activeTouches.values()];
             pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
             return;
         }
         if (activeTouches.size > 2) return;
+    }
+    // 🔨 공사모드: 사물 위에서 누르면 곧장 집어서 드래그 (마우스는 좌클릭만)
+    if (buildMode && (e.pointerType === 'touch' || e.button === 0)) {
+        if (startBuildDrag(e)) { pressAt = null; return; }
     }
     pressAt = { x: e.clientX, y: e.clientY, t: performance.now() };
 });
@@ -2325,6 +2392,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     pressAt = null;
     const slop = e.pointerType === 'touch' ? 13 : 6;   // 손가락은 마우스보다 떨림이 커서 탭 판정을 넉넉히
     if (moved > slop || held > 400) return;
+    if (buildMode) { buildSelect(null); return; }   // 🔨 빈 곳 탭 = 선택 해제 (사물은 pointerdown이 잡음) · 펫 메뉴는 잠금
     pointerNdc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
     raycaster.setFromCamera(pointerNdc, camera);
     for (const p of pets) {
@@ -2754,9 +2822,219 @@ function bindZoomBtn(b, dir) {
     b.addEventListener('pointercancel', stop);
     b.addEventListener('lostpointercapture', stop);
 }
+const buildBtn = dockBtn('🔨', '공사 모드 — 사물 옮기기');
+const syncBuildBtn = () => { buildBtn.style.background = buildMode ? 'rgba(214,150,52,0.92)' : 'rgba(30,32,40,0.88)'; };
+buildBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
+buildBtn.addEventListener('click', () => setBuildMode(!buildMode));
 bindZoomBtn(dockBtn('＋', '확대 (키보드 + 키)'), -1);
 bindZoomBtn(dockBtn('－', '축소 (키보드 - 키)'), 1);
 document.body.appendChild(dockUI);
+
+// ---- 🔨 공사 모드 (동물의 숲식 사물 옮기기): 사물을 누르면 집어 들고(살짝 떠오름), 끌어서
+// 원하는 곳에 놓는다. 링이 초록(놓기 가능)/빨강(겹침·물·섬 밖)으로 판정을 보여주고, 놓으면
+// 콜라이더·침대/그네/시소 좌표·블롭 그림자·램프 불빛이 함께 이사한다(bakePropBeds 재사용).
+// 배치는 서버(/api/world_layout)+localStorage에 저장되고 다음 접속 때 씬을 짓기 전에 적용된다
+// (파일 상단 savedLayout). 지형 평탄화 패드는 섬 메시에 구워져 있어 리로드 후에야 새 위치를
+// 따라간다 — 그때까지 잔디가 살짝 울퉁불퉁할 수 있는 게 유일한 시각적 타협점.
+const PROP_LABELS = { tree: '나무', bowl: '밥그릇', fence: '울타리', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', house: '집', car: '자동차' };
+const buildRingMat = new THREE.MeshBasicMaterial({ color: 0x66d9ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+const buildRing = new THREE.Mesh(new THREE.RingGeometry(0.82, 1.0, 40), buildRingMat);
+buildRing.rotation.x = -Math.PI / 2;
+buildRing.visible = false;
+scene.add(buildRing);
+const effR = (q) => (q.type === 'house' ? 1.25 : q.type === 'car' ? 0.55 : Math.max(q.r || 0, 0.22));
+function positionBuildRing(p) {
+    if (!p) { buildRing.visible = false; return; }
+    buildRing.visible = true;
+    buildRing.scale.setScalar(effR(p) + 0.3);
+    buildRing.position.set(p.x, terrainHeight(p.x, p.z) + 0.02, p.z);
+}
+function canPlace(p, x, z) {
+    const pr = effR(p);
+    // 섬 안(가장자리 여유 포함)이어야 하고 — 다리 위·바다는 불가
+    if (!ISLANDS.some((isl) => Math.hypot(x - isl.x, z - isl.z) < isl.r - Math.min(pr * 0.6, 0.5) - 0.12)) return false;
+    for (const q of PROPS) {
+        if (q === p) continue;
+        if (p.type === 'house' && q.type === 'furniture') continue;   // 집 안 가구는 집과 한 몸
+        const qr = q.type === 'house' ? 1.25 : (q.r || 0);
+        if (!qr) continue;
+        if (Math.hypot(x - q.x, z - q.z) < (pr + qr) * 0.8) return false;
+    }
+    return true;
+}
+// 드래그 중: 그룹·블롭·불빛만 가볍게 따라오고(살짝 든 채), 좌표 파생물(침대 등)은 놓을 때 굽는다.
+function movePropVisual(p, x, z) {
+    p.x = x; p.z = z;
+    const gy = terrainHeight(x, z);
+    if (p.type === 'car') { CAR.x = x; CAR.z = z; carGroup.position.set(x, gy + 0.14, z); }
+    else p.obj.position.set(x, gy + 0.14, z);
+    if (p.blob) p.blob.position.set(x, gy + 0.012, z);
+    if (p.lampLight) { p.lampLight.position.set(x, gy + 0.95, z); p.lampHalo.position.copy(p.lampLight.position); }
+    positionBuildRing(p);
+}
+function applyPropMove(p, x, z, rotY) {
+    p.x = x; p.z = z;
+    const gy = terrainHeight(x, z);
+    if (p.type === 'car') {
+        CAR.x = x; CAR.z = z; CAR.heading = rotY;
+        carGroup.position.set(x, world.groundHeightAt(x, z), z);
+        carGroup.rotation.y = rotY;
+    } else {
+        p.rotY = rotY;
+        p.obj.position.set(x, gy, z);
+        p.obj.rotation.y = rotY;
+        if (p.type === 'house') { HOUSE.x = x; HOUSE.z = z; refreshHouseDerived(); }
+        if (p.bedEntries) { unbakePropBeds(p); bakePropBeds(p); }
+    }
+    if (p.blob) { p.blob.position.set(x, gy + 0.012, z); p.blob.rotation.y = p.type === 'car' ? 0 : rotY; }
+    if (p.lampLight) { p.lampLight.position.set(x, gy + 0.95, z); p.lampHalo.position.copy(p.lampLight.position); }
+    if (buildSel === p) positionBuildRing(p);
+}
+function pickMovable(e) {
+    pointerNdc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+    raycaster.setFromCamera(pointerNdc, camera);
+    let best = null, bestD = Infinity;
+    for (const q of PROPS) {
+        if (!q.obj || !(MOVABLE_TYPES.has(q.type) || q.type === 'car')) continue;
+        const hits = raycaster.intersectObject(q.obj, true);
+        if (hits.length && hits[0].distance < bestD) { best = q; bestD = hits[0].distance; }
+    }
+    return best;
+}
+const buildPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const buildHitV = new THREE.Vector3();
+function buildGroundPoint(e, planeY) {
+    pointerNdc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+    raycaster.setFromCamera(pointerNdc, camera);
+    buildPlane.constant = -planeY;
+    return raycaster.ray.intersectPlane(buildPlane, buildHitV);
+}
+function startBuildDrag(e) {
+    const p = pickMovable(e);
+    if (!p) return false;
+    buildSelect(p);
+    const planeY = terrainHeight(p.x, p.z);
+    const g = buildGroundPoint(e, planeY);
+    buildDrag = {
+        id: e.pointerId, p, planeY,
+        dx: g ? p.x - g.x : 0, dz: g ? p.z - g.z : 0,   // 잡은 지점 오프셋 — 사물이 손가락 밑으로 튀지 않게
+        fromX: p.x, fromZ: p.z,
+        rot: p.type === 'car' ? CAR.heading : (p.rotY || 0),
+    };
+    controls.enabled = false;                            // 이 포인터는 사물 것 — 카메라가 같이 돌지 않게
+    return true;
+}
+function endBuildDrag(commit) {
+    const d = buildDrag;
+    if (!d) return;
+    buildDrag = null;
+    controls.enabled = true;
+    const p = d.p;
+    const movedFar = Math.hypot(p.x - d.fromX, p.z - d.fromZ) > 0.05;
+    if (commit && canPlace(p, p.x, p.z)) {
+        applyPropMove(p, p.x, p.z, d.rot);
+        if (movedFar) {
+            saveLayoutSoon();
+            logWorldEvent(`주인이 ${PROP_LABELS[p.type] || p.type}를 옮겼다`);
+        }
+    } else {
+        applyPropMove(p, d.fromX, d.fromZ, d.rot);
+        if (commit && movedFar) showToast('🚫 거기엔 놓을 수 없어요');
+    }
+    buildRingMat.color.setHex(0x66d9ff);
+}
+window.addEventListener('pointermove', (e) => {
+    if (!buildDrag || e.pointerId !== buildDrag.id) return;
+    const g = buildGroundPoint(e, buildDrag.planeY);
+    if (!g) return;
+    const nx = g.x + buildDrag.dx, nz = g.z + buildDrag.dz;
+    movePropVisual(buildDrag.p, nx, nz);
+    buildRingMat.color.setHex(canPlace(buildDrag.p, nx, nz) ? 0x7ee08a : 0xe86a6a);
+});
+const endBuildDragUp = (e) => { if (buildDrag && e.pointerId === buildDrag.id) endBuildDrag(e.type !== 'pointercancel'); };
+window.addEventListener('pointerup', endBuildDragUp);
+window.addEventListener('pointercancel', endBuildDragUp);
+function buildSelect(p) {
+    buildSel = p;
+    buildRingMat.color.setHex(0x66d9ff);
+    positionBuildRing(p);
+}
+// 상단 공사 툴바: 회전(45°)·원위치·전부 원위치·완료
+const buildBar = document.createElement('div');
+buildBar.style.cssText = `position:fixed; left:50%; top:calc(12px + env(safe-area-inset-top, 0px)); transform:translateX(-50%); display:none; gap:6px; z-index:96; align-items:center; flex-wrap:wrap; justify-content:center; max-width:calc(100vw - 20px); background:rgba(30,32,40,0.9); padding:${IS_TOUCH ? '10px 12px' : '8px 10px'}; border-radius:12px; font-family:sans-serif; box-shadow:0 4px 14px rgba(0,0,0,0.35);`;
+const buildTitle = document.createElement('span');
+buildTitle.textContent = '🔨 공사 모드';
+buildTitle.style.cssText = `color:#ffd54f; font-size:${IS_TOUCH ? 14 : 12.5}px; font-weight:700;`;
+buildBar.appendChild(buildTitle);
+const bbBtn = (label, fn) => {
+    const b = document.createElement('div');
+    b.textContent = label;
+    b.style.cssText = `padding:${IS_TOUCH ? '9px 12px' : '6px 10px'}; font-size:${IS_TOUCH ? 14 : 12.5}px; color:#fff; background:rgba(255,255,255,0.12); border-radius:9px; cursor:pointer; white-space:nowrap; user-select:none; -webkit-user-select:none; touch-action:none;`;
+    b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); fn(); });
+    buildBar.appendChild(b);
+    return b;
+};
+bbBtn('↺ 회전', () => {
+    if (!buildSel) { showToast('먼저 사물을 탭해서 선택하세요'); return; }
+    if (buildSel.type === 'house') { showToast('🏠 집은 회전 없이 이동만 돼요'); return; }
+    const r = (buildSel.type === 'car' ? CAR.heading : (buildSel.rotY || 0)) + Math.PI / 4;
+    applyPropMove(buildSel, buildSel.x, buildSel.z, r);
+    saveLayoutSoon();
+});
+bbBtn('원위치', () => {
+    if (!buildSel) { showToast('먼저 사물을 탭해서 선택하세요'); return; }
+    if (!canPlace(buildSel, buildSel.def.x, buildSel.def.z)) { showToast('🚫 원래 자리에 다른 사물이 있어요'); return; }
+    applyPropMove(buildSel, buildSel.def.x, buildSel.def.z, buildSel.def.rotY);
+    saveLayoutSoon();
+});
+bbBtn('전부 원위치', () => {
+    for (const q of PROPS) {
+        if (!q.def || !(MOVABLE_TYPES.has(q.type) || q.type === 'car')) continue;
+        applyPropMove(q, q.def.x, q.def.z, q.def.rotY);
+    }
+    buildSelect(null);
+    saveLayoutSoon();
+    showToast('↩️ 모든 사물을 원래 자리로 되돌렸어요');
+});
+bbBtn('✓ 완료', () => setBuildMode(false));
+document.body.appendChild(buildBar);
+function setBuildMode(on) {
+    if (buildMode === on) return;
+    buildMode = on;
+    if (on) {
+        escapeAction();                                   // 조종 해제 + 메뉴/패널 정리 (차에서도 내림)
+        for (const q of pets) forceEndBed(q);             // 침대·그네·시소에서 즉시 하차
+        buildSelect(null);
+        buildBar.style.display = 'flex';
+        showToast('🔨 사물을 끌어서 옮기세요 — 놓을 곳이 빨간 링이면 못 놓아요');
+    } else {
+        endBuildDrag(false);
+        buildSelect(null);
+        buildBar.style.display = 'none';
+        saveLayout();
+        showToast('🔨 배치가 저장됐어요');
+    }
+    syncBuildBtn();
+}
+// 저장: 이동 가능 프롭 전체를 id→{x,z,rotY}로 — localStorage(이 기기) + 서버(기기 공유, 있으면)
+let saveLayoutTimer = null;
+function saveLayoutSoon() { clearTimeout(saveLayoutTimer); saveLayoutTimer = setTimeout(saveLayout, 400); }
+function saveLayout() {
+    const out = {};
+    for (const q of PROPS) {
+        if (!q.layoutId || !(MOVABLE_TYPES.has(q.type) || q.type === 'car')) continue;
+        out[q.layoutId] = {
+            x: +q.x.toFixed(3), z: +q.z.toFixed(3),
+            rotY: +(((q.type === 'car' ? CAR.heading : q.rotY) || 0)).toFixed(3),
+        };
+    }
+    try { localStorage.setItem('world-layout', JSON.stringify(out)); } catch (err) {}
+    fetch('/api/world_layout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ layout: out }),
+    }).catch(() => {});
+}
 // Keyboard zoom: +/- (with or without shift) and the numpad keys; ignored while typing.
 window.addEventListener('keydown', (e) => {
     if (e.target && e.target.tagName === 'INPUT') return;
@@ -4062,7 +4340,7 @@ function doInteract() {
 }
 window.addEventListener('keydown', (e) => {
     if (e.target && e.target.tagName === 'INPUT') return;        // typing in the chat bar
-    if (e.key === 'Escape') { escapeAction(); return; }
+    if (e.key === 'Escape') { if (buildMode) { setBuildMode(false); return; } escapeAction(); return; }   // 🔨 공사 중 Esc = 공사 종료(저장)
     if (!possessed) return;
     if (ARROW_KEYS.includes(e.key)) { heldKeys.add(e.key); e.preventDefault(); }
     else if (e.code === 'Space') { e.preventDefault(); doJump(); }
@@ -4646,7 +4924,7 @@ function nearestFreeBed(p, maxDist) {
     return best;
 }
 async function mountBed(p, bed) {
-    if (p.bed || bed.occupant) return;
+    if (buildMode || p.bed || bed.occupant) return;   // 🔨 공사 중엔 아무도 안 탄다 (이사 중인 침대에 눕기 방지)
     removeDrink(p);                                   // put the cup/snack down before climbing in
     removeFood(p);
     bed.occupant = p; p.bed = bed; p.bedPhase = 'approach';

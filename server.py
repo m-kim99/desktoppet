@@ -11399,6 +11399,30 @@ async def world_save_screenshot(request: Request):
         f.write(base64.b64decode(b64))
     return {"ok": True, "file": name}
 
+# 🔨 월드 공사모드 배치 저장 — 폰/데스크톱 어느 기기에서 사물을 옮겨도 같은 배치를 보도록
+# 서버 파일 하나(config/world_layout.json)에 둔다. 클라이언트는 시작 시 GET, 이동할 때 POST.
+WORLD_LAYOUT_FILE = os.path.join(base_path, "config", "world_layout.json")
+
+@app.get("/api/world_layout")
+async def world_get_layout():
+    try:
+        with open(WORLD_LAYOUT_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {"layout": data if isinstance(data, dict) else {}}
+    except Exception:
+        return {"layout": {}}
+
+@app.post("/api/world_layout")
+async def world_set_layout(request: Request):
+    data = await request.json()
+    layout = data.get("layout")
+    if not isinstance(layout, dict):
+        return {"ok": False}
+    os.makedirs(os.path.dirname(WORLD_LAYOUT_FILE), exist_ok=True)
+    with open(WORLD_LAYOUT_FILE, "w", encoding="utf-8") as f:
+        json.dump(layout, f, ensure_ascii=False, indent=2)
+    return {"ok": True}
+
 # ---- 월드 채팅 (P1/P2): a dedicated LLM session for the pet world, fully separate from the main
 # chat pipeline. Per-pet history + a rolling summary live in USER_DATA_DIR/world_chat/{pet}.json.
 # Each turn the world client sends a Korean world-state snapshot + recent world events; the reply
