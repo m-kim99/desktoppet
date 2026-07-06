@@ -1941,11 +1941,13 @@ function rollWeather() {
         const month = new Date().getMonth() + 1;
         wx = { type: (month >= 11 || month <= 2) ? 'snow' : 'rain', until: now + (3 + Math.random() * 5) * 60000 };
         logWorldEvent(wx.type === 'snow' ? '눈이 내리기 시작했다' : '비가 내리기 시작했다');
+        maybeProactive(null, wx.type === 'snow' ? '방금 눈이 내리기 시작했다!' : '방금 비가 내리기 시작했다!');
     } else {
         const gotRainbow = wx.type === 'rain' && lastDayF > 0.35;
         if (gotRainbow) { rainbowT = 75; rainbowAge = 0; }   // sun comes back out
         wx = { type: 'clear', until: now + (10 + Math.random() * 15) * 60000 };
         logWorldEvent(gotRainbow ? '비가 그치고 바다 위에 무지개가 떴다' : '날이 개었다');
+        if (gotRainbow) maybeProactive(pets.find((q) => q.name === 'chick'), '방금 비가 그치고 바다 위에 무지개가 떴다!');
     }
     try { localStorage.setItem('world-weather', JSON.stringify(wx)); } catch (e) {}
 }
@@ -1960,6 +1962,7 @@ function setManualWeather(type) {
     if (type && type !== 'clear') {
         wx = { type, until: Infinity };
         logWorldEvent(type === 'snow' ? '주인이 눈을 내리게 했다 ❄️' : type === 'storm' ? '주인이 천둥번개를 불러왔다 ⛈️' : '주인이 비를 내리게 했다 🌧️');
+        maybeProactive(null, type === 'snow' ? '주인이 방금 눈을 내리게 했다!' : type === 'storm' ? '주인이 방금 천둥번개를 불러왔다! 조금 무섭다.' : '주인이 방금 비를 내리게 했다!');
         return;
     }
     // 맑음 고정('clear') 또는 자동 복귀(null): 내리던 강수는 즉시 개고, 낮 비/뇌우 뒤엔 무지개.
@@ -3013,12 +3016,17 @@ function setBuildMode(on) {
         buildBar.style.display = 'none';
         saveLayout();
         showToast('🔨 배치가 저장됐어요');
+        if (buildDirty) {
+            buildDirty = false;
+            setTimeout(() => maybeProactive(null, '주인이 방금 공사 모드로 섬의 사물들을 옮겨 배치를 바꿨다.'), 1200);
+        }
     }
     syncBuildBtn();
 }
 // 저장: 이동 가능 프롭 전체를 id→{x,z,rotY}로 — localStorage(이 기기) + 서버(기기 공유, 있으면)
 let saveLayoutTimer = null;
-function saveLayoutSoon() { clearTimeout(saveLayoutTimer); saveLayoutTimer = setTimeout(saveLayout, 400); }
+let buildDirty = false;   // 이번 공사에서 실제로 무언가 옮겼나 — 종료 시 펫 반응 트리거
+function saveLayoutSoon() { buildDirty = true; clearTimeout(saveLayoutTimer); saveLayoutTimer = setTimeout(saveLayout, 400); }
 function saveLayout() {
     const out = {};
     for (const q of PROPS) {
@@ -3942,7 +3950,7 @@ function pickResponder(text) {
 // ---- P2 액션 태그: the reply may carry <motion=..> <goto=..> <mount=..> <drink=..> <snack=..>
 // <hat=..> tags. They are whitelisted against what actually exists in the world, capped at 4,
 // stripped from the bubble text and run strictly in order by runWorldActions below. ----
-const ACTION_RE = /<\s*(motion|goto|mount|drink|snack|hat)\s*[=:]\s*([a-z0-9-]+)\s*\/?\s*>/gi;
+const ACTION_RE = /<\s*(motion|goto|mount|drink|snack|hat|swim|drive)\s*[=:]\s*([a-z0-9-]+)\s*\/?\s*>/gi;
 const ACTION_IDS = {
     motion: new Set(GLB_MOTIONS.map((m) => m.id)),
     goto: new Set(['plaza', 'house', 'pond', 'bowl', 'coffee', 'snack', 'radio', 'swing', 'seesaw', 'sunbed', 'hammock', 'friend']),
@@ -3950,6 +3958,8 @@ const ACTION_IDS = {
     drink: new Set(DRINKS.map((d) => d.id)),
     snack: new Set(FOODS.map((f) => f.id)),
     hat: new Set([...GLB_ACCESSORIES.map((a) => a.id), 'off']),
+    swim: new Set(['pond', 'sea']),
+    drive: new Set(['car']),
 };
 function parseWorldReply(raw) {
     const actions = [];
@@ -4022,6 +4032,22 @@ async function actGoto(p, id, gen) {
     if (gen !== scriptGen || p === possessed) return;
     await Promise.race([gotoAsync(p, spot.x, spot.z), sleepMs(25000)]);
 }
+// <drive=car>: 차 옆까지 걸어가 올라타고, updateAutoDrive가 잠깐 몰다가 스스로 내린다.
+async function actDrive(p, gen) {
+    if (carDrive) return;                                        // 차는 한 대 — 이미 누가 타고 있다
+    await freeForScript(p);
+    if (gen !== scriptGen || p === possessed) return;
+    const dx = p.mover.position.x - CAR.x, dz = p.mover.position.z - CAR.z;
+    const k = 0.9 / (Math.hypot(dx, dz) || 1);
+    await Promise.race([gotoAsync(p, CAR.x + dx * k, CAR.z + dz * k), sleepMs(25000)]);
+    if (gen !== scriptGen || p === possessed || carDrive) return;
+    releaseAI(p);
+    p.ai.state = 'held';                                         // 드라이브 동안 배회 AI가 못 데려가게 주차
+    carDrive = { driver: p, passenger: null, auto: { t: 11 + Math.random() * 6, steer: (Math.random() < 0.5 ? 1 : -1) * 0.55 } };
+    startEngine();
+    logWorldEvent(`${petKo(p)}가 스포츠카 드라이브를 시작했다`);
+    await waitFor(() => !carDrive || !carDrive.auto, 30000);
+}
 async function runWorldActions(p, actions) {
     const gen = ++scriptGen;
     for (const a of actions) {
@@ -4050,6 +4076,14 @@ async function runWorldActions(p, actions) {
                 if (gen !== scriptGen || p === possessed) continue;
                 mountBed(p, bed);
                 await waitFor(() => p.bedPhase === 'lying' || !p.bed, 25000);
+            } else if (a.kind === 'swim') {
+                if (p.dip) continue;
+                await freeForScript(p);
+                if (gen !== scriptGen || p === possessed) continue;
+                startDip(p, a.id);
+                await waitFor(() => !p.dip || p.dip.phase !== 'approach', 25000);
+            } else if (a.kind === 'drive') {
+                await actDrive(p, gen);
             } else if (a.kind === 'drink' || a.kind === 'snack') {
                 await actGoto(p, a.kind === 'drink' ? 'coffee' : 'snack', gen);
                 if (gen !== scriptGen || p === possessed) continue;
@@ -4072,9 +4106,17 @@ async function sendWorldChat() {
     if (!text) return;
     if (waitingReply) { showToast('아직 대답을 생각하는 중…'); return; }
     chatInput.value = '';
-    responder = pickResponder(text);
-    if (!responder) return;
+    const pet = pickResponder(text);
+    if (!pet) return;
     pushChatLog('주인', text);
+    const speech = await requestWorldChat(pet, text);
+    if (speech) maybeFriendChime(pet, text, speech);
+}
+
+// 한 턴의 공통 파이프(주인 채팅·선제 대화·절친 거들기 공용): think 포즈 → /api/world_chat →
+// 말풍선·로그·행동 태그 실행. 성공하면 말한 내용을 돌려준다.
+async function requestWorldChat(pet, text) {
+    responder = pet;
     startWaiting();
     let reply = null;
     try {
@@ -4082,29 +4124,64 @@ async function sendWorldChat() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                pet: responder.name,
+                pet: pet.name,
                 text,
-                snapshot: buildWorldSnapshot(responder),
+                snapshot: buildWorldSnapshot(pet),
                 events: recentEventsText(),
             }),
         });
         if (res.ok) reply = (await res.json()).reply;
         else console.error('[World] chat http', res.status, await res.text().catch(() => ''));
     } catch (e) { console.error('[World] chat failed', e); }
-    if (!waitingReply) return;                                    // timed out / cancelled meanwhile
+    if (!waitingReply) return null;                               // timed out / cancelled meanwhile
     if (!reply) {
         stopWaiting(false);
         showBubbleTyped('으엥, 대답이 안 나와… 메인 모델 설정을 확인해줘! 💦');
-        return;
+        return null;
     }
     const { speech, actions } = parseWorldReply(reply);
     stopWaiting(true, actions.length === 0);       // 행동이 이어지면 해피 홉 생략 — 행동이 곧 리액션이니까
     if (speech) {
         showBubbleTyped(speech);
-        pushChatLog(petKo(responder), speech);
+        pushChatLog(petKo(pet), speech);
     }
-    if (actions.length) runWorldActions(responder, actions);
+    if (actions.length) runWorldActions(pet, actions);
+    return speech || null;
 }
+
+// ③ 절친 거들기: 둘 다 부르거나 무리로 부르면 반드시, 이름 없이 말하면 가끔(35%) 옆에서
+// 한마디 얹는다. 첫 펫의 말풍선이 타자로 다 나올 즈음에 이어받는다.
+function maybeFriendChime(first, ownerText, firstSpeech) {
+    const friend = pets.find((q) => q !== first);
+    if (!friend || friend.pet.sleeping) return;
+    const bothNamed = /병아리|삐약|chick/i.test(ownerText) && /강아지|멍멍|댕댕|puppy/i.test(ownerText);
+    const groupCall = /얘들아|애들아|둘\s*다|너희|같이|모두/.test(ownerText);
+    if (!(bothNamed || groupCall) && Math.random() > 0.35) return;
+    const delay = Math.min(7000, 1000 + firstSpeech.length * 45);
+    setTimeout(() => {
+        if (waitingReply || buildMode) return;
+        requestWorldChat(friend, `(주인이 방금 "${ownerText}"라고 말했고, 절친 ${petKo(first)}가 "${firstSpeech}"라고 대답했다. 너도 옆에서 들었다는 듯 자연스럽게 짧게 한마디 거들어라.)`);
+    }, delay);
+}
+
+// ② 선제 대화: 특별한 순간에 펫이 먼저 말을 건다. 8분 쿨다운 + 대화·공사 중이거나 창이
+// 백그라운드면 건너뛴다 (호출 비용도 그래서 가볍다). cue는 서버 히스토리에 남아 기억도 된다.
+let lastProactiveAt = 0;
+function maybeProactive(pet, cue) {
+    if (waitingReply || buildMode || !winFocused) return;
+    if (Date.now() - lastProactiveAt < 8 * 60000) return;
+    const p = pet || pets[Math.floor(Math.random() * pets.length)];
+    if (!p || p.pet.sleeping) return;
+    lastProactiveAt = Date.now();
+    requestWorldChat(p, `(주인은 아직 아무 말도 하지 않았다. ${cue} 지금 상황에 맞게 네가 먼저 주인에게 한두 문장으로 말을 걸어라. 어울리면 행동 태그도 붙여라.)`);
+}
+// 오랜만에 돌아오면 반겨준다 — 3시간 이상 비웠다가 열었을 때, 씬·펫이 자리 잡은 뒤 한 번.
+setTimeout(() => {
+    const last = +localStorage.getItem('world-last-seen') || 0;
+    if (last && Date.now() - last > 3 * 3600000) maybeProactive(null, '주인이 오랜만에 월드에 돌아왔다!');
+    try { localStorage.setItem('world-last-seen', String(Date.now())); } catch (e) {}
+}, 12000);
+setInterval(() => { try { localStorage.setItem('world-last-seen', String(Date.now())); } catch (e) {} }, 60000);
 
 function startWaiting() {
     waitingReply = true;
@@ -4425,43 +4502,13 @@ function updatePlayer(delta) {
     }
     if (carDrive) {
         // Driving: ↑/↓ throttle & reverse, ←/→ steer (steering authority grows with speed).
-        const maxV = p.speed * 4.5;                    // 걷기(×1.5)의 정확히 3배
         let acc = 0;
         if (heldKeys.has('ArrowUp')) acc += 3.4;
         if (heldKeys.has('ArrowDown')) acc -= 2.8;
         if (touchMove.active) acc += 3.4 * Math.max(0, touchMove.z) - 2.8 * Math.max(0, -touchMove.z);   // 📱 스틱 전후 = 가속·후진
-        CAR.vel += acc * delta;
-        CAR.vel *= Math.pow(0.3, delta);               // rolling friction
-        CAR.vel = THREE.MathUtils.clamp(CAR.vel, -maxV * 0.4, maxV);
         let steer = (heldKeys.has('ArrowLeft') ? 1 : 0) - (heldKeys.has('ArrowRight') ? 1 : 0);
         if (touchMove.active) steer = THREE.MathUtils.clamp(steer - touchMove.x, -1, 1);   // 📱 스틱 좌우 = 핸들
-        CAR.heading += steer * delta * 2.4 * THREE.MathUtils.clamp(CAR.vel / maxV, -1, 1);
-        const nx = CAR.x + Math.sin(CAR.heading) * CAR.vel * delta;
-        const nz = CAR.z + Math.cos(CAR.heading) * CAR.vel * delta;
-        if (!carBlocked(nx, nz)) { CAR.x = nx; CAR.z = nz; }
-        else CAR.vel = 0;
-        carCollider.x = CAR.x;
-        carCollider.z = CAR.z;
-        const cy = world.groundHeightAt(CAR.x, CAR.z);   // bridge decks lift the car over the arch
-        carGroup.position.set(CAR.x, cy, CAR.z);
-        carGroup.rotation.y = CAR.heading;
-        for (const w of carWheels) w.rotation.x += CAR.vel * delta * 9;
-        const rX = Math.cos(CAR.heading), rZ = -Math.sin(CAR.heading);
-        const seatPet = (q, side) => {
-            q.mover.position.set(
-                CAR.x + rX * side * 0.17 - Math.sin(CAR.heading) * 0.06,
-                cy + 0.22,
-                CAR.z + rZ * side * 0.17 - Math.cos(CAR.heading) * 0.06
-            );
-            q.mover.rotation.y = CAR.heading;
-            q.mover.rotation.x = 0;
-            q.mover.rotation.z = 0;
-            q.pet.walking = false;
-            q.swimming = false;
-        };
-        seatPet(p, -1);
-        if (carDrive.passenger) seatPet(carDrive.passenger, 1);
-        engineUpdate();
+        stepCar(acc, steer, delta, p);
         const driveHint = IS_TOUCH
             ? `🚗 ${p.name === 'chick' ? '병아리' : '강아지'} 운전 중${carDrive.passenger ? ' 👥' : ''} — 스틱 가속·핸들 · ✋ 내리기 · ✕ 해제`
             : `🚗 ${p.name === 'chick' ? '병아리' : '강아지'} 운전 중${carDrive.passenger ? ' 👥' : ''} — ↑↓ 가속·후진 · ←→ 핸들 · Ctrl/⌘ 내리기 · Esc 해제`;
@@ -4656,8 +4703,8 @@ function pickDipWaypoint(p) {
     const r = ISLAND_R + 0.5 + Math.random() * 1.5;
     return { x: Math.sin(a) * r, z: Math.cos(a) * r };
 }
-async function startDip(p) {
-    const kind = Math.random() < 0.5 ? 'pond' : 'sea';
+async function startDip(p, want) {
+    const kind = (want === 'pond' || want === 'sea') ? want : (Math.random() < 0.5 ? 'pond' : 'sea');   // <swim> 태그는 장소를 고른다
     let entry = null;
     for (let i = 0; i < 10 && !entry; i++) {
         const a = Math.random() * Math.PI * 2;
@@ -4860,6 +4907,58 @@ function exitCar() {
     if (passenger) {
         hopOut(passenger, 1);
         if (passenger.ai.state === 'held') releaseAI(passenger);
+    }
+}
+// 차 물리 한 스텝 — 조종(updatePlayer)과 AI 드라이브(<drive> 태그, updateAutoDrive)가 공유한다.
+function stepCar(acc, steer, delta, driver) {
+    const maxV = driver.speed * 4.5;                   // 걷기(×1.5)의 정확히 3배
+    CAR.vel += acc * delta;
+    CAR.vel *= Math.pow(0.3, delta);                   // rolling friction
+    CAR.vel = THREE.MathUtils.clamp(CAR.vel, -maxV * 0.4, maxV);
+    CAR.heading += steer * delta * 2.4 * THREE.MathUtils.clamp(CAR.vel / maxV, -1, 1);
+    const nx = CAR.x + Math.sin(CAR.heading) * CAR.vel * delta;
+    const nz = CAR.z + Math.cos(CAR.heading) * CAR.vel * delta;
+    if (!carBlocked(nx, nz)) { CAR.x = nx; CAR.z = nz; }
+    else CAR.vel = 0;
+    carCollider.x = CAR.x;
+    carCollider.z = CAR.z;
+    const cy = world.groundHeightAt(CAR.x, CAR.z);     // bridge decks lift the car over the arch
+    carGroup.position.set(CAR.x, cy, CAR.z);
+    carGroup.rotation.y = CAR.heading;
+    for (const w of carWheels) w.rotation.x += CAR.vel * delta * 9;
+    const rX = Math.cos(CAR.heading), rZ = -Math.sin(CAR.heading);
+    const seatPet = (q, side) => {
+        q.mover.position.set(
+            CAR.x + rX * side * 0.17 - Math.sin(CAR.heading) * 0.06,
+            cy + 0.22,
+            CAR.z + rZ * side * 0.17 - Math.cos(CAR.heading) * 0.06
+        );
+        q.mover.rotation.y = CAR.heading;
+        q.mover.rotation.x = 0;
+        q.mover.rotation.z = 0;
+        q.pet.walking = false;
+        q.swimming = false;
+    };
+    seatPet(driver, -1);
+    if (carDrive && carDrive.passenger) seatPet(carDrive.passenger, 1);
+    engineUpdate();
+}
+// <drive> 태그의 자율 주행: 완만한 스티어에 사인 흔들림을 얹어 빙 돌고, 벽에 막히면 반대로
+// 꺾는다. 시간이 다 되면 스스로 내린다 (주인이 조종을 넘겨받으면 auto만 조용히 떼어낸다).
+function updateAutoDrive(delta) {
+    if (!carDrive || !carDrive.auto) return;
+    if (carDrive.driver === possessed) { carDrive.auto = null; return; }
+    const d = carDrive.auto;
+    d.t -= delta;
+    d.w = (d.w || 0) + delta;
+    if (CAR.vel === 0 && d.lastVel === 0) d.steer *= -1;   // 두 프레임 연속 정지 = 막힘 → 핸들 반대로
+    d.lastVel = CAR.vel;
+    stepCar(d.t > 1.3 ? 2.7 : -0.6, d.steer + Math.sin(d.w * 0.7) * 0.3, delta, carDrive.driver);
+    if (d.t <= 0) {
+        const driver = carDrive.driver;
+        exitCar();
+        if (driver.ai.state === 'held') releaseAI(driver, 2);
+        logWorldEvent(`${petKo(driver)}가 드라이브를 마치고 내렸다`);
     }
 }
 function updateHandHold(delta) {
@@ -5253,6 +5352,7 @@ function animate() {
     updateSwings(delta);
     updateSeesaws(delta);
     updateDips(delta);
+    updateAutoDrive(delta);
     updateAutoSleep();
     updateMeals();
     updateCrumbs(delta);

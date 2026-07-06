@@ -11461,6 +11461,8 @@ WORLD_ACTION_SPEC = """[행동 태그]
 <drink=ID> 커피 부스에 걸어가 음료를 받아 든다. ID: americano·iced-ame·espresso·latte·cappuccino·choco·strawberry·matcha·icetea
 <snack=ID> 간식 부스에 걸어가 간식을 받아 든다. ID: toast·omurice·burrito·hotdog·donut·bungeo·gimbap·churros·cupcake
 <hat=santa-hat> 산타모자를 쓴다 / <hat=off> 벗는다
+<swim=ID> 물놀이하러 간다. ID: pond(연못에서 첨벙첨벙)·sea(절벽에서 바다로 다이빙)
+<drive=car> 스포츠카에 올라타 신나게 한 바퀴 드라이브하고 스스로 내린다 (차는 한 대 — 누가 타고 있으면 안 된다)
 예시: "좋아, 그네 타러 가자! 삐약! <goto=swing> <mount=swing>"
 규칙: 요청받은 행동이나 지금 기분에 어울리는 행동만 골라라. 태그는 반드시 위 목록의 표기 그대로. 움직일 수 없는 상황(잠자는 중 등)이면 태그 없이 말로만 답해도 된다."""
 
