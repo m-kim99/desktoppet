@@ -1708,6 +1708,81 @@ async function startDig(p) {
     }
 }
 
+// ---- 워프 포탈 (㉖): 광장가 ↔ 모험의 섬 돌링 한 쌍. AI 펫은 buildRoute가 "포탈 경유가 확실히
+// 짧을 때만" tp 웨이포인트를 심어 순간이동하고, 조종 중인 펫은 소용돌이에 들어서면 넘어간다.
+// 링은 r 0(비차단) — 차단원이면 경로 스텝퍼가 blocked=도착으로 오인해 중간에 멈춘다. ----
+function makePortal() {
+    const g = new THREE.Group();
+    const stone = M(0x9aa3ad, { flatShading: true });
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.42, 0.12, 10), stone);
+    base.position.y = 0.06;
+    g.add(base);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.075, 10, 22), M(0x7c8894, { flatShading: true }));
+    ring.position.y = 0.62;
+    g.add(ring);
+    const mat = new THREE.ShaderMaterial({   // 도는 나선 — 오로라와 같은 셰이더 계열, 드로우콜 1
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        uniforms: { uT: wxTime },
+        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: `
+            uniform float uT; varying vec2 vUv;
+            void main(){
+                vec2 c = vUv - 0.5;
+                float r = length(c) * 2.0;
+                float ang = atan(c.y, c.x);
+                float sw = sin(ang * 3.0 - uT * 2.4 + r * 7.0) * 0.5 + 0.5;
+                float a = smoothstep(1.0, 0.15, r) * (0.25 + 0.55 * sw);
+                vec3 col = mix(vec3(0.45, 0.95, 1.0), vec3(0.62, 0.5, 1.0), r);
+                gl_FragColor = vec4(col, a);
+            }`,
+    });
+    const swirl = new THREE.Mesh(new THREE.CircleGeometry(0.36, 24), mat);
+    swirl.position.y = 0.62;
+    g.add(swirl);
+    const halo = glowSprite(0x8fd8ff, 0.9, 0.35);
+    halo.position.y = 0.62;
+    g.add(halo);
+    return g;
+}
+const PORTALS = PROPS.filter((q) => q.type === 'portal');
+const portalExit = (pr) => ({ x: pr.x + Math.sin(pr.rotY || 0) * 0.75, z: pr.z + Math.cos(pr.rotY || 0) * 0.75 });
+let portalCoolAt = 0, portalLogAt = 0;
+function portalSparkle(x, z) {
+    const y = terrainHeight(x, z) + 0.3;
+    for (let i = 0; i < 8; i++) {
+        const spr = glowSprite(Math.random() < 0.5 ? 0x7fe8ff : 0xb490ff, 0.14 + Math.random() * 0.1, 0.9);
+        spr.position.set(x + (Math.random() - 0.5) * 0.4, y + (Math.random() - 0.5) * 0.4, z + (Math.random() - 0.5) * 0.3);
+        scene.add(spr);
+        hugBurst.push({ spr, vx: (Math.random() - 0.5) * 0.7, vy: 0.4 + Math.random() * 0.6, vz: (Math.random() - 0.5) * 0.7, t: 0 });
+    }
+}
+function portalHop(p, to) {
+    portalSparkle(p.mover.position.x, p.mover.position.z);
+    p.mover.position.set(to.x, world.groundHeightAt(to.x, to.z), to.z);
+    portalSparkle(to.x, to.z);
+    try {   // 슝— 위로 감기는 스윕음
+        const o = audioCtx.createOscillator();
+        o.type = 'sine';
+        const gn = audioCtx.createGain();
+        const t0 = audioCtx.currentTime;
+        o.frequency.setValueAtTime(280, t0);
+        o.frequency.exponentialRampToValueAtTime(980, t0 + 0.22);
+        gn.gain.setValueAtTime(0.05, t0);
+        gn.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.3);
+        o.connect(gn);
+        gn.connect(sfxMaster);
+        o.start(t0);
+        o.stop(t0 + 0.32);
+    } catch (e) {}
+    if (Date.now() - portalLogAt > 60000) {
+        portalLogAt = Date.now();
+        logWorldEvent(`${petKo(p)}가 워프 포탈을 통과했다 🌀`);
+    }
+}
+
 // ---- 추억의 섬 (SW, ㉒㉓㉔): 쪼아쪼아나무 · 소원우물 · 타임캡슐 — 기념비와 함께 다리 건너
 // 우리만의 성지. 나무·우물·캡슐은 클릭/탭으로 상호작용한다 (renderer pointerup의 PROP_CLICKS). ----
 function mkHeart(scale, mat) {
@@ -2091,8 +2166,9 @@ const HOVER_PROMPTS = {
     boulder: () => '🪨 바위',
     lookout: () => '🔭 전망대 — 언덕 위, 별이 잘 보여요',
     digsite: () => (digState && !digState.dug ? '⛏️ 보물 모래밭 — 반짝이는 자리를 조종 중 ⌘로 파요' : '⛏️ 보물 모래밭 — 오늘 보물은 이미 찾았어요'),
+    portal: () => '🌀 워프 포탈 — 들어서면 반대편으로',
 };
-const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7 };
+const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15 };
 const hoverEl = document.createElement('div');
 hoverEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); z-index:88; pointer-events:none; background:rgba(30,32,40,0.88); color:#fff; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
 document.body.appendChild(hoverEl);
@@ -2170,6 +2246,17 @@ function updateMemorialIsland(delta) {
             digGlint.visible = false;
         }
     }
+    // 워프 포탈: 조종 중인 펫이 소용돌이에 들어서면 반대편으로 (운전 중엔 제외, 2.5초 쿨다운)
+    if (PORTALS.length === 2 && possessed && Date.now() > portalCoolAt && !(carDrive && carDrive.driver === possessed)) {
+        for (let i = 0; i < 2; i++) {
+            const pa = PORTALS[i];
+            if (Math.hypot(possessed.mover.position.x - pa.x, possessed.mover.position.z - pa.z) < 0.45) {
+                portalCoolAt = Date.now() + 2500;
+                portalHop(possessed, portalExit(PORTALS[1 - i]));
+                break;
+            }
+        }
+    }
     if (Date.now() > digAutoAt) {
         digAutoAt = Date.now() + 15 * 60000;
         if (digState && !digState.dug && !digDoing && !duoBusy && Math.random() < 0.1) {
@@ -2208,7 +2295,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointerleave', () => { hoverActive = false; });
 fetchCapsules();   // 부팅 시 한 번 — 개봉 알림용
 
-const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite };
+const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -3357,6 +3444,7 @@ function updateWander(p, delta) {
         const wp = (ai.waypoints && ai.waypoints.length) ? ai.waypoints[0] : ai.target;
         const res = steerToward(p, wp, delta);
         if (res === 'arrived' && ai.waypoints && ai.waypoints.length > 1) {
+            if (wp && wp.tp) portalHop(p, wp.tp);   // 🌀 포탈 웨이포인트 — 반대편으로 슝
             ai.waypoints.shift();
             ai.stall = 0;
             return;
@@ -3402,7 +3490,11 @@ function updateWander(p, delta) {
     const wp = (ai.waypoints && ai.waypoints.length) ? ai.waypoints[0] : ai.target;
     const res = steerToward(p, wp, delta);
     if (res === 'arrived') {
-        if (ai.waypoints && ai.waypoints.length > 1) { ai.waypoints.shift(); return; }
+        if (ai.waypoints && ai.waypoints.length > 1) {
+            if (wp && wp.tp) portalHop(p, wp.tp);   // 🌀 배회 경로에 심긴 포탈 웨이포인트
+            ai.waypoints.shift();
+            return;
+        }
         ai.state = 'idle'; ai.wait = 2 + Math.random() * 4;
         if (Math.random() < 0.22) pet.action = { id: Math.random() < 0.5 ? 'happy' : 'think', t: 0 };  // arrival flourish
     } else if (res === 'blocked') {
@@ -3412,7 +3504,7 @@ function updateWander(p, delta) {
 
 // Cross-island trips are routed through the right bridge (each satellite has exactly one), so a
 // straight-line steer never tries to cross open water.
-function buildRoute(from, to) {
+function buildRouteWalk(from, to) {
     const a = islandOf(from.x, from.z), b = islandOf(to.x, to.z);
     if (a === b || a === -1 || b === -1) return [{ x: to.x, z: to.z }];
     const route = [];
@@ -3420,6 +3512,32 @@ function buildRoute(from, to) {
     if (b !== 0) { const br = BRIDGES[b - 1]; route.push({ ...br.inner }, { ...br.outer }); }
     route.push({ x: to.x, z: to.z });
     return route;
+}
+function routeLen(from, wps) {
+    let len = 0, px = from.x, pz = from.z;
+    for (const w of wps) {
+        len += Math.hypot(w.x - px, w.z - pz);
+        px = w.x; pz = w.z;
+    }
+    return len;
+}
+// 다리 경로가 기본, 포탈 경유가 "확실히" 짧을 때만 tp 웨이포인트를 심는다 (팔랑귀 방지 문턱 1.2).
+function buildRoute(from, to) {
+    const walk = buildRouteWalk(from, to);
+    if (PORTALS.length !== 2) return walk;
+    let best = walk, bestLen = routeLen(from, walk);
+    for (const i of [0, 1]) {
+        const pa = PORTALS[i], pb = PORTALS[1 - i];
+        const exit = portalExit(pb);
+        const leg1 = buildRouteWalk(from, { x: pa.x, z: pa.z });
+        const leg2 = buildRouteWalk(exit, to);
+        const len = routeLen(from, leg1) + 0.8 + routeLen(exit, leg2);
+        if (len < bestLen - 1.2) {
+            bestLen = len;
+            best = [...leg1.slice(0, -1), { x: pa.x, z: pa.z, tp: exit }, ...leg2];
+        }
+    }
+    return best;
 }
 
 // ---- World FX: the shared motions emit emoji/overlays through per-entity hooks; here they anchor
@@ -4071,7 +4189,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭' };
+const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
