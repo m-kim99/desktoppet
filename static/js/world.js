@@ -26,7 +26,7 @@ const savedLayout = await (async () => {
     try { return JSON.parse(localStorage.getItem('world-layout')) || {}; } catch (err) { return {}; }
 })();
 // 이동 가능한 타입 (연못=지형 함몰이라 고정, furniture=집 내부 파생이라 집을 따라감)
-const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house']);
+const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot']);
 {
     const counts = {};
     for (const p of PROPS) {
@@ -1292,7 +1292,163 @@ function makeFoodBooth() {
     return g;
 }
 
-const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth };
+// ---- 광장 세트 (P1 ㉑㉕): 베프 기념비 + 포옹 포인트 ----
+function makeMonument() {
+    // 조그만 돌 기념비: 받침 두 단 + 각인 판("베프 포에버" — 주인의 선택은 날짜 없이 문구만) + 꼭대기 하트.
+    const g = new THREE.Group();
+    const stone = M(0xcfd4d8);
+    const base = new THREE.Mesh(new RoundedBoxGeometry(0.56, 0.1, 0.44, 3, 0.03), stone);
+    base.position.y = 0.05;
+    g.add(base);
+    const tier = new THREE.Mesh(new RoundedBoxGeometry(0.42, 0.08, 0.32, 3, 0.025), stone);
+    tier.position.y = 0.14;
+    g.add(tier);
+    const slab = new THREE.Mesh(new RoundedBoxGeometry(0.36, 0.5, 0.12, 3, 0.035), M(0xe7e3da, { map: plasterTex }));
+    slab.position.y = 0.43;
+    g.add(slab);
+    const cv = document.createElement('canvas');
+    cv.width = 256; cv.height = 160;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#f6efdf';
+    ctx.fillRect(0, 0, 256, 160);
+    ctx.strokeStyle = 'rgba(150,120,80,0.55)';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(9, 9, 238, 142);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#6b5335';
+    ctx.font = '44px sans-serif';
+    ctx.fillText('🐕🐣', 128, 64);
+    ctx.font = 'bold 30px sans-serif';
+    ctx.fillText('베프 포에버', 128, 107);
+    ctx.font = '26px sans-serif';
+    ctx.fillText('💕', 128, 142);
+    const plateTex = new THREE.CanvasTexture(cv);
+    plateTex.colorSpace = THREE.SRGBColorSpace;
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.175), new THREE.MeshStandardMaterial({ map: plateTex, roughness: 0.9, metalness: 0 }));
+    plate.position.set(0, 0.45, 0.065);   // 남쪽 = 기본 카메라 쪽 면
+    g.add(plate);
+    const heartMat = M(0xf28bb0);
+    const heart = new THREE.Group();
+    const hl = new THREE.Mesh(new THREE.SphereGeometry(0.052, 12, 10), heartMat);
+    hl.position.x = -0.036;
+    const hr = hl.clone();
+    hr.position.x = 0.036;
+    const hb = new THREE.Mesh(new THREE.BoxGeometry(0.088, 0.088, 0.058), heartMat);
+    hb.rotation.z = Math.PI / 4;
+    hb.position.y = -0.045;
+    heart.add(hl, hr, hb);
+    heart.position.y = 0.77;
+    g.add(heart);
+    return g;
+}
+// 포옹 포인트: 하트 데칼 + 숨쉬는 링. 둘이 같이 서면 자동 포옹 — updateHugSpot이 지켜본다.
+let hugRing = null;
+const hugHeartTex = (() => {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 128;
+    const ctx = cv.getContext('2d');
+    ctx.translate(64, 60);
+    ctx.fillStyle = 'rgba(255,150,190,0.92)';
+    ctx.beginPath();
+    ctx.moveTo(0, 34);
+    ctx.bezierCurveTo(-66, -12, -30, -58, 0, -22);
+    ctx.bezierCurveTo(30, -58, 66, -12, 0, 34);
+    ctx.fill();
+    const t = new THREE.CanvasTexture(cv);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+})();
+function makeHugSpot() {
+    const g = new THREE.Group();
+    const decal = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.85, 0.85).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ map: hugHeartTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, opacity: 0.8 })
+    );
+    decal.position.y = 0.045;   // 광장 석재 타일 리본보다 확실히 위 — 아니면 타일이 하트를 덮는다
+    g.add(decal);
+    hugRing = new THREE.Mesh(
+        new THREE.RingGeometry(0.5, 0.56, 40).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: 0xff9ec2, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+    hugRing.position.y = 0.05;
+    g.add(hugRing);
+    return g;
+}
+let hugSpotCooldownUntil = 0;
+const hugBurst = [];   // { spr, vx, vy, vz, t } — 하트·반짝이가 둥실 떠오르다 사라진다
+function triggerHugBurst(x, y, z) {
+    for (let i = 0; i < 14; i++) {
+        const heartish = Math.random() < 0.6;
+        const spr = heartish
+            ? new THREE.Sprite(new THREE.SpriteMaterial({ map: hugHeartTex, transparent: true, opacity: 0.95, depthWrite: false }))
+            : glowSprite(0xfff3a6, 1, 0.9);
+        spr.scale.setScalar(heartish ? 0.14 + Math.random() * 0.09 : 0.16 + Math.random() * 0.1);
+        spr.position.set(x + (Math.random() - 0.5) * 0.5, y + 0.05, z + (Math.random() - 0.5) * 0.5);
+        scene.add(spr);
+        hugBurst.push({ spr, vx: (Math.random() - 0.5) * 0.5, vy: 0.85 + Math.random() * 0.7, vz: (Math.random() - 0.5) * 0.5, t: 0 });
+    }
+    try {   // 반짝이는 4음 아르페지오 (C-E-G-C) — 파일 없는 신스, sfx 볼륨을 따른다
+        const t0 = audioCtx.currentTime;
+        [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+            const o = audioCtx.createOscillator();
+            o.type = 'triangle';
+            o.frequency.value = f;
+            const gn = audioCtx.createGain();
+            gn.gain.setValueAtTime(0, t0 + i * 0.09);
+            gn.gain.linearRampToValueAtTime(0.05, t0 + i * 0.09 + 0.02);
+            gn.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.09 + 0.5);
+            o.connect(gn);
+            gn.connect(sfxMaster);
+            o.start(t0 + i * 0.09);
+            o.stop(t0 + i * 0.09 + 0.55);
+        });
+    } catch (e) {}
+}
+function updateHugSpot(delta) {
+    if (hugRing) {   // 링이 은은하게 숨쉰다
+        const s = 1 + 0.05 * Math.sin(wxTime.value * 2.2);
+        hugRing.scale.set(s, 1, s);
+        hugRing.material.opacity = 0.26 + 0.13 * Math.sin(wxTime.value * 2.2);
+    }
+    for (let i = hugBurst.length - 1; i >= 0; i--) {
+        const b = hugBurst[i];
+        b.t += delta;
+        b.spr.position.x += b.vx * delta;
+        b.spr.position.y += b.vy * delta;
+        b.spr.position.z += b.vz * delta;
+        b.vy -= 0.5 * delta;
+        b.spr.material.opacity = Math.max(0, 0.95 * (1 - b.t / 1.6));
+        if (b.t > 1.6) {
+            scene.remove(b.spr);
+            b.spr.material.dispose();
+            hugBurst.splice(i, 1);
+        }
+    }
+    const spot = PROPS.find((pr) => pr.type === 'hugspot');   // live — 공사 모드로 옮겨도 그대로
+    if (!spot || Date.now() < hugSpotCooldownUntil || pets.length < 2) return;
+    const on = (q) => Math.hypot(q.mover.position.x - spot.x, q.mover.position.z - spot.z) < 0.6;
+    const [a, b] = pets;
+    if (!on(a) || !on(b)) return;
+    const fxY = terrainHeight(spot.x, spot.z) + 0.25;
+    if (possessed) {   // 주인이 데려온 순간: 조종은 안 뺏고, 버스트 + 절친의 솔로 하트 포즈로 화답
+        const buddy = pets.find((q) => q !== possessed);
+        if (!buddy || buddy.pet.sleeping || buddy.bed || buddy.dip || buddy.ai.state === 'held' || duoBusy) return;
+        hugSpotCooldownUntil = Date.now() + 90 * 1000;
+        triggerHugBurst(spot.x, fxY, spot.z);
+        buddy.mover.rotation.y = Math.atan2(possessed.mover.position.x - buddy.mover.position.x, possessed.mover.position.z - buddy.mover.position.z);
+        buddy.pet.action = { id: 'hug', t: 0, role: 'solo', dir: 1 };
+        logWorldEvent('포옹 포인트에서 주인과 마음이 통했다 💕');
+        return;
+    }
+    const free = (q) => !q.pet.sleeping && !q.bed && !q.dip && q.ai.state !== 'held' && q.ai.state !== 'busy' && q.ai.state !== 'goto';
+    if (duoBusy || !free(a) || !free(b)) return;
+    hugSpotCooldownUntil = Date.now() + 5 * 60 * 1000;   // 자주 터지면 마법이 아니니까
+    triggerHugBurst(spot.x, fxY, spot.z);
+    logWorldEvent('포옹 포인트가 반짝이며 자동 포옹이 시작됐다 💕');
+    worldHug(a);
+}
+
+const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -1310,7 +1466,7 @@ const blobTex = (() => {
 })();
 const blobGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-const BLOB_SIZE = { tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0 };
+const BLOB_SIZE = { tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62 };
 // Beds register a lying spot (on the furniture, with a lean-back tilt + heading) and an
 // approach point just outside their collider that the pet walks to before climbing on.
 // 🔨 함수로 분리: 로드 시 프롭 루프가 굽고, 공사모드에서 프롭이 이사하면 unbake→bake로 다시
@@ -1480,7 +1636,7 @@ function refreshHouseDerived() {
 // friend takes the passenger seat), arrow keys drive at 3× walking speed, Ctrl/⌘ again hops out.
 // Bridges count as road, so you can drive to the satellite islands (wheels overhang, who cares).
 // The collider entry moves with the car so wandering pets steer around it, parked or not.
-const CAR = { x: 0, z: 0, heading: 1.05, vel: 0 };
+const CAR = { x: 2.5, z: -1.35, heading: 1.05, vel: 0 };   // 광장 남동쪽 길가 — 광장 가운데는 기념비·포옹 포인트의 자리
 {   // 🔨 저장된 주차 위치 — 차는 PROPS 루프 밖에서 만들어져 여기서 따로 적용한다
     const o = savedLayout['car-1'];
     if (o && Number.isFinite(o.x) && Number.isFinite(o.z)) {
@@ -2797,8 +2953,8 @@ async function worldHug(initiator) {
 // sight — sight is sampled against the same prop circles the pets collide with, so whatever
 // blocks walking blocks seeing, and construction-mode moves stay honest (PROPS positions are
 // live). Starts from the pet menu, a <game=hideseek> chat tag, or occasionally on its own. ----
-const HIDE_OCCLUDERS = { tree: 0.42, house: 1.15, coffee: 0.5, food: 0.5, swing: 0.5, seesaw: 0.55, fence: 0.5, radio: 0.3 };
-const HIDE_STANDOFF  = { tree: 0.75, house: 1.6, coffee: 0.85, food: 0.85, swing: 0.85, seesaw: 0.9, fence: 0.8, radio: 0.55 };
+const HIDE_OCCLUDERS = { tree: 0.42, house: 1.15, coffee: 0.5, food: 0.5, swing: 0.5, seesaw: 0.55, fence: 0.5, radio: 0.3, monument: 0.3 };
+const HIDE_STANDOFF  = { tree: 0.75, house: 1.6, coffee: 0.85, food: 0.85, swing: 0.85, seesaw: 0.9, fence: 0.8, radio: 0.55, monument: 0.62 };
 const HS_COUNT_SPOT = { x: 0.25, z: 0.45 };   // 광장 가운데 — 술래가 눈 가리고 세는 자리
 let hideSeekGame = null;   // { phase, seeker, hider, playerHides, countTotal, t, seekT, losT, lastLeft, found, cancel }
 let hideSeekAutoAt = Date.now() + 12 * 60000;   // 가끔 스스로 한 판 (다음 추첨 시각)
@@ -3080,7 +3236,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소' };
+const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -4746,7 +4902,7 @@ function pickResponder(text) {
 const ACTION_RE = /<\s*(motion|goto|mount|drink|snack|hat|swim|drive|game)\s*[=:]\s*([a-z0-9-]+)\s*\/?\s*>/gi;
 const ACTION_IDS = {
     motion: new Set(GLB_MOTIONS.map((m) => m.id)),
-    goto: new Set(['plaza', 'house', 'pond', 'bowl', 'coffee', 'snack', 'radio', 'swing', 'seesaw', 'sunbed', 'hammock', 'friend']),
+    goto: new Set(['plaza', 'house', 'pond', 'bowl', 'coffee', 'snack', 'radio', 'swing', 'seesaw', 'sunbed', 'hammock', 'friend', 'monument', 'hugspot']),
     mount: new Set(['swing', 'seesaw', 'sofa', 'sunbed', 'hammock', 'loftbed']),
     drink: new Set(DRINKS.map((d) => d.id)),
     snack: new Set(FOODS.map((f) => f.id)),
@@ -4793,7 +4949,7 @@ async function freeForScript(p) {
     p.pet.sleeping = false;
     p.pet.autoSleeping = false;
 }
-const GOTO_PROP_TYPE = { pond: 'pond', bowl: 'bowl', coffee: 'coffee', snack: 'food', radio: 'radio', swing: 'swing', seesaw: 'seesaw', sunbed: 'sunbed', hammock: 'hammock' };
+const GOTO_PROP_TYPE = { pond: 'pond', bowl: 'bowl', coffee: 'coffee', snack: 'food', radio: 'radio', swing: 'swing', seesaw: 'seesaw', sunbed: 'sunbed', hammock: 'hammock', monument: 'monument', hugspot: 'hugspot' };
 function resolveGotoSpot(p, id) {
     if (id === 'plaza') return { x: 0.4, z: 0.4 };
     if (id === 'house') { const w = houseWorld(0, 1.3); return { x: w.x, z: w.z }; }
@@ -6153,6 +6309,7 @@ function animate() {
     updateSwings(delta);
     updateSeesaws(delta);
     updateHideSeek(delta);
+    updateHugSpot(delta);
     updateDips(delta);
     updateAutoDrive(delta);
     updateAutoSleep();
