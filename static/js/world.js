@@ -1799,7 +1799,67 @@ function openCapsulePanel() {
     capUI.panel.style.display = 'flex';
     fetchCapsules();
 }
-const PROP_CLICKS = { pecktree: onPeckTreeClick, well: () => openWellPanel(), capsule: () => openCapsulePanel() };
+// ---- 상호작용 문법 통일 (실무 조사 반영): "세상은 클릭, 펫 몸은 ⌘" — 클릭/탭 = 주인의 손
+// (패널·스위치·대리주문, 심즈式), ⌘/✋ = 조종 중인 펫의 몸(탑승·운전·손잡기, 동숲式). 마크처럼
+// 두 경로를 병행하고, Roblox ProximityPrompt처럼 호버 라벨이 "무엇이 되는지"를 그 자리에서
+// 알려준다 (updateHoverPrompt). ----
+const PROP_CLICKS = {
+    pecktree: onPeckTreeClick,
+    well: () => openWellPanel(),
+    capsule: () => openCapsulePanel(),
+    radio: () => toggleRadioPanel(),
+    lamp: () => cycleLampBrightness(),
+    coffee: () => toggleCoffeePanel(),
+    food: () => toggleFoodPanel(),
+};
+// 호버 프롬프트: 클릭형은 "· 클릭", 몸이 필요한 것은 ⌘ 안내, 나머지는 이름표만.
+const HOVER_PROMPTS = {
+    pecktree: () => '💗 쪼아쪼아 나무 · 클릭',
+    well: () => '🪙 소원 빌기 · 클릭',
+    capsule: () => '🕰️ 타임캡슐 · 클릭',
+    radio: () => '📻 라디오 · 클릭',
+    lamp: () => `💡 가로등 밝기 ${Math.round(lampBrightness * 100)}% · 클릭`,
+    coffee: () => '☕ 커피 주문 · 클릭',
+    food: () => '🍞 간식 주문 · 클릭',
+    swing: () => '🛝 그네 — 조종 중 ⌘/✋로 타요',
+    seesaw: () => '🛝 시소 — 조종 중 ⌘/✋로 타요',
+    sunbed: () => '🛏️ 선베드 — 조종 중 ⌘/✋로 누워요',
+    hammock: () => '🛏️ 해먹 — 조종 중 ⌘/✋로 누워요',
+    monument: () => '🗿 베프 포에버 💕',
+    hugspot: () => '💕 포옹 포인트 — 둘이 같이 서면!',
+};
+const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4 };
+const hoverEl = document.createElement('div');
+hoverEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); z-index:88; pointer-events:none; background:rgba(30,32,40,0.88); color:#fff; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
+document.body.appendChild(hoverEl);
+let hoverSX = -1, hoverSY = -1, hoverActive = false, hoverProp = null, hoverT = 0;
+const _hoverV = new THREE.Vector3();
+function updateHoverPrompt(delta) {
+    hoverT += delta;
+    if (hoverT >= 0.12) {   // 레이캐스트는 ~8회/초만 — 발열 예산
+        hoverT = 0;
+        hoverProp = null;
+        if (hoverActive && !buildMode) {
+            pointerNdc.set((hoverSX / window.innerWidth) * 2 - 1, -(hoverSY / window.innerHeight) * 2 + 1);
+            raycaster.setFromCamera(pointerNdc, camera);
+            for (const pr of PROPS) {
+                if (!HOVER_PROMPTS[pr.type] || !pr.obj) continue;
+                if (raycaster.intersectObject(pr.obj, true).length) { hoverProp = pr; break; }
+            }
+        }
+        renderer.domElement.style.cursor = hoverProp && PROP_CLICKS[hoverProp.type] ? 'pointer' : '';
+    }
+    if (!hoverProp) {
+        if (hoverEl.style.display !== 'none') hoverEl.style.display = 'none';
+        return;
+    }
+    _hoverV.set(hoverProp.x, terrainHeight(hoverProp.x, hoverProp.z) + (HOVER_H[hoverProp.type] || 1), hoverProp.z).project(camera);
+    if (_hoverV.z > 1) { hoverEl.style.display = 'none'; return; }
+    hoverEl.textContent = HOVER_PROMPTS[hoverProp.type]();
+    hoverEl.style.left = `${(_hoverV.x * 0.5 + 0.5) * window.innerWidth}px`;
+    hoverEl.style.top = `${(-_hoverV.y * 0.5 + 0.5) * window.innerHeight}px`;
+    hoverEl.style.display = 'block';
+}
 let capsuleNoticeT = 55, capsuleNoticed = false;
 function updateMemorialIsland(delta) {
     // 동전 포물선: 0.7초에 우물 속으로 — 끝나면 퐁당 + 반짝
@@ -1847,6 +1907,13 @@ function updateMemorialIsland(delta) {
         }
     }
 }
+renderer.domElement.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch') { hoverActive = false; return; }   // 터치는 탭=실행 (마크式 직접 터치)
+    hoverSX = e.clientX;
+    hoverSY = e.clientY;
+    hoverActive = true;
+});
+renderer.domElement.addEventListener('pointerleave', () => { hoverActive = false; });
 fetchCapsules();   // 부팅 시 한 번 — 개봉 알림용
 
 const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule };
@@ -5212,7 +5279,7 @@ for (const d of DRINKS) {
     item.onmouseenter = () => { item.style.background = 'rgba(255,255,255,0.1)'; };
     item.onmouseleave = () => { item.style.background = 'transparent'; };
     item.onclick = () => {
-        if (possessed) giveDrink(possessed, d);
+        ownerOrder('drink', d);
         coffeePanel.style.display = 'none';
     };
     coffeeGrid.appendChild(item);
@@ -5252,7 +5319,7 @@ for (const f of FOODS) {
     item.onmouseenter = () => { item.style.background = 'rgba(255,255,255,0.1)'; };
     item.onmouseleave = () => { item.style.background = 'transparent'; };
     item.onclick = () => {
-        if (possessed) giveFood(possessed, f);
+        ownerOrder('food', f);
         foodPanel.style.display = 'none';
     };
     foodGrid.appendChild(item);
@@ -5260,6 +5327,24 @@ for (const f of FOODS) {
 document.body.appendChild(foodPanel);
 function toggleFoodPanel() {
     foodPanel.style.display = (foodPanel.style.display === 'none' || !foodPanel.style.display) ? 'block' : 'none';
+}
+// 심즈式 대리 주문: 부스를 클릭해서 고르면 — 조종 중인 펫이 부스 옆에 있으면 그 펫이 바로 받고,
+// 아니면 한가한 AI 펫이 부스까지 걸어가서 받아 온다 (⌘ 근접 주문은 예전 그대로).
+async function ownerOrder(kind, def) {
+    const boothType = kind === 'drink' ? 'coffee' : 'food';
+    if (possessed && nearestPropDist(possessed, boothType) < 1.3) {
+        (kind === 'drink' ? giveDrink : giveFood)(possessed, def);
+        return;
+    }
+    const p = pets.find((q) => q !== possessed && !q.pet.sleeping && !q.bed && !q.dip
+        && q.ai.state !== 'held' && q.ai.state !== 'busy' && q.ai.state !== 'goto');
+    if (!p) { showToast(`${kind === 'drink' ? '☕' : '🍞'} 지금 주문을 받아올 펫이 없어요`); return; }
+    showToast(`${petKo(p)}가 ${def.name} 받으러 가요`);
+    const want = resolveGotoSpot(p, boothType === 'coffee' ? 'coffee' : 'snack');
+    const spot = want && nearestOpenSpot(want.x, want.z);
+    if (spot) await gotoAsync(p, spot.x, spot.z);
+    (kind === 'drink' ? giveDrink : giveFood)(p, def);
+    releaseAI(p);
 }
 
 // Right-click on the world → a tiny "먹기" popup (and never the browser context menu). Picking
@@ -5774,13 +5859,17 @@ function doInteract() {
         return;
     }
     if (nearestPropDist(possessed, 'lamp') < 1.0) {
-        // Streetlamp brightness now lives on the lamps: cycle it in steps at the lamp (persisted).
-        const steps = [0, 0.25, 0.5, 0.75, 1];
-        const idx = steps.findIndex((s) => Math.abs(s - lampBrightness) < 0.125);
-        lampBrightness = steps[(idx + 1) % steps.length];
-        try { localStorage.setItem('worldLampBrightness', String(lampBrightness)); } catch (err) {}
-        updateDayNight(true);
+        cycleLampBrightness();
     }
+}
+// Streetlamp brightness cycles in steps (persisted) — ⌘ at a lamp or a direct click both land here.
+function cycleLampBrightness() {
+    const steps = [0, 0.25, 0.5, 0.75, 1];
+    const idx = steps.findIndex((s) => Math.abs(s - lampBrightness) < 0.125);
+    lampBrightness = steps[(idx + 1) % steps.length];
+    try { localStorage.setItem('worldLampBrightness', String(lampBrightness)); } catch (err) {}
+    updateDayNight(true);
+    showToast(`💡 가로등 밝기 ${Math.round(lampBrightness * 100)}%`);
 }
 window.addEventListener('keydown', (e) => {
     if (e.target && e.target.tagName === 'INPUT') return;        // typing in the chat bar
@@ -6721,6 +6810,7 @@ function animate() {
     updateHideSeek(delta);
     updateHugSpot(delta);
     updateMemorialIsland(delta);
+    updateHoverPrompt(delta);
     updateDips(delta);
     updateAutoDrive(delta);
     updateAutoSleep();
