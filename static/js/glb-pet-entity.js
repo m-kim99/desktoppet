@@ -22,6 +22,7 @@ export const GLB_MOTIONS = [
     { id: 'play',      label: '놀이 (Play)' },
     { id: 'think',     label: '생각 (Think)' },
     { id: 'eat',       label: '먹기 (Eat)' },
+    { id: 'dig',       label: '파기 (Dig)' },
     { id: 'sleep',     label: '수면 (Sleep)' },
 ];
 
@@ -73,6 +74,8 @@ export function spawnBurstEmoji(chars, count = 14, { cx = 50, cy = 32 } = {}) {
 // touches the head top; setGlbPetAccessory anchors it there. New items = builder + list entry. ----
 export const GLB_ACCESSORIES = [
     { id: 'santa-hat', label: '🎅 산타모자' },
+    { id: 'straw-hat', label: '👒 밀짚모자' },   // 보물찾기 1호 보상 (월드에서 발굴하면 열림)
+    { id: 'ribbon',    label: '🎀 리본' },       // 보물찾기 2호 보상
 ];
 
 // Classic floppy santa hat: white brim ring, red cone tilted at the tip, white pompom at the point.
@@ -97,7 +100,45 @@ function makeSantaHat(brimR) {
     return g;
 }
 
-const ACCESSORY_BUILDERS = { 'santa-hat': makeSantaHat };
+// 밀짚모자: 넓은 챙 + 낮은 돔 + 산호빛 띠.
+function makeStrawHat(brimR) {
+    const g = new THREE.Group();
+    const straw = new THREE.MeshStandardMaterial({ color: 0xe8c878, roughness: 0.9 });
+    const band = new THREE.MeshStandardMaterial({ color: 0xd6604e, roughness: 0.7 });
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(brimR * 1.75, brimR * 1.85, brimR * 0.14, 24), straw);
+    g.add(brim);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(brimR * 0.95, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), straw);
+    dome.position.y = brimR * 0.05;
+    dome.scale.y = 0.75;
+    g.add(dome);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(brimR * 0.93, brimR * 0.09, 8, 24), band);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = brimR * 0.16;
+    g.add(ring);
+    g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    return g;
+}
+// 리본: 정수리의 나비매듭 — 매듭 + 좌우 고리 + 늘어진 꼬리.
+function makeRibbon(brimR) {
+    const g = new THREE.Group();
+    const pink = new THREE.MeshStandardMaterial({ color: 0xf27ba0, roughness: 0.6 });
+    const knot = new THREE.Mesh(new THREE.SphereGeometry(brimR * 0.22, 12, 10), pink);
+    g.add(knot);
+    for (const side of [-1, 1]) {
+        const loop = new THREE.Mesh(new THREE.SphereGeometry(brimR * 0.42, 12, 10), pink);
+        loop.position.set(side * brimR * 0.48, brimR * 0.06, 0);
+        loop.scale.set(1, 0.62, 0.45);
+        loop.rotation.z = side * 0.35;
+        g.add(loop);
+        const tail = new THREE.Mesh(new THREE.ConeGeometry(brimR * 0.16, brimR * 0.5, 8), pink);
+        tail.position.set(side * brimR * 0.3, -brimR * 0.3, 0.02);
+        tail.rotation.z = side * 2.6;
+        g.add(tail);
+    }
+    g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    return g;
+}
+const ACCESSORY_BUILDERS = { 'santa-hat': makeSantaHat, 'straw-hat': makeStrawHat, 'ribbon': makeRibbon };
 
 // Wear a 코디 item (id) or take the current one off (id = null/undefined). The item is parented to
 // `wrap`, so every motion (nod, spin, sleep droop, …) carries it naturally.
@@ -225,7 +266,7 @@ export function updateGlbPetEntity(pet, delta) {
     // One-shot motions (from the motion menu / on summon). Plays for its duration, then clears and
     // falls through to idle. Each frame starts from rest so leftover idle pose doesn't bleed in.
     if (pet.action) {
-        const DUR = { wave: 2.4, happy: 1.8, think: 2.8, dance: 4.5, cheer: 3.5, celebrate: 2.6, eat: 3.2, hug: 3.0, play: 6.0 };
+        const DUR = { wave: 2.4, happy: 1.8, think: 2.8, dance: 4.5, cheer: 3.5, celebrate: 2.6, eat: 3.2, dig: 2.8, hug: 3.0, play: 6.0 };
         const dur = DUR[pet.action.id] || 2.0;
         pet.action.t += delta;
         const p = pet.action.t / dur;
@@ -414,6 +455,41 @@ export function updateGlbPetEntity(pet, delta) {
                     if (pet.wings.length) pet.spawnEmoji(Math.random() < 0.5 ? '🌾' : '✨', { left: 45 + Math.random() * 10, top: 60 + Math.random() * 6, size: 15 + Math.random() * 8, dx: (Math.random() - 0.5) * 24, duration: 1000 });
                     else pet.spawnEmoji(Math.random() < 0.25 ? '❤️' : '✨', { left: 45 + Math.random() * 10, top: 56 + Math.random() * 6, size: 18 + Math.random() * 8, dx: (Math.random() - 0.5) * 24, duration: 1100 });
                     a.noteT = 0.42;
+                }
+            }
+            if (pet.action.id === 'dig') {
+                // 땅 파기. Phases: A(0–.12) 웅크리기, B(.12–.85) 파기 사이클 — 좌우 번갈아 긁으며
+                // 흙먼지가 튄다, C(.85–1) 만족스럽게 몸을 편다. 병아리 = 날개 갈퀴질 + 부리 콕콕,
+                // 강아지 = 몸통 리듬 갈퀴질 + 신난 꼬리 + 펄럭이는 귀.
+                const digging = p >= 0.12 && p < 0.85;
+                let crouch;
+                if (p < 0.12)    crouch = Ease.inOutSine(p / 0.12);
+                else if (digging) crouch = 1;
+                else             crouch = 1 - Ease.outBack(Math.min(1, (p - 0.85) / 0.15));
+                const cyc = digging ? pet.t * Math.PI * 6 : 0;
+                const scratchL = Math.max(0, Math.sin(cyc));
+                const scratchR = Math.max(0, -Math.sin(cyc));
+                pet.wrap.rotation.x = 0.34 * crouch + (digging ? Math.abs(Math.sin(cyc)) * 0.08 : 0);
+                pet.wrap.position.y = -0.015 * crouch;
+                if (pet.wings.length) {
+                    pet.wings.forEach((wg, i) => {
+                        const side = (i % 2 === 0) ? 1 : -1;
+                        const s = side > 0 ? scratchL : scratchR;
+                        wg.rotation.z = (wg.userData._restRotZ || 0) - side * (0.25 * crouch + s * 0.75);
+                        wg.rotation.x = (wg.userData._restRotX || 0) + s * 0.5;
+                    });
+                    if (pet.beak) pet.beak.rotation.x = (pet.beak.userData._restRotX || 0) - scratchL * 0.15;
+                } else {
+                    pet.wrap.rotation.z = Math.sin(cyc) * 0.12 * crouch;
+                    if (pet.tail) pet.tail.rotation.y = Math.sin(pet.t * 20) * 0.5 * crouch;
+                    pet.ears.forEach(eo => { eo.rotation.x = (eo.userData._restRotX || 0) + crouch * 0.4 + scratchL * 0.12; });
+                }
+                pet.eyes.forEach(ey => { ey.scale.y = ey.userData._restScaleY * (1 - 0.3 * crouch); });
+                const a = pet.action;
+                a.dirtT = (a.dirtT ?? 0) - delta;
+                if (a.dirtT <= 0 && digging) {
+                    pet.spawnEmoji(Math.random() < 0.6 ? '💨' : '✨', { left: 42 + Math.random() * 16, top: 62 + Math.random() * 8, size: 14 + Math.random() * 8, dx: (Math.random() - 0.5) * 30, duration: 900 });
+                    a.dirtT = 0.3;
                 }
             }
             if (pet.action.id === 'hug') {

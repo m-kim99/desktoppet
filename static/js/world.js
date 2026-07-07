@@ -1598,6 +1598,116 @@ function makeBoulder() {
     return g;
 }
 
+// ---- 보물 모래밭 (모험의 섬 ㉜): X 세 곳 중 매일 한 곳에 보물이 묻힌다 — 반짝이는 자리를
+// 조종 중 ⌘로 파거나 채팅 <game=treasure>로 시키고, 펫이 아주 가끔 스스로 발굴하기도 한다.
+// 파기는 새 Dig 모션(엔티티 공용)이고, 보상은 잠긴 코디가 차례로 열린다: 👒 밀짚모자 → 🎀 리본
+// → 그다음부턴 반짝이는 동전. 일일 상태·언락은 localStorage. ----
+const DIG_SPOTS_LOCAL = [[-0.4, 0.4], [0.45, -0.35], [-0.15, -0.55]];
+const DIG_UNLOCK_ORDER = ['straw-hat', 'ribbon'];
+let digGlint = null, digsitePr = null;
+let accUnlocked = new Set(['santa-hat']);
+try {
+    const saved = JSON.parse(localStorage.getItem('world-acc-unlocked'));
+    if (Array.isArray(saved)) saved.forEach((id) => accUnlocked.add(id));
+} catch (e) {}
+accUnlocked.add('santa-hat');   // 산타모자는 언제나 — 이미 출시된 코디를 잠그지 않는다
+function saveAccUnlocked() {
+    try { localStorage.setItem('world-acc-unlocked', JSON.stringify([...accUnlocked])); } catch (e) {}
+}
+let digState = null;   // { date, spot, dug }
+function refreshDigState() {
+    const today = localDateStr();
+    if (digState && digState.date === today) return;
+    try { digState = JSON.parse(localStorage.getItem('world-treasure')); } catch (e) { digState = null; }
+    if (!digState || digState.date !== today) {
+        digState = { date: today, spot: Math.floor(Math.random() * DIG_SPOTS_LOCAL.length), dug: false };
+        try { localStorage.setItem('world-treasure', JSON.stringify(digState)); } catch (e) {}
+    }
+}
+function digSpotWorld() {
+    if (!digsitePr || !digState) return null;
+    const [lx, lz] = DIG_SPOTS_LOCAL[digState.spot];
+    const cy = Math.cos(digsitePr.rotY || 0), sy = Math.sin(digsitePr.rotY || 0);
+    return { x: digsitePr.x + lx * cy + lz * sy, z: digsitePr.z - lx * sy + lz * cy };
+}
+function makeDigsite(p) {
+    digsitePr = p;
+    const g = new THREE.Group();
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 64;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#e8d5a8';
+    ctx.fillRect(0, 0, 64, 64);
+    for (let i = 0; i < 90; i++) {
+        ctx.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,0.25)' : 'rgba(150,120,70,0.2)';
+        ctx.fillRect(Math.random() * 63, Math.random() * 63, 1.6, 1.6);
+    }
+    const sandTex = new THREE.CanvasTexture(cv);
+    sandTex.colorSpace = THREE.SRGBColorSpace;
+    const sand = new THREE.Mesh(new THREE.CircleGeometry(1.2, 24).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: sandTex, roughness: 1, metalness: 0 }));
+    sand.position.y = 0.03;
+    g.add(sand);
+    const xcv = document.createElement('canvas');
+    xcv.width = xcv.height = 48;
+    const xctx = xcv.getContext('2d');
+    xctx.strokeStyle = 'rgba(178,90,60,0.85)';
+    xctx.lineWidth = 7;
+    xctx.lineCap = 'round';
+    xctx.beginPath();
+    xctx.moveTo(10, 10); xctx.lineTo(38, 38);
+    xctx.moveTo(38, 10); xctx.lineTo(10, 38);
+    xctx.stroke();
+    const xTex = new THREE.CanvasTexture(xcv);
+    const xMat = new THREE.MeshBasicMaterial({ map: xTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
+    for (const [lx, lz] of DIG_SPOTS_LOCAL) {
+        const xm = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.32).rotateX(-Math.PI / 2), xMat);
+        xm.position.set(lx, 0.045, lz);
+        g.add(xm);
+    }
+    digGlint = glowSprite(0xfff2a8, 0.45, 0);   // 오늘의 보물 자리 반짝임 — updateMemorialIsland가 움직인다
+    digGlint.position.y = 0.22;
+    g.add(digGlint);
+    return g;
+}
+let digDoing = false, digAutoAt = Date.now() + 15 * 60000;
+async function startDig(p) {
+    refreshDigState();
+    if (!digState || digState.dug || digDoing || !p || p.bed || p.dip) return;
+    const w = digSpotWorld();
+    if (!w) return;
+    digDoing = true;
+    try {
+        p.mover.rotation.y = Math.atan2(w.x - p.mover.position.x, w.z - p.mover.position.z);
+        p.pet.action = { id: 'dig', t: 0 };
+        const y = terrainHeight(w.x, w.z);
+        for (let i = 0; i < 10; i++) {   // 흙 puffs — 어두운 스프라이트라 가산 대신 보통 블렌딩
+            const puff = new THREE.Sprite(new THREE.SpriteMaterial({ map: blobTex, transparent: true, opacity: 0.75, depthWrite: false }));
+            puff.scale.setScalar(0.12 + Math.random() * 0.12);
+            puff.position.set(w.x + (Math.random() - 0.5) * 0.3, y + 0.06, w.z + (Math.random() - 0.5) * 0.3);
+            scene.add(puff);
+            hugBurst.push({ spr: puff, vx: (Math.random() - 0.5) * 0.8, vy: 0.7 + Math.random() * 0.6, vz: (Math.random() - 0.5) * 0.8, t: Math.random() * -0.9 });
+        }
+        await sleepMs(2900);
+        digState.dug = true;
+        try { localStorage.setItem('world-treasure', JSON.stringify(digState)); } catch (e) {}
+        triggerHugBurst(w.x, y + 0.25, w.z);
+        const next = DIG_UNLOCK_ORDER.find((id) => !accUnlocked.has(id));
+        if (next) {
+            accUnlocked.add(next);
+            saveAccUnlocked();
+            const label = GLB_ACCESSORIES.find((a) => a.id === next)?.label || next;
+            showToast(`🎁 보물 발견! ${label} 코디가 열렸어요`);
+            logWorldEvent(`${petKo(p)}가 모래밭에서 보물을 파냈다 — ${label} 코디 언락 🎁`);
+            maybeProactive(p, `방금 모래밭에서 보물을 파냈다! ${label}이(가) 나왔다!`);
+        } else {
+            showToast('✨ 반짝이는 동전을 찾았다 — 소원 우물에 어울리겠어');
+            logWorldEvent(`${petKo(p)}가 모래밭에서 반짝이는 동전을 파냈다 ✨`);
+        }
+    } finally {
+        digDoing = false;
+    }
+}
+
 // ---- 추억의 섬 (SW, ㉒㉓㉔): 쪼아쪼아나무 · 소원우물 · 타임캡슐 — 기념비와 함께 다리 건너
 // 우리만의 성지. 나무·우물·캡슐은 클릭/탭으로 상호작용한다 (renderer pointerup의 PROP_CLICKS). ----
 function mkHeart(scale, mat) {
@@ -1980,8 +2090,9 @@ const HOVER_PROMPTS = {
     cave: () => '🕳️ 아늑한 동굴 — 조종 중 ⌘/✋로 쿠션에 앉아요',
     boulder: () => '🪨 바위',
     lookout: () => '🔭 전망대 — 언덕 위, 별이 잘 보여요',
+    digsite: () => (digState && !digState.dug ? '⛏️ 보물 모래밭 — 반짝이는 자리를 조종 중 ⌘로 파요' : '⛏️ 보물 모래밭 — 오늘 보물은 이미 찾았어요'),
 };
-const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1 };
+const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7 };
 const hoverEl = document.createElement('div');
 hoverEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); z-index:88; pointer-events:none; background:rgba(30,32,40,0.88); color:#fff; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
 document.body.appendChild(hoverEl);
@@ -2047,6 +2158,32 @@ function updateMemorialIsland(delta) {
     }
     // 동굴 랜턴: 불꽃처럼 일렁인다
     if (caveLamp) caveLamp.intensity = 1.05 + 0.1 * Math.sin(wxTime.value * 9) + 0.05 * Math.sin(wxTime.value * 23);
+    // 보물 모래밭: 오늘의 자리 반짝임 + 아주 가끔 펫이 스스로 발굴
+    refreshDigState();
+    if (digGlint && digState) {
+        if (!digState.dug) {
+            const [lx, lz] = DIG_SPOTS_LOCAL[digState.spot];
+            digGlint.position.set(lx, 0.2 + 0.05 * Math.sin(wxTime.value * 3), lz);
+            digGlint.material.opacity = 0.3 + 0.22 * Math.sin(wxTime.value * 3);
+            digGlint.visible = true;
+        } else {
+            digGlint.visible = false;
+        }
+    }
+    if (Date.now() > digAutoAt) {
+        digAutoAt = Date.now() + 15 * 60000;
+        if (digState && !digState.dug && !digDoing && !duoBusy && Math.random() < 0.1) {
+            const p = pets.find((q) => q !== possessed && !q.pet.sleeping && !q.bed && !q.dip
+                && (q.ai.state === 'idle' || q.ai.state === 'walk'));
+            const w = digSpotWorld();
+            if (p && w) (async () => {
+                await gotoAsync(p, w.x + 0.3, w.z + 0.2);
+                p.ai.state = 'busy';
+                await startDig(p);
+                releaseAI(p);
+            })();
+        }
+    }
     // 타임캡슐 개봉 알림: 1분마다 확인, 세션당 한 번만 조른다
     capsuleNoticeT += delta;
     if (capsuleNoticeT >= 60) {
@@ -2071,7 +2208,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointerleave', () => { hoverActive = false; });
 fetchCapsules();   // 부팅 시 한 번 — 개봉 알림용
 
-const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout };
+const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -3457,7 +3594,9 @@ for (let i = 0; i < GLB_ACCESSORIES.length; i++) {
     item.onclick = () => {
         const p = menuPet;
         hideMenu();
-        if (p) setGlbPetAccessory(p.pet, (p.pet.accessory && p.pet.accessory.id === a.id) ? null : a.id);
+        if (!p) return;
+        if (!accUnlocked.has(a.id)) { showToast('🔒 모험의 섬 보물찾기에서 발견하면 열려요'); return; }
+        setGlbPetAccessory(p.pet, (p.pet.accessory && p.pet.accessory.id === a.id) ? null : a.id);
     };
     motionMenu.appendChild(item);
     accessoryItems.push({ el: item, acc: a });
@@ -3466,7 +3605,8 @@ function showMenu(x, y, p) {
     menuPet = p;
     controlItem.textContent = (p === possessed) ? '🎮 조종 해제 (Esc)' : '🎮 조종하기';
     for (const { el, acc } of accessoryItems) {
-        el.textContent = (p.pet.accessory && p.pet.accessory.id === acc.id) ? `${acc.label} 벗기` : acc.label;
+        el.textContent = !accUnlocked.has(acc.id) ? '🔒 ???'
+            : (p.pet.accessory && p.pet.accessory.id === acc.id) ? `${acc.label} 벗기` : acc.label;
     }
     motionMenu.style.display = 'block';
     // Open to the RIGHT of the click point (the click lands on the pet — an offset keeps the
@@ -3931,7 +4071,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대' };
+const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -5618,14 +5758,14 @@ function pickResponder(text) {
 const ACTION_RE = /<\s*(motion|goto|mount|drink|snack|hat|swim|drive|game)\s*[=:]\s*([a-z0-9-]+)\s*\/?\s*>/gi;
 const ACTION_IDS = {
     motion: new Set(GLB_MOTIONS.map((m) => m.id)),
-    goto: new Set(['plaza', 'house', 'pond', 'bowl', 'coffee', 'snack', 'radio', 'swing', 'seesaw', 'sunbed', 'hammock', 'friend', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'cave', 'lookout']),
+    goto: new Set(['plaza', 'house', 'pond', 'bowl', 'coffee', 'snack', 'radio', 'swing', 'seesaw', 'sunbed', 'hammock', 'friend', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'cave', 'lookout', 'digsite']),
     mount: new Set(['swing', 'seesaw', 'sofa', 'sunbed', 'hammock', 'loftbed']),
     drink: new Set(DRINKS.map((d) => d.id)),
     snack: new Set(FOODS.map((f) => f.id)),
     hat: new Set([...GLB_ACCESSORIES.map((a) => a.id), 'off']),
     swim: new Set(['pond', 'sea']),
     drive: new Set(['car']),
-    game: new Set(['hideseek']),
+    game: new Set(['hideseek', 'treasure']),
 };
 function parseWorldReply(raw) {
     const actions = [];
@@ -5665,7 +5805,7 @@ async function freeForScript(p) {
     p.pet.sleeping = false;
     p.pet.autoSleeping = false;
 }
-const GOTO_PROP_TYPE = { pond: 'pond', bowl: 'bowl', coffee: 'coffee', snack: 'food', radio: 'radio', swing: 'swing', seesaw: 'seesaw', sunbed: 'sunbed', hammock: 'hammock', monument: 'monument', hugspot: 'hugspot', pecktree: 'pecktree', well: 'well', capsule: 'capsule', cave: 'cave', lookout: 'lookout' };
+const GOTO_PROP_TYPE = { pond: 'pond', bowl: 'bowl', coffee: 'coffee', snack: 'food', radio: 'radio', swing: 'swing', seesaw: 'seesaw', sunbed: 'sunbed', hammock: 'hammock', monument: 'monument', hugspot: 'hugspot', pecktree: 'pecktree', well: 'well', capsule: 'capsule', cave: 'cave', lookout: 'lookout', digsite: 'digsite' };
 function resolveGotoSpot(p, id) {
     if (id === 'plaza') return { x: 0.4, z: 0.4 };
     if (id === 'house') { const w = houseWorld(0, 1.3); return { x: w.x, z: w.z }; }
@@ -5755,6 +5895,18 @@ async function runWorldActions(p, actions) {
                 if (a.id === 'hideseek' && !duoBusy && !hideSeekGame && !buildMode) {
                     worldHideSeek(p);   // 태그를 뱉은 펫이 술래 (주인이 조종 중이면 주인이 숨는다)
                     await waitFor(() => !hideSeekGame, 150000);
+                } else if (a.id === 'treasure') {
+                    refreshDigState();
+                    const w = digSpotWorld();
+                    if (w && digState && !digState.dug && !digDoing) {
+                        await freeForScript(p);
+                        if (gen !== scriptGen || p === possessed) continue;
+                        await Promise.race([gotoAsync(p, w.x + 0.3, w.z + 0.2), sleepMs(30000)]);
+                        if (gen !== scriptGen) continue;
+                        p.ai.state = 'busy';
+                        await startDig(p);
+                        releaseAI(p);
+                    }
                 }
             } else if (a.kind === 'drink' || a.kind === 'snack') {
                 await actGoto(p, a.kind === 'drink' ? 'coffee' : 'snack', gen);
@@ -6067,6 +6219,13 @@ function doInteract() {
     if (tryGrabHand()) return;
     const bed = !possessed.bed && nearestFreeBed(possessed, 0.95);
     if (bed) { mountBed(possessed, bed); return; }
+    if (digState && !digState.dug && !digDoing) {   // ⛏️ 보물: 반짝이는 자리 옆에서 ⌘ = 파기
+        const w = digSpotWorld();
+        if (w && Math.hypot(possessed.mover.position.x - w.x, possessed.mover.position.z - w.z) < 0.8) {
+            startDig(possessed);
+            return;
+        }
+    }
     if (nearestPropDist(possessed, 'coffee') < 1.1) {
         toggleCoffeePanel();
         return;
