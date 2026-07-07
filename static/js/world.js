@@ -1512,6 +1512,76 @@ function makeCave() {
     return g;
 }
 
+// ---- 전망대 (모험의 섬 ①): 언덕 고원 위 팔각 나무 데크 — 난간은 내리막(입구) 쪽만 트여
+// 있고, 망원경이 바다를 향한다. 데크는 얇아서(0.08) 펫이 그냥 밟고 올라선다. 램프 기둥은
+// lamps 배열에 합류해 밤이면 다른 가로등처럼 켜진다. 언덕과 한 몸 — 이동 불가. ----
+function makeLookout() {
+    const g = new THREE.Group();
+    const wood = M(0xb08a60, { map: woodTex });
+    const woodDark = M(0x8a6647, { map: woodTex });
+    const deck = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.1, 0.08, 8), wood);
+    deck.position.y = 0.04;
+    g.add(deck);
+    // 난간: 입구 방향(+z 로컬, 내리막)만 ±0.55rad 비운다
+    const postGeo = new THREE.CylinderGeometry(0.03, 0.035, 0.34, 8);
+    const railGeo = new THREE.BoxGeometry(0.02, 0.035, 1);
+    const posts = [];
+    for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2;
+        if (Math.abs(THREE.MathUtils.euclideanModulo(a + Math.PI, Math.PI * 2) - Math.PI) < 0.55) { posts.push(null); continue; }   // 입구 갭
+        const post = new THREE.Mesh(postGeo, woodDark);
+        post.position.set(Math.sin(a) * 0.95, 0.25, Math.cos(a) * 0.95);
+        g.add(post);
+        posts.push(post);
+    }
+    for (let i = 0; i < 10; i++) {
+        const p1 = posts[i], p2 = posts[(i + 1) % 10];
+        if (!p1 || !p2) continue;
+        const rail = new THREE.Mesh(railGeo, wood);
+        rail.position.lerpVectors(p1.position, p2.position, 0.5);
+        rail.position.y = 0.4;
+        const dx = p2.position.x - p1.position.x, dz = p2.position.z - p1.position.z;
+        rail.scale.z = Math.hypot(dx, dz);
+        rail.rotation.y = Math.atan2(dx, dz);
+        g.add(rail);
+    }
+    // 망원경: 삼각대 + 하늘로 든 경통 (바다 쪽 = 로컬 -z)
+    const scope = new THREE.Group();
+    const legGeo = new THREE.CylinderGeometry(0.014, 0.018, 0.34, 6);
+    for (const la of [0.3, 2.4, 4.5]) {
+        const leg = new THREE.Mesh(legGeo, M(0x5a6a75));
+        leg.position.set(Math.sin(la) * 0.09, 0.16, Math.cos(la) * 0.09);
+        leg.rotation.z = Math.sin(la) * 0.28;
+        leg.rotation.x = -Math.cos(la) * 0.28;
+        scope.add(leg);
+    }
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.058, 0.42, 12), M(0xd9b25e));
+    tube.position.set(0, 0.42, 0.02);
+    tube.rotation.x = Math.PI / 2 - 0.65;   // 위로 55° — 별 보기 각도
+    scope.add(tube);
+    const eye = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.06, 8), M(0x4a3f30));
+    eye.position.set(0, 0.28, 0.15);
+    eye.rotation.x = Math.PI / 2 - 0.65;
+    scope.add(eye);
+    scope.position.set(0.35, 0.08, -0.35);
+    scope.rotation.y = Math.PI;   // 경통이 로컬 -z(바다)로
+    g.add(scope);
+    // 데크 램프: 밤이면 가로등과 함께 켜진다 (lamps 합류)
+    const lpost = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.03, 0.62, 8), M(0x5a6a75));
+    lpost.position.set(-0.7, 0.39, -0.55);
+    const globe = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 10), lampGlobeMat);
+    globe.position.set(-0.7, 0.76, -0.55);
+    g.add(lpost, globe);
+    const light = new THREE.PointLight(0xffd9a0, 0, 3.6, 2);
+    light.position.set(-0.7, 0.78, -0.55);
+    g.add(light);
+    const halo = glowSprite(0xffc978, 0.5, 0);
+    halo.position.set(-0.7, 0.78, -0.55);
+    g.add(halo);
+    lamps.push({ light, glow: halo.material });
+    return g;
+}
+
 // 바위 (모험의 섬 드레싱): 각진 저폴리 바위 덩어리 둘 — 계절 중립, 숨기 스팟 겸용.
 function makeBoulder() {
     const g = new THREE.Group();
@@ -1909,8 +1979,9 @@ const HOVER_PROMPTS = {
     hugspot: () => '💕 포옹 포인트 — 둘이 같이 서면!',
     cave: () => '🕳️ 아늑한 동굴 — 조종 중 ⌘/✋로 쿠션에 앉아요',
     boulder: () => '🪨 바위',
+    lookout: () => '🔭 전망대 — 언덕 위, 별이 잘 보여요',
 };
-const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7 };
+const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1 };
 const hoverEl = document.createElement('div');
 hoverEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); z-index:88; pointer-events:none; background:rgba(30,32,40,0.88); color:#fff; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
 document.body.appendChild(hoverEl);
@@ -2000,7 +2071,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointerleave', () => { hoverActive = false; });
 fetchCapsules();   // 부팅 시 한 번 — 개봉 알림용
 
-const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave };
+const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -3821,7 +3892,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴' };
+const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -5508,7 +5579,7 @@ function pickResponder(text) {
 const ACTION_RE = /<\s*(motion|goto|mount|drink|snack|hat|swim|drive|game)\s*[=:]\s*([a-z0-9-]+)\s*\/?\s*>/gi;
 const ACTION_IDS = {
     motion: new Set(GLB_MOTIONS.map((m) => m.id)),
-    goto: new Set(['plaza', 'house', 'pond', 'bowl', 'coffee', 'snack', 'radio', 'swing', 'seesaw', 'sunbed', 'hammock', 'friend', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'cave']),
+    goto: new Set(['plaza', 'house', 'pond', 'bowl', 'coffee', 'snack', 'radio', 'swing', 'seesaw', 'sunbed', 'hammock', 'friend', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'cave', 'lookout']),
     mount: new Set(['swing', 'seesaw', 'sofa', 'sunbed', 'hammock', 'loftbed']),
     drink: new Set(DRINKS.map((d) => d.id)),
     snack: new Set(FOODS.map((f) => f.id)),
@@ -5555,7 +5626,7 @@ async function freeForScript(p) {
     p.pet.sleeping = false;
     p.pet.autoSleeping = false;
 }
-const GOTO_PROP_TYPE = { pond: 'pond', bowl: 'bowl', coffee: 'coffee', snack: 'food', radio: 'radio', swing: 'swing', seesaw: 'seesaw', sunbed: 'sunbed', hammock: 'hammock', monument: 'monument', hugspot: 'hugspot', pecktree: 'pecktree', well: 'well', capsule: 'capsule', cave: 'cave' };
+const GOTO_PROP_TYPE = { pond: 'pond', bowl: 'bowl', coffee: 'coffee', snack: 'food', radio: 'radio', swing: 'swing', seesaw: 'seesaw', sunbed: 'sunbed', hammock: 'hammock', monument: 'monument', hugspot: 'hugspot', pecktree: 'pecktree', well: 'well', capsule: 'capsule', cave: 'cave', lookout: 'lookout' };
 function resolveGotoSpot(p, id) {
     if (id === 'plaza') return { x: 0.4, z: 0.4 };
     if (id === 'house') { const w = houseWorld(0, 1.3); return { x: w.x, z: w.z }; }

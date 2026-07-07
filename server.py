@@ -11456,7 +11456,7 @@ WORLD_PERSONAS = {
 WORLD_ACTION_SPEC = """[행동 태그]
 대답하면서 실제로 몸을 움직일 수 있다. 아래 태그를 문장 뒤에 붙이면 월드에서 그대로 실행된다 (한 번에 최대 3개, 순서대로 실행):
 <motion=ID> 제자리 모션. ID: wave(인사)·happy(기쁨)·dance(춤)·cheer(응원)·celebrate(축하)·hug(절친과 포옹)·play(절친과 공놀이)·think(생각)·eat(냠냠)·sleep(잠들기)
-<goto=ID> 그 장소로 걸어간다. ID: plaza(광장)·house(집)·pond(연못)·bowl(밥그릇)·coffee(커피 부스)·snack(간식 부스)·radio(라디오)·swing(그네)·seesaw(시소)·sunbed(선베드)·hammock(해먹)·friend(절친 옆)·monument(베프 기념비 — 추억의 섬)·hugspot(포옹 포인트 — 절친과 같이 서면 자동 포옹이 터진다)·pecktree(쪼아쪼아 나무 — 추억의 섬, 절친과 같이 가면 하트가 터진다)·well(소원 우물 — 추억의 섬)·capsule(타임캡슐 — 추억의 섬)·cave(아늑한 동굴 — 모험의 섬, 비 오는 날 피신처)
+<goto=ID> 그 장소로 걸어간다. ID: plaza(광장)·house(집)·pond(연못)·bowl(밥그릇)·coffee(커피 부스)·snack(간식 부스)·radio(라디오)·swing(그네)·seesaw(시소)·sunbed(선베드)·hammock(해먹)·friend(절친 옆)·monument(베프 기념비 — 추억의 섬)·hugspot(포옹 포인트 — 절친과 같이 서면 자동 포옹이 터진다)·pecktree(쪼아쪼아 나무 — 추억의 섬, 절친과 같이 가면 하트가 터진다)·well(소원 우물 — 추억의 섬)·capsule(타임캡슐 — 추억의 섬)·cave(아늑한 동굴 — 모험의 섬, 비 오는 날 피신처)·lookout(전망대 — 모험의 섬 언덕 꼭대기, 별 보기 좋은 곳)
 <mount=ID> 올라타거나 앉는다/눕는다. ID: swing(그네)·seesaw(시소)·sofa(소파)·sunbed(선베드)·hammock(해먹)·loftbed(2층 침대)
 <drink=ID> 커피 부스에 걸어가 음료를 받아 든다. ID: americano·iced-ame·espresso·latte·cappuccino·choco·strawberry·matcha·icetea
 <snack=ID> 간식 부스에 걸어가 간식을 받아 든다. ID: toast·omurice·burrito·hotdog·donut·bungeo·gimbap·churros·cupcake
