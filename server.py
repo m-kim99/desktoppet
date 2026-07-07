@@ -11609,6 +11609,95 @@ async def world_chat(request: Request):
     return {"reply": reply}
 
 
+# ---- 월드 그림일기 (㉚): 하루의 이벤트 로그를 펫 1인칭 일기로 접는다. 날짜·펫별로
+# config/world_layout.json처럼 서버 파일(config/world_diary.json)에 보관 — 폰/데스크톱 공유,
+# 같은 날 재요청은 저장본을 돌려준다(force=다시 쓰기). 페르소나/장기기억은 world_chat 것을 재사용.
+WORLD_DIARY_FILE = os.path.join(base_path, "config", "world_diary.json")
+
+
+def _world_diary_load() -> dict:
+    try:
+        with open(WORLD_DIARY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+
+def _world_diary_save(data: dict):
+    try:
+        os.makedirs(os.path.dirname(WORLD_DIARY_FILE), exist_ok=True)
+        with open(WORLD_DIARY_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=1)
+    except Exception as e:
+        print(f"[world_diary] save failed: {e}")
+
+
+@app.get("/api/world_diary")
+async def world_diary_all():
+    return _world_diary_load()
+
+
+@app.post("/api/world_diary")
+async def world_diary_write(request: Request):
+    data = await request.json()
+    pet = str(data.get("pet", "chick"))
+    if pet not in WORLD_PERSONAS:
+        pet = "chick"
+    date = str(data.get("date", "")).strip()
+    if not date:
+        return JSONResponse({"error": "no date"}, status_code=400)
+    diary = _world_diary_load()
+    saved = (diary.get(date) or {}).get(pet)
+    if saved and not data.get("force"):
+        return {"cached": True, **saved}
+    events = str(data.get("events", "")).strip()
+    snapshot = str(data.get("snapshot", "")).strip()
+    if not events:
+        return JSONResponse({"error": "no events"}, status_code=400)
+    try:
+        wc_client, current_settings = await _world_chat_client_and_model()
+        store = _world_chat_load(pet)
+        sys_parts = [
+            WORLD_PERSONAS[pet],
+            WORLD_LORE,
+            "오늘 하루를 마무리하며 그림일기를 쓴다. 규칙:\n"
+            "- 1인칭, 내(펫) 목소리 그대로. 한국어 4~6문장, 이모지 1~3개.\n"
+            "- 아래 [오늘 있었던 일]에 적힌 사실만 쓴다. 없던 일을 지어내지 않는다.\n"
+            "- 절친이나 주인이 등장했다면 꼭 언급한다.\n"
+            "- 마지막 줄은 반드시 '기분: <이모지 하나> <한 단어>' 형식으로 끝낸다.",
+        ]
+        if store["summary"]:
+            sys_parts.append(f"[주인과의 기억]\n{store['summary']}")
+        user_text = f"[오늘 날짜] {date}\n\n[오늘의 월드]\n{snapshot}\n\n[오늘 있었던 일]\n{events}\n\n이제 오늘의 일기를 쓰자."
+        resp = await wc_client.chat.completions.create(
+            model=current_settings["model"],
+            messages=[
+                {"role": "system", "content": "\n\n".join(sys_parts)},
+                {"role": "user", "content": user_text},
+            ],
+            temperature=0.8,
+            max_tokens=500,
+        )
+        text = (resp.choices[0].message.content or "").strip()
+        if not text:
+            return JSONResponse({"error": "empty reply"}, status_code=502)
+    except Exception as e:
+        print(f"[world_diary] LLM call failed: {e}")
+        return JSONResponse({"error": str(e)}, status_code=502)
+    mood = ""
+    m = re.search(r"기분\s*[:：]\s*(.+)$", text, re.M)
+    if m:
+        mood = m.group(1).strip()[:24]
+    entry = {"text": text, "mood": mood, "ts": int(time.time() * 1000)}
+    diary = _world_diary_load()   # reload — 다른 펫의 일기가 그새 저장됐을 수 있다
+    diary.setdefault(date, {})[pet] = entry
+    _world_diary_save(diary)
+    return {"cached": False, **entry}
+
+
 app.mount("/vrm", StaticFiles(directory=DEFAULT_VRM_DIR), name="vrm")
 app.mount("/tool_temp", StaticFiles(directory=TOOL_TEMP_DIR), name="tool_temp")
 app.mount("/uploaded_files", StaticFiles(directory=UPLOAD_FILES_DIR), name="uploaded_files")

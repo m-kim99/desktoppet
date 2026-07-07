@@ -889,6 +889,19 @@ function makeHouse() {
     const shade = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.08, 12, 1, true), lampGlobeMat);
     shade.position.y = 0.31;
     table.add(shade);
+    // 탁자 위 그림일기장 📔 — 내용은 독의 📔 버튼으로 읽는다 (밤마다 펫이 쓴다).
+    const diaryBook = new THREE.Group();
+    const pageL = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.008, 0.115), M(0xfdf3df));
+    pageL.position.x = -0.043;
+    pageL.rotation.z = 0.09;
+    const pageR = pageL.clone();
+    pageR.position.x = 0.043;
+    pageR.rotation.z = -0.09;
+    const spineB = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.012, 0.115), M(0xc96f6f));
+    diaryBook.add(pageL, pageR, spineB);
+    diaryBook.position.set(0.105, 0.185, 0.03);
+    diaryBook.rotation.y = -0.5;
+    table.add(diaryBook);
     table.position.set(0, 0.05, 0.15);
     g.add(table);
     const rug = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.012, 24), M(0xf6d7b0));
@@ -3035,7 +3048,7 @@ try {
 function petKo(p) { return p.name === 'chick' ? '병아리' : '강아지'; }
 function logWorldEvent(text) {
     worldEvents.push({ t: Date.now(), text });
-    if (worldEvents.length > 40) worldEvents.splice(0, worldEvents.length - 40);
+    if (worldEvents.length > 120) worldEvents.splice(0, worldEvents.length - 120);   // 하루치 — 그림일기가 먹는다
     try { localStorage.setItem('world-events', JSON.stringify(worldEvents)); } catch (e) {}
 }
 function recentEventsText() {
@@ -3049,6 +3062,21 @@ function recentEventsText() {
             return `- (${when}) ${e.text}`;
         })
         .join('\n');
+}
+// 그림일기용: 오늘(자정 이후)의 이벤트를 시각과 함께 전부.
+function todayEventsText() {
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    return worldEvents
+        .filter((e) => e.t >= dayStart.getTime())
+        .map((e) => {
+            const d = new Date(e.t);
+            return `- ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} ${e.text}`;
+        })
+        .join('\n');
+}
+function localDateStr(d = new Date()) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
@@ -3340,6 +3368,124 @@ logBtn.addEventListener('click', () => {
     chatLogPanel.style.display = open ? 'flex' : 'none';
     if (open) chatLogBody.scrollTop = chatLogBody.scrollHeight;
 });
+// 📔 그림일기: 하루의 이벤트 로그를 펫이 1인칭 일기로 접어 서버(config/world_diary.json)에
+// 보관한다. 밤 10시가 넘으면 그날의 일기를 스스로 쓰고, ✍️ 버튼으로 먼저 쓰게 할 수도 있다.
+// 종이 노트 스타일 패널: ◀ 날짜 ▶ 넘기기 + 🐤/🐶 탭.
+const diaryBtn = dockBtn('📔', '그림일기 — 펫이 쓴 오늘 하루');
+const diaryPanel = document.createElement('div');
+diaryPanel.style.cssText = 'position:fixed; right:calc(70px + env(safe-area-inset-right, 0px)); bottom:calc(70px + env(safe-area-inset-bottom, 0px)); display:none; z-index:95; width:min(330px, calc(100vw - 100px)); max-height:62vh; background:#fbf3e2; color:#4a3f30; border-radius:14px; box-shadow:0 8px 28px rgba(0,0,0,0.4); font-family:sans-serif; flex-direction:column; overflow:hidden;';
+const diaryHead = document.createElement('div');
+diaryHead.style.cssText = 'display:flex; align-items:center; gap:6px; padding:9px 10px; font-size:13px; font-weight:700; background:rgba(120,90,50,0.12);';
+const diaryBody = document.createElement('div');
+diaryBody.style.cssText = 'padding:12px 14px; font-size:13px; line-height:23px; white-space:pre-wrap; word-break:break-word; overflow-y:auto; min-height:92px; background:repeating-linear-gradient(transparent, transparent 22px, rgba(160,130,90,0.22) 22px, rgba(160,130,90,0.22) 23px);';
+const diaryFoot = document.createElement('div');
+diaryFoot.style.cssText = 'display:flex; gap:6px; padding:8px 10px; background:rgba(120,90,50,0.1);';
+diaryPanel.append(diaryHead, diaryBody, diaryFoot);
+document.body.appendChild(diaryPanel);
+diaryPanel.addEventListener('pointerdown', (e) => e.stopPropagation());
+const mkDiaryBtn = (label) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = 'border:none; background:rgba(120,90,50,0.15); color:#4a3f30; border-radius:7px; font-size:12px; padding:3px 8px; cursor:pointer;';
+    return b;
+};
+const diaryPrev = mkDiaryBtn('◀'), diaryNext = mkDiaryBtn('▶');
+const diaryDateEl = document.createElement('div');
+diaryDateEl.style.cssText = 'flex:1; text-align:center;';
+const diaryTabChick = mkDiaryBtn('🐤'), diaryTabPuppy = mkDiaryBtn('🐶');
+diaryHead.append('📔', diaryPrev, diaryDateEl, diaryNext, diaryTabChick, diaryTabPuppy);
+const diaryWriteBtn = document.createElement('button');
+diaryWriteBtn.style.cssText = 'flex:1; border:none; border-radius:8px; background:#e8b04b; color:#3d2f18; font-weight:700; font-size:12.5px; padding:7px 0; cursor:pointer;';
+diaryFoot.appendChild(diaryWriteBtn);
+let diaryData = {};              // 서버 저장본 { 'YYYY-MM-DD': { chick: {text, mood, ts}, puppy: {...} } }
+let diaryDate = localDateStr();
+let diaryPet = 'chick';
+let diaryBusy = false;
+function diaryDates() {
+    const set = new Set(Object.keys(diaryData));
+    set.add(localDateStr());
+    return [...set].sort();
+}
+function renderDiary() {
+    const dates = diaryDates();
+    const i = dates.indexOf(diaryDate);
+    diaryPrev.style.opacity = i <= 0 ? '0.35' : '1';
+    diaryNext.style.opacity = i >= dates.length - 1 ? '0.35' : '1';
+    diaryDateEl.textContent = diaryDate.replace(/-/g, '.');
+    diaryTabChick.style.background = diaryPet === 'chick' ? '#e8b04b' : 'rgba(120,90,50,0.15)';
+    diaryTabPuppy.style.background = diaryPet === 'puppy' ? '#e8b04b' : 'rgba(120,90,50,0.15)';
+    const entry = (diaryData[diaryDate] || {})[diaryPet];
+    const today = diaryDate === localDateStr();
+    if (diaryBusy) diaryBody.textContent = '✍️ 일기 쓰는 중…';
+    else if (entry) diaryBody.textContent = entry.text;
+    else diaryBody.textContent = today ? '아직 오늘 일기를 안 썼어요.\n(밤 10시가 지나면 스스로 써요)' : '이 날의 일기가 없어요.';
+    diaryWriteBtn.textContent = entry ? '✍️ 오늘 일기 다시 쓰기' : '✍️ 지금 일기 쓰기';
+    const canWrite = !diaryBusy && today && pets.length > 0;
+    diaryWriteBtn.disabled = !canWrite;
+    diaryWriteBtn.style.opacity = canWrite ? '1' : '0.45';
+}
+diaryPrev.onclick = () => { const d = diaryDates(); const i = d.indexOf(diaryDate); if (i > 0) { diaryDate = d[i - 1]; renderDiary(); } };
+diaryNext.onclick = () => { const d = diaryDates(); const i = d.indexOf(diaryDate); if (i < d.length - 1) { diaryDate = d[i + 1]; renderDiary(); } };
+diaryTabChick.onclick = () => { diaryPet = 'chick'; renderDiary(); };
+diaryTabPuppy.onclick = () => { diaryPet = 'puppy'; renderDiary(); };
+async function fetchDiary() {
+    try {
+        const res = await fetch('/api/world_diary');
+        if (res.ok) diaryData = (await res.json()) || {};
+    } catch (e) {}
+}
+async function writeDiary(petName, force = false, silent = false) {
+    const me = pets.find((q) => q.name === petName);
+    const events = todayEventsText();
+    if (!me || !events) {
+        if (!silent) showToast('📔 오늘은 아직 일기에 쓸 만한 일이 없어요');
+        return;
+    }
+    diaryBusy = true;
+    renderDiary();
+    try {
+        const res = await fetch('/api/world_diary', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pet: petName, date: localDateStr(), events, snapshot: buildWorldSnapshot(me), force }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const entry = await res.json();
+        (diaryData[localDateStr()] = diaryData[localDateStr()] || {})[petName] = entry;
+    } catch (e) {
+        console.error('[World] diary write failed', e);
+        if (!silent) showToast('📔 일기 쓰기에 실패했어요 — 잠시 후 다시');
+    } finally {
+        diaryBusy = false;
+        renderDiary();
+    }
+}
+diaryWriteBtn.onclick = () => {
+    if (diaryWriteBtn.disabled) return;
+    writeDiary(diaryPet, !!(diaryData[diaryDate] || {})[diaryPet]);
+};
+diaryBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
+diaryBtn.addEventListener('click', () => {
+    const open = diaryPanel.style.display === 'none';
+    if (open) {
+        diaryDate = localDateStr();
+        renderDiary();
+        fetchDiary().then(renderDiary);
+    }
+    diaryPanel.style.display = open ? 'flex' : 'none';
+});
+// 밤 10시가 넘으면 하루 한 번, 두 펫이 나란히 그날의 일기를 쓴다 (animate가 부른다).
+function maybeAutoDiary() {
+    if (currentHour() < 22.05) return;
+    const today = localDateStr();
+    try { if (localStorage.getItem('world-diary-auto') === today) return; } catch (e) {}
+    try { localStorage.setItem('world-diary-auto', today); } catch (e) {}
+    if (!todayEventsText() || !pets.length) return;
+    (async () => {
+        for (const p of pets) await writeDiary(p.name, false, true);   // 순차 — LLM 호출이 겹치지 않게
+        logWorldEvent('오늘의 그림일기를 썼다 📔');
+    })();
+}
 function bindZoomBtn(b, dir) {
     b.addEventListener('pointerdown', (e) => {
         e.preventDefault();
@@ -6019,6 +6165,7 @@ function animate() {
     updateWeather(delta);                    // eases fronts, slides the drops, times the rainbow
     updateSeasonBlend(delta);                // 계절 크로스페이드 — 전환 중에만 일한다
     updateDayNight();                        // throttled inside (repaints ~2×/min)
+    maybeAutoDiary();                        // 22시 이후 하루 한 번, 그날의 그림일기를 스스로 쓴다
     updateOcean(delta);
     if (ballFlight) {
         ballFlight.t += delta;
