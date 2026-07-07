@@ -2244,7 +2244,7 @@ const HOUSE_DERIVED = { cols: [], beds: [], light: null };
     fCol(0.05, -0.62, 0.11);   // nightstand
     const sofaW = houseWorld(-0.68, 0.2), sofaA = houseWorld(-0.28, 0.58);
     const sofa = {
-        id: 'sofa', mode: 'sit', occupant: null, sway: 0,
+        id: 'sofa', mode: 'sit', occupant: null, sway: 0, shelter: true,   // 비 피신 폴백 자리
         lie: { x: sofaW.x, z: sofaW.z, y: HOUSE.floorY + 0.17, rotY: HOUSE.rotY + Math.PI / 2, tilt: -0.35 },
         approach: { x: sofaA.x, z: sofaA.z },
     };
@@ -2946,6 +2946,44 @@ function updateAurora(delta) {
     }
 }
 
+// ---- 비 피신 (⑯ v2): 비/뇌우가 내리기 시작하면 한가한 펫들이 동굴 쿠션(폴백: 집 소파)으로
+// 뛰어들어가 앉아 기다리고, 날이 개면 스스로 일어난다. 눈은 예외 — 눈밭 산책은 낭만이니까.
+// 바쁜 펫(식사·탑승·조종·듀오·goto)은 양보하고, 이동·착석은 기존 mountBed/bedExit 표준을 쓴다. ----
+let shelterMode = false;
+function shelterFreePets() {
+    let went = false;
+    for (const p of pets) {
+        if (p === possessed || p.bed || p.dip || p.pet.sleeping) continue;
+        if (p.ai.state !== 'idle' && p.ai.state !== 'walk') continue;
+        const bed = BEDS.find((b) => b.shelter && !b.occupant);
+        if (!bed) break;
+        p.sheltering = true;
+        mountBed(p, bed);
+        went = true;
+    }
+    if (went) logWorldEvent('비가 쏟아져서 동굴로 피했다 ☔');
+}
+function updateShelter() {
+    const wet = wx.type === 'rain' || wx.type === 'storm';
+    if (wet && !shelterMode && wxF > 0.25) {
+        shelterMode = true;
+        shelterFreePets();
+    } else if (!wet && shelterMode && wxF < 0.2) {
+        shelterMode = false;
+    }
+    if (!shelterMode) {   // 갠 뒤: 앉아 있던 펫은 일어나고, 아직 걸어가던 펫은 그냥 해제
+        for (const p of pets) {
+            if (!p.sheltering) continue;
+            if (p.bed && p.bedPhase === 'lying') {
+                p.sheltering = false;
+                p.bedExit = true;
+            } else if (!p.bed && p.ai.state !== 'goto') {
+                p.sheltering = false;
+            }
+        }
+    }
+}
+
 // Rain hiss: looped synthesized noise through a lowpass, faded with wxF. Snow stays silent.
 let rainHiss = null;
 function setRainHiss(vol) {
@@ -3081,6 +3119,7 @@ function updateWeather(delta) {
     setRainHiss(rainy ? (0.06 + 0.045 * stormF) * wxF : 0);
     updateLightning(delta);
     updateAurora(delta);
+    updateShelter();
     if (rainbowT > 0) {
         rainbowT -= delta;
         rainbowAge += delta;
