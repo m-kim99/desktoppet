@@ -2465,10 +2465,14 @@ function wireWorldFx(p) {
     const zzzEl   = mk('zzz', '💤');
     const thinkEl = mk('think', '💭');
     const cheerEl = mk('cheer', '파이팅!', 'font-weight:700; text-shadow:0 2px 5px rgba(0,0,0,0.55), 0 0 2px rgba(0,0,0,0.5); white-space:nowrap;');
+    const countEl = mk('count', '10', 'font-weight:800; color:#fff; text-shadow:0 2px 6px rgba(0,0,0,0.6);');
+    const exclaimEl = mk('exclaim', '❗', 'font-weight:700; text-shadow:0 2px 6px rgba(0,0,0,0.5);');
     const overlays = [
         { el: zzzEl,   left: 58, top: 14, size: 44 },
         { el: thinkEl, left: 62, top: 10, size: 44 },
         { el: cheerEl, left: 50, top: 4,  size: 18 },
+        { el: countEl, left: 60, top: 6,  size: 26 },
+        { el: exclaimEl, left: 50, top: 2, size: 40 },
     ];
     p.pet.setZzz   = (on) => { zzzEl.style.opacity   = on ? '0.9' : '0'; };
     p.pet.setThink = (on) => { thinkEl.style.opacity = on ? '0.95' : '0'; };
@@ -2478,6 +2482,13 @@ function wireWorldFx(p) {
         }
         cheerEl.style.opacity = on ? '1' : '0';
     };
+    // 숨바꼭질 오버레이: 술래 머리 위 카운트다운 숫자, 발견의 ❗.
+    p.pet.setCount = (n) => {
+        if (n == null) { countEl.style.opacity = '0'; return; }
+        countEl.textContent = String(n);
+        countEl.style.opacity = '1';
+    };
+    p.pet.setExclaim = (on) => { exclaimEl.style.opacity = on ? '1' : '0'; };
     // Eat FX are real 3D in the world (no emoji): a per-pet ground prop — grain patch for the
     // chick, mini kibble bowl for the puppy — placed in front of the pet when the motion starts,
     // and hidden entirely when eating at the real bowl (the bowl IS the food there).
@@ -2572,6 +2583,14 @@ for (const m of GLB_MOTIONS) {
     item.onclick = () => { const p = menuPet; hideMenu(); if (p) playWorldMotion(p, m.id); };
     motionMenu.appendChild(item);
 }
+// 놀이: 숨바꼭질 — 조종 중이면 주인이 숨고 (다른 펫이 술래), 아니면 클릭한 펫이 술래.
+const hideSeekItem = document.createElement('div');
+hideSeekItem.textContent = '🙈 숨바꼭질';
+hideSeekItem.style.cssText = `padding:${menuPad}; font-size:${menuFont}px; color:#9be7ff; border-radius:7px; cursor:pointer; white-space:nowrap;`;
+hideSeekItem.onmouseenter = () => { hideSeekItem.style.background = 'rgba(255,255,255,0.14)'; };
+hideSeekItem.onmouseleave = () => { hideSeekItem.style.background = 'transparent'; };
+hideSeekItem.onclick = () => { const p = menuPet; hideMenu(); if (p) worldHideSeek(p); };
+motionMenu.appendChild(hideSeekItem);
 // 코디 items below the motions (divider above the first); labels refresh per open in showMenu.
 const accessoryItems = [];
 for (let i = 0; i < GLB_ACCESSORIES.length; i++) {
@@ -2756,6 +2775,186 @@ async function worldHug(initiator) {
         await sleepMs(3100);                                   // hug DUR is 3.0s
     } finally {
         duoBusy = false; releaseAI(initiator); releaseAI(partner);
+    }
+}
+
+// ---- Hide and seek (숨바꼭질): the third duo director. The seeker counts at the plaza while the
+// hider ducks behind a prop on the far side (or the OWNER hides, if possessing a pet); then the
+// seeker patrols the hiding spots. "Seen" = close + inside the facing cone + a clear 2D line of
+// sight — sight is sampled against the same prop circles the pets collide with, so whatever
+// blocks walking blocks seeing, and construction-mode moves stay honest (PROPS positions are
+// live). Starts from the pet menu, a <game=hideseek> chat tag, or occasionally on its own. ----
+const HIDE_OCCLUDERS = { tree: 0.42, house: 1.15, coffee: 0.5, food: 0.5, swing: 0.5, seesaw: 0.55, fence: 0.5, radio: 0.3 };
+const HIDE_STANDOFF  = { tree: 0.75, house: 1.6, coffee: 0.85, food: 0.85, swing: 0.85, seesaw: 0.9, fence: 0.8, radio: 0.55 };
+const HS_COUNT_SPOT = { x: 0.25, z: 0.45 };   // 광장 가운데 — 술래가 눈 가리고 세는 자리
+let hideSeekGame = null;   // { phase, seeker, hider, playerHides, countTotal, t, seekT, losT, lastLeft, found, cancel }
+let hideSeekAutoAt = Date.now() + 12 * 60000;   // 가끔 스스로 한 판 (다음 추첨 시각)
+
+function sightClear(ax, az, bx, bz) {
+    const d = Math.hypot(bx - ax, bz - az);
+    const steps = Math.max(2, Math.ceil(d / 0.22));
+    for (const pr of PROPS) {
+        const rr = HIDE_OCCLUDERS[pr.type];
+        if (!rr) continue;
+        const rr2 = rr * rr;
+        const aIn = (ax - pr.x) ** 2 + (az - pr.z) ** 2 < rr2;
+        const bIn = (bx - pr.x) ** 2 + (bz - pr.z) ** 2 < rr2;
+        if (aIn && bIn) continue;   // 둘 다 같은 차단원 안(집 안에서 마주침) — 그건 보인 것
+        for (let i = 1; i < steps; i++) {
+            const t = i / steps;
+            const dx = ax + (bx - ax) * t - pr.x, dz = az + (bz - az) * t - pr.z;
+            if (dx * dx + dz * dz < rr2) return false;
+        }
+    }
+    return true;
+}
+function canSee(seeker, target) {
+    const S = seeker.mover.position, H = target.mover.position;
+    const dx = H.x - S.x, dz = H.z - S.z;
+    const d = Math.hypot(dx, dz);
+    if (d > 3.2) return false;
+    if (d > 0.8) {   // 팔 뻗을 거리 밖이면 시야 원뿔 안에도 있어야 한다
+        const fx = Math.sin(seeker.mover.rotation.y), fz = Math.cos(seeker.mover.rotation.y);
+        if ((fx * dx + fz * dz) / d < 0.25) return false;
+    }
+    return sightClear(S.x, S.z, H.x, H.z);
+}
+function pickHideSpot(fromX, fromZ) {
+    const cands = [];
+    for (const pr of PROPS) {
+        const off = HIDE_STANDOFF[pr.type];
+        if (!off) continue;
+        const dx = pr.x - fromX, dz = pr.z - fromZ;
+        const d = Math.hypot(dx, dz) || 1;
+        const x = pr.x + (dx / d) * off, z = pr.z + (dz / d) * off;   // 술래 반대편, 프롭 뒤
+        if (world.isBlocked(x, z)) continue;
+        cands.push({ x, z, prop: pr, score: d + Math.random() * 4 });
+    }
+    cands.sort((a, b) => b.score - a.score);
+    if (!cands.length) return null;
+    return cands[Math.floor(Math.random() * Math.min(3, cands.length))];
+}
+async function worldHideSeek(clicked) {
+    if (duoBusy || hideSeekGame || buildMode || pets.length < 2) return;
+    const playerHides = !!possessed;
+    const hider = playerHides ? possessed : clicked;
+    const seeker = pets.find((q) => q !== hider);
+    if (!seeker || !hider) return;
+    const ok = (q) => q === possessed || (!q.pet.sleeping && !q.bed && !q.dip && q.ai.state !== 'held');
+    if (!ok(seeker) || !ok(hider)) { showToast('🙈 지금은 숨바꼭질을 할 수 없어요'); return; }
+    duoBusy = true;
+    const g = hideSeekGame = {
+        phase: 'count', seeker, hider, playerHides,
+        countTotal: playerHides ? 15 : 10, t: 0, seekT: 0, losT: 0, lastLeft: -1,
+        found: false, cancel: false,
+    };
+    logWorldEvent(`숨바꼭질 시작 — 술래는 ${petKo(seeker)} 🙈`);
+    try {
+        await gotoAsync(seeker, HS_COUNT_SPOT.x, HS_COUNT_SPOT.z);
+        if (g.cancel) return;
+        seeker.ai.state = 'busy';
+        seeker.mover.rotation.y = Math.PI * 0.9;   // 숨는 쪽을 등지고 바다를 본다
+        seeker.pet.action = { id: 'think', t: 0 };
+        if (playerHides) {
+            showToast(`🙈 ${petKo(seeker)}가 ${g.countTotal}까지 세요 — 어서 숨어요!`);
+        } else {
+            const spot = pickHideSpot(HS_COUNT_SPOT.x, HS_COUNT_SPOT.z);
+            if (spot) {
+                gotoAsync(hider, spot.x, spot.z).then(() => {
+                    if (hideSeekGame !== g || g.cancel) return;
+                    hider.ai.state = 'busy';
+                    hider.mover.rotation.y = Math.atan2(spot.prop.x - spot.x, spot.prop.z - spot.z);   // 프롭에 딱 붙어 웅크린 방향
+                });
+            }
+        }
+        await waitFor(() => g.t >= g.countTotal || g.cancel, (g.countTotal + 6) * 1000);
+        if (g.cancel) return;
+        seeker.pet.setCount(null);
+        seeker.pet.action = { id: 'happy', t: 0 };
+        g.phase = 'seek';
+        if (playerHides) showToast('👀 술래가 찾기 시작했어요!');
+        // 수색: 숨을 만한 프롭들을 가까운 곳부터(약간 뒤섞어) 순회 — 시야 판정은 updateHideSeek가 맡는다.
+        const spots = PROPS.filter((pr) => HIDE_STANDOFF[pr.type])
+            .map((pr) => ({ x: pr.x, z: pr.z, d: Math.hypot(pr.x - HS_COUNT_SPOT.x, pr.z - HS_COUNT_SPOT.z) + Math.random() * 5 }))
+            .sort((a, b) => a.d - b.d);
+        const done = () => g.found || g.cancel || g.seekT > 90;
+        for (const wp of spots) {
+            if (done()) break;
+            await Promise.race([
+                gotoAsync(seeker, wp.x + (Math.random() - 0.5) * 0.8, wp.z + (Math.random() - 0.5) * 0.8),
+                waitFor(done, 30000),
+            ]);
+        }
+        while (!done()) {   // 코스를 다 돌고도 못 찾았으면 시간이 다할 때까지 재수색
+            const wp = spots[Math.floor(Math.random() * spots.length)];
+            await Promise.race([gotoAsync(seeker, wp.x, wp.z), waitFor(done, 30000)]);
+        }
+        if (g.cancel) return;
+        g.phase = 'end';
+        if (g.found) {
+            seeker.pet.setExclaim(true);
+            await gotoAsync(seeker, hider.mover.position.x + 0.5, hider.mover.position.z + 0.2);
+            seeker.pet.setExclaim(false);
+            if (hider !== possessed) faceEachOther(seeker, hider);
+            seeker.pet.action = { id: 'cheer', t: 0 };
+            if (hider !== possessed) hider.pet.action = { id: 'happy', t: 0 };
+            showToast(playerHides ? '❗ 들켰다! 술래 승리 😆' : `❗ ${petKo(seeker)}가 ${petKo(hider)}를 찾았다!`);
+            logWorldEvent(playerHides
+                ? `숨바꼭질: ${petKo(seeker)}가 숨어 있던 주인을 찾아냈다 ❗`
+                : `숨바꼭질: ${petKo(seeker)}가 ${petKo(hider)}를 찾아냈다 ❗`);
+            if (playerHides) maybeProactive(seeker, '방금 숨바꼭질에서 주인님을 찾아냈다! 내가 이겼다!');
+            await sleepMs(2600);
+        } else {
+            showToast(playerHides ? '🏆 승리! 술래가 끝까지 못 찾았어요' : `🙈 ${petKo(hider)}의 승리 — 술래가 못 찾았다`);
+            logWorldEvent(playerHides
+                ? '숨바꼭질: 주인이 끝까지 안 들켰다 🏆'
+                : `숨바꼭질: ${petKo(hider)}가 끝까지 안 들켰다 🏆`);
+            if (playerHides) maybeProactive(seeker, '숨바꼭질에서 주인님을 끝내 못 찾았다… 분하다!');
+            seeker.pet.action = { id: 'think', t: 0 };
+            if (hider !== possessed) {
+                await gotoAsync(hider, seeker.mover.position.x + 0.6, seeker.mover.position.z);
+                hider.pet.action = { id: 'cheer', t: 0 };
+            }
+            await sleepMs(2400);
+        }
+    } finally {
+        seeker.pet.setCount(null);
+        seeker.pet.setExclaim(false);
+        duoBusy = false;
+        hideSeekGame = null;
+        releaseAI(seeker);
+        releaseAI(hider);
+    }
+}
+function updateHideSeek(delta) {
+    const g = hideSeekGame;
+    if (!g) {
+        if (Date.now() > hideSeekAutoAt) {   // 가끔 스스로 한 판: 둘 다 한가한 낮에만
+            hideSeekAutoAt = Date.now() + 12 * 60000;
+            const okAuto = !duoBusy && !buildMode && !possessed && pets.length >= 2
+                && dayFactor(currentHour()) > 0.3 && Math.random() < 0.12
+                && pets.every((q) => !q.pet.sleeping && !q.bed && !q.dip && q.ai.state !== 'held'
+                    && (q.ai.state === 'idle' || q.ai.state === 'walk'));
+            if (okAuto) worldHideSeek(pets[Math.floor(Math.random() * pets.length)]);
+        }
+        return;
+    }
+    // 판 접기: 술래를 조종하거나, AI 하이더를 조종하거나, 공사 모드에 들어가면.
+    if (buildMode || g.seeker.ai.state === 'player' || g.seeker.ai.state === 'held') g.cancel = true;
+    if (g.playerHides && g.hider !== possessed) g.cancel = true;                        // 숨던 주인이 조종을 풀었다
+    if (!g.playerHides && (g.hider.ai.state === 'player' || g.hider.ai.state === 'held')) g.cancel = true;
+    if (g.phase === 'count') {
+        g.t += delta;
+        const left = Math.max(0, Math.ceil(g.countTotal - g.t));
+        if (left !== g.lastLeft) { g.lastLeft = left; g.seeker.pet.setCount(left > 0 ? left : null); }
+        if (!g.seeker.pet.action && g.t < g.countTotal) g.seeker.pet.action = { id: 'think', t: 0 };   // 계속 눈 가리는 포즈
+    } else if (g.phase === 'seek') {
+        g.seekT += delta;
+        g.losT += delta;
+        if (g.losT >= 0.35) {
+            g.losT = 0;
+            if (canSee(g.seeker, g.hider)) g.found = true;
+        }
     }
 }
 
@@ -4398,7 +4597,7 @@ function pickResponder(text) {
 // ---- P2 액션 태그: the reply may carry <motion=..> <goto=..> <mount=..> <drink=..> <snack=..>
 // <hat=..> tags. They are whitelisted against what actually exists in the world, capped at 4,
 // stripped from the bubble text and run strictly in order by runWorldActions below. ----
-const ACTION_RE = /<\s*(motion|goto|mount|drink|snack|hat|swim|drive)\s*[=:]\s*([a-z0-9-]+)\s*\/?\s*>/gi;
+const ACTION_RE = /<\s*(motion|goto|mount|drink|snack|hat|swim|drive|game)\s*[=:]\s*([a-z0-9-]+)\s*\/?\s*>/gi;
 const ACTION_IDS = {
     motion: new Set(GLB_MOTIONS.map((m) => m.id)),
     goto: new Set(['plaza', 'house', 'pond', 'bowl', 'coffee', 'snack', 'radio', 'swing', 'seesaw', 'sunbed', 'hammock', 'friend']),
@@ -4408,6 +4607,7 @@ const ACTION_IDS = {
     hat: new Set([...GLB_ACCESSORIES.map((a) => a.id), 'off']),
     swim: new Set(['pond', 'sea']),
     drive: new Set(['car']),
+    game: new Set(['hideseek']),
 };
 function parseWorldReply(raw) {
     const actions = [];
@@ -4533,6 +4733,11 @@ async function runWorldActions(p, actions) {
                 await waitFor(() => !p.dip || p.dip.phase !== 'approach', 25000);
             } else if (a.kind === 'drive') {
                 await actDrive(p, gen);
+            } else if (a.kind === 'game') {
+                if (a.id === 'hideseek' && !duoBusy && !hideSeekGame && !buildMode) {
+                    worldHideSeek(p);   // 태그를 뱉은 펫이 술래 (주인이 조종 중이면 주인이 숨는다)
+                    await waitFor(() => !hideSeekGame, 150000);
+                }
             } else if (a.kind === 'drink' || a.kind === 'snack') {
                 await actGoto(p, a.kind === 'drink' ? 'coffee' : 'snack', gen);
                 if (gen !== scriptGen || p === possessed) continue;
@@ -5801,6 +6006,7 @@ function animate() {
     updateBeds(delta);
     updateSwings(delta);
     updateSeesaws(delta);
+    updateHideSeek(delta);
     updateDips(delta);
     updateAutoDrive(delta);
     updateAutoSleep();
