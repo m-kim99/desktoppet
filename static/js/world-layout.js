@@ -15,10 +15,20 @@ export const ISLANDS = [
     { x: 0,     z: 0,     r: ISLAND_R },
     { x: 8.2,   z: 4.18,  r: 2.2 },      // NE island — 놀이터 (그네·시소)
     { x: -8.06, z: -3.53, r: 2.9 },      // SW island — 추억의 섬 (기념비·쪼아쪼아나무·소원우물·타임캡슐)
+    { x: 7.9,   z: -5.6,  r: 3.5 },      // SE island — 모험의 섬 (언덕·동굴·전망대·보물 모래밭), 위성 중 최대
 ];
+// 주의: buildRoute가 BRIDGES[섬 인덱스-1]로 다리를 찾는다 — 다리 순서는 위 위성섬 순서와 같아야 한다.
 export const BRIDGES = [
     { A: { x: 4.41,  z: 2.25 },  B: { x: 6.46,  z: 3.30 },  inner: { x: 4.10,  z: 2.09 },  outer: { x: 6.73,  z: 3.43 } },
     { A: { x: -4.53, z: -1.99 }, B: { x: -6.46, z: -2.83 }, inner: { x: -4.21, z: -1.84 }, outer: { x: -6.73, z: -2.95 } },
+    { A: { x: 4.04,  z: -2.86 }, B: { x: 5.59,  z: -3.96 }, inner: { x: 3.75,  z: -2.65 }, outer: { x: 5.83,  z: -4.13 } },
+];
+
+// 언덕 (HILLS): terrainHeight에 더해지는 고원형 봉우리 — 정상부(반경 35%)는 평평해서 데크를
+// 얹을 수 있고, 사면은 펫이 그냥 걸어 오른다. FLAT_SPOTS 패드가 언덕도 눌러서(동굴 포켓)
+// 언덕 남서면에 자연스러운 절개 벽이 생긴다.
+export const HILLS = [
+    { x: 8.9, z: -6.3, r: 2.6, h: 1.1 },   // 모험의 섬 언덕 — 위에 전망대, 서남면에 동굴
 ];
 
 // 복층집 (two-story house) anchor — the walk-space helpers in world.js (floor/loft/stairs/walls)
@@ -34,6 +44,7 @@ export const FLAT_SPOTS = [
     { x: 8.2, z: 4.85, r: 1.0, follow: 'swing-1' },    // NE island swing pad (level ground under the A-frame legs)
     { x: 9.3, z: 4.0, r: 1.0, follow: 'seesaw-1' },    // NE island seesaw pad (level ground under the fulcrum + plank)
     { x: -8.06, z: -3.53, r: 1.55 },   // 추억의 섬 중앙 뜰 — 기념비·소원우물·타임캡슐이 반듯하게 선다
+    { x: 7.55, z: -5.55, r: 1.15 },    // 모험의 섬 동굴 포켓 — 언덕 남서면을 파서 만든 평탄 바닥
 ];
 
 // Props: type + position + blocking radius (`r` is the circle collider pets steer around; the
@@ -83,4 +94,10 @@ export const PROPS = [
     { type: 'pecktree', x: -7.3,  z: -4.55, rotY: 0.4, r: 0.45 },
     { type: 'well',     x: -8.15, z: -3.35, rotY: 0,   r: 0.5 },
     { type: 'capsule',  x: -8.55, z: -2.25, rotY: 0.6, r: 0.28 },
+    // 모험의 섬 (0단계 기본 드레싱): 다리목 가로등 + 해안 나무 + 바위 셋 (언덕 크래그·평지·완사면)
+    { type: 'lamp',    x:  5.55, z: -4.5,  rotY: 0,   r: 0.18 },
+    { type: 'tree',    x:  9.3,  z: -4.4,  rotY: 1.8, r: 0.45, big: true },
+    { type: 'boulder', x:  9.9,  z: -6.6,  rotY: 0.5, r: 0.5 },
+    { type: 'boulder', x:  6.2,  z: -6.9,  rotY: 2.2, r: 0.45 },
+    { type: 'boulder', x:  8.6,  z: -4.2,  rotY: 4.1, r: 0.4 },
 ];

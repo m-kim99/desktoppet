@@ -7,7 +7,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory } from './glb-pet-entity.js';
-import { ISLAND_R, ISLANDS, BRIDGES, HOUSE, FLAT_SPOTS, PROPS } from './world-layout.js';
+import { ISLAND_R, ISLANDS, BRIDGES, HILLS, HOUSE, FLAT_SPOTS, PROPS } from './world-layout.js';
 import { kitProp } from './world-kit.js';
 
 // ---- 🔨 공사모드 저장 레이아웃: 씬을 짓기 "전에" PROPS/HOUSE/FLAT_SPOTS에 덮어쓴다. 지형 패드·
@@ -26,7 +26,7 @@ const savedLayout = await (async () => {
     try { return JSON.parse(localStorage.getItem('world-layout')) || {}; } catch (err) { return {}; }
 })();
 // 이동 가능한 타입 (연못=지형 함몰이라 고정, furniture=집 내부 파생이라 집을 따라감)
-const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule']);
+const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder']);
 {
     const counts = {};
     for (const p of PROPS) {
@@ -663,6 +663,11 @@ function terrainHeight(x, z) {
         if (rr >= isl.r) continue;
         let h = 0.05 * Math.sin(x * 1.7 + 1.3) * Math.sin(z * 1.9 - 0.7)
               + 0.04 * Math.sin((x + z) * 1.1 + 2.1) + 0.045;
+        // 언덕: 고원형 봉우리 (정상 35%는 평평 — 데크 자리, 사면은 걸어 오르는 완경사)
+        for (const hl of HILLS) {
+            const d = Math.hypot(x - hl.x, z - hl.z);
+            if (d < hl.r) h += hl.h * (1 - THREE.MathUtils.smoothstep(d, hl.r * 0.35, hl.r));
+        }
         h *= THREE.MathUtils.smoothstep(isl.r - rr, 0, 0.9);
         for (const s of FLAT_SPOTS) {
             h *= THREE.MathUtils.smoothstep(Math.hypot(x - s.x, z - s.z), s.r * 0.55, s.r);
@@ -1448,6 +1453,22 @@ function updateHugSpot(delta) {
     worldHug(a);
 }
 
+// 바위 (모험의 섬 드레싱): 각진 저폴리 바위 덩어리 둘 — 계절 중립, 숨기 스팟 겸용.
+function makeBoulder() {
+    const g = new THREE.Group();
+    const mat = M(0xb3ab9f, { flatShading: true });
+    const big = new THREE.Mesh(new THREE.DodecahedronGeometry(0.34, 0), mat);
+    big.position.y = 0.2;
+    big.scale.set(1.15, 0.78, 1);
+    big.rotation.y = 0.5;
+    const small = new THREE.Mesh(new THREE.DodecahedronGeometry(0.2, 0), mat);
+    small.position.set(0.32, 0.12, 0.14);
+    small.scale.y = 0.75;
+    small.rotation.y = 2.1;
+    g.add(big, small);
+    return g;
+}
+
 // ---- 추억의 섬 (SW, ㉒㉓㉔): 쪼아쪼아나무 · 소원우물 · 타임캡슐 — 기념비와 함께 다리 건너
 // 우리만의 성지. 나무·우물·캡슐은 클릭/탭으로 상호작용한다 (renderer pointerup의 PROP_CLICKS). ----
 function mkHeart(scale, mat) {
@@ -1916,7 +1937,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointerleave', () => { hoverActive = false; });
 fetchCapsules();   // 부팅 시 한 번 — 개봉 알림용
 
-const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule };
+const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -1934,7 +1955,7 @@ const blobTex = (() => {
 })();
 const blobGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-const BLOB_SIZE = { tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62, pecktree: 0.55, well: 0.75, capsule: 0.5 };
+const BLOB_SIZE = { tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62, pecktree: 0.55, well: 0.75, capsule: 0.5, boulder: 0.75 };
 // Beds register a lying spot (on the furniture, with a lean-back tilt + heading) and an
 // approach point just outside their collider that the pet walks to before climbing on.
 // 🔨 함수로 분리: 로드 시 프롭 루프가 굽고, 공사모드에서 프롭이 이사하면 unbake→bake로 다시
@@ -2602,7 +2623,7 @@ function updateOcean(delta) {
 // (heat budget: the world stays a single forward pass + two tiny point clouds). Rain = streak
 // sprites, snow = flakes on a sine drift. A rainbow rises over the sea when rain ends in daylight,
 // and the rain hiss is synthesized noise through the sfx chain — no files, same as the water. ----
-const WX_AREA_R = 12.5, WX_TOP = 8.5, WX_H = 9.5;   // drop cylinder: covers all three islands
+const WX_AREA_R = 14, WX_TOP = 8.5, WX_H = 9.5;   // drop cylinder: covers all four islands (모험의 섬 가장자리 13.2까지)
 function precipTexture(draw) {
     const cv = document.createElement('canvas');
     cv.width = cv.height = 32;
@@ -3430,8 +3451,8 @@ async function worldHug(initiator) {
 // sight — sight is sampled against the same prop circles the pets collide with, so whatever
 // blocks walking blocks seeing, and construction-mode moves stay honest (PROPS positions are
 // live). Starts from the pet menu, a <game=hideseek> chat tag, or occasionally on its own. ----
-const HIDE_OCCLUDERS = { tree: 0.42, house: 1.15, coffee: 0.5, food: 0.5, swing: 0.5, seesaw: 0.55, fence: 0.5, radio: 0.3, monument: 0.3, pecktree: 0.42, well: 0.42 };
-const HIDE_STANDOFF  = { tree: 0.75, house: 1.6, coffee: 0.85, food: 0.85, swing: 0.85, seesaw: 0.9, fence: 0.8, radio: 0.55, monument: 0.62, pecktree: 0.75, well: 0.8 };
+const HIDE_OCCLUDERS = { tree: 0.42, house: 1.15, coffee: 0.5, food: 0.5, swing: 0.5, seesaw: 0.55, fence: 0.5, radio: 0.3, monument: 0.3, pecktree: 0.42, well: 0.42, boulder: 0.45 };
+const HIDE_STANDOFF  = { tree: 0.75, house: 1.6, coffee: 0.85, food: 0.85, swing: 0.85, seesaw: 0.9, fence: 0.8, radio: 0.55, monument: 0.62, pecktree: 0.75, well: 0.8, boulder: 0.8 };
 const HS_COUNT_SPOT = { x: 0.25, z: 0.45 };   // 광장 가운데 — 술래가 눈 가리고 세는 자리
 let hideSeekGame = null;   // { phase, seeker, hider, playerHides, countTotal, t, seekT, losT, lastLeft, found, cancel }
 let hideSeekAutoAt = Date.now() + 12 * 60000;   // 가끔 스스로 한 판 (다음 추첨 시각)
@@ -3713,7 +3734,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐' };
+const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -3727,8 +3748,9 @@ function describeSpot(x, z) {
     if (Math.hypot(x, z) < 1.8) return '중앙 광장';
     const idx = islandOf(x, z);
     if (idx === 0) return '본섬 풀밭';
-    if (idx === 1) return '북동섬';
-    if (idx === 2) return '남서섬';
+    if (idx === 1) return '북동섬 놀이터';
+    if (idx === 2) return '추억의 섬';
+    if (idx === 3) return '모험의 섬';
     return '바다';
 }
 const BED_KO = { sunbed: '선베드', hammock: '해먹', swing: '그네', seesaw: '시소', sofa: '소파', loftbed: '2층 침대' };
