@@ -1453,6 +1453,65 @@ function updateHugSpot(delta) {
     worldHug(a);
 }
 
+// ---- 동굴 (모험의 섬 ②): 언덕 남서면의 평탄 포켓 위에 얹는 바위 셸. 두꺼운 셸이 해를 등지고
+// 내부에 진짜 그림자를 드리워서(castShadow) 별도 렌더 트릭 없이 어둑하고, 호박빛 랜턴이 그
+// 안을 데운다. 쿠션 두 개는 sit-침대(⌘로 앉기)이자 비 피신 자리. 지형과 한 몸이라 이동 불가. ----
+let caveLamp = null;   // 랜턴 포인트라이트 — updateMemorialIsland가 불꽃처럼 일렁이게 한다
+function makeCave() {
+    const g = new THREE.Group();
+    const rock = M(0xa89f92, { flatShading: true });
+    const rockDark = M(0x8f8779, { flatShading: true });
+    const back = new THREE.Mesh(new THREE.SphereGeometry(1.0, 10, 8), rock);
+    back.position.set(0, 0.35, -0.8);
+    back.scale.set(1.35, 0.95, 0.8);
+    const left = new THREE.Mesh(new THREE.SphereGeometry(0.8, 9, 7), rock);
+    left.position.set(-1.0, 0.3, -0.05);
+    left.scale.set(0.85, 0.9, 1.15);
+    const right = left.clone();
+    right.position.x = 1.0;
+    const roof = new THREE.Mesh(new THREE.SphereGeometry(1.15, 10, 8), rockDark);
+    roof.position.set(0, 0.92, -0.35);
+    roof.scale.set(1.12, 0.58, 1.02);
+    const pillarL = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 6), rockDark);
+    pillarL.position.set(-0.85, 0.32, 0.62);
+    pillarL.scale.set(0.8, 1.15, 0.8);
+    const pillarR = pillarL.clone();
+    pillarR.position.x = 0.85;
+    const lintel = new THREE.Mesh(new THREE.SphereGeometry(0.62, 8, 6), rock);
+    lintel.position.set(0, 1.02, 0.5);
+    lintel.scale.set(1.5, 0.5, 0.7);
+    g.add(back, left, right, roof, pillarL, pillarR, lintel);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(1.18, 12, 5, 0, Math.PI * 2, 0, Math.PI * 0.32), snowCapMat);
+    cap.position.copy(roof.position);
+    cap.scale.copy(roof.scale).multiplyScalar(1.02);
+    cap.visible = false;
+    g.add(cap);
+    seasonSnowCaps.push(cap);
+    // 내부: 러그 + 쿠션 둘 + 랜턴 (아늑함의 3요소)
+    const rug = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.015, 20), M(0xd8a878));
+    rug.position.set(0, 0.012, -0.15);
+    g.add(rug);
+    const cushA = new THREE.Mesh(new RoundedBoxGeometry(0.34, 0.15, 0.3, 3, 0.05), M(0xf2b8c6));
+    cushA.position.set(-0.35, 0.075, -0.28);
+    cushA.rotation.y = 0.25;
+    const cushB = new THREE.Mesh(new RoundedBoxGeometry(0.34, 0.15, 0.3, 3, 0.05), M(0x9fc4e8));
+    cushB.position.set(0.36, 0.075, -0.32);
+    cushB.rotation.y = -0.2;
+    g.add(cushA, cushB);
+    const lampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.065, 0.08, 8), M(0x6f5030, { map: woodTex }));
+    lampBase.position.set(0, 0.04, -0.68);
+    const glass = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), new THREE.MeshLambertMaterial({ color: 0xffd9a8, emissive: 0xff9d4d, emissiveIntensity: 0.9 }));
+    glass.position.set(0, 0.15, -0.68);
+    g.add(lampBase, glass);
+    const halo = glowSprite(0xffb066, 0.5, 0.5);
+    halo.position.set(0, 0.16, -0.68);
+    g.add(halo);
+    caveLamp = new THREE.PointLight(0xffb066, 1.1, 3.4, 2);
+    caveLamp.position.set(0, 0.35, -0.55);
+    g.add(caveLamp);
+    return g;
+}
+
 // 바위 (모험의 섬 드레싱): 각진 저폴리 바위 덩어리 둘 — 계절 중립, 숨기 스팟 겸용.
 function makeBoulder() {
     const g = new THREE.Group();
@@ -1848,8 +1907,10 @@ const HOVER_PROMPTS = {
     hammock: () => '🛏️ 해먹 — 조종 중 ⌘/✋로 누워요',
     monument: () => '🗿 베프 포에버 💕',
     hugspot: () => '💕 포옹 포인트 — 둘이 같이 서면!',
+    cave: () => '🕳️ 아늑한 동굴 — 조종 중 ⌘/✋로 쿠션에 앉아요',
+    boulder: () => '🪨 바위',
 };
-const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4 };
+const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7 };
 const hoverEl = document.createElement('div');
 hoverEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); z-index:88; pointer-events:none; background:rgba(30,32,40,0.88); color:#fff; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
 document.body.appendChild(hoverEl);
@@ -1913,6 +1974,8 @@ function updateMemorialIsland(delta) {
             }
         }
     }
+    // 동굴 랜턴: 불꽃처럼 일렁인다
+    if (caveLamp) caveLamp.intensity = 1.05 + 0.1 * Math.sin(wxTime.value * 9) + 0.05 * Math.sin(wxTime.value * 23);
     // 타임캡슐 개봉 알림: 1분마다 확인, 세션당 한 번만 조른다
     capsuleNoticeT += delta;
     if (capsuleNoticeT >= 60) {
@@ -1937,7 +2000,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointerleave', () => { hoverActive = false; });
 fetchCapsules();   // 부팅 시 한 번 — 개봉 알림용
 
-const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder };
+const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -2065,6 +2128,30 @@ for (const p of PROPS) {
         p.lampHalo = halo;
     }
     bakePropBeds(p);
+}
+
+// Cave extras (루프 뒤에서 — 순회 중 PROPS에 push하면 안 되니까): 쿠션 둘을 sit-침대로 등록하고
+// (shelter: true — 비 피신 대상), 셸 바위들을 가구 콜라이더로 막는다. 입구(+z 로컬)만 뚫린다.
+{
+    const cavePr = PROPS.find((q) => q.type === 'cave');
+    if (cavePr) {
+        const cy = Math.cos(cavePr.rotY || 0), sy = Math.sin(cavePr.rotY || 0);
+        const cw = (lx, lz) => ({ x: cavePr.x + lx * cy + lz * sy, z: cavePr.z - lx * sy + lz * cy });
+        const baseY = terrainHeight(cavePr.x, cavePr.z);
+        for (const [lx, lz, id] of [[-0.35, -0.28, 'cavecushion-a'], [0.36, -0.32, 'cavecushion-b']]) {
+            const w = cw(lx, lz);
+            const ap = cw(lx * 0.6, 1.35);
+            BEDS.push({
+                id, mode: 'sit', occupant: null, sway: 0, shelter: true,
+                lie: { x: w.x, z: w.z, y: baseY + 0.16, rotY: cavePr.rotY || 0, tilt: -0.35 },
+                approach: { x: ap.x, z: ap.z },
+            });
+        }
+        for (const [lx, lz, r] of [[0, -0.8, 0.95], [-1.0, -0.05, 0.68], [1.0, -0.05, 0.68], [-0.85, 0.62, 0.34], [0.85, 0.62, 0.34]]) {
+            const w = cw(lx, lz);
+            PROPS.push({ type: 'furniture', x: w.x, z: w.z, rotY: 0, r });
+        }
+    }
 }
 
 // House extras: furniture colliders (collision-only entries — the meshes live inside the house
@@ -3451,8 +3538,8 @@ async function worldHug(initiator) {
 // sight — sight is sampled against the same prop circles the pets collide with, so whatever
 // blocks walking blocks seeing, and construction-mode moves stay honest (PROPS positions are
 // live). Starts from the pet menu, a <game=hideseek> chat tag, or occasionally on its own. ----
-const HIDE_OCCLUDERS = { tree: 0.42, house: 1.15, coffee: 0.5, food: 0.5, swing: 0.5, seesaw: 0.55, fence: 0.5, radio: 0.3, monument: 0.3, pecktree: 0.42, well: 0.42, boulder: 0.45 };
-const HIDE_STANDOFF  = { tree: 0.75, house: 1.6, coffee: 0.85, food: 0.85, swing: 0.85, seesaw: 0.9, fence: 0.8, radio: 0.55, monument: 0.62, pecktree: 0.75, well: 0.8, boulder: 0.8 };
+const HIDE_OCCLUDERS = { tree: 0.42, house: 1.15, coffee: 0.5, food: 0.5, swing: 0.5, seesaw: 0.55, fence: 0.5, radio: 0.3, monument: 0.3, pecktree: 0.42, well: 0.42, boulder: 0.45, cave: 1.05 };
+const HIDE_STANDOFF  = { tree: 0.75, house: 1.6, coffee: 0.85, food: 0.85, swing: 0.85, seesaw: 0.9, fence: 0.8, radio: 0.55, monument: 0.62, pecktree: 0.75, well: 0.8, boulder: 0.8, cave: 1.4 };
 const HS_COUNT_SPOT = { x: 0.25, z: 0.45 };   // 광장 가운데 — 술래가 눈 가리고 세는 자리
 let hideSeekGame = null;   // { phase, seeker, hider, playerHides, countTotal, t, seekT, losT, lastLeft, found, cancel }
 let hideSeekAutoAt = Date.now() + 12 * 60000;   // 가끔 스스로 한 판 (다음 추첨 시각)
@@ -3734,11 +3821,13 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위' };
+const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
     if (onBridge(x, z)) return '다리 위';
+    const cavePr = PROPS.find((q) => q.type === 'cave');
+    if (cavePr && Math.hypot(x - cavePr.x, z - cavePr.z) < 1.0) return '동굴 안';
     let best = null, bestD = Infinity;
     for (const q of PROPS) {
         const d = Math.hypot(x - q.x, z - q.z) - q.r;
@@ -5419,7 +5508,7 @@ function pickResponder(text) {
 const ACTION_RE = /<\s*(motion|goto|mount|drink|snack|hat|swim|drive|game)\s*[=:]\s*([a-z0-9-]+)\s*\/?\s*>/gi;
 const ACTION_IDS = {
     motion: new Set(GLB_MOTIONS.map((m) => m.id)),
-    goto: new Set(['plaza', 'house', 'pond', 'bowl', 'coffee', 'snack', 'radio', 'swing', 'seesaw', 'sunbed', 'hammock', 'friend', 'monument', 'hugspot', 'pecktree', 'well', 'capsule']),
+    goto: new Set(['plaza', 'house', 'pond', 'bowl', 'coffee', 'snack', 'radio', 'swing', 'seesaw', 'sunbed', 'hammock', 'friend', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'cave']),
     mount: new Set(['swing', 'seesaw', 'sofa', 'sunbed', 'hammock', 'loftbed']),
     drink: new Set(DRINKS.map((d) => d.id)),
     snack: new Set(FOODS.map((f) => f.id)),
@@ -5466,7 +5555,7 @@ async function freeForScript(p) {
     p.pet.sleeping = false;
     p.pet.autoSleeping = false;
 }
-const GOTO_PROP_TYPE = { pond: 'pond', bowl: 'bowl', coffee: 'coffee', snack: 'food', radio: 'radio', swing: 'swing', seesaw: 'seesaw', sunbed: 'sunbed', hammock: 'hammock', monument: 'monument', hugspot: 'hugspot', pecktree: 'pecktree', well: 'well', capsule: 'capsule' };
+const GOTO_PROP_TYPE = { pond: 'pond', bowl: 'bowl', coffee: 'coffee', snack: 'food', radio: 'radio', swing: 'swing', seesaw: 'seesaw', sunbed: 'sunbed', hammock: 'hammock', monument: 'monument', hugspot: 'hugspot', pecktree: 'pecktree', well: 'well', capsule: 'capsule', cave: 'cave' };
 function resolveGotoSpot(p, id) {
     if (id === 'plaza') return { x: 0.4, z: 0.4 };
     if (id === 'house') { const w = houseWorld(0, 1.3); return { x: w.x, z: w.z }; }
