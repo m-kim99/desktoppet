@@ -13,8 +13,8 @@ export const ISLAND_R = 5.2;
 // player, particles and roads all agree on what counts as ground.
 export const ISLANDS = [
     { x: 0,     z: 0,     r: ISLAND_R },
-    { x: 8.2,   z: 4.18,  r: 2.2 },      // NE island — open ground for future features
-    { x: -8.06, z: -3.53, r: 2.0 },      // SW island
+    { x: 8.2,   z: 4.18,  r: 2.2 },      // NE island — 놀이터 (그네·시소)
+    { x: -8.06, z: -3.53, r: 2.9 },      // SW island — 추억의 섬 (기념비·쪼아쪼아나무·소원우물·타임캡슐)
 ];
 export const BRIDGES = [
     { A: { x: 4.41,  z: 2.25 },  B: { x: 6.46,  z: 3.30 },  inner: { x: 4.10,  z: 2.09 },  outer: { x: 6.73,  z: 3.43 } },
@@ -33,6 +33,7 @@ export const FLAT_SPOTS = [
     { x: -2.6, z: -2.9, r: 0.95 },  // pond basin (연못은 이동 불가 — 지형 함몰)
     { x: 8.2, z: 4.85, r: 1.0, follow: 'swing-1' },    // NE island swing pad (level ground under the A-frame legs)
     { x: 9.3, z: 4.0, r: 1.0, follow: 'seesaw-1' },    // NE island seesaw pad (level ground under the fulcrum + plank)
+    { x: -8.06, z: -3.53, r: 1.55 },   // 추억의 섬 중앙 뜰 — 기념비·소원우물·타임캡슐이 반듯하게 선다
 ];
 
 // Props: type + position + blocking radius (`r` is the circle collider pets steer around; the
@@ -66,7 +67,7 @@ export const PROPS = [
     { type: 'food', x: -0.85, z: 1.95, rotY: 2.73, r: 0.5 },   // 간식 부스 (Ctrl/⌘로 주문)
     // Satellite islands: a tree and a lamp at each bridgehead (otherwise open feature ground)
     { type: 'tree',  x:  8.7,  z:  3.78, rotY: 0.7, r: 0.45, big: true  },
-    { type: 'tree',  x: -8.4,  z: -3.0,  rotY: 2.9, r: 0.45, big: false },
+    { type: 'tree',  x: -9.3,  z: -2.55, rotY: 2.9, r: 0.45, big: false },   // 추억의 섬 북서로 물러남 — 가운데 뜰을 비워줌
     { type: 'lamp', x:  6.97, z:  3.05, rotY: 0, r: 0.18 },
     { type: 'lamp', x: -6.60, z: -3.38, rotY: 0, r: 0.18 },
     { type: 'swing', x: 8.2, z: 4.85, rotY: 3.14, r: 0.55 },   // NE 섬 그네 (2인 A자, 앞자리 섬 안쪽 향함)
@@ -74,8 +75,12 @@ export const PROPS = [
     // 벚꽃나무 (P1 ③): 봄에 분홍으로 만개하고 꽃잎이 흩날린다 — 계절 시스템이 칠한다.
     // (공사 모드 저장 id가 타입별 순번이라 새 프롭은 반드시 목록 끝에 추가)
     { type: 'tree',  x:  1.35, z: -3.5, rotY: 0.9, r: 0.45, big: true, cherry: true },
-    // 광장 세트 (P1 ㉑㉕): 베프 기념비(광장 북쪽) + 포옹 포인트(바로 앞 남쪽 하트) — 월드의
-    // 감성 중심. 포옹 포인트는 r 0 = 밟고 설 수 있어야 자동 포옹이 발동한다.
-    { type: 'monument', x: 0,     z: -0.55, rotY: 0, r: 0.38 },
+    // 포옹 포인트 (P1 ㉕): 광장 남쪽 하트 — r 0 = 밟고 설 수 있어야 자동 포옹이 발동한다.
+    // 기념비는 추억의 섬(SW)으로 이사 — 다리를 건너 만나러 가는 우리만의 성지.
+    { type: 'monument', x: -9.35, z: -3.75, rotY: 1.28, r: 0.38 },   // 섬 서쪽, 다리 쪽을 바라봄
     { type: 'hugspot',  x: -0.15, z:  0.7,  rotY: 0, r: 0 },
+    // 추억의 섬 세트 (P5→앞당김 ㉒㉓㉔): 쪼아쪼아나무(남동) · 소원우물(섬 심장) · 타임캡슐(북동 언덕가)
+    { type: 'pecktree', x: -7.3,  z: -4.55, rotY: 0.4, r: 0.45 },
+    { type: 'well',     x: -8.15, z: -3.35, rotY: 0,   r: 0.5 },
+    { type: 'capsule',  x: -8.55, z: -2.25, rotY: 0.6, r: 0.28 },
 ];

@@ -26,7 +26,7 @@ const savedLayout = await (async () => {
     try { return JSON.parse(localStorage.getItem('world-layout')) || {}; } catch (err) { return {}; }
 })();
 // 이동 가능한 타입 (연못=지형 함몰이라 고정, furniture=집 내부 파생이라 집을 따라감)
-const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot']);
+const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule']);
 {
     const counts = {};
     for (const p of PROPS) {
@@ -1448,7 +1448,408 @@ function updateHugSpot(delta) {
     worldHug(a);
 }
 
-const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot };
+// ---- 추억의 섬 (SW, ㉒㉓㉔): 쪼아쪼아나무 · 소원우물 · 타임캡슐 — 기념비와 함께 다리 건너
+// 우리만의 성지. 나무·우물·캡슐은 클릭/탭으로 상호작용한다 (renderer pointerup의 PROP_CLICKS). ----
+function mkHeart(scale, mat) {
+    const h = new THREE.Group();
+    const l = new THREE.Mesh(new THREE.SphereGeometry(0.052 * scale, 10, 8), mat);
+    l.position.x = -0.036 * scale;
+    const r = l.clone();
+    r.position.x = 0.036 * scale;
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.088 * scale, 0.088 * scale, 0.058 * scale), mat);
+    b.rotation.z = Math.PI / 4;
+    b.position.y = -0.045 * scale;
+    h.add(l, r, b);
+    return h;
+}
+function makePeckTree() {
+    // 하트잎 나무: 사시사철 장미빛 캐노피(계절 리베이크에 등록하지 않는다 — 언제나 우리의 분홍)
+    // + 하트 열매 다섯 알. 겨울 눈모자만 계절을 따른다.
+    const g = new THREE.Group();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 0.5, 10), M(0x8a5a48, { map: woodTex }));
+    trunk.position.y = 0.25;
+    g.add(trunk);
+    const lobes = [
+        [0, 0.66, 0, 0.3, 0xff9db8, 0xd06080],
+        [0.2, 0.56, 0.08, 0.22, 0xffb2c8, 0xdb7295],
+        [-0.2, 0.58, -0.05, 0.23, 0xffb2c8, 0xdb7295],
+        [0, 0.84, 0, 0.2, 0xffa8c0, 0xd06888],
+    ];
+    for (const [x, y, z, r, top, bottom] of lobes) {
+        const s = new THREE.Mesh(gradSphereGeo(r, top, bottom), leafMatGrad);
+        s.position.set(x, y, z);
+        g.add(s);
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(r * 1.045, 16, 6, 0, Math.PI * 2, 0, Math.PI * 0.4), snowCapMat);
+        cap.position.set(x, y, z);
+        cap.visible = false;
+        g.add(cap);
+        seasonSnowCaps.push(cap);
+    }
+    const fruitMat = M(0xe8506e);
+    for (const [x, y, z, ry] of [[0.26, 0.62, 0.14, 0.4], [-0.24, 0.7, 0.1, 2.2], [0.05, 0.9, 0.05, 1.1], [0.18, 0.5, -0.2, 3.6], [-0.15, 0.52, 0.22, 5.0]]) {
+        const f = mkHeart(0.45, fruitMat);
+        f.position.set(x, y, z);
+        f.rotation.y = ry;
+        g.add(f);
+    }
+    return g;
+}
+let peckLogAt = 0, peckDuoCooldownUntil = 0;
+function onPeckTreeClick(pr) {
+    const y = terrainHeight(pr.x, pr.z) + 0.7;
+    triggerHugBurst(pr.x, y, pr.z);
+    try {   // "쪼아쪼아~" — 네 번의 짧은 쪼기 삑
+        const t0 = audioCtx.currentTime;
+        [988, 1319, 988, 1319].forEach((f, i) => {
+            const at = t0 + [0, 0.09, 0.24, 0.33][i];
+            const o = audioCtx.createOscillator();
+            o.type = 'square';
+            o.frequency.value = f;
+            const gn = audioCtx.createGain();
+            gn.gain.setValueAtTime(0, at);
+            gn.gain.linearRampToValueAtTime(0.03, at + 0.012);
+            gn.gain.exponentialRampToValueAtTime(0.0001, at + 0.12);
+            o.connect(gn);
+            gn.connect(sfxMaster);
+            o.start(at);
+            o.stop(at + 0.14);
+        });
+    } catch (e) {}
+    if (Date.now() - peckLogAt > 60000) {   // 연타는 소리만 — 로그는 분당 하나
+        peckLogAt = Date.now();
+        logWorldEvent('쪼아쪼아 나무를 콕콕 두드렸다 — 하트가 반짝 💗');
+    }
+}
+// 소원 우물: 돌 몸통 + 지붕 달린 도르래 + 두레박. 클릭하면 소원 패널이 뜬다.
+function makeWell() {
+    const g = new THREE.Group();
+    const stone = M(0xb9c1ca, { map: plasterTex });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.38, 0.3, 14), stone);
+    body.position.y = 0.15;
+    g.add(body);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.05, 10, 18), M(0x9aa3ad));
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = 0.31;
+    g.add(rim);
+    const water = new THREE.Mesh(new THREE.CircleGeometry(0.27, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x1d3a5f }));
+    water.position.y = 0.26;
+    g.add(water);
+    const glint = new THREE.Mesh(new THREE.CircleGeometry(0.025, 8).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffd968 }));
+    glint.position.set(0.08, 0.262, -0.05);   // 먼저 던져진 동전 하나가 반짝
+    g.add(glint);
+    const wood = M(0xb08a60, { map: woodTex }), woodDark = M(0x8a6647, { map: woodTex });
+    for (const px of [-0.3, 0.3]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.62, 0.05), wood);
+        post.position.set(px, 0.55, 0);
+        g.add(post);
+    }
+    for (const s of [-1, 1]) {
+        const slope = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.035, 0.44), woodDark);
+        slope.position.set(s * 0.155, 0.985, 0);
+        slope.rotation.z = -s * 0.66;
+        g.add(slope);
+    }
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.64, 8), woodDark);
+    bar.rotation.z = Math.PI / 2;
+    bar.position.y = 0.78;
+    g.add(bar);
+    const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.24, 6), M(0xd8c49a));
+    rope.position.y = 0.66;
+    g.add(rope);
+    const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.045, 0.08, 10, 1, true), woodDark);
+    bucket.position.y = 0.52;
+    g.add(bucket);
+    return g;
+}
+// 타임캡슐: 흙무덤에 반쯤 파묻힌 상자 뚜껑 + 팻말. 클릭하면 캡슐 패널이 뜬다.
+function makeCapsule() {
+    const g = new THREE.Group();
+    const mound = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 8), M(0x9a7b55));
+    mound.scale.y = 0.34;
+    mound.position.y = 0.02;
+    g.add(mound);
+    const lid = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.09, 0.18, 3, 0.02), M(0xb08a60, { map: woodTex }));
+    lid.position.y = 0.1;
+    lid.rotation.set(-0.08, 0, 0.1);
+    g.add(lid);
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.095, 0.05), M(0x6f5030));
+    strap.position.y = 0.1;
+    strap.rotation.set(-0.08, 0, 0.1);
+    g.add(strap);
+    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.035, 0.055), M(0xffd968));
+    buckle.position.set(0.0, 0.145, 0.0);
+    buckle.rotation.set(-0.08, 0, 0.1);
+    g.add(buckle);
+    const stake = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.018, 0.24, 8), M(0x8a6647, { map: woodTex }));
+    stake.position.set(0.24, 0.12, -0.1);
+    g.add(stake);
+    const cv = document.createElement('canvas');
+    cv.width = 128; cv.height = 80;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#f0e6cf';
+    ctx.fillRect(0, 0, 128, 80);
+    ctx.textAlign = 'center';
+    ctx.font = '44px sans-serif';
+    ctx.fillText('🕰️', 64, 58);
+    const signTex = new THREE.CanvasTexture(cv);
+    signTex.colorSpace = THREE.SRGBColorSpace;
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 0.09), new THREE.MeshStandardMaterial({ map: signTex, roughness: 0.9, metalness: 0, side: THREE.DoubleSide }));
+    sign.position.set(0.24, 0.26, -0.1);
+    sign.rotation.y = 0.5;
+    g.add(sign);
+    return g;
+}
+// ---- 상호작용: 공용 양피지 다이얼로그 + 소원/캡슐 저장 (서버 config/*.json — 일기와 같은 방식) ----
+function memorialPanel(title) {
+    const panel = document.createElement('div');
+    panel.style.cssText = 'position:fixed; left:50%; top:44%; transform:translate(-50%,-50%); display:none; z-index:120; width:min(330px, calc(100vw - 60px)); max-height:66vh; background:#fbf3e2; color:#4a3f30; border-radius:14px; box-shadow:0 10px 34px rgba(0,0,0,0.45); font-family:sans-serif; flex-direction:column; overflow:hidden;';
+    const head = document.createElement('div');
+    head.style.cssText = 'display:flex; align-items:center; gap:6px; padding:9px 12px; font-size:13.5px; font-weight:700; background:rgba(120,90,50,0.12);';
+    const titleEl = document.createElement('div');
+    titleEl.textContent = title;
+    titleEl.style.cssText = 'flex:1;';
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕';
+    closeBtn.style.cssText = 'border:none; background:rgba(120,90,50,0.15); color:#4a3f30; border-radius:7px; font-size:12px; padding:3px 9px; cursor:pointer;';
+    closeBtn.onclick = () => { panel.style.display = 'none'; };
+    head.append(titleEl, closeBtn);
+    const body = document.createElement('div');
+    body.style.cssText = 'padding:10px 12px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; font-size:12.5px;';
+    panel.append(head, body);
+    panel.addEventListener('pointerdown', (e) => e.stopPropagation());
+    panel.addEventListener('keydown', (e) => e.stopPropagation());   // 입력 중 WASD/Space가 펫을 몰지 않게
+    document.body.appendChild(panel);
+    return { panel, body };
+}
+const memoInput = (ph, rows = 2) => {
+    const t = document.createElement('textarea');
+    t.placeholder = ph;
+    t.rows = rows;
+    t.maxLength = 200;
+    t.style.cssText = 'width:100%; box-sizing:border-box; border:1px solid rgba(120,90,50,0.35); border-radius:8px; background:#fffdf6; color:#4a3f30; font-size:13px; padding:7px 9px; resize:none; font-family:sans-serif;';
+    return t;
+};
+const memoBtn = (label) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = 'border:none; border-radius:8px; background:#e8b04b; color:#3d2f18; font-weight:700; font-size:12.5px; padding:7px 10px; cursor:pointer;';
+    return b;
+};
+// 소원 우물 패널
+const wellUI = memorialPanel('⛲ 소원 우물');
+const wishInput = memoInput('소원을 적어요… (동전과 함께 우물에 잠겨요)');
+const wishToss = memoBtn('🪙 동전 던지고 소원 빌기');
+const wishListEl = document.createElement('div');
+wishListEl.style.cssText = 'display:flex; flex-direction:column; gap:5px; border-top:1px dashed rgba(120,90,50,0.35); padding-top:8px;';
+wellUI.body.append(wishInput, wishToss, wishListEl);
+let wishesData = [];
+function renderWishes() {
+    wishListEl.textContent = '';
+    if (!wishesData.length) {
+        wishListEl.textContent = '아직 빌어둔 소원이 없어요.';
+        return;
+    }
+    for (const w of [...wishesData].reverse().slice(0, 30)) {
+        const row = document.createElement('div');
+        const d = new Date(w.ts);
+        row.textContent = `✨ ${d.getMonth() + 1}.${d.getDate()} — ${w.text}`;
+        row.style.cssText = 'line-height:1.5;';
+        wishListEl.appendChild(row);
+    }
+}
+async function fetchWishes() {
+    try {
+        const res = await fetch('/api/world_wishes');
+        if (res.ok) wishesData = (await res.json()).wishes || [];
+    } catch (e) {}
+    renderWishes();
+}
+const coinFlights = [];   // { m, t, x, z, y0 }
+wishToss.onclick = async () => {
+    const text = wishInput.value.trim();
+    if (!text) { showToast('⛲ 소원을 먼저 적어주세요'); return; }
+    wishToss.disabled = true;
+    try {
+        const res = await fetch('/api/world_wishes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        wishesData.push((await res.json()).wish);
+        wishInput.value = '';
+        renderWishes();
+        const pr = PROPS.find((q) => q.type === 'well');
+        if (pr) {   // 동전이 포물선을 그리며 우물로 퐁당
+            const coin = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.01, 12), M(0xffd968));
+            const y0 = terrainHeight(pr.x, pr.z);
+            coin.position.set(pr.x + 0.55, y0 + 0.55, pr.z + 0.35);
+            scene.add(coin);
+            coinFlights.push({ m: coin, t: 0, x: pr.x, z: pr.z, y0 });
+        }
+        showToast('✨ 소원이 우물 깊이 잠겼어요');
+        logWorldEvent('소원 우물에 동전을 던지고 소원을 빌었다 ✨');
+        maybeProactive(null, '주인이 방금 소원 우물에 동전을 던졌다! 무슨 소원인지 궁금하다.');
+    } catch (e) {
+        console.error('[World] wish failed', e);
+        showToast('⛲ 소원 저장에 실패했어요 — 잠시 후 다시');
+    } finally {
+        wishToss.disabled = false;
+    }
+};
+function openWellPanel() {
+    wellUI.panel.style.display = 'flex';
+    fetchWishes();
+}
+// 타임캡슐 패널
+const capUI = memorialPanel('🕰️ 타임캡슐');
+const capInput = memoInput('미래의 우리에게 남길 말…', 3);
+const capDate = document.createElement('input');
+capDate.type = 'date';
+capDate.style.cssText = 'border:1px solid rgba(120,90,50,0.35); border-radius:8px; background:#fffdf6; color:#4a3f30; font-size:13px; padding:6px 9px; font-family:sans-serif;';
+const capBury = memoBtn('🕰️ 캡슐 묻기');
+const capListEl = document.createElement('div');
+capListEl.style.cssText = 'display:flex; flex-direction:column; gap:7px; border-top:1px dashed rgba(120,90,50,0.35); padding-top:8px;';
+capUI.body.append(capInput, capDate, capBury, capListEl);
+let capsulesData = [];
+function renderCapsules() {
+    capListEl.textContent = '';
+    if (!capsulesData.length) {
+        capListEl.textContent = '아직 묻어둔 캡슐이 없어요.';
+        return;
+    }
+    const today = localDateStr();
+    for (const c of [...capsulesData].reverse()) {
+        const row = document.createElement('div');
+        row.style.cssText = 'line-height:1.5;';
+        const buried = new Date(c.ts);
+        if (c.opened) {
+            row.textContent = `📜 (${buried.getMonth() + 1}.${buried.getDate()}에 묻음 · 개봉함) ${c.text}`;
+        } else if (today >= c.openAt) {
+            const btn = memoBtn('🎁 열어보기');
+            btn.style.padding = '4px 8px';
+            btn.onclick = () => openCapsule(c.id);
+            row.textContent = `🎁 ${c.openAt.replace(/-/g, '.')} 캡슐이 열릴 준비가 됐어요! `;
+            row.appendChild(btn);
+        } else {
+            const dday = Math.max(1, Math.ceil((new Date(c.openAt) - Date.now()) / 86400000));
+            row.textContent = `🔒 ${c.openAt.replace(/-/g, '.')}에 열려요 (D-${dday})`;
+        }
+        capListEl.appendChild(row);
+    }
+}
+async function fetchCapsules() {
+    try {
+        const res = await fetch('/api/world_capsules');
+        if (res.ok) capsulesData = (await res.json()).capsules || [];
+    } catch (e) {}
+    renderCapsules();
+}
+capBury.onclick = async () => {
+    const text = capInput.value.trim();
+    if (!text) { showToast('🕰️ 남길 말을 먼저 적어주세요'); return; }
+    if (!capDate.value || capDate.value <= localDateStr()) { showToast('🕰️ 내일 이후의 개봉 날짜를 골라주세요'); return; }
+    capBury.disabled = true;
+    try {
+        const res = await fetch('/api/world_capsules', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'bury', text, openAt: capDate.value }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        capsulesData.push((await res.json()).capsule);
+        capInput.value = '';
+        renderCapsules();
+        showToast(`🕰️ 타임캡슐을 묻었어요 — ${capDate.value.replace(/-/g, '.')}에 만나요`);
+        logWorldEvent('타임캡슐을 묻었다 — 미래의 우리에게 🕰️');
+        maybeProactive(null, '주인이 방금 타임캡슐을 묻었다! 안에 뭐가 들었을까.');
+    } catch (e) {
+        console.error('[World] capsule bury failed', e);
+        showToast('🕰️ 캡슐 묻기에 실패했어요 — 잠시 후 다시');
+    } finally {
+        capBury.disabled = false;
+    }
+};
+async function openCapsule(id) {
+    try {
+        const res = await fetch('/api/world_capsules', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'open', id }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const c = (await res.json()).capsule;
+        const i = capsulesData.findIndex((q) => q.id === id);
+        if (i >= 0) capsulesData[i] = c;
+        renderCapsules();
+        const pr = PROPS.find((q) => q.type === 'capsule');
+        if (pr) triggerHugBurst(pr.x, terrainHeight(pr.x, pr.z) + 0.3, pr.z);
+        showToast('🎁 타임캡슐이 열렸어요!');
+        logWorldEvent('묻어두었던 타임캡슐을 열었다 🎁');
+        maybeProactive(null, '방금 타임캡슐이 열렸다! 과거의 주인이 남긴 말이 나왔다.');
+    } catch (e) {
+        console.error('[World] capsule open failed', e);
+        showToast('🎁 개봉에 실패했어요 — 잠시 후 다시');
+    }
+}
+function openCapsulePanel() {
+    const tomorrow = new Date(Date.now() + 86400000);
+    capDate.min = localDateStr(tomorrow);
+    if (!capDate.value || capDate.value < capDate.min) capDate.value = capDate.min;
+    capUI.panel.style.display = 'flex';
+    fetchCapsules();
+}
+const PROP_CLICKS = { pecktree: onPeckTreeClick, well: () => openWellPanel(), capsule: () => openCapsulePanel() };
+let capsuleNoticeT = 55, capsuleNoticed = false;
+function updateMemorialIsland(delta) {
+    // 동전 포물선: 0.7초에 우물 속으로 — 끝나면 퐁당 + 반짝
+    for (let i = coinFlights.length - 1; i >= 0; i--) {
+        const c = coinFlights[i];
+        c.t += delta;
+        const k = Math.min(1, c.t / 0.7);
+        c.m.position.x = c.x + 0.55 * (1 - k);
+        c.m.position.z = c.z + 0.35 * (1 - k);
+        c.m.position.y = c.y0 + 0.55 + Math.sin(k * Math.PI) * 0.45 - k * 0.28;
+        c.m.rotation.x += delta * 9;
+        if (k >= 1) {
+            scene.remove(c.m);
+            coinFlights.splice(i, 1);
+            try { playBuffer(splashBuf, { vol: 0.5, rate: 1.5, filterFreq: 1600 }); } catch (e) {}
+            triggerHugBurst(c.x, c.y0 + 0.5, c.z);
+        }
+    }
+    // 쪼아쪼아 나무: 둘이 나무 밑에 모이면 하트가 터지고 포옹으로 이어진다 (7분 쿨다운)
+    if (Date.now() > peckDuoCooldownUntil && pets.length >= 2 && !duoBusy && !possessed) {
+        const pr = PROPS.find((q) => q.type === 'pecktree');
+        if (pr) {
+            const near = (q) => Math.hypot(q.mover.position.x - pr.x, q.mover.position.z - pr.z) < 1.15;
+            const free = (q) => !q.pet.sleeping && !q.bed && !q.dip && q.ai.state !== 'held' && q.ai.state !== 'busy' && q.ai.state !== 'goto';
+            if (near(pets[0]) && near(pets[1]) && free(pets[0]) && free(pets[1])) {
+                peckDuoCooldownUntil = Date.now() + 7 * 60 * 1000;
+                triggerHugBurst(pr.x, terrainHeight(pr.x, pr.z) + 0.7, pr.z);
+                logWorldEvent('쪼아쪼아 나무 아래에서 하트가 터졌다 — 포옹! 💗');
+                worldHug(pets[0]);
+            }
+        }
+    }
+    // 타임캡슐 개봉 알림: 1분마다 확인, 세션당 한 번만 조른다
+    capsuleNoticeT += delta;
+    if (capsuleNoticeT >= 60) {
+        capsuleNoticeT = 0;
+        if (!capsuleNoticed) {
+            const today = localDateStr();
+            if (capsulesData.some((c) => !c.opened && today >= c.openAt)) {
+                capsuleNoticed = true;
+                showToast('🎁 열 수 있는 타임캡슐이 있어요! (추억의 섬에서 탭)');
+                logWorldEvent('묻어둔 타임캡슐이 열릴 때가 됐다 🎁');
+                maybeProactive(null, '묻어둔 타임캡슐이 드디어 열릴 때가 됐다! 두근두근.');
+            }
+        }
+    }
+}
+fetchCapsules();   // 부팅 시 한 번 — 개봉 알림용
+
+const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -1466,7 +1867,7 @@ const blobTex = (() => {
 })();
 const blobGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-const BLOB_SIZE = { tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62 };
+const BLOB_SIZE = { tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62, pecktree: 0.55, well: 0.75, capsule: 0.5 };
 // Beds register a lying spot (on the furniture, with a lean-back tilt + heading) and an
 // approach point just outside their collider that the pet walks to before climbing on.
 // 🔨 함수로 분리: 로드 시 프롭 루프가 굽고, 공사모드에서 프롭이 이사하면 unbake→bake로 다시
@@ -2871,6 +3272,15 @@ renderer.domElement.addEventListener('pointerup', (e) => {
             return;
         }
     }
+    // 추억의 섬 소품 (쪼아쪼아나무·소원우물·타임캡슐): 클릭/탭으로 상호작용 — 드래그는 위의
+    // slop 판정에서 이미 걸러졌으니 좌클릭 탭도 카메라와 안 싸운다.
+    for (const pr of PROPS) {
+        if (!PROP_CLICKS[pr.type] || !pr.obj) continue;
+        if (raycaster.intersectObject(pr.obj, true).length) {
+            PROP_CLICKS[pr.type](pr);
+            return;
+        }
+    }
 });
 
 // ---- Motions. Solo ones set the entity action exactly like the pet windows; hug/play are
@@ -2953,8 +3363,8 @@ async function worldHug(initiator) {
 // sight — sight is sampled against the same prop circles the pets collide with, so whatever
 // blocks walking blocks seeing, and construction-mode moves stay honest (PROPS positions are
 // live). Starts from the pet menu, a <game=hideseek> chat tag, or occasionally on its own. ----
-const HIDE_OCCLUDERS = { tree: 0.42, house: 1.15, coffee: 0.5, food: 0.5, swing: 0.5, seesaw: 0.55, fence: 0.5, radio: 0.3, monument: 0.3 };
-const HIDE_STANDOFF  = { tree: 0.75, house: 1.6, coffee: 0.85, food: 0.85, swing: 0.85, seesaw: 0.9, fence: 0.8, radio: 0.55, monument: 0.62 };
+const HIDE_OCCLUDERS = { tree: 0.42, house: 1.15, coffee: 0.5, food: 0.5, swing: 0.5, seesaw: 0.55, fence: 0.5, radio: 0.3, monument: 0.3, pecktree: 0.42, well: 0.42 };
+const HIDE_STANDOFF  = { tree: 0.75, house: 1.6, coffee: 0.85, food: 0.85, swing: 0.85, seesaw: 0.9, fence: 0.8, radio: 0.55, monument: 0.62, pecktree: 0.75, well: 0.8 };
 const HS_COUNT_SPOT = { x: 0.25, z: 0.45 };   // 광장 가운데 — 술래가 눈 가리고 세는 자리
 let hideSeekGame = null;   // { phase, seeker, hider, playerHides, countTotal, t, seekT, losT, lastLeft, found, cancel }
 let hideSeekAutoAt = Date.now() + 12 * 60000;   // 가끔 스스로 한 판 (다음 추첨 시각)
@@ -3236,7 +3646,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트' };
+const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -4902,7 +5312,7 @@ function pickResponder(text) {
 const ACTION_RE = /<\s*(motion|goto|mount|drink|snack|hat|swim|drive|game)\s*[=:]\s*([a-z0-9-]+)\s*\/?\s*>/gi;
 const ACTION_IDS = {
     motion: new Set(GLB_MOTIONS.map((m) => m.id)),
-    goto: new Set(['plaza', 'house', 'pond', 'bowl', 'coffee', 'snack', 'radio', 'swing', 'seesaw', 'sunbed', 'hammock', 'friend', 'monument', 'hugspot']),
+    goto: new Set(['plaza', 'house', 'pond', 'bowl', 'coffee', 'snack', 'radio', 'swing', 'seesaw', 'sunbed', 'hammock', 'friend', 'monument', 'hugspot', 'pecktree', 'well', 'capsule']),
     mount: new Set(['swing', 'seesaw', 'sofa', 'sunbed', 'hammock', 'loftbed']),
     drink: new Set(DRINKS.map((d) => d.id)),
     snack: new Set(FOODS.map((f) => f.id)),
@@ -4949,7 +5359,7 @@ async function freeForScript(p) {
     p.pet.sleeping = false;
     p.pet.autoSleeping = false;
 }
-const GOTO_PROP_TYPE = { pond: 'pond', bowl: 'bowl', coffee: 'coffee', snack: 'food', radio: 'radio', swing: 'swing', seesaw: 'seesaw', sunbed: 'sunbed', hammock: 'hammock', monument: 'monument', hugspot: 'hugspot' };
+const GOTO_PROP_TYPE = { pond: 'pond', bowl: 'bowl', coffee: 'coffee', snack: 'food', radio: 'radio', swing: 'swing', seesaw: 'seesaw', sunbed: 'sunbed', hammock: 'hammock', monument: 'monument', hugspot: 'hugspot', pecktree: 'pecktree', well: 'well', capsule: 'capsule' };
 function resolveGotoSpot(p, id) {
     if (id === 'plaza') return { x: 0.4, z: 0.4 };
     if (id === 'house') { const w = houseWorld(0, 1.3); return { x: w.x, z: w.z }; }
@@ -6310,6 +6720,7 @@ function animate() {
     updateSeesaws(delta);
     updateHideSeek(delta);
     updateHugSpot(delta);
+    updateMemorialIsland(delta);
     updateDips(delta);
     updateAutoDrive(delta);
     updateAutoSleep();

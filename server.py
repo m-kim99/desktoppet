@@ -11456,7 +11456,7 @@ WORLD_PERSONAS = {
 WORLD_ACTION_SPEC = """[행동 태그]
 대답하면서 실제로 몸을 움직일 수 있다. 아래 태그를 문장 뒤에 붙이면 월드에서 그대로 실행된다 (한 번에 최대 3개, 순서대로 실행):
 <motion=ID> 제자리 모션. ID: wave(인사)·happy(기쁨)·dance(춤)·cheer(응원)·celebrate(축하)·hug(절친과 포옹)·play(절친과 공놀이)·think(생각)·eat(냠냠)·sleep(잠들기)
-<goto=ID> 그 장소로 걸어간다. ID: plaza(광장)·house(집)·pond(연못)·bowl(밥그릇)·coffee(커피 부스)·snack(간식 부스)·radio(라디오)·swing(그네)·seesaw(시소)·sunbed(선베드)·hammock(해먹)·friend(절친 옆)·monument(베프 기념비)·hugspot(포옹 포인트 — 절친과 같이 서면 자동 포옹이 터진다)
+<goto=ID> 그 장소로 걸어간다. ID: plaza(광장)·house(집)·pond(연못)·bowl(밥그릇)·coffee(커피 부스)·snack(간식 부스)·radio(라디오)·swing(그네)·seesaw(시소)·sunbed(선베드)·hammock(해먹)·friend(절친 옆)·monument(베프 기념비 — 추억의 섬)·hugspot(포옹 포인트 — 절친과 같이 서면 자동 포옹이 터진다)·pecktree(쪼아쪼아 나무 — 추억의 섬, 절친과 같이 가면 하트가 터진다)·well(소원 우물 — 추억의 섬)·capsule(타임캡슐 — 추억의 섬)
 <mount=ID> 올라타거나 앉는다/눕는다. ID: swing(그네)·seesaw(시소)·sofa(소파)·sunbed(선베드)·hammock(해먹)·loftbed(2층 침대)
 <drink=ID> 커피 부스에 걸어가 음료를 받아 든다. ID: americano·iced-ame·espresso·latte·cappuccino·choco·strawberry·matcha·icetea
 <snack=ID> 간식 부스에 걸어가 간식을 받아 든다. ID: toast·omurice·burrito·hotdog·donut·bungeo·gimbap·churros·cupcake
@@ -11696,6 +11696,85 @@ async def world_diary_write(request: Request):
     diary.setdefault(date, {})[pet] = entry
     _world_diary_save(diary)
     return {"cached": False, **entry}
+
+
+# ---- 추억의 섬 저장소 (㉓ 소원우물 / ㉔ 타임캡슐): world_layout처럼 서버 파일 — 기기 공유,
+# localStorage 초기화에도 살아남는다. LLM 불필요, 순수 파일 IO.
+WORLD_WISH_FILE = os.path.join(base_path, "config", "world_wishes.json")
+WORLD_CAPSULE_FILE = os.path.join(base_path, "config", "world_capsules.json")
+
+
+def _world_json_load(path: str, key: str) -> list:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict) and isinstance(data.get(key), list):
+            return data[key]
+    except Exception:
+        pass
+    return []
+
+
+def _world_json_save(path: str, key: str, items: list):
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({key: items}, f, ensure_ascii=False, indent=1)
+    except Exception as e:
+        print(f"[world_store] save failed ({path}): {e}")
+
+
+@app.get("/api/world_wishes")
+async def world_wishes_all():
+    return {"wishes": _world_json_load(WORLD_WISH_FILE, "wishes")}
+
+
+@app.post("/api/world_wishes")
+async def world_wish_add(request: Request):
+    data = await request.json()
+    text = str(data.get("text", "")).strip()[:200]
+    if not text:
+        return JSONResponse({"error": "empty wish"}, status_code=400)
+    wishes = _world_json_load(WORLD_WISH_FILE, "wishes")
+    wish = {"text": text, "ts": int(time.time() * 1000)}
+    wishes.append(wish)
+    _world_json_save(WORLD_WISH_FILE, "wishes", wishes)
+    return {"ok": True, "wish": wish}
+
+
+@app.get("/api/world_capsules")
+async def world_capsules_all():
+    return {"capsules": _world_json_load(WORLD_CAPSULE_FILE, "capsules")}
+
+
+@app.post("/api/world_capsules")
+async def world_capsule_act(request: Request):
+    data = await request.json()
+    action = str(data.get("action", ""))
+    capsules = _world_json_load(WORLD_CAPSULE_FILE, "capsules")
+    if action == "bury":
+        text = str(data.get("text", "")).strip()[:400]
+        open_at = str(data.get("openAt", "")).strip()
+        if not text or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", open_at):
+            return JSONResponse({"error": "need text + openAt(YYYY-MM-DD)"}, status_code=400)
+        capsule = {"id": int(time.time() * 1000), "text": text, "openAt": open_at, "ts": int(time.time() * 1000), "opened": False}
+        capsules.append(capsule)
+        _world_json_save(WORLD_CAPSULE_FILE, "capsules", capsules)
+        return {"ok": True, "capsule": capsule}
+    if action == "open":
+        cid = data.get("id")
+        today = time.strftime("%Y-%m-%d")
+        for c in capsules:
+            if c.get("id") == cid:
+                if c.get("opened"):
+                    return {"ok": True, "capsule": c}
+                if today < str(c.get("openAt", "")):
+                    return JSONResponse({"error": "not yet"}, status_code=403)
+                c["opened"] = True
+                _world_json_save(WORLD_CAPSULE_FILE, "capsules", capsules)
+                return {"ok": True, "capsule": c}
+        return JSONResponse({"error": "no such capsule"}, status_code=404)
+    return JSONResponse({"error": "unknown action"}, status_code=400)
 
 
 app.mount("/vrm", StaticFiles(directory=DEFAULT_VRM_DIR), name="vrm")
