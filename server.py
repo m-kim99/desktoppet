@@ -366,6 +366,7 @@ from fastapi import status
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse,Response
 import uuid
 import time
+import random
 from typing import Any, AsyncIterator, List, Dict,Optional, Tuple, Union
 import shortuuid
 from py.mcp_clients import McpClient
@@ -11453,10 +11454,15 @@ WORLD_PERSONAS = {
 절친: 병아리 — 텐션 높은 병아리를 흐뭇하게 지켜본다.""",
 }
 
+WORLD_MAIL_PERSONA = """너는 병아리 🐤와 강아지 🐶 둘을 함께 대변해서, 주인이 우편함에 넣은 편지에
+같이 쓰는 답장을 작성한다. 병아리는 밝고 통통 튀는 반말(가끔 "삐약!"), 강아지는 느긋하고
+다정한 반말(가끔 "멍!") — 둘의 말투가 번갈아 섞인 짧은 대화체 편지로 3~5문장, 이모지 1~3개.
+편지 형식(인사말/날짜/서명 같은 격식)은 필요 없다 — 그냥 둘이 재잘대며 쓰는 편지 내용만."""
+
 WORLD_ACTION_SPEC = """[행동 태그]
 대답하면서 실제로 몸을 움직일 수 있다. 아래 태그를 문장 뒤에 붙이면 월드에서 그대로 실행된다 (한 번에 최대 3개, 순서대로 실행):
 <motion=ID> 제자리 모션. ID: wave(인사)·happy(기쁨)·dance(춤)·cheer(응원)·celebrate(축하)·hug(절친과 포옹)·play(절친과 공놀이)·think(생각)·eat(냠냠)·sleep(잠들기)
-<goto=ID> 그 장소로 걸어간다. ID: plaza(광장)·house(집)·pond(연못)·bowl(밥그릇)·coffee(커피 부스)·snack(간식 부스)·radio(라디오)·swing(그네)·seesaw(시소)·sunbed(선베드)·hammock(해먹)·friend(절친 옆)·monument(베프 기념비 — 추억의 섬)·hugspot(포옹 포인트 — 절친과 같이 서면 자동 포옹이 터진다)·pecktree(쪼아쪼아 나무 — 추억의 섬, 절친과 같이 가면 하트가 터진다)·well(소원 우물 — 추억의 섬)·capsule(타임캡슐 — 추억의 섬)·cave(아늑한 동굴 — 모험의 섬, 비 오는 날 피신처)·lookout(전망대 — 모험의 섬 언덕 꼭대기, 별 보기 좋은 곳)·digsite(보물 모래밭 — 모험의 섬)·garden(텃밭 — 본섬 북서 뜰)·piano(피아노 — 본섬 서쪽 잔디)
+<goto=ID> 그 장소로 걸어간다. ID: plaza(광장)·house(집)·pond(연못)·bowl(밥그릇)·coffee(커피 부스)·snack(간식 부스)·radio(라디오)·swing(그네)·seesaw(시소)·sunbed(선베드)·hammock(해먹)·friend(절친 옆)·monument(베프 기념비 — 추억의 섬)·hugspot(포옹 포인트 — 절친과 같이 서면 자동 포옹이 터진다)·pecktree(쪼아쪼아 나무 — 추억의 섬, 절친과 같이 가면 하트가 터진다)·well(소원 우물 — 추억의 섬)·capsule(타임캡슐 — 추억의 섬)·cave(아늑한 동굴 — 모험의 섬, 비 오는 날 피신처)·lookout(전망대 — 모험의 섬 언덕 꼭대기, 별 보기 좋은 곳)·digsite(보물 모래밭 — 모험의 섬)·garden(텃밭 — 본섬 북서 뜰)·piano(피아노 — 본섬 서쪽 잔디)·mailbox(우편함 — 집 앞길)·gym(운동 공간 — NE 놀이터 섬, 그네·시소 옆)·library(도서관 코너 — 본섬 서쪽 뜰)·fountain(분수)
 <mount=ID> 올라타거나 앉는다/눕는다. ID: swing(그네)·seesaw(시소)·sofa(소파)·sunbed(선베드)·hammock(해먹)·loftbed(2층 침대)
 <drink=ID> 커피 부스에 걸어가 음료를 받아 든다. ID: americano·iced-ame·espresso·latte·cappuccino·choco·strawberry·matcha·icetea
 <snack=ID> 간식 부스에 걸어가 간식을 받아 든다. ID: toast·omurice·burrito·hotdog·donut·bungeo·gimbap·churros·cupcake
@@ -11831,6 +11837,77 @@ async def world_constellation_add(request: Request):
     items.append(entry)
     _world_json_save(WORLD_CONSTEL_FILE, "constellations", items)
     return {"ok": True, "constellation": entry}
+
+
+# ---- 우편함 (⑬): 편지를 넣으면 병아리·강아지 공동 명의로 답장을 즉시 지어두되, 실제로는
+# 4~12분 뒤에야 "배달"된 것으로 보여준다(deliverAt) — 클라이언트가 그 전까지는 숨긴다.
+WORLD_MAIL_FILE = os.path.join(base_path, "config", "world_mail.json")
+
+
+@app.get("/api/world_mail")
+async def world_mail_all():
+    return {"letters": _world_json_load(WORLD_MAIL_FILE, "letters")}
+
+
+@app.post("/api/world_mail")
+async def world_mail_send(request: Request):
+    data = await request.json()
+    text = str(data.get("text", "")).strip()[:400]
+    if not text:
+        return JSONResponse({"error": "empty letter"}, status_code=400)
+    try:
+        wc_client, current_settings = await _world_chat_client_and_model()
+        resp = await wc_client.chat.completions.create(
+            model=current_settings["model"],
+            messages=[
+                {"role": "system", "content": "\n\n".join([WORLD_MAIL_PERSONA, WORLD_LORE])},
+                {"role": "user", "content": f"주인이 우편함에 넣은 편지:\n{text}"},
+            ],
+            temperature=0.85,
+            max_tokens=350,
+        )
+        reply = (resp.choices[0].message.content or "").strip()
+    except Exception as e:
+        print(f"[world_mail] LLM call failed: {e}")
+        return JSONResponse({"error": str(e)}, status_code=502)
+    now = int(time.time() * 1000)
+    letter = {
+        "id": now,
+        "text": text,
+        "ts": now,
+        "reply": reply,
+        "deliverAt": now + random.randint(4, 12) * 60000,
+    }
+    letters = _world_json_load(WORLD_MAIL_FILE, "letters")
+    letters.append(letter)
+    _world_json_save(WORLD_MAIL_FILE, "letters", letters)
+    return {"ok": True, "letter": letter}
+
+
+# ---- 꽃 심기 챌린지 (㉝): 심은 꽃 하나하나를 좌표+색으로 누적 — 100송이가 목표.
+WORLD_FLOWER_FILE = os.path.join(base_path, "config", "world_flowers.json")
+
+
+@app.get("/api/world_flowers")
+async def world_flowers_all():
+    return {"flowers": _world_json_load(WORLD_FLOWER_FILE, "flowers")}
+
+
+@app.post("/api/world_flowers")
+async def world_flower_add(request: Request):
+    data = await request.json()
+    try:
+        x = float(data.get("x")); z = float(data.get("z"))
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "need numeric x/z"}, status_code=400)
+    color = data.get("c")
+    flowers = _world_json_load(WORLD_FLOWER_FILE, "flowers")
+    if len(flowers) >= 150:
+        return JSONResponse({"error": "flowerbed full"}, status_code=409)
+    flower = {"x": round(x, 2), "z": round(z, 2), "c": color, "ts": int(time.time() * 1000)}
+    flowers.append(flower)
+    _world_json_save(WORLD_FLOWER_FILE, "flowers", flowers)
+    return {"ok": True, "flower": flower, "total": len(flowers)}
 
 
 # ---- 사진 게시판 (⑭): screenshots/ 목록 (최신순) — 원본은 아래 /screenshots 마운트가 서빙.

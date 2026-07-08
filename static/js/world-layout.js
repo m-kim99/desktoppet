@@ -7,13 +7,13 @@
 //   · level ground → add a FLAT_SPOTS circle (flat pads under buildings, ponds, plazas)
 // Positions are in world units: a pet stands ~0.4–0.5 tall, the main island radius is 5.2.
 
-export const ISLAND_R = 5.2;
+export const ISLAND_R = 5.6;   // 5.2→5.6: 마지막 6종(우편함·운동·도서관·분수·꽃바구니·반딧불이)이 들어설 서쪽 뜰 확보
 // Archipelago: the main island plus two satellites reached over wooden bridges. Every land query
 // (terrain height, blocking, bridge decks) goes through the helpers in world.js, so pets, the
 // player, particles and roads all agree on what counts as ground.
 export const ISLANDS = [
     { x: 0,     z: 0,     r: ISLAND_R },
-    { x: 8.2,   z: 4.18,  r: 2.2 },      // NE island — 놀이터 (그네·시소)
+    { x: 8.2,   z: 4.18,  r: 3.2 },      // NE island — 놀이터 (그네·시소·운동 공간), 2.2→3.2로 확장해 여유 확보
     { x: -8.06, z: -3.53, r: 2.9 },      // SW island — 추억의 섬 (기념비·쪼아쪼아나무·소원우물·타임캡슐)
     { x: 7.9,   z: -5.6,  r: 3.5 },      // SE island — 모험의 섬 (언덕·동굴·전망대·보물 모래밭), 위성 중 최대
 ];
@@ -117,4 +117,11 @@ export const PROPS = [
     { type: 'garden',     x: -2.9,  z: 3.35, rotY: 0.55,  r: 0.72 },
     { type: 'piano',      x: -3.85, z: 2.1,  rotY: 1.9,   r: 0.4 },
     { type: 'photoboard', x:  4.35, z: 1.4,  rotY: -2.2,  r: 0.42 },
+    // 마지막 6종 — 우편함(집 앞길)·운동 공간(남쪽 공터)·도서관(NW 예약지, garden/piano와 안 겹치게)·
+    // 분수(연못 안, 연잎 반대편으로 살짝 비켜서 r 0 — 블로킹은 pond가 이미 담당)·꽃바구니(집마당가 토글).
+    { type: 'mailbox',      x:  1.85, z:  2.75, rotY: -0.5,  r: 0.15 },
+    { type: 'gym',           x:  6.6,  z:  5.68, rotY: 3.6,   r: 0.8 },   // NE 놀이터 섬 — 그네·시소와 한 존
+    { type: 'library',       x: -4.5,  z: -0.6,  rotY: 2.0,   r: 0.65 },
+    { type: 'fountain',      x:  2.3,  z: -1.0,  rotY: 0,     r: 0.55 },
+    { type: 'flowerbasket',  x:  0.9,  z:  2.6,  rotY: 1.3,   r: 0.15 },
 ];

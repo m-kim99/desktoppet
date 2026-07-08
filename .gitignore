@@ -171,6 +171,8 @@ node_modules/
 super/
 
 config/settings.json
+# 월드 런타임 데이터 — 코드가 아니라 플레이 중 쌓이는 개인적인 내용(편지·소원·일기·꽃밭 등)
+config/world_*.json
 test/
 uploaded_files/
 kb/

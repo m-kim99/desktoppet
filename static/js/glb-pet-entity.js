@@ -23,6 +23,7 @@ export const GLB_MOTIONS = [
     { id: 'think',     label: '생각 (Think)' },
     { id: 'eat',       label: '먹기 (Eat)' },
     { id: 'dig',       label: '파기 (Dig)' },
+    { id: 'stretch',   label: '스트레칭 (Stretch)' },
     { id: 'sleep',     label: '수면 (Sleep)' },
 ];
 
@@ -266,7 +267,7 @@ export function updateGlbPetEntity(pet, delta) {
     // One-shot motions (from the motion menu / on summon). Plays for its duration, then clears and
     // falls through to idle. Each frame starts from rest so leftover idle pose doesn't bleed in.
     if (pet.action) {
-        const DUR = { wave: 2.4, happy: 1.8, think: 2.8, dance: 4.5, cheer: 3.5, celebrate: 2.6, eat: 3.2, dig: 2.8, hug: 3.0, play: 6.0 };
+        const DUR = { wave: 2.4, happy: 1.8, think: 2.8, dance: 4.5, cheer: 3.5, celebrate: 2.6, eat: 3.2, dig: 2.8, stretch: 3.6, hug: 3.0, play: 6.0 };
         const dur = DUR[pet.action.id] || 2.0;
         pet.action.t += delta;
         const p = pet.action.t / dur;
@@ -491,6 +492,31 @@ export function updateGlbPetEntity(pet, delta) {
                     pet.spawnEmoji(Math.random() < 0.6 ? '💨' : '✨', { left: 42 + Math.random() * 16, top: 62 + Math.random() * 8, size: 14 + Math.random() * 8, dx: (Math.random() - 0.5) * 30, duration: 900 });
                     a.dirtT = 0.3;
                 }
+            }
+            if (pet.action.id === 'stretch') {
+                // 스트레칭 (운동 공간). Phases: A(0–.3) 위로 쭈욱 — 몸을 펴고 날개/귀를 하늘로,
+                // B(.3–.55) 왼쪽으로 기울-이-기, C(.55–.8) 오른쪽으로, D(.8–1) 탈탈 털고 제자리.
+                const up = p < 0.3 ? Ease.inOutSine(p / 0.3) : p < 0.8 ? 1 : 1 - Ease.inOutSine((p - 0.8) / 0.2);
+                let lean = 0;
+                if (p >= 0.3 && p < 0.55) lean = -Math.sin(((p - 0.3) / 0.25) * Math.PI) * 0.34;
+                else if (p >= 0.55 && p < 0.8) lean = Math.sin(((p - 0.55) / 0.25) * Math.PI) * 0.34;
+                const shake = p >= 0.8 ? Math.sin(pet.t * 34) * 0.06 * (1 - (p - 0.8) / 0.2) : 0;
+                pet.wrap.rotation.z = lean + shake;
+                pet.wrap.rotation.x = -0.12 * up;                    // 가슴 펴기
+                pet.wrap.position.y = 0.02 * up;
+                pet.wrap.scale.y = 1 + 0.05 * up;                    // 살짝 늘어나는 몸
+                if (pet.wings.length) {
+                    pet.wings.forEach((wg, i) => {
+                        const side = (i % 2 === 0) ? 1 : -1;
+                        wg.rotation.z = (wg.userData._restRotZ || 0) - side * (1.15 * up + lean * side * 0.4);
+                    });
+                    if (pet.beak) pet.beak.rotation.x = (pet.beak.userData._restRotX || 0) - 0.12 * up;   // 시원한 하품 낌새
+                } else {
+                    pet.ears.forEach(eo => { eo.rotation.x = (eo.userData._restRotX || 0) - 0.5 * up; });
+                    if (pet.tail) pet.tail.rotation.y = Math.sin(pet.t * 6) * 0.25 * up;
+                    if (pet.tongue) pet.tongue.rotation.x = (pet.tongue.userData._restRotX || 0) - 0.18 * up;
+                }
+                pet.eyes.forEach(ey => { ey.scale.y = ey.userData._restScaleY * (1 - 0.5 * up); });   // 지그시 감고 쭈욱
             }
             if (pet.action.id === 'hug') {
                 // Two pets lean into each other (main slides the windows together). Phases: reach (0–.2),
