@@ -26,7 +26,7 @@ const savedLayout = await (async () => {
     try { return JSON.parse(localStorage.getItem('world-layout')) || {}; } catch (err) { return {}; }
 })();
 // 이동 가능한 타입 (연못=지형 함몰이라 고정, furniture=집 내부 파생이라 집을 따라감)
-const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder']);
+const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'piano', 'photoboard']);
 {
     const counts = {};
     for (const p of PROPS) {
@@ -94,11 +94,15 @@ const moonMesh = new THREE.Mesh(
     new THREE.MeshBasicMaterial({ color: 0xf2eede, fog: false })
 );
 scene.add(moonMesh);
-let starMat = null;
+let starMat = null, starPts = null;
 {
+    // 고정 시드 별밭 — 별자리(㉞) 저장이 부팅을 넘어 유효하려면 별들이 언제나 같은 자리에 떠야 한다.
+    let starSeed = 20260707;
+    const srand = () => { starSeed = (starSeed * 1664525 + 1013904223) >>> 0; return starSeed / 4294967296; };
     const pts = [];
     for (let i = 0; i < 240; i++) {
-        const v = new THREE.Vector3().randomDirection();
+        const u = srand() * 2 - 1, a = srand() * Math.PI * 2;
+        const v = new THREE.Vector3(Math.sqrt(1 - u * u) * Math.cos(a), u, Math.sqrt(1 - u * u) * Math.sin(a));
         v.y = Math.abs(v.y) * 0.9 + 0.08;       // upper hemisphere only
         v.normalize().multiplyScalar(39);
         pts.push(v.x, v.y, v.z);
@@ -106,8 +110,12 @@ let starMat = null;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
     starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.28, transparent: true, opacity: 0, fog: false, depthWrite: false });
-    scene.add(new THREE.Points(g, starMat));
+    starPts = new THREE.Points(g, starMat);
+    scene.add(starPts);
 }
+// 별자리(㉞) 렌더 상태 — updateDayNight가 별과 함께 페이드시키므로 여기(첫 호출 전)에 선언.
+const constelLineMat = new THREE.LineBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+const constelObjs = [];   // { line, label }
 const cloudSpin = new THREE.Group();     // rotated a hair every frame → clouds drift
 scene.add(cloudSpin);
 const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xaecbe8, emissiveIntensity: 0.35 });
@@ -393,6 +401,8 @@ function updateDayNight(force = false) {
     cloudMat.color.set(0x6c7ea6).lerp(new THREE.Color(0xffffff), dayF).lerp(new THREE.Color(0x66707c), wxF * 0.75);
     cloudMat.emissiveIntensity = (0.12 + 0.23 * dayF) * (1 - 0.5 * wxF);
     starMat.opacity = nightF * (0.35 + 0.55 * THREE.MathUtils.smoothstep(nightF, 0.6, 1)) * (1 - wxF);
+    constelLineMat.opacity = starMat.opacity * 0.9;   // 저장된 별자리는 별과 함께 뜨고 진다
+    for (const co of constelObjs) co.label.material.opacity = starMat.opacity * 0.8;
 
     // The sea darkens after sunset, warms a touch at golden hour, grays under rain.
     if (seaMat) {
@@ -1708,6 +1718,506 @@ async function startDig(p) {
     }
 }
 
+// ---- 피아노 (⑪): 8건반 미니 스탠드 피아노 — 건반 클릭 = 그 음(주인의 손), 몸통 클릭이나
+// ⌘ 근접 = 펫이 다가와 짧은 펜타토닉 즉흥곡을 춤추며 연주(펫의 몸). 소리는 오실레이터 2겹. ----
+const PIANO_FREQS = [523.25, 587.33, 659.25, 698.46, 783.99, 880, 987.77, 1046.5];   // C5~C6
+const PIANO_KEY_COLORS = [0xf28ba8, 0xf2b04b, 0xf2d54b, 0x8fd06c, 0x7fc9e8, 0x8f9de8, 0xc59de8, 0xf2a8c9];
+let pianoKeys = null;
+const pianoKeyAnims = [];
+function makePiano() {
+    const g = new THREE.Group();
+    const wood = M(0x8a5a48, { map: woodTex });
+    const body = new THREE.Mesh(new RoundedBoxGeometry(1.0, 0.34, 0.34, 3, 0.04), wood);
+    body.position.y = 0.42;
+    g.add(body);
+    for (const lx of [-0.42, 0.42]) {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.28, 8), M(0x6f4436, { map: woodTex }));
+        leg.position.set(lx, 0.14, 0);
+        g.add(leg);
+    }
+    pianoKeys = [];
+    for (let i = 0; i < 8; i++) {
+        const key = new THREE.Mesh(new RoundedBoxGeometry(0.105, 0.05, 0.2, 2, 0.015), M(PIANO_KEY_COLORS[i]));
+        key.position.set(-0.42 + i * 0.12, 0.615, 0.08);
+        key.rotation.x = 0.12;
+        key.userData.keyIdx = i;
+        key.userData.restY = 0.615;
+        g.add(key);
+        pianoKeys.push(key);
+    }
+    const lid = new THREE.Mesh(new RoundedBoxGeometry(1.0, 0.05, 0.26, 2, 0.02), wood);
+    lid.position.set(0, 0.68, -0.13);
+    lid.rotation.x = -0.55;
+    g.add(lid);
+    return g;
+}
+function pianoNote(i, vol = 0.05) {
+    try {
+        const t0 = audioCtx.currentTime;
+        for (const [type, mul, v] of [['triangle', 1, vol], ['sine', 2, vol * 0.3]]) {
+            const o = audioCtx.createOscillator();
+            o.type = type;
+            o.frequency.value = PIANO_FREQS[i] * mul;
+            const gn = audioCtx.createGain();
+            gn.gain.setValueAtTime(0, t0);
+            gn.gain.linearRampToValueAtTime(v, t0 + 0.015);
+            gn.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
+            o.connect(gn);
+            gn.connect(sfxMaster);
+            o.start(t0);
+            o.stop(t0 + 0.95);
+        }
+    } catch (e) {}
+    if (pianoKeys && pianoKeys[i]) pianoKeyAnims.push({ key: pianoKeys[i], t: 0 });
+}
+function updatePianoKeys(delta) {
+    for (let i = pianoKeyAnims.length - 1; i >= 0; i--) {
+        const a = pianoKeyAnims[i];
+        a.t += delta;
+        const k = Math.min(1, a.t / 0.22);
+        a.key.position.y = a.key.userData.restY - Math.sin(k * Math.PI) * 0.022;
+        if (k >= 1) pianoKeyAnims.splice(i, 1);
+    }
+}
+function onPianoClick(pr, hit) {
+    let o = hit && hit.object;
+    while (o) {
+        if (o.userData && o.userData.keyIdx != null) { pianoNote(o.userData.keyIdx); return; }
+        o = o.parent;
+    }
+    petPlayPiano();   // 몸통 클릭 = 펫에게 연주 부탁 (심즈式 — 가까운 펫이 걸어와서 친다)
+}
+let pianoBusy = false, pianoAutoAt = Date.now() + 20 * 60000;
+async function petPlayPiano(player) {
+    if (pianoBusy) return;
+    const pr = PROPS.find((q) => q.type === 'piano');
+    if (!pr) return;
+    const p = player || pets.find((q) => q !== possessed && !q.pet.sleeping && !q.bed && !q.dip
+        && (q.ai.state === 'idle' || q.ai.state === 'walk'));
+    if (!p) { showToast('🎹 지금 연주할 펫이 없어요'); return; }
+    pianoBusy = true;
+    try {
+        if (p !== possessed) {
+            const side = { x: pr.x + Math.sin(pr.rotY || 0) * 0.78, z: pr.z + Math.cos(pr.rotY || 0) * 0.78 };
+            await Promise.race([gotoAsync(p, side.x, side.z), sleepMs(20000)]);
+            p.ai.state = 'busy';
+        }
+        p.mover.rotation.y = Math.atan2(pr.x - p.mover.position.x, pr.z - p.mover.position.z);
+        logWorldEvent(`${petKo(p)}가 피아노를 연주했다 🎹`);
+        p.pet.action = { id: 'dance', t: 0 };   // 살랑이며 치는 몸
+        const penta = [0, 1, 2, 4, 5, 7];
+        let cur = 2;
+        for (let n = 0; n < 12; n++) {
+            cur = THREE.MathUtils.clamp(cur + Math.round((Math.random() - 0.5) * 2.4), 0, penta.length - 1);
+            pianoNote(penta[cur], 0.045);
+            await sleepMs(300 + Math.random() * 120);
+        }
+    } finally {
+        pianoBusy = false;
+        if (p !== possessed) releaseAI(p);
+    }
+}
+
+// ---- 사진 게시판 (⑭): 코르크 보드에 최근 스크린샷 6장이 핀으로 꽂힌다. 클릭 = 라이트박스
+// (◀ ▶로 전체 넘기기). 목록은 /api/screenshots_list, 원본은 /screenshots/ 정적 마운트. ----
+let photoSlots = null, photoFiles = [];
+function makePhotoboard() {
+    const g = new THREE.Group();
+    const wood = M(0x8a6647, { map: woodTex });
+    for (const lx of [-0.55, 0.55]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.05, 0.07), wood);
+        post.position.set(lx, 0.52, 0);
+        g.add(post);
+    }
+    const frame = new THREE.Mesh(new RoundedBoxGeometry(1.3, 0.78, 0.06, 2, 0.02), wood);
+    frame.position.y = 0.9;
+    g.add(frame);
+    const cork = new THREE.Mesh(new THREE.PlaneGeometry(1.18, 0.66), M(0xd8b98a));
+    cork.position.set(0, 0.9, 0.035);
+    g.add(cork);
+    const cap = new THREE.Mesh(new RoundedBoxGeometry(1.42, 0.06, 0.28, 2, 0.02), M(0x6f4436, { map: woodTex }));
+    cap.position.y = 1.33;
+    g.add(cap);
+    photoSlots = [];
+    for (let i = 0; i < 6; i++) {
+        const col = i % 3, row = Math.floor(i / 3);
+        const ph = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.255), new THREE.MeshBasicMaterial({ color: 0xf5efe2 }));
+        ph.position.set(-0.38 + col * 0.38, 1.05 - row * 0.3, 0.045);
+        ph.rotation.z = (Math.random() - 0.5) * 0.12;
+        g.add(ph);
+        const pin = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 6), M(0xe64a3c));
+        pin.position.set(ph.position.x, ph.position.y + 0.12, 0.06);
+        g.add(pin);
+        photoSlots.push(ph);
+    }
+    refreshPhotoboard();
+    return g;
+}
+const photoTexLoader = new THREE.TextureLoader();
+async function refreshPhotoboard() {
+    try {
+        const res = await fetch('/api/screenshots_list');
+        if (!res.ok) return;
+        photoFiles = (await res.json()).files || [];
+    } catch (e) { return; }
+    if (!photoSlots) return;
+    photoSlots.forEach((ph, i) => {
+        const f = photoFiles[i];
+        if (!f) return;
+        photoTexLoader.load(`/screenshots/${encodeURIComponent(f)}`, (t) => {
+            t.colorSpace = THREE.SRGBColorSpace;
+            ph.material.map = t;
+            ph.material.color.set(0xffffff);
+            ph.material.needsUpdate = true;
+        });
+    });
+}
+const photoViewer = document.createElement('div');
+photoViewer.style.cssText = 'position:fixed; inset:0; display:none; z-index:130; background:rgba(12,14,20,0.82); align-items:center; justify-content:center; gap:14px;';
+const pvImg = document.createElement('img');
+pvImg.style.cssText = 'max-width:min(86vw, 1100px); max-height:82vh; border-radius:12px; box-shadow:0 12px 44px rgba(0,0,0,0.6); background:#222;';
+const mkPvBtn = (label) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = 'border:none; border-radius:10px; background:rgba(255,255,255,0.14); color:#fff; font-size:20px; padding:12px 14px; cursor:pointer;';
+    return b;
+};
+const pvPrev = mkPvBtn('◀'), pvNext = mkPvBtn('▶'), pvClose = mkPvBtn('✕');
+pvClose.style.position = 'absolute';
+pvClose.style.top = '18px';
+pvClose.style.right = '18px';
+photoViewer.append(pvPrev, pvImg, pvNext, pvClose);
+document.body.appendChild(photoViewer);
+photoViewer.addEventListener('pointerdown', (e) => e.stopPropagation());
+let pvIdx = 0;
+function pvShow() {
+    if (!photoFiles.length) return;
+    pvIdx = ((pvIdx % photoFiles.length) + photoFiles.length) % photoFiles.length;
+    pvImg.src = `/screenshots/${encodeURIComponent(photoFiles[pvIdx])}`;
+}
+pvPrev.onclick = () => { pvIdx -= 1; pvShow(); };
+pvNext.onclick = () => { pvIdx += 1; pvShow(); };
+pvClose.onclick = () => { photoViewer.style.display = 'none'; };
+photoViewer.onclick = (e) => { if (e.target === photoViewer) photoViewer.style.display = 'none'; };
+async function openPhotoViewer() {
+    await refreshPhotoboard();
+    if (!photoFiles.length) {
+        showToast('📌 아직 사진이 없어요 — 📷 버튼으로 찍으면 여기 붙어요');
+        return;
+    }
+    pvIdx = 0;
+    pvShow();
+    photoViewer.style.display = 'flex';
+}
+
+// ---- 별자리 만들기 (㉞): 밤에 전망대를 클릭하면 별 잇기 모드 — 별을 차례로 탭해 잇고 이름을
+// 붙이면 그 별자리가 매일 밤 하늘에 남는다 (서버 config/world_constellations.json). 별밭은
+// 고정 시드라 저장된 좌표가 부팅을 넘어 유효하다. Esc = 취소. ----
+let constelMode = false;
+let constelPicked = [];
+let constelTempLine = null;
+const constelMarks = [];
+let constellations = [];
+const constelBar = document.createElement('div');
+constelBar.style.cssText = 'position:fixed; left:50%; bottom:calc(120px + env(safe-area-inset-bottom, 0px)); transform:translateX(-50%); display:none; z-index:96; align-items:center; gap:7px; background:rgba(30,32,40,0.93); border-radius:12px; padding:8px 10px; box-shadow:0 8px 28px rgba(0,0,0,0.4); font-family:sans-serif;';
+const constelInfo = document.createElement('div');
+constelInfo.style.cssText = 'color:#cfe3ff; font-size:12.5px;';
+const constelName = document.createElement('input');
+constelName.placeholder = '별자리 이름';
+constelName.maxLength = 20;
+constelName.style.cssText = 'border:none; border-radius:8px; background:rgba(255,255,255,0.1); color:#fff; font-size:13px; padding:6px 9px; width:120px;';
+const mkCsBtn = (label, bg) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = `border:none; border-radius:8px; background:${bg}; color:#fff; font-size:12.5px; font-weight:700; padding:6px 11px; cursor:pointer;`;
+    return b;
+};
+const constelSave = mkCsBtn('⭐ 저장', '#5b8def');
+const constelCancel = mkCsBtn('✕', 'rgba(255,255,255,0.14)');
+constelBar.append(constelInfo, constelName, constelSave, constelCancel);
+document.body.appendChild(constelBar);
+constelBar.addEventListener('pointerdown', (e) => e.stopPropagation());
+constelBar.addEventListener('keydown', (e) => e.stopPropagation());
+function updateConstelBar() {
+    constelInfo.textContent = constelPicked.length < 2 ? `⭐ 별을 차례로 탭해 이으세요 (${constelPicked.length})` : `⭐ ${constelPicked.length}개 연결됨`;
+    constelSave.style.opacity = constelPicked.length >= 2 ? '1' : '0.4';
+}
+function clearConstelTemp() {
+    if (constelTempLine) {
+        scene.remove(constelTempLine);
+        constelTempLine.geometry.dispose();
+        constelTempLine = null;
+    }
+    for (const m of constelMarks) scene.remove(m);
+    constelMarks.length = 0;
+}
+function endConstellationMode() {
+    constelMode = false;
+    constelBar.style.display = 'none';
+    clearConstelTemp();
+    constelPicked = [];
+}
+function onLookoutClick() {
+    if (constelMode) return;
+    if (dayFactor(currentHour()) > 0.3) { showToast('🔭 별자리는 밤에 — 해가 지면 다시 와요'); return; }
+    constelMode = true;
+    constelPicked = [];
+    constelName.value = '';
+    updateConstelBar();
+    constelBar.style.display = 'flex';
+    showToast('⭐ 별을 차례로 탭해 이어보세요 (Esc 취소)');
+}
+function pickConstelStar() {
+    raycaster.params.Points.threshold = 1.3;
+    const hits = starPts ? raycaster.intersectObject(starPts) : [];
+    raycaster.params.Points.threshold = 1;
+    if (!hits.length) return;
+    const idx = hits[0].index;
+    const pos = starPts.geometry.attributes.position;
+    const v = new THREE.Vector3(pos.getX(idx), pos.getY(idx), pos.getZ(idx));
+    const last = constelPicked[constelPicked.length - 1];
+    if (last && last.distanceTo(v) < 0.01) return;
+    constelPicked.push(v);
+    const mark = glowSprite(0xbfe3ff, 1.5, 0.85);
+    mark.position.copy(v);
+    scene.add(mark);
+    constelMarks.push(mark);
+    if (constelPicked.length >= 2) {
+        if (constelTempLine) { scene.remove(constelTempLine); constelTempLine.geometry.dispose(); }
+        constelTempLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(constelPicked), new THREE.LineBasicMaterial({ color: 0xcfe9ff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+        scene.add(constelTempLine);
+    }
+    updateConstelBar();
+}
+function drawConstellation(c) {
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(c.points.map((p) => new THREE.Vector3(p.x, p.y, p.z))), constelLineMat);
+    scene.add(line);
+    const cv = document.createElement('canvas');
+    cv.width = 256; cv.height = 64;
+    const ctx = cv.getContext('2d');
+    ctx.font = 'bold 34px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(207,227,255,0.95)';
+    ctx.fillText(c.name, 128, 42);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false }));
+    const centroid = c.points.reduce((a, p) => a.add(new THREE.Vector3(p.x, p.y, p.z)), new THREE.Vector3()).multiplyScalar(1 / c.points.length);
+    label.position.copy(centroid).multiplyScalar(1.02).add(new THREE.Vector3(0, 1.6, 0));
+    label.scale.set(6, 1.5, 1);
+    scene.add(label);
+    constelObjs.push({ line, label });
+}
+async function fetchConstellations() {
+    try {
+        const res = await fetch('/api/world_constellations');
+        if (res.ok) constellations = (await res.json()).constellations || [];
+    } catch (e) {}
+    for (const c of constellations) drawConstellation(c);
+}
+constelCancel.onclick = () => endConstellationMode();
+constelSave.onclick = async () => {
+    if (constelPicked.length < 2) { showToast('⭐ 별을 두 개 이상 이어주세요'); return; }
+    const name = constelName.value.trim() || '우리 별자리';
+    const entry = { name, points: constelPicked.map((v) => ({ x: +v.x.toFixed(2), y: +v.y.toFixed(2), z: +v.z.toFixed(2) })) };
+    try {
+        const res = await fetch('/api/world_constellations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(entry),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        constellations.push(entry);
+        drawConstellation(entry);
+        showToast(`⭐ 「${name}」 별자리가 밤하늘에 남았어요`);
+        logWorldEvent(`밤하늘에 우리 별자리 「${name}」를 그렸다 ⭐`);
+        maybeProactive(null, `주인이 방금 밤하늘에 「${name}」 별자리를 그렸다! 매일 밤 보이겠다.`);
+        endConstellationMode();
+    } catch (e) {
+        console.error('[World] constellation save failed', e);
+        showToast('⭐ 저장에 실패했어요 — 잠시 후 다시');
+    }
+};
+fetchConstellations();   // 부팅 시 저장된 별자리를 하늘에 그려둔다
+
+// ---- 텃밭 (⑫): 나무 프레임 안 2×2 밭. 빈 밭 클릭 = 심기(랜덤 작물), 자라는 중 클릭 = 물주기
+// (다음 단계까지 남은 시간 절반, 단계당 1회), 다 자라면 클릭 = 수확. 성장은 실시간 — 씨앗→새싹
+// 1시간, 새싹→수확 4시간. 상태는 서버(config/world_garden.json)라 기기끼리 같은 밭을 본다. ----
+const GARDEN_CROPS = [
+    { id: 'carrot', ko: '당근', emoji: '🥕' },
+    { id: 'tomato', ko: '토마토', emoji: '🍅' },
+    { id: 'sunflower', ko: '해바라기', emoji: '🌻' },
+];
+const GARDEN_T1 = 3600000, GARDEN_T2 = 14400000;
+const GARDEN_PLOTS_LOCAL = [[-0.32, -0.21], [0.32, -0.21], [-0.32, 0.26], [0.32, 0.26]];
+let gardenPlots = [null, null, null, null];   // { kind, plantedAt, boost, wateredStage } | null
+let gardenGroups = null;
+let gardenStageHash = '';
+function gardenStage(pl) {   // 0 빈 밭, 1 씨앗, 2 새싹, 3 수확 가능
+    if (!pl) return 0;
+    const el = Date.now() - pl.plantedAt + (pl.boost || 0);
+    return el >= GARDEN_T1 + GARDEN_T2 ? 3 : el >= GARDEN_T1 ? 2 : 1;
+}
+function buildPlotVisual(stage, kind) {
+    const v = new THREE.Group();
+    if (stage === 1) {
+        const mound = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), M(0x7d5c38));
+        mound.scale.y = 0.5;
+        v.add(mound);
+    } else if (stage === 2) {
+        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.02, 0.11, 6), M(0x4e9a3d));
+        stem.position.y = 0.055;
+        v.add(stem);
+        for (const s of [-1, 1]) {
+            const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.038, 8, 6), M(0x66bb4a));
+            leaf.position.set(s * 0.04, 0.11, 0);
+            leaf.scale.set(1, 0.5, 0.6);
+            v.add(leaf);
+        }
+    } else if (stage === 3) {
+        if (kind === 'carrot') {
+            const top = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.09, 8), M(0xf28034));
+            top.position.y = 0.035;
+            v.add(top);
+            for (const a of [0, 2.1, 4.2]) {
+                const frond = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.12, 6), M(0x4e9a3d));
+                frond.position.set(Math.sin(a) * 0.03, 0.13, Math.cos(a) * 0.03);
+                frond.rotation.set(Math.cos(a) * 0.35, 0, -Math.sin(a) * 0.35);
+                v.add(frond);
+            }
+        } else if (kind === 'tomato') {
+            const bush = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), M(0x4d9a44));
+            bush.position.y = 0.1;
+            v.add(bush);
+            for (const [x, y, z] of [[0.07, 0.13, 0.05], [-0.06, 0.09, 0.08], [0.02, 0.16, -0.06]]) {
+                const t = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 6), M(0xe64a3c));
+                t.position.set(x, y, z);
+                v.add(t);
+            }
+        } else {
+            const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.022, 0.26, 6), M(0x4e9a3d));
+            stem.position.y = 0.13;
+            v.add(stem);
+            const petals = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.02, 12), M(0xf2c53d));
+            petals.position.y = 0.27;
+            petals.rotation.x = 0.5;
+            v.add(petals);
+            const core = new THREE.Mesh(new THREE.SphereGeometry(0.042, 10, 8), M(0x6f5030));
+            core.position.set(0, 0.275, 0.012);
+            v.add(core);
+        }
+    }
+    return v;
+}
+function refreshGardenVisuals() {
+    if (!gardenGroups) return;
+    gardenGroups.forEach((pg, i) => {
+        for (let c = pg.children.length - 1; c >= 0; c--) {
+            const ch = pg.children[c];
+            pg.remove(ch);
+            ch.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+        }
+        const st = gardenStage(gardenPlots[i]);
+        if (st > 0) pg.add(buildPlotVisual(st, gardenPlots[i].kind));
+    });
+    gardenStageHash = gardenPlots.map((pl) => gardenStage(pl)).join('');
+}
+function makeGarden() {
+    const g = new THREE.Group();
+    const wood = M(0x8a6647, { map: woodTex });
+    for (const [x, z, w, d] of [[0, -0.52, 1.5, 0.12], [0, 0.57, 1.5, 0.12], [-0.72, 0.025, 0.12, 1.0], [0.72, 0.025, 0.12, 1.0]]) {
+        const rail = new THREE.Mesh(new RoundedBoxGeometry(w, 0.16, d, 2, 0.03), wood);
+        rail.position.set(x, 0.08, z);
+        g.add(rail);
+    }
+    const soil = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.07, 0.98), M(0x6f5030));
+    soil.position.set(0, 0.07, 0.025);
+    g.add(soil);
+    const can = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.1, 10), M(0x7fa8c9));
+    can.position.set(0.68, 0.2, -0.5);
+    g.add(can);
+    const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.02, 0.12, 6), M(0x7fa8c9));
+    spout.position.set(0.61, 0.22, -0.46);
+    spout.rotation.z = 0.9;
+    g.add(spout);
+    gardenGroups = GARDEN_PLOTS_LOCAL.map(([lx, lz], i) => {
+        const pg = new THREE.Group();
+        pg.position.set(lx, 0.105, lz);
+        pg.userData.plotIdx = i;
+        // 빈 밭도 클릭되도록 투명 픽킹 패드
+        const pad = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.38), new THREE.MeshBasicMaterial({ visible: false }));
+        pad.userData.plotIdx = i;
+        pg.add(pad);
+        g.add(pg);
+        return pg;
+    });
+    refreshGardenVisuals();
+    return g;
+}
+async function fetchGarden() {
+    try {
+        const res = await fetch('/api/world_garden');
+        if (res.ok) {
+            const j = await res.json();
+            if (Array.isArray(j.plots)) gardenPlots = [0, 1, 2, 3].map((i) => j.plots[i] || null);
+        }
+    } catch (e) {}
+    refreshGardenVisuals();
+}
+function saveGarden() {
+    fetch('/api/world_garden', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plots: gardenPlots }),
+    }).catch(() => {});
+}
+function onGardenClick(pr, hit) {
+    let o = hit && hit.object, idx = -1;
+    while (o) {
+        if (o.userData && o.userData.plotIdx != null) { idx = o.userData.plotIdx; break; }
+        o = o.parent;
+    }
+    if (idx < 0) { showToast('🌱 밭 한 칸을 콕 집어 클릭해 보세요'); return; }
+    const pl = gardenPlots[idx];
+    const st = gardenStage(pl);
+    const [lx, lz] = GARDEN_PLOTS_LOCAL[idx];
+    const cy = Math.cos(pr.rotY || 0), sy = Math.sin(pr.rotY || 0);
+    const wx = pr.x + lx * cy + lz * sy, wz = pr.z - lx * sy + lz * cy;
+    if (st === 0) {
+        const crop = GARDEN_CROPS[Math.floor(Math.random() * GARDEN_CROPS.length)];
+        gardenPlots[idx] = { kind: crop.id, plantedAt: Date.now(), boost: 0, wateredStage: 0 };
+        showToast(`🌱 ${crop.ko} 씨앗을 심었어요`);
+        logWorldEvent(`텃밭에 ${crop.ko} 씨앗을 심었다 🌱`);
+    } else if (st === 3) {
+        const crop = GARDEN_CROPS.find((c) => c.id === pl.kind) || GARDEN_CROPS[0];
+        gardenPlots[idx] = null;
+        triggerHugBurst(wx, terrainHeight(wx, wz) + 0.25, wz);
+        showToast(`${crop.emoji} ${crop.ko} 수확!`);
+        logWorldEvent(`텃밭에서 ${crop.ko}를 수확했다 ${crop.emoji}`);
+        maybeProactive(null, `주인이 방금 텃밭에서 ${crop.ko}를 수확했다! 맛있겠다!`);
+        const p = pets.find((q) => q.ai.state === 'idle' || q.ai.state === 'walk');
+        if (p) p.pet.action = { id: 'happy', t: 0 };
+    } else {
+        if (pl.wateredStage === st) { showToast('💧 이 단계엔 이미 물을 줬어요 — 조금만 기다려요'); return; }
+        pl.wateredStage = st;
+        const el = Date.now() - pl.plantedAt + (pl.boost || 0);
+        const target = st === 1 ? GARDEN_T1 : GARDEN_T1 + GARDEN_T2;
+        pl.boost = (pl.boost || 0) + Math.max(0, (target - el) / 2);
+        showToast('💧 물을 줬어요 — 쑥쑥!');
+        logWorldEvent('텃밭에 물을 줬다 💧');
+        const y = terrainHeight(wx, wz) + 0.2;
+        for (let i = 0; i < 6; i++) {
+            const spr = glowSprite(0x8fc9f2, 0.1 + Math.random() * 0.07, 0.85);
+            spr.position.set(wx + (Math.random() - 0.5) * 0.25, y, wz + (Math.random() - 0.5) * 0.25);
+            scene.add(spr);
+            hugBurst.push({ spr, vx: (Math.random() - 0.5) * 0.3, vy: -0.25 - Math.random() * 0.3, vz: (Math.random() - 0.5) * 0.3, t: 0.5 });
+        }
+    }
+    saveGarden();
+    refreshGardenVisuals();
+}
+fetchGarden();   // 부팅 시 서버의 밭 상태를 읽는다
+
 // ---- 워프 포탈 (㉖): 광장가 ↔ 모험의 섬 돌링 한 쌍. AI 펫은 buildRoute가 "포탈 경유가 확실히
 // 짧을 때만" tp 웨이포인트를 심어 순간이동하고, 조종 중인 펫은 소용돌이에 들어서면 넘어간다.
 // 링은 r 0(비차단) — 차단원이면 경로 스텝퍼가 blocked=도착으로 오인해 중간에 멈춘다. ----
@@ -2146,6 +2656,10 @@ const PROP_CLICKS = {
     lamp: () => cycleLampBrightness(),
     coffee: () => toggleCoffeePanel(),
     food: () => toggleFoodPanel(),
+    garden: (pr, hit) => onGardenClick(pr, hit),
+    piano: (pr, hit) => onPianoClick(pr, hit),
+    photoboard: () => openPhotoViewer(),
+    lookout: (pr, hit) => onLookoutClick(pr, hit),
 };
 // 호버 프롬프트: 클릭형은 "· 클릭", 몸이 필요한 것은 ⌘ 안내, 나머지는 이름표만.
 const HOVER_PROMPTS = {
@@ -2167,8 +2681,11 @@ const HOVER_PROMPTS = {
     lookout: () => '🔭 전망대 — 언덕 위, 별이 잘 보여요',
     digsite: () => (digState && !digState.dug ? '⛏️ 보물 모래밭 — 반짝이는 자리를 조종 중 ⌘로 파요' : '⛏️ 보물 모래밭 — 오늘 보물은 이미 찾았어요'),
     portal: () => '🌀 워프 포탈 — 들어서면 반대편으로',
+    garden: () => '🥕 텃밭 — 밭 칸 클릭: 심기 · 물주기 · 수확',
+    piano: () => '🎹 피아노 — 건반 클릭 = 음, 몸통 클릭 = 펫 연주',
+    photoboard: () => '📌 사진 게시판 — 클릭해서 추억 넘겨보기',
 };
-const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15 };
+const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, piano: 1.05, photoboard: 1.55 };
 const hoverEl = document.createElement('div');
 hoverEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); z-index:88; pointer-events:none; background:rgba(30,32,40,0.88); color:#fff; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
 document.body.appendChild(hoverEl);
@@ -2257,6 +2774,11 @@ function updateMemorialIsland(delta) {
             }
         }
     }
+    // 피아노: 아주 가끔 펫이 스스로 한 곡 (한가할 때만)
+    if (Date.now() > pianoAutoAt) {
+        pianoAutoAt = Date.now() + 20 * 60000;
+        if (!pianoBusy && !duoBusy && Math.random() < 0.08) petPlayPiano();
+    }
     if (Date.now() > digAutoAt) {
         digAutoAt = Date.now() + 15 * 60000;
         if (digState && !digState.dug && !digDoing && !duoBusy && Math.random() < 0.1) {
@@ -2295,7 +2817,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointerleave', () => { hoverActive = false; });
 fetchCapsules();   // 부팅 시 한 번 — 개봉 알림용
 
-const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal };
+const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, piano: makePiano, photoboard: makePhotoboard };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -2313,7 +2835,7 @@ const blobTex = (() => {
 })();
 const blobGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-const BLOB_SIZE = { tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62, pecktree: 0.55, well: 0.75, capsule: 0.5, boulder: 0.75 };
+const BLOB_SIZE = { tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62, pecktree: 0.55, well: 0.75, capsule: 0.5, boulder: 0.75, garden: 1.5, piano: 0.8, photoboard: 0.8 };
 // Beds register a lying spot (on the furniture, with a lean-back tilt + heading) and an
 // approach point just outside their collider that the pet walks to before climbing on.
 // 🔨 함수로 분리: 로드 시 프롭 루프가 굽고, 공사모드에서 프롭이 이사하면 unbake→bake로 다시
@@ -3800,6 +4322,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     if (buildMode) { buildSelect(null); return; }   // 🔨 빈 곳 탭 = 선택 해제 (사물은 pointerdown이 잡음) · 펫 메뉴는 잠금
     pointerNdc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
     raycaster.setFromCamera(pointerNdc, camera);
+    if (constelMode) { pickConstelStar(); return; }   // ⭐ 별 잇기 모드 — 탭은 전부 별 선택
     for (const p of pets) {
         if (raycaster.intersectObject(p.mover, true).length) {
             if (e.button !== 2 && e.pointerType !== 'touch') return;   // 마우스는 RIGHT-click 전용 (left = camera) · 터치는 탭이 곧 상호작용
@@ -3819,8 +4342,9 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     // slop 판정에서 이미 걸러졌으니 좌클릭 탭도 카메라와 안 싸운다.
     for (const pr of PROPS) {
         if (!PROP_CLICKS[pr.type] || !pr.obj) continue;
-        if (raycaster.intersectObject(pr.obj, true).length) {
-            PROP_CLICKS[pr.type](pr);
+        const hits = raycaster.intersectObject(pr.obj, true);
+        if (hits.length) {
+            PROP_CLICKS[pr.type](pr, hits[0]);   // hit까지 넘긴다 — 텃밭 플롯·피아노 건반이 자식 메쉬를 판별
             return;
         }
     }
@@ -4189,7 +4713,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈' };
+const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', piano: '피아노', photoboard: '사진 게시판' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -4866,6 +5390,7 @@ async function takeScreenshot() {
         });
         const j = await res.json();
         showToast(j && j.ok ? `📷 저장됨 — screenshots/${j.file}` : '📷 저장 실패');
+        if (j && j.ok) refreshPhotoboard();   // 📌 게시판에 새 사진이 바로 붙는다
     } catch (e) {
         showToast('📷 저장 실패 (서버 응답 없음)');
     }
@@ -5876,7 +6401,7 @@ function pickResponder(text) {
 const ACTION_RE = /<\s*(motion|goto|mount|drink|snack|hat|swim|drive|game)\s*[=:]\s*([a-z0-9-]+)\s*\/?\s*>/gi;
 const ACTION_IDS = {
     motion: new Set(GLB_MOTIONS.map((m) => m.id)),
-    goto: new Set(['plaza', 'house', 'pond', 'bowl', 'coffee', 'snack', 'radio', 'swing', 'seesaw', 'sunbed', 'hammock', 'friend', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'cave', 'lookout', 'digsite']),
+    goto: new Set(['plaza', 'house', 'pond', 'bowl', 'coffee', 'snack', 'radio', 'swing', 'seesaw', 'sunbed', 'hammock', 'friend', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'cave', 'lookout', 'digsite', 'garden', 'piano']),
     mount: new Set(['swing', 'seesaw', 'sofa', 'sunbed', 'hammock', 'loftbed']),
     drink: new Set(DRINKS.map((d) => d.id)),
     snack: new Set(FOODS.map((f) => f.id)),
@@ -5923,7 +6448,7 @@ async function freeForScript(p) {
     p.pet.sleeping = false;
     p.pet.autoSleeping = false;
 }
-const GOTO_PROP_TYPE = { pond: 'pond', bowl: 'bowl', coffee: 'coffee', snack: 'food', radio: 'radio', swing: 'swing', seesaw: 'seesaw', sunbed: 'sunbed', hammock: 'hammock', monument: 'monument', hugspot: 'hugspot', pecktree: 'pecktree', well: 'well', capsule: 'capsule', cave: 'cave', lookout: 'lookout', digsite: 'digsite' };
+const GOTO_PROP_TYPE = { pond: 'pond', bowl: 'bowl', coffee: 'coffee', snack: 'food', radio: 'radio', swing: 'swing', seesaw: 'seesaw', sunbed: 'sunbed', hammock: 'hammock', monument: 'monument', hugspot: 'hugspot', pecktree: 'pecktree', well: 'well', capsule: 'capsule', cave: 'cave', lookout: 'lookout', digsite: 'digsite', garden: 'garden', piano: 'piano' };
 function resolveGotoSpot(p, id) {
     if (id === 'plaza') return { x: 0.4, z: 0.4 };
     if (id === 'house') { const w = houseWorld(0, 1.3); return { x: w.x, z: w.z }; }
@@ -6344,6 +6869,10 @@ function doInteract() {
             return;
         }
     }
+    if (nearestPropDist(possessed, 'piano') < 1.0) {   // 🎹 조종 펫이 직접 연주 (몸 동작 = ⌘)
+        petPlayPiano(possessed);
+        return;
+    }
     if (nearestPropDist(possessed, 'coffee') < 1.1) {
         toggleCoffeePanel();
         return;
@@ -6371,7 +6900,7 @@ function cycleLampBrightness() {
 }
 window.addEventListener('keydown', (e) => {
     if (e.target && e.target.tagName === 'INPUT') return;        // typing in the chat bar
-    if (e.key === 'Escape') { if (buildMode) { setBuildMode(false); return; } escapeAction(); return; }   // 🔨 공사 중 Esc = 공사 종료(저장)
+    if (e.key === 'Escape') { if (constelMode) { endConstellationMode(); return; } if (buildMode) { setBuildMode(false); return; } escapeAction(); return; }   // 🔨 공사 중 Esc = 공사 종료(저장)
     if (!possessed) return;
     if (ARROW_KEYS.includes(e.key)) { heldKeys.add(e.key); e.preventDefault(); }
     else if (e.code === 'Space') { e.preventDefault(); doJump(); }
@@ -7309,6 +7838,7 @@ function animate() {
     updateHugSpot(delta);
     updateMemorialIsland(delta);
     updateHoverPrompt(delta);
+    updatePianoKeys(delta);
     updateDips(delta);
     updateAutoDrive(delta);
     updateAutoSleep();

@@ -11456,7 +11456,7 @@ WORLD_PERSONAS = {
 WORLD_ACTION_SPEC = """[행동 태그]
 대답하면서 실제로 몸을 움직일 수 있다. 아래 태그를 문장 뒤에 붙이면 월드에서 그대로 실행된다 (한 번에 최대 3개, 순서대로 실행):
 <motion=ID> 제자리 모션. ID: wave(인사)·happy(기쁨)·dance(춤)·cheer(응원)·celebrate(축하)·hug(절친과 포옹)·play(절친과 공놀이)·think(생각)·eat(냠냠)·sleep(잠들기)
-<goto=ID> 그 장소로 걸어간다. ID: plaza(광장)·house(집)·pond(연못)·bowl(밥그릇)·coffee(커피 부스)·snack(간식 부스)·radio(라디오)·swing(그네)·seesaw(시소)·sunbed(선베드)·hammock(해먹)·friend(절친 옆)·monument(베프 기념비 — 추억의 섬)·hugspot(포옹 포인트 — 절친과 같이 서면 자동 포옹이 터진다)·pecktree(쪼아쪼아 나무 — 추억의 섬, 절친과 같이 가면 하트가 터진다)·well(소원 우물 — 추억의 섬)·capsule(타임캡슐 — 추억의 섬)·cave(아늑한 동굴 — 모험의 섬, 비 오는 날 피신처)·lookout(전망대 — 모험의 섬 언덕 꼭대기, 별 보기 좋은 곳)·digsite(보물 모래밭 — 모험의 섬)
+<goto=ID> 그 장소로 걸어간다. ID: plaza(광장)·house(집)·pond(연못)·bowl(밥그릇)·coffee(커피 부스)·snack(간식 부스)·radio(라디오)·swing(그네)·seesaw(시소)·sunbed(선베드)·hammock(해먹)·friend(절친 옆)·monument(베프 기념비 — 추억의 섬)·hugspot(포옹 포인트 — 절친과 같이 서면 자동 포옹이 터진다)·pecktree(쪼아쪼아 나무 — 추억의 섬, 절친과 같이 가면 하트가 터진다)·well(소원 우물 — 추억의 섬)·capsule(타임캡슐 — 추억의 섬)·cave(아늑한 동굴 — 모험의 섬, 비 오는 날 피신처)·lookout(전망대 — 모험의 섬 언덕 꼭대기, 별 보기 좋은 곳)·digsite(보물 모래밭 — 모험의 섬)·garden(텃밭 — 본섬 북서 뜰)·piano(피아노 — 본섬 서쪽 잔디)
 <mount=ID> 올라타거나 앉는다/눕는다. ID: swing(그네)·seesaw(시소)·sofa(소파)·sunbed(선베드)·hammock(해먹)·loftbed(2층 침대)
 <drink=ID> 커피 부스에 걸어가 음료를 받아 든다. ID: americano·iced-ame·espresso·latte·cappuccino·choco·strawberry·matcha·icetea
 <snack=ID> 간식 부스에 걸어가 간식을 받아 든다. ID: toast·omurice·burrito·hotdog·donut·bungeo·gimbap·churros·cupcake
@@ -11778,6 +11778,76 @@ async def world_capsule_act(request: Request):
     return JSONResponse({"error": "unknown action"}, status_code=400)
 
 
+# ---- 텃밭 (⑫): 밭 4칸의 상태 하나를 통째로 저장/반환 — 기기끼리 같은 밭을 본다.
+WORLD_GARDEN_FILE = os.path.join(base_path, "config", "world_garden.json")
+
+
+@app.get("/api/world_garden")
+async def world_garden_get():
+    try:
+        with open(WORLD_GARDEN_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict) and isinstance(data.get("plots"), list):
+            return {"plots": data["plots"]}
+    except Exception:
+        pass
+    return {"plots": [None, None, None, None]}
+
+
+@app.post("/api/world_garden")
+async def world_garden_set(request: Request):
+    data = await request.json()
+    plots = data.get("plots")
+    if not isinstance(plots, list) or len(plots) > 8:
+        return JSONResponse({"error": "bad plots"}, status_code=400)
+    try:
+        os.makedirs(os.path.dirname(WORLD_GARDEN_FILE), exist_ok=True)
+        with open(WORLD_GARDEN_FILE, "w", encoding="utf-8") as f:
+            json.dump({"plots": plots}, f, ensure_ascii=False, indent=1)
+    except Exception as e:
+        print(f"[world_garden] save failed: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+    return {"ok": True}
+
+
+# ---- 별자리 (㉞): 이름 + 별 좌표 목록 — 한 번 그리면 매일 밤 하늘에 남는다.
+WORLD_CONSTEL_FILE = os.path.join(base_path, "config", "world_constellations.json")
+
+
+@app.get("/api/world_constellations")
+async def world_constellations_all():
+    return {"constellations": _world_json_load(WORLD_CONSTEL_FILE, "constellations")}
+
+
+@app.post("/api/world_constellations")
+async def world_constellation_add(request: Request):
+    data = await request.json()
+    name = str(data.get("name", "")).strip()[:20] or "우리 별자리"
+    points = data.get("points")
+    if not isinstance(points, list) or not (2 <= len(points) <= 40):
+        return JSONResponse({"error": "need 2~40 points"}, status_code=400)
+    items = _world_json_load(WORLD_CONSTEL_FILE, "constellations")
+    entry = {"name": name, "points": points, "ts": int(time.time() * 1000)}
+    items.append(entry)
+    _world_json_save(WORLD_CONSTEL_FILE, "constellations", items)
+    return {"ok": True, "constellation": entry}
+
+
+# ---- 사진 게시판 (⑭): screenshots/ 목록 (최신순) — 원본은 아래 /screenshots 마운트가 서빙.
+@app.get("/api/screenshots_list")
+async def world_screenshots_list():
+    try:
+        os.makedirs(WORLD_SHOT_DIR, exist_ok=True)
+        files = [f for f in os.listdir(WORLD_SHOT_DIR) if f.lower().endswith(".png")]
+        files.sort(key=lambda f: os.path.getmtime(os.path.join(WORLD_SHOT_DIR, f)), reverse=True)
+        return {"files": files[:60]}
+    except Exception as e:
+        print(f"[screenshots_list] failed: {e}")
+        return {"files": []}
+
+
+os.makedirs(WORLD_SHOT_DIR, exist_ok=True)
+app.mount("/screenshots", StaticFiles(directory=WORLD_SHOT_DIR), name="screenshots")
 app.mount("/vrm", StaticFiles(directory=DEFAULT_VRM_DIR), name="vrm")
 app.mount("/tool_temp", StaticFiles(directory=TOOL_TEMP_DIR), name="tool_temp")
 app.mount("/uploaded_files", StaticFiles(directory=UPLOAD_FILES_DIR), name="uploaded_files")

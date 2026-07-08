@@ -113,4 +113,8 @@ export const PROPS = [
     // 라우팅이 좌표를 참조하므로 이동 불가, r 0 = 비차단 (링을 그냥 지나 걷는다).
     { type: 'portal', x: 4.3,  z: -1.5,  rotY: -1.24, r: 0 },
     { type: 'portal', x: 6.6,  z: -4.7,  rotY: -0.93, r: 0 },
+    // 본섬 NW 공터 채우기: 텃밭(⑫ — 예약돼 있던 그 자리) + 피아노(⑪) + 사진 게시판(⑭ 집마당가)
+    { type: 'garden',     x: -2.9,  z: 3.35, rotY: 0.55,  r: 0.72 },
+    { type: 'piano',      x: -3.85, z: 2.1,  rotY: 1.9,   r: 0.4 },
+    { type: 'photoboard', x:  4.35, z: 1.4,  rotY: -2.2,  r: 0.42 },
 ];
