@@ -1860,6 +1860,18 @@ function makeMailbox() {
     const knob = GM(new THREE.SphereGeometry(0.022, 10, 8), 0xfdf7e8, 0xcabfa6);
     knob.position.set(0, 0.552, 0.098);
     g.add(knob);
+    // 비네트: 징검돌 두 장 + 덤불 한 쌍 — 우편함이 소품 하나가 아니라 "길가의 한 장면"이 된다.
+    for (const [sx, sz, sr] of [[0.02, 0.34, 0.085], [-0.1, 0.6, 0.068]]) {
+        const step = GM(new THREE.CylinderGeometry(sr, sr * 1.08, 0.022, 10), 0xd8cbb4, 0xa89a82);
+        step.position.set(sx, 0.011, sz);
+        g.add(step);
+    }
+    for (const [bx, bz, br] of [[-0.3, 0.12, 0.11], [0.32, 0.2, 0.085]]) {
+        const bush = GM(new THREE.SphereGeometry(br, 12, 9), 0x8fd06c, 0x4e8a3c, { curve: 1.2 });
+        bush.scale.y = 0.72;
+        bush.position.set(bx, br * 0.55, bz);
+        g.add(bush);
+    }
     mailFlag = new THREE.Group();
     const arm = new THREE.Mesh(new RoundedBoxGeometry(0.035, 0.15, 0.024, 2, 0.012), M(0xf2c53d));
     arm.position.y = 0.075;
@@ -1959,6 +1971,20 @@ function makeGym() {
     const g = new THREE.Group();
     // 동숲식 조형: 매트는 더 도톰+큰 라운딩+톱라이트 그라디언트, 바는 그네와 같은 나무 언어
     // (테이퍼 기둥+둥근 캡), 아령은 통통한 파스텔 볼. 매트 위치(GYM_MAT_LOCAL)는 불변.
+    // 비네트: 수건 롤 + 물병 — 매트 곁에 놓여 "운동 코너"로 묶인다. (받침 데크는 시도했다가 뺐다:
+    // 이 월드의 평탄 패드는 지반 0으로 눌러 만드는 얕은 크레이터라, 낮은 판은 턱에 늘 묻혀 보인다.
+    // 그네·시소처럼 패드 바닥에 직접 놓는 게 이 지형의 문법.)
+    const towel = GM(new THREE.CylinderGeometry(0.045, 0.045, 0.16, 10), 0xffffff, 0xcfc8ba);
+    towel.rotation.z = Math.PI / 2;
+    towel.rotation.y = 0.5;
+    towel.position.set(-0.38, 0.045, -0.47);
+    g.add(towel);
+    const bottle = GM(new THREE.CylinderGeometry(0.028, 0.03, 0.11, 10), 0x93d1c8, 0x5fa197);
+    bottle.position.set(0.4, 0.055, 0.47);
+    g.add(bottle);
+    const bottleCap = GM(new THREE.SphereGeometry(0.024, 8, 6), 0xf3ead8, 0xc2b79f);
+    bottleCap.position.set(0.4, 0.117, 0.47);
+    g.add(bottleCap);
     const MAT_COLS = [[0xa5d6ef, 0x76a8c8], [0xf7c6d3, 0xd897a8]];   // 하늘/분홍
     for (const [i, [lx, lz]] of GYM_MAT_LOCAL.entries()) {
         const mat = GM(new RoundedBoxGeometry(0.55, 0.048, 0.88, 3, 0.024), MAT_COLS[i][0], MAT_COLS[i][1], { curve: 1.4 });
@@ -2066,6 +2092,26 @@ function makeLibrary() {
         cush.position.set(lx, 0.08, lz);
         g.add(cush);
     }
+    // 비네트: 라운드 사이드 테이블 + 찻잔·받침 + 바닥에 쌓아둔 책 두 권 — 독서 코너의 완성.
+    const tTop = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.095, 0.105, 0.024, 14), 0xc79a6b, 0x8e6b46), gradMatWood);
+    tTop.position.set(0.14, 0.15, 0.78);
+    g.add(tTop);
+    const tLeg = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.022, 0.03, 0.14, 10), 0xa8845e, 0x7a5b3d), gradMatWood);
+    tLeg.position.set(0.14, 0.07, 0.78);
+    g.add(tLeg);
+    const saucer = GM(new THREE.CylinderGeometry(0.037, 0.037, 0.008, 12), 0xfdf7e8, 0xd0c4ac);
+    saucer.position.set(0.11, 0.166, 0.76);
+    g.add(saucer);
+    const cup = GM(new THREE.CylinderGeometry(0.024, 0.019, 0.034, 10), 0xfdf7e8, 0xd8ccb4);
+    cup.position.set(0.11, 0.187, 0.76);
+    g.add(cup);
+    [[0xe8746a, 0.016], [0x7fc9e8, 0.046]].forEach(([bc, by], bi) => {
+        const bb = GM(new RoundedBoxGeometry(0.12, 0.03, 0.09, 2, 0.01),
+            _bc.setHex(bc).clone().lerp(_w, 0.25).getHex(), _bc.setHex(bc).clone().lerp(_d, 0.3).getHex());
+        bb.position.set(0.38, by, 0.72);
+        bb.rotation.y = bi * 0.45 - 0.2;
+        g.add(bb);
+    });
     const lpost = GM(new THREE.CylinderGeometry(0.02, 0.03, 0.7, 10), 0x8b9bad, 0x5c6a7a);
     lpost.position.set(-0.62, 0.35, 0.3);
     g.add(lpost);
@@ -2167,6 +2213,19 @@ function makeFountain(p) {
     const bowlWater = new THREE.Mesh(new THREE.CircleGeometry(0.108, 14).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x9fd8ff }));
     bowlWater.position.y = 0.42;
     g.add(bowlWater);
+    // 비네트: 둘레 꽃 여섯 송이 — 분수가 남쪽 뜰의 포컬 포인트가 된다 (콜라이더 밖, 비차단 장식).
+    for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + 0.35;
+        const fr = 0.62 + (i % 2) * 0.09;
+        const fx = Math.cos(a) * fr, fz = Math.sin(a) * fr;
+        const stem = GM(new THREE.CylinderGeometry(0.009, 0.011, 0.09, 6), 0x5d9a48, 0x3f6b30);
+        stem.position.set(fx, 0.04, fz);
+        g.add(stem);
+        const fc = [0xff8fb3, 0xffd54f, 0xffffff][i % 3];
+        const head = GM(new THREE.SphereGeometry(0.03, 10, 8), fc, new THREE.Color(fc).multiplyScalar(0.62).getHex(), { curve: 1.2 });
+        head.position.set(fx, 0.095, fz);
+        g.add(head);
+    }
     {
         // 물방울 Points: 그릇(로컬 y 0.42)에서 솟아 바닥(로컬 y 0.02)에 떨어질 때까지의 포물선을
         // 방울마다 제 수명으로 반복한다. 예전 스프라이트 시뮬과 같은 분포(속도·크기·개수 ~24 동시).
@@ -2265,6 +2324,17 @@ function makeFlowerBasket() {
         leaf.position.set(x, 0.155, z);
         g.add(leaf);
     }
+    // 비네트: 미니 씨앗 팻말 — "여기서 꽃을 심어요"가 그림으로 읽힌다.
+    const sPost = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.012, 0.016, 0.16, 8), 0xa8845e, 0x6f5238), gradMatWood);
+    sPost.position.set(0.22, 0.08, -0.06);
+    g.add(sPost);
+    const sBoard = GM(new RoundedBoxGeometry(0.12, 0.075, 0.016, 2, 0.008), 0xfdf3da, 0xd9c9a8);
+    sBoard.position.set(0.22, 0.175, -0.06);
+    sBoard.rotation.y = -0.35;
+    g.add(sBoard);
+    const sBloom = GM(new THREE.SphereGeometry(0.016, 8, 6), 0xff8fb3, 0xa85f77);
+    sBloom.position.set(0.185, 0.222, -0.075);
+    g.add(sBloom);
     return g;
 }
 // 꽃은 InstancedMesh 두 개(줄기·머리)로 그린다 — 150송이 만발해도 드로우콜 2. 예전엔 송이마다
@@ -3580,9 +3650,10 @@ function mergePropGroup(root) {
         for (const m of list) m.parent.remove(m);
     }
 }
+const NO_MERGE_DEBUG = new URLSearchParams(window.location.search).get('nomerge') === '1';   // 병합 on/off 비교용
 for (const p of PROPS) {
     const obj = PROP_BUILDERS[p.type](p);
-    if (MERGE_TYPES.has(p.type)) mergePropGroup(obj);
+    if (MERGE_TYPES.has(p.type) && !NO_MERGE_DEBUG) mergePropGroup(obj);
     p.obj = obj;                                     // 🔨 공사모드가 이 그룹을 집어 옮긴다
     obj.position.set(p.x, terrainHeight(p.x, p.z), p.z);
     obj.rotation.y = p.rotY || 0;
