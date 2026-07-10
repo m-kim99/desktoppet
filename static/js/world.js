@@ -467,6 +467,16 @@ controls.enableZoom = false;
 // 밖으로 밀어낼 수 있어 통째로 끈다(-1 → onTouchStart switch가 default: NONE). 마우스
 // 우클릭-드래그 팬은 별개 경로라 데스크톱은 그대로.
 controls.touches.TWO = -1;
+// 🎥 프리뷰 카메라 (?cam=px,py,pz[,tx,ty,tz]) — ?hour=처럼 개발/스크린샷용. 소품 클로즈업을
+// 헤드리스 캡처로 검증할 때 쓴다. 줌 글라이드 타깃(zoomTargetDist)도 같이 맞춰 되돌아가지 않게.
+{
+    const cs = (new URLSearchParams(window.location.search).get('cam') || '').split(',').map(parseFloat);
+    if (cs.length >= 3 && cs.every((v) => Number.isFinite(v))) {
+        camera.position.set(cs[0], cs[1], cs[2]);
+        if (cs.length >= 6) controls.target.set(cs[3], cs[4], cs[5]);
+        controls.update();
+    }
+}
 let zoomTargetDist = camera.position.distanceTo(controls.target);
 renderer.domElement.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -632,6 +642,34 @@ function gradSphereGeo(r, topHex, bottomHex) {
     g.setAttribute('color', new THREE.Float32BufferAttribute(gradColors(g, topHex, bottomHex), 3));
     return g;
 }
+// ---- 범용 그라디언트 굽기 (동숲식 셰이딩의 일반화): 나무 잎이 증명한 "위-밝음/아래-어두움
+// 램프를 버텍스에 굽기"를 아무 지오메트리에나. 색은 지오메트리가 들고 재질은 공유(gradMat) —
+// 한 프롭의 그라디언트 부품들이 재질이 같아져 mergePropGroup에서 드로우콜 1개로 합쳐진다.
+// curve>1 = 아랫도리를 더 눌러 접지 AO 느낌. yMin/yMax로 램프 구간을 고정할 수도 있다.
+function bakeGrad(geo, topHex, bottomHex, { yMin = null, yMax = null, curve = 1 } = {}) {
+    const pos = geo.attributes.position;
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < pos.count; i++) { const y = pos.getY(i); if (y < lo) lo = y; if (y > hi) hi = y; }
+    if (yMin !== null) lo = yMin;
+    if (yMax !== null) hi = yMax;
+    const cT = new THREE.Color(topHex), cB = new THREE.Color(bottomHex), c = new THREE.Color();
+    const cols = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+        const t = Math.pow(THREE.MathUtils.clamp((pos.getY(i) - lo) / Math.max(1e-6, hi - lo), 0, 1), curve);
+        c.copy(cB).lerp(cT, t);
+        cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b;
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    return geo;
+}
+// 그라디언트 부품용 공유 재질: 민무늬/나무결. (InstancedMesh나 계절-틴트 재질에 쓸 땐 색을
+// 흰~회색 루미넌스 램프로 구우면 material.color·instanceColor와 곱해져 틴트가 살아남는다.)
+const gradMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
+const gradMatWood = new THREE.MeshStandardMaterial({ vertexColors: true, map: woodTex, roughness: 0.95, metalness: 0 });
+// 왕복형 Lathe 프로파일(안벽↑ 립 바깥벽↓)은 되돌아오는 구간의 와인딩이 뒤집혀 앞면 컬링에
+// 잡아먹힌다 — 그런 셸 조형(분수 수반·컵처럼 안팎이 다 보이는 것)만 양면 재질을 쓴다.
+const gradMatDS = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, side: THREE.DoubleSide });
+const GM = (geo, top, bottom, opts) => new THREE.Mesh(bakeGrad(geo, top, bottom, opts), gradMat);
 
 // ---- Stage: a floating meadow island — gently rolling vertex-colored grass over a rounded dirt
 // cliff, dressed with chubby pastel props. Pets still sense it ONLY through `world` below.
@@ -1795,20 +1833,32 @@ let mailFlag = null, mailData = [], mailReadTs = 0;
 try { mailReadTs = parseInt(localStorage.getItem('world-mail-read') || '0', 10) || 0; } catch (e) {}
 function makeMailbox() {
     const g = new THREE.Group();
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.5, 8), M(0x8a6647, { map: woodTex }));
+    // 동숲식 조형: 테이퍼 기둥 + 발치 둔덕, 통통한 몸통 위에 돔 뚜껑, 볼록한 투입구와 손잡이.
+    const post = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.042, 0.058, 0.5, 10), 0xa8845e, 0x6f5238, { curve: 1.3 }), gradMatWood);
     post.position.y = 0.25;
     g.add(post);
-    const box = new THREE.Mesh(new RoundedBoxGeometry(0.24, 0.19, 0.17, 3, 0.05), M(0xd6604e));
+    const foot = GM(new THREE.SphereGeometry(0.075, 12, 8), 0x9a7a56, 0x6f5238);
+    foot.scale.y = 0.42;
+    foot.position.y = 0.015;
+    g.add(foot);
+    const box = GM(new RoundedBoxGeometry(0.26, 0.2, 0.19, 4, 0.06), 0xe97c63, 0xa8483c, { curve: 1.15 });
     box.position.y = 0.58;
     g.add(box);
-    const slot = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.02, 0.01), M(0xf6efdf));
-    slot.position.set(0, 0.6, 0.086);
+    const lid = GM(new THREE.SphereGeometry(0.148, 16, 9, 0, Math.PI * 2, 0, Math.PI / 2), 0xd4695a, 0x8e372e);
+    lid.scale.set(0.95, 0.52, 0.72);
+    lid.position.y = 0.672;
+    g.add(lid);
+    const slot = GM(new RoundedBoxGeometry(0.14, 0.036, 0.022, 2, 0.012), 0xfdf7e8, 0xd8ccb4);
+    slot.position.set(0, 0.615, 0.093);
     g.add(slot);
+    const knob = GM(new THREE.SphereGeometry(0.022, 10, 8), 0xfdf7e8, 0xcabfa6);
+    knob.position.set(0, 0.552, 0.098);
+    g.add(knob);
     mailFlag = new THREE.Group();
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.14, 0.02), M(0xf2c53d));
-    arm.position.y = 0.07;
-    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.05, 0.02), M(0xf2c53d));
-    tip.position.set(0.02, 0.14, 0);
+    const arm = new THREE.Mesh(new RoundedBoxGeometry(0.035, 0.15, 0.024, 2, 0.012), M(0xf2c53d));
+    arm.position.y = 0.075;
+    const tip = new THREE.Mesh(new RoundedBoxGeometry(0.085, 0.055, 0.024, 2, 0.012), M(0xf2c53d));
+    tip.position.set(0.03, 0.15, 0);
     mailFlag.add(arm, tip);
     mailFlag.position.set(0.13, 0.6, 0);
     mailFlag.rotation.z = -1.5;   // 평소엔 접힘 — 답장이 오면 선다
@@ -1901,32 +1951,39 @@ fetchMail();   // 부팅 — 깃발 상태 복원
 const GYM_MAT_LOCAL = [[-0.34, 0.05], [0.34, -0.05]];
 function makeGym() {
     const g = new THREE.Group();
+    // 동숲식 조형: 매트는 더 도톰+큰 라운딩+톱라이트 그라디언트, 바는 그네와 같은 나무 언어
+    // (테이퍼 기둥+둥근 캡), 아령은 통통한 파스텔 볼. 매트 위치(GYM_MAT_LOCAL)는 불변.
+    const MAT_COLS = [[0xa5d6ef, 0x76a8c8], [0xf7c6d3, 0xd897a8]];   // 하늘/분홍
     for (const [i, [lx, lz]] of GYM_MAT_LOCAL.entries()) {
-        const mat = new THREE.Mesh(new RoundedBoxGeometry(0.55, 0.035, 0.88, 2, 0.015), M(i ? 0xf2b8c6 : 0x8fc9e8));
-        mat.position.set(lx, 0.02, lz);
+        const mat = GM(new RoundedBoxGeometry(0.55, 0.048, 0.88, 3, 0.024), MAT_COLS[i][0], MAT_COLS[i][1], { curve: 1.4 });
+        mat.position.set(lx, 0.024, lz);
         mat.rotation.y = (i ? -1 : 1) * 0.08;
         g.add(mat);
     }
     const bar = new THREE.Group();   // 스트레칭 바
     for (const s of [-1, 1]) {
-        const postB = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.52, 8), M(0x5a6a75));
+        const postB = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.034, 0.046, 0.52, 10), 0xbb9268, 0x7d5e40, { curve: 1.3 }), gradMatWood);
         postB.position.set(s * 0.45, 0.26, -0.62);
         bar.add(postB);
+        const cap = new THREE.Mesh(bakeGrad(new THREE.SphereGeometry(0.042, 10, 8), 0xc79c70, 0x8a6a49), gradMatWood);
+        cap.position.set(s * 0.45, 0.525, -0.62);
+        bar.add(cap);
     }
-    const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.92, 8), M(0xd9b25e));
+    const rail = GM(new THREE.CylinderGeometry(0.027, 0.027, 0.92, 10), 0xe8c46f, 0xb98f42);
     rail.rotation.z = Math.PI / 2;
     rail.position.set(0, 0.5, -0.62);
     bar.add(rail);
     g.add(bar);
     const dumb = new THREE.Group();   // 아령 한 쌍
-    for (const dz of [0, 0.12]) {
-        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.2, 8), M(0x5a6a75));
+    const W_COLS = [[0xf5a394, 0xc96f60], [0x93d1c8, 0x5fa197]];     // 코랄/민트
+    for (const [di, dz] of [[0, 0], [1, 0.13]]) {
+        const shaft = GM(new THREE.CylinderGeometry(0.02, 0.02, 0.21, 10), 0xf3ead8, 0xc2b79f);
         shaft.rotation.z = Math.PI / 2;
-        shaft.position.set(0, 0.035, dz);
+        shaft.position.set(0, 0.05, dz);
         dumb.add(shaft);
         for (const s of [-1, 1]) {
-            const w = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), M(0x4a5560));
-            w.position.set(s * 0.1, 0.035, dz);
+            const w = GM(new THREE.SphereGeometry(0.052, 12, 10), W_COLS[di][0], W_COLS[di][1], { curve: 1.2 });
+            w.position.set(s * 0.105, 0.05, dz);
             dumb.add(w);
         }
     }
@@ -1968,33 +2025,42 @@ const LIB_SEATS_LOCAL = [[-0.18, 0.52], [0.42, 0.46]];
 let libBooks = [];
 function makeLibrary() {
     const g = new THREE.Group();
-    const wood = M(0xb08a60, { map: woodTex });
-    const shelf = new THREE.Mesh(new RoundedBoxGeometry(0.95, 1.0, 0.24, 3, 0.03), wood);
+    // 동숲식 조형: 책장에 톱라이트 그라디언트+크라운 몰딩, 책은 더 통통하고 살짝 기울여 꽂고
+    // (전부 gradMat 공유 → 병합 후 드로우콜 1), 방석은 더 둥글게. 좌석 좌표(LIB_SEATS_LOCAL) 불변.
+    const shelf = new THREE.Mesh(bakeGrad(new RoundedBoxGeometry(0.95, 1.0, 0.24, 3, 0.035), 0xc79a6b, 0x84603e, { curve: 1.25 }), gradMatWood);
     shelf.position.set(0, 0.5, -0.15);
     g.add(shelf);
+    const crown = new THREE.Mesh(bakeGrad(new RoundedBoxGeometry(1.02, 0.055, 0.28, 2, 0.02), 0xd3a878, 0x9a7449), gradMatWood);
+    crown.position.set(0, 1.02, -0.15);
+    g.add(crown);
     let bookSeed = 7;
     const brand = () => { bookSeed = (bookSeed * 1664525 + 1013904223) >>> 0; return bookSeed / 4294967296; };
     const bookColors = [0xe8746a, 0xf2b04b, 0x8fd06c, 0x7fc9e8, 0xb39ddb, 0xf27ba0];
+    const _bc = new THREE.Color(), _w = new THREE.Color(0xfff6e4), _d = new THREE.Color(0x2c2018);
     for (let row = 0; row < 3; row++) {
         let bx = -0.36;
-        while (bx < 0.34) {
-            const bw = 0.05 + brand() * 0.05;
-            const bh = 0.16 + brand() * 0.06;
-            const book = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.14), M(bookColors[Math.floor(brand() * bookColors.length)]));
+        while (bx < 0.32) {
+            const bw = 0.055 + brand() * 0.045;
+            const bh = 0.17 + brand() * 0.065;
+            _bc.setHex(bookColors[Math.floor(brand() * bookColors.length)]);
+            const top = _bc.clone().lerp(_w, 0.28).getHex(), bot = _bc.clone().lerp(_d, 0.3).getHex();
+            const book = GM(new RoundedBoxGeometry(bw, bh, 0.15, 2, 0.012), top, bot);
             book.position.set(bx + bw / 2, 0.22 + row * 0.3 + bh / 2, -0.14);
+            book.rotation.z = (brand() - 0.5) * 0.14;   // 살짝 기대어 꽂힌 책들
             g.add(book);
-            bx += bw + 0.015;
+            bx += bw + 0.018;
         }
     }
-    const rug = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.012, 20), M(0xf6d7b0));
+    const rug = GM(new THREE.CylinderGeometry(0.55, 0.55, 0.014, 24), 0xfae3c0, 0xe3c298);
     rug.position.set(0.1, 0.01, 0.45);
     g.add(rug);
+    const CUSH_COLS = [[0xf7dd66, 0xd0ad38], [0xaecfec, 0x7fa6cb]];
     for (const [i, [lx, lz]] of LIB_SEATS_LOCAL.entries()) {
-        const cush = new THREE.Mesh(new RoundedBoxGeometry(0.34, 0.15, 0.3, 3, 0.05), M(i ? 0x9fc4e8 : 0xf2d54b));
-        cush.position.set(lx, 0.075, lz);
+        const cush = GM(new RoundedBoxGeometry(0.35, 0.17, 0.32, 4, 0.075), CUSH_COLS[i][0], CUSH_COLS[i][1], { curve: 1.3 });
+        cush.position.set(lx, 0.08, lz);
         g.add(cush);
     }
-    const lpost = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.028, 0.7, 8), M(0x5a6a75));
+    const lpost = GM(new THREE.CylinderGeometry(0.02, 0.03, 0.7, 10), 0x8b9bad, 0x5c6a7a);
     lpost.position.set(-0.62, 0.35, 0.3);
     g.add(lpost);
     const globe = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 10), lampGlobeMat);
@@ -2066,29 +2132,33 @@ let fountainHiss = null;
 function makeFountain(p) {
     fountainPr = p;
     const g = new THREE.Group();
-    const stone = M(0xb9c1ca, { map: plasterTex });
-    const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.48, 0.05, 24), stone);
-    rim.position.y = 0.025;
-    g.add(rim);
-    const basinWater = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.03, 24), new THREE.MeshBasicMaterial({ color: 0x6ec6e8, transparent: true, opacity: 0.75 }));
-    basinWater.position.y = 0.045;
+    // 동숲식 조형: 원기둥 스택 대신 Lathe 곡선 — 바깥으로 말린 립을 가진 수반, 플레어 받침에서
+    // 잘록해졌다 컵으로 벌어지는 기둥. 따뜻한 크림 스톤에 위-밝음 그라디언트를 굽는다.
+    const STONE_T = 0xf0e6d6, STONE_B = 0xa89a86;
+    const lathe = (pts, segs = 28) => new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), segs);
+    const basin = new THREE.Mesh(bakeGrad(lathe([
+        [0.30, 0.05], [0.385, 0.055], [0.405, 0.115],          // 안바닥 → 안벽
+        [0.415, 0.175], [0.45, 0.19], [0.485, 0.175], [0.5, 0.13],   // 도톰하게 말린 립
+        [0.49, 0.05], [0.515, -0.05],                           // 바깥벽 → 치맛단 (지면 아래로 — 구릉에 뜨지 않게)
+    ]), STONE_T, STONE_B, { yMin: 0, curve: 1.3 }), gradMatDS);
+    g.add(basin);
+    const basinWater = new THREE.Mesh(new THREE.CylinderGeometry(0.375, 0.375, 0.03, 24), new THREE.MeshBasicMaterial({ color: 0x6ec6e8, transparent: true, opacity: 0.75 }));
+    basinWater.position.y = 0.055;
     g.add(basinWater);
     for (const [x, z, s] of [[-0.4, 0.18, 0.9], [0.32, -0.3, 1], [0.1, 0.42, 0.75]]) {   // 둘레 돌 (연못 스타일 재사용)
-        const st = new THREE.Mesh(new THREE.DodecahedronGeometry(0.06 * s, 0), M(0xa8a094));
+        const st = GM(new THREE.DodecahedronGeometry(0.06 * s, 0), 0xd8ccba, 0xa39684);
         st.position.set(x, 0.035, z);
         st.scale.y = 0.6;
         g.add(st);
     }
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.17, 0.1, 14), stone);
-    base.position.y = 0.1;
-    g.add(base);
-    const column = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 0.22, 10), stone);
-    column.position.y = 0.25;
-    g.add(column);
-    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.1, 0.08, 12, 1, true), stone);
-    bowl.position.y = 0.39;
-    g.add(bowl);
-    const bowlWater = new THREE.Mesh(new THREE.CircleGeometry(0.12, 12).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x9fd8ff }));
+    const pedestal = new THREE.Mesh(bakeGrad(lathe([
+        [0.0, 0.02], [0.19, 0.02], [0.215, 0.06], [0.13, 0.115],   // 둥근 받침 플레어
+        [0.08, 0.17], [0.062, 0.29],                                // 잘록한 기둥 (테이퍼)
+        [0.125, 0.35], [0.158, 0.40], [0.165, 0.445],               // 컵 바깥 곡선
+        [0.128, 0.455], [0.112, 0.415], [0.0, 0.405],               // 말린 립 → 컵 안바닥
+    ], 24), STONE_T, STONE_B, { curve: 1.2 }), gradMatDS);
+    g.add(pedestal);
+    const bowlWater = new THREE.Mesh(new THREE.CircleGeometry(0.108, 14).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x9fd8ff }));
     bowlWater.position.y = 0.42;
     g.add(bowlWater);
     {
@@ -2102,7 +2172,7 @@ function makeFountain(p) {
             const a = Math.random() * Math.PI * 2, m = 0.12 + Math.random() * 0.22;
             const vy = 1.25 + Math.random() * 0.5;
             vel[i * 3] = Math.cos(a) * m; vel[i * 3 + 1] = vy; vel[i * 3 + 2] = Math.sin(a) * m;
-            life[i] = (vy + Math.sqrt(vy * vy + 2 * G * 0.40)) / G;   // 0.42 + vy·t − ½G·t² = 0.02 의 양근
+            life[i] = (vy + Math.sqrt(vy * vy + 2 * G * 0.365)) / G;   // 0.42 + vy·t − ½G·t² = 0.055(수면) 의 양근
             phase[i] = Math.random() * life[i];                        // 방울마다 어긋난 시작 위상
             sz[i] = (0.05 + Math.random() * 0.04) * 2.414;             // 스프라이트 월드 크기 → gl_PointSize 환산 (fov 45)
         }
@@ -2164,20 +2234,30 @@ scene.add(flowerGroup);
 let flowersDone = false;
 function makeFlowerBasket() {
     const g = new THREE.Group();
-    const basket = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.1, 0.13, 12, 1, true), M(0xc9a06a, { map: woodTex }));
-    basket.position.y = 0.09;
+    // 동숲식 조형: 배가 볼록한 Lathe 바구니 + 도톰하게 말린 테 + 속 채움판 + 큼직한 꽃송이와 잎.
+    const basket = new THREE.Mesh(bakeGrad(new THREE.LatheGeometry([
+        [0.0, 0.005], [0.085, 0.005], [0.122, 0.032], [0.143, 0.09], [0.128, 0.148],
+    ].map(([x, y]) => new THREE.Vector2(x, y)), 18), 0xd9b078, 0x8f6a42, { curve: 1.2 }), gradMatWood);
     g.add(basket);
-    const rim2 = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.018, 8, 16), M(0xa87f4f));
-    rim2.rotation.x = Math.PI / 2;
-    rim2.position.y = 0.155;
+    const fill = GM(new THREE.CircleGeometry(0.115, 14).rotateX(-Math.PI / 2), 0x5d8244, 0x435f30);
+    fill.position.y = 0.132;
+    g.add(fill);
+    const rim2 = new THREE.Mesh(bakeGrad(new THREE.TorusGeometry(0.128, 0.024, 10, 18).rotateX(Math.PI / 2), 0xc59a68, 0x8a6540), gradMatWood);
+    rim2.position.y = 0.15;
     g.add(rim2);
-    const handle = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.014, 8, 14, Math.PI), M(0xa87f4f));
-    handle.position.y = 0.16;
+    const handle = new THREE.Mesh(bakeGrad(new THREE.TorusGeometry(0.115, 0.019, 10, 16, Math.PI), 0xc59a68, 0x8a6540), gradMatWood);
+    handle.position.y = 0.152;
     g.add(handle);
-    for (const [x, z, c] of [[-0.04, 0.02, 0xff8fb3], [0.05, -0.03, 0xffd54f]]) {
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), new THREE.MeshLambertMaterial({ color: c }));
-        head.position.set(x, 0.17, z);
+    for (const [x, z, c, s] of [[-0.045, 0.02, 0xff8fb3, 0.05], [0.05, -0.03, 0xffd54f, 0.046], [0.01, 0.05, 0xffffff, 0.038]]) {
+        const head = GM(new THREE.SphereGeometry(s, 12, 10), c, new THREE.Color(c).multiplyScalar(0.62).getHex(), { curve: 1.2 });
+        head.position.set(x, 0.175, z);
         g.add(head);
+    }
+    for (const [x, z] of [[-0.02, -0.045], [0.075, 0.035]]) {
+        const leaf = GM(new THREE.SphereGeometry(0.026, 8, 6), 0x77b45a, 0x4a7336);
+        leaf.scale.y = 0.55;
+        leaf.position.set(x, 0.155, z);
+        g.add(leaf);
     }
     return g;
 }
@@ -2189,7 +2269,11 @@ const flowerTmpM = new THREE.Matrix4(), flowerTmpC = new THREE.Color();
 function ensureFlowerIM() {
     if (flowerStemIM) return;
     flowerStemIM = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.009, 0.011, 0.1, 6), M(0x4e9a3d), FLOWER_CAP);
-    flowerHeadIM = new THREE.InstancedMesh(new THREE.SphereGeometry(0.032, 10, 8), new THREE.MeshLambertMaterial({ color: 0xffffff }), FLOWER_CAP);
+    // 머리는 흰~회 루미넌스 램프를 굽고 vertexColors로 켠다 — instanceColor(꽃색)와 곱해져
+    // "위는 밝고 아래는 그늘진" 동숲식 셰이딩이 모든 꽃색에 공짜로 얹힌다.
+    flowerHeadIM = new THREE.InstancedMesh(
+        bakeGrad(new THREE.SphereGeometry(0.032, 10, 8), 0xffffff, 0xb2a898, { curve: 1.2 }),
+        new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true }), FLOWER_CAP);
     flowerStemIM.count = 0;
     flowerHeadIM.count = 0;
     flowerStemIM.frustumCulled = false;   // 인스턴스가 온 섬에 흩어진다 — 지오메트리 바운즈 무의미
@@ -3901,7 +3985,11 @@ for (let i = 1; i < ISLANDS.length; i++) ROAD_NODES.push({ x: ISLANDS[i].x, z: I
     const dummy = new THREE.Object3D();
 
     const tufts = spots(380, 0.45);
-    const tuftMesh = new THREE.InstancedMesh(new THREE.ConeGeometry(0.022, 0.1, 5), M(0x5fae44), tufts.length);
+    // 루미넌스 램프(흰~회)를 굽고 vertexColors로 material.color와 곱한다 — 계절 틴트(applySeason이
+    // 이 재질들의 color를 애니메이트)가 그대로 살아 있으면서 밑동만 그늘진다.
+    const tuftMesh = new THREE.InstancedMesh(
+        bakeGrad(new THREE.ConeGeometry(0.022, 0.1, 5), 0xffffff, 0xa9b89c, { curve: 1.1 }),
+        M(0x5fae44, { vertexColors: true }), tufts.length);
     tufts.forEach((s, i) => {
         dummy.position.set(s.x, terrainHeight(s.x, s.z) + 0.04, s.z);
         dummy.rotation.set(rnd(-0.16, 0.16), rnd(0, Math.PI), rnd(-0.16, 0.16));
@@ -3915,7 +4003,9 @@ for (let i = 1; i < ISLANDS.length; i++) ROAD_NODES.push({ x: ISLANDS[i].x, z: I
     const petals = [0xff8fb3, 0xffd54f, 0xffffff, 0xb39ddb, 0xff8a65];
     const blooms = spots(75, 0.5);
     const stemMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.008, 0.01, 0.09, 6), M(0x4e9a3d), blooms.length);
-    const headMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.028, 10, 8), new THREE.MeshLambertMaterial({ color: 0xffffff }), blooms.length);
+    const headMesh = new THREE.InstancedMesh(
+        bakeGrad(new THREE.SphereGeometry(0.028, 10, 8), 0xffffff, 0xb2a898, { curve: 1.2 }),
+        new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true }), blooms.length);
     blooms.forEach((s, i) => {
         const y = terrainHeight(s.x, s.z);
         dummy.rotation.set(0, 0, 0);
@@ -3933,7 +4023,9 @@ for (let i = 1; i < ISLANDS.length; i++) ROAD_NODES.push({ x: ISLANDS[i].x, z: I
     stage.add(headMesh);
 
     const pebbles = spots(46, 0.5);
-    const pebbleMesh = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.045, 0), M(0xbdb7ab), pebbles.length);
+    const pebbleMesh = new THREE.InstancedMesh(
+        bakeGrad(new THREE.DodecahedronGeometry(0.045, 0), 0xffffff, 0x9d9588, { curve: 1.1 }),
+        M(0xbdb7ab, { vertexColors: true }), pebbles.length);
     pebbles.forEach((s, i) => {
         dummy.position.set(s.x, terrainHeight(s.x, s.z) + 0.012, s.z);
         dummy.rotation.set(rnd(0, Math.PI), rnd(0, Math.PI), 0);

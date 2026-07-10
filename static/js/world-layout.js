@@ -43,6 +43,7 @@ export const FLAT_SPOTS = [
     { x: -2.6, z: -2.9, r: 0.95 },  // pond basin (연못은 이동 불가 — 지형 함몰)
     { x: 8.2, z: 4.85, r: 1.0, follow: 'swing-1' },    // NE island swing pad (level ground under the A-frame legs)
     { x: 9.3, z: 4.0, r: 1.0, follow: 'seesaw-1' },    // NE island seesaw pad (level ground under the fulcrum + plank)
+    { x: 6.6, z: 5.68, r: 1.15, follow: 'gym-1' },     // NE island gym pad — 매트/아령이 구릉에 뚫리지 않게 (그네·시소 패드와 같은 원리)
     { x: -8.06, z: -3.53, r: 1.55 },   // 추억의 섬 중앙 뜰 — 기념비·소원우물·타임캡슐이 반듯하게 선다
     { x: 7.55, z: -5.55, r: 1.15 },    // 모험의 섬 동굴 포켓 — 언덕 남서면을 파서 만든 평탄 바닥
 ];
@@ -122,6 +123,8 @@ export const PROPS = [
     { type: 'mailbox',      x:  1.85, z:  2.75, rotY: -0.5,  r: 0.15 },
     { type: 'gym',           x:  6.6,  z:  5.68, rotY: 3.6,   r: 0.8 },   // NE 놀이터 섬 — 그네·시소와 한 존
     { type: 'library',       x: -4.5,  z: -0.6,  rotY: 2.0,   r: 0.65 },
-    { type: 'fountain',      x:  2.3,  z: -1.0,  rotY: 0,     r: 0.55 },
+    // 분수는 남쪽 뜰로 이전 — 원래 자리(2.3,-1.0)는 자동차 기본 주차(2.5,-1.35) 겹침 + 도로
+    // 링(r≈2.7~3.3)에 가장자리가 걸렸다 (마지막 6종 겹침 검사에 차/도로가 빠져 있었음).
+    { type: 'fountain',      x:  0.4,  z: -4.3,  rotY: 0,     r: 0.55 },
     { type: 'flowerbasket',  x:  0.9,  z:  2.6,  rotY: 1.3,   r: 0.15 },
 ];
