@@ -830,6 +830,10 @@ const BEDS = [];   // filled during prop placement: where pets sleep at night / 
 const SWINGS = []; // swing seats (also pushed into BEDS so mount/⌘ reuse works) — each is a pendulum
 const SEESAWS = [];        // seesaw seats (in BEDS too); two per plank share one tilting body
 const SEESAW_BODIES = [];  // the tilting planks — one shared angle drives both of its seats
+// 월드 팔레트 가이드 (퀄리티 패스 ④): 파스텔 톤 유지 — 나무 0xb08a60/0x8a6647 계열, 돌·바위는
+// 웜 베이지(0xc2b096~0xa08d74, 순수 회색 금지), 포인트 색은 파스텔 원색(코랄 f5a394 · 민트 93d1c8 ·
+// 하늘 a5d6ef · 분홍 f7c6d3 · 꿀 e8c46f · 버터 f7dd66). 새 프롭은 이 대역에서 고르고, 정적 부품은
+// bakeGrad(top, bottom)로 톱라이트 램프를 얹는 것이 기본 문법.
 const M = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, ...extra });
 const leafMatGrad = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
 
@@ -1091,7 +1095,7 @@ function makePond() {
     const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.032, 10, 8), M(0xff8fb3));
     bloom.position.set(0.16, 0.085, -0.12);
     g.add(bloom);
-    const stoneM = M(0xb9b2a6);
+    const stoneM = M(0xc4b6a0);   // 팔레트 ④: 웜 스톤
     for (const [x, z, s] of [[-0.62, 0.28, 1], [0.05, 0.68, 0.8], [0.6, -0.35, 0.9]]) {
         const st = new THREE.Mesh(new THREE.DodecahedronGeometry(0.07 * s, 0), stoneM);
         st.position.set(x, 0.045, z);
@@ -1546,8 +1550,9 @@ function updateHugSpot(delta) {
 let caveLamp = null;   // 랜턴 포인트라이트 — updateMemorialIsland가 불꽃처럼 일렁이게 한다
 function makeCave() {
     const g = new THREE.Group();
-    const rock = M(0xa89f92, { flatShading: true });
-    const rockDark = M(0x8f8779, { flatShading: true });
+    // 팔레트 ④: 회색 바위는 파스텔 월드의 이탈자 — 웜 베이지로 (형태 인식은 flatShading이 지킨다)
+    const rock = M(0xbcaa90, { flatShading: true });
+    const rockDark = M(0xa08d74, { flatShading: true });
     const back = new THREE.Mesh(new THREE.SphereGeometry(1.0, 10, 8), rock);
     back.position.set(0, 0.35, -0.8);
     back.scale.set(1.35, 0.95, 0.8);
@@ -1672,7 +1677,7 @@ function makeLookout() {
 // 바위 (모험의 섬 드레싱): 각진 저폴리 바위 덩어리 둘 — 계절 중립, 숨기 스팟 겸용.
 function makeBoulder() {
     const g = new THREE.Group();
-    const mat = M(0xb3ab9f, { flatShading: true });
+    const mat = M(0xc2b096, { flatShading: true });   // 팔레트 ④: 웜 베이지 (회색 이탈자 보정)
     const big = new THREE.Mesh(new THREE.DodecahedronGeometry(0.34, 0), mat);
     big.position.y = 0.2;
     big.scale.set(1.15, 0.78, 1);
@@ -2851,7 +2856,7 @@ function makeGarden() {
         rail.position.set(x, 0.08, z);
         g.add(rail);
     }
-    const soil = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.07, 0.98), M(0x6f5030));
+    const soil = GM(new THREE.BoxGeometry(1.36, 0.07, 0.98), 0x96744e, 0x684d31);   // 팔레트 ④: 어둡던 흙을 웜 브라운 + 톱라이트로 — 멀리서 "검은 판"으로 읽히던 문제
     soil.position.set(0, 0.07, 0.025);
     g.add(soil);
     const can = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.1, 10), M(0x7fa8c9));
