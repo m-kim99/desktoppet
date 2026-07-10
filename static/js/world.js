@@ -766,6 +766,7 @@ function buildIslandMeshes(isl) {
     const segs = Math.max(48, Math.round(isl.r * 18));
     const positions = [], colors = [], uvs = [], indices = [];
     const base = new THREE.Color(0.93, 0.95, 0.88), light = new THREE.Color(1.07, 1.1, 1.0);
+    const warmG = new THREE.Color(1.1, 1.05, 0.8), coolG = new THREE.Color(0.8, 0.94, 1.02);
     const c = new THREE.Color();
     for (let i = 0; i <= rings; i++) {
         const r = (i / rings) * isl.r;
@@ -777,6 +778,11 @@ function buildIslandMeshes(isl) {
             uvs.push(x * 0.8, z * 0.8);                 // planar world mapping — pattern flows across islands
             const patch = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1;
             c.copy(base).lerp(light, Math.min(1, patch * 0.45 + y * 2.2));
+            // 저주파 웜/쿨 얼룩 (2~3m 붓터치): 균일한 초록 카펫 느낌을 깨고 프롭을 지면에 앉힌다.
+            // 곱셈 계열(1.0 근방) 틴트라 grassTex·계절 틴트·설원 텍스처와 그대로 합성된다.
+            const blotch = Math.sin(x * 1.05 + Math.sin(z * 0.85) * 1.6) * Math.sin(z * 1.2 + Math.sin(x * 0.75) * 1.4);
+            if (blotch > 0) c.lerp(warmG, blotch * 0.16);
+            else c.lerp(coolG, -blotch * 0.14);
             colors.push(c.r, c.g, c.b);
         }
     }
@@ -3820,6 +3826,21 @@ function isOnRoad(x, z, pad = 0.12) {
 const pathTex = canvasTex(64, 5, 1, (ctx, s) => {
     ctx.fillStyle = '#d9c294';
     ctx.fillRect(0, 0, s, s);
+    // 가장자리 어둠띠 + 은은한 중앙 밟힘 하이라이트 — 리본 UV의 y가 정확히 길 폭(0..1)이라
+    // 텍스처에 구우면 모든 길·모든 스포크에 공짜로 테두리가 생긴다 (원인⑤: 길이 잔디에 스티커처럼 뜨는 문제).
+    const eg = ctx.createLinearGradient(0, 0, 0, s);
+    eg.addColorStop(0, 'rgba(122,94,58,0.55)');
+    eg.addColorStop(0.14, 'rgba(122,94,58,0)');
+    eg.addColorStop(0.86, 'rgba(122,94,58,0)');
+    eg.addColorStop(1, 'rgba(122,94,58,0.55)');
+    ctx.fillStyle = eg;
+    ctx.fillRect(0, 0, s, s);
+    const cg = ctx.createLinearGradient(0, 0, 0, s);
+    cg.addColorStop(0.34, 'rgba(255,246,222,0)');
+    cg.addColorStop(0.5, 'rgba(255,246,222,0.18)');
+    cg.addColorStop(0.66, 'rgba(255,246,222,0)');
+    ctx.fillStyle = cg;
+    ctx.fillRect(0, 0, s, s);
     for (let i = 0; i < 60; i++) {
         ctx.fillStyle = `rgba(${Math.random() < 0.5 ? '150,120,75' : '255,245,215'},0.18)`;
         ctx.fillRect(Math.random() * s, Math.random() * s, 2, 2);
@@ -3983,8 +4004,23 @@ for (let i = 1; i < ISLANDS.length; i++) ROAD_NODES.push({ x: ISLANDS[i].x, z: I
         return out;
     };
     const dummy = new THREE.Object3D();
+    // 클러스터 살포: 균일 랜덤은 노이즈로 읽힌다 — 실제 들판처럼 몇 포기씩 뭉쳐 나게 한다.
+    // (중심을 spots로 뽑아 길/광장/집/프롭은 이미 피하고, 오프셋 지점도 한 번 더 거른다.)
+    const clusters = (centerCount, perLo, perHi, spread, margin) => {
+        const out = [];
+        spots(centerCount, margin + spread).forEach((cpt, ci) => {
+            const k = perLo + Math.floor(Math.random() * (perHi - perLo + 1));
+            for (let i = 0; i < k; i++) {
+                const a = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * spread;
+                const x = cpt.x + Math.cos(a) * rr, z = cpt.z + Math.sin(a) * rr;
+                if (world.isBlocked(x, z) || isOnRoad(x, z) || houseFloorY(x, z) !== null || islandOf(x, z) < 0) continue;
+                out.push({ x, z, ci });   // ci: 다발 번호 — 들꽃은 "한 다발 = 한 색"에 쓴다
+            }
+        });
+        return out;
+    };
 
-    const tufts = spots(380, 0.45);
+    const tufts = clusters(68, 4, 7, 0.42, 0.45);   // ~370포기가 4~7포기씩 다발로
     // 루미넌스 램프(흰~회)를 굽고 vertexColors로 material.color와 곱한다 — 계절 틴트(applySeason이
     // 이 재질들의 color를 애니메이트)가 그대로 살아 있으면서 밑동만 그늘진다.
     const tuftMesh = new THREE.InstancedMesh(
@@ -4001,7 +4037,7 @@ for (let i = 1; i < ISLANDS.length; i++) ROAD_NODES.push({ x: ISLANDS[i].x, z: I
     stage.add(tuftMesh);
 
     const petals = [0xff8fb3, 0xffd54f, 0xffffff, 0xb39ddb, 0xff8a65];
-    const blooms = spots(75, 0.5);
+    const blooms = clusters(17, 3, 6, 0.3, 0.5);    // 들꽃도 화단처럼 3~6송이 다발로
     const stemMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.008, 0.01, 0.09, 6), M(0x4e9a3d), blooms.length);
     const headMesh = new THREE.InstancedMesh(
         bakeGrad(new THREE.SphereGeometry(0.028, 10, 8), 0xffffff, 0xb2a898, { curve: 1.2 }),
@@ -4016,7 +4052,7 @@ for (let i = 1; i < ISLANDS.length; i++) ROAD_NODES.push({ x: ISLANDS[i].x, z: I
         dummy.position.set(s.x, y + 0.095, s.z);
         dummy.updateMatrix();
         headMesh.setMatrixAt(i, dummy.matrix);
-        headMesh.setColorAt(i, new THREE.Color(petals[i % petals.length]));
+        headMesh.setColorAt(i, new THREE.Color(petals[(s.ci ?? i) % petals.length]));
     });
     headMesh.castShadow = true;
     stage.add(stemMesh);
