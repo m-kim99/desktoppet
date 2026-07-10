@@ -56,7 +56,7 @@ document.body.classList.add(isElectron ? 'electron' : 'web');
 const renderer = new THREE.WebGLRenderer();
 // Add performance-optimization settings
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.max(1, window.devicePixelRatio));
+renderer.setPixelRatio(Math.min(Math.max(1, window.devicePixelRatio || 1), 2));   // cap 2x — 3x 패널에서도 레티나 이상은 낭비 (발열)
 renderer.setClearColor(0x00000000, 0);
 renderer.xr.enabled = true;
 // Use fetch to query the value of /cur_language
@@ -1481,6 +1481,7 @@ function startChunkAnimation(chunkId, chunkState) {
     }
 
     function animateChunk() {
+        vrmWake();   // 말하는 동안(립싱크 재생 중)은 60fps 유지
         const currentState = chunkAnimations.get(chunkId);
         if (!currentState || !currentState.isPlaying) {
             // Zero it out when stopped
@@ -1673,6 +1674,7 @@ async function startLipSyncForChunk(data) {
 
         // 9. Animation loop (the core algorithm)
         function animateChunk() {
+            vrmWake();   // 말하는 동안(립싱크 재생 중)은 60fps 유지
             const currentState = chunkAnimations.get(chunkId);
             if (!currentState || !currentState.isPlaying) {
                 if (currentVrm && currentVrm.expressionManager) {
@@ -2309,6 +2311,22 @@ const vmcToVrmBone = {
 // animate
 const clock = new THREE.Clock();
 clock.start();
+
+// ♡ 프레임 페이싱 (world.js와 같은 원칙): 데스크톱 펫 창은 하루 종일 떠 있는데, rAF를 그대로
+// 두면 ProMotion 패널에서 120fps로 돈다. 활동 중(포인터·모션 재생·말하기·VMC·XR)에만 60fps,
+// 가만히 숨 쉬는 idle은 30fps — 이 콘텐츠에선 겉모습 차이가 없고 상시 발열만 줄어든다.
+let vrmLastFrameMs = 0;
+let vrmLastActiveMs = performance.now();
+function vrmWake() { vrmLastActiveMs = performance.now(); }
+for (const ev of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart']) {
+    window.addEventListener(ev, vrmWake, { passive: true, capture: true });
+}
+function vrmActive() {
+    if (renderer.xr.isPresenting || isRenderMode) return true;   // XR·파노라마 캡처는 항상 풀 페이스
+    if (window.vmcAPI || vmcReceiveEnabled) return true;         // VMC 송수신 스트리밍 중
+    if (glbPet && glbPet.action) return true;                    // GLB 펫 모션 재생 중 (춤·인사…)
+    return performance.now() - vrmLastActiveMs < 4000;           // 입력·말하기 후 4초의 여운
+}
 let currentLookYaw = 0;   // Left/right yaw (Y axis)
 let currentLookPitch = 0; // Up/down pitch (X axis)
 
@@ -2317,10 +2335,19 @@ let debugSphere, debugCamera, debugControls;
 
 function animate() {
     requestAnimationFrame(animate);
-    
-    const deltaTime = clock.getDelta();
+
+    // 60/30fps 게이트 — 스킵한 시간은 다음 프레임 delta에 흡수되고, clamp가 오래 멈춘 뒤의
+    // 물리 폭주를 막는다 (기존엔 클램프 없이도 매 프레임이라 문제가 없었을 뿐).
+    const nowMs = performance.now();
+    if (nowMs - vrmLastFrameMs < (vrmActive() ? 15.5 : 31)) return;
+    vrmLastFrameMs = nowMs;
+
+    const deltaTime = Math.min(clock.getDelta(), 0.1);
     updatePointerLockMovement(deltaTime);
     const shouldSkipModelUpdate = isModelHiddenByHover && isAutoHideEnabled;
+    // 호버 자동 숨김 중엔 캔버스가 CSS opacity 0 — 보이지 않는 프레임은 그리지도 않는다.
+    // (VMC 송신·렌더 모드·XR은 화면 밖 소비자가 있으니 예외.)
+    if (shouldSkipModelUpdate && !isRenderMode && !renderer.xr.isPresenting && !window.vmcAPI) return;
 
     if (glbPet && !shouldSkipModelUpdate) updateGlbPetEntity(glbPet, deltaTime);
 

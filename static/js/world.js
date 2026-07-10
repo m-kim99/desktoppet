@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory } from './glb-pet-entity.js';
 import { ISLAND_R, ISLANDS, BRIDGES, HILLS, HOUSE, FLAT_SPOTS, PROPS } from './world-layout.js';
@@ -53,6 +54,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));    // full retina 
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.autoUpdate = false;   // 그림자 맵은 renderFrame()이 2프레임에 1번 굽는다 (30/15Hz — 소프트 섀도라 안 보임)
 renderer.toneMapping = THREE.ACESFilmicToneMapping;   // gentle filmic rolloff — pastels stay soft
 renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
@@ -136,18 +138,23 @@ try {
         { a: 3.6, r: 10,   y: 4.1, s: 0.8 },
         { a: 5.1, r: 12.5, y: 5.1, s: 1.1 },
     ];
+    // 로브 20개가 전부 같은 재질이라 하나의 지오메트리로 병합 — 드로우콜 20→1, 모양 동일.
+    // (변환을 지오메트리에 베이크: 로브 squash → 로브 위치 → 구름 스케일 → 구름 위치 —
+    //  기존 그룹 계층이 만들던 것과 같은 순서다.)
+    const geos = [];
     for (const d of defs) {
-        const cloud = new THREE.Group();
         for (const [lx, ly, lz, lr] of [[0, 0, 0, 0.55], [0.5, 0.08, 0.1, 0.4], [-0.48, 0.05, -0.08, 0.42], [0.15, 0.3, 0, 0.35], [-0.2, 0.26, 0.12, 0.3]]) {
-            const lobe = new THREE.Mesh(new THREE.SphereGeometry(lr, 18, 14), cloudMat);
-            lobe.position.set(lx, ly, lz);
-            lobe.scale.y = 0.62;           // squash into that puffy-flat cartoon cloud shape
-            cloud.add(lobe);
+            const lobe = new THREE.SphereGeometry(lr, 18, 14);
+            lobe.scale(1, 0.62, 1);           // squash into that puffy-flat cartoon cloud shape
+            lobe.translate(lx, ly, lz);
+            lobe.scale(d.s, d.s, d.s);
+            lobe.translate(Math.cos(d.a) * d.r, d.y, Math.sin(d.a) * d.r);
+            geos.push(lobe);
         }
-        cloud.position.set(Math.cos(d.a) * d.r, d.y, Math.sin(d.a) * d.r);
-        cloud.scale.setScalar(d.s);
-        cloudSpin.add(cloud);
     }
+    const clouds = new THREE.Mesh(mergeGeometries(geos), cloudMat);
+    clouds.matrixAutoUpdate = false;   // 부모(cloudSpin)만 돈다 — 로컬 변환은 영원히 identity
+    cloudSpin.add(clouds);
 }
 
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
@@ -200,6 +207,15 @@ let onBattery = false;
 let winFocused = document.hasFocus();
 window.addEventListener('focus', () => { winFocused = true; });
 window.addEventListener('blur', () => { winFocused = false; });
+// 입력 idle: 포커스여도 12초간 입력이 없으면 30fps(구경 모드), 입력 즉시 60fps 복귀.
+// 저더가 제일 잘 보이는 카메라 조작은 입력 그 자체라 언제나 60fps다. 공사모드·줌 홀드는
+// idle로 치지 않고, 펫이 말을 걸어오면(말풍선·토스트) 잠깐 깨워 모션이 매끄럽게 보이게 한다.
+let lastInputMs = performance.now();
+const wakeInput = () => { lastInputMs = performance.now(); };
+for (const ev of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart']) {
+    window.addEventListener(ev, wakeInput, { passive: true, capture: true });
+}
+const renderIdle = () => !buildMode && !heldZoom && performance.now() - lastInputMs > 12000;
 const ecoActive = () => ecoMode || onBattery;
 function applyPixelRatio() {
     const pr = Math.min(window.devicePixelRatio, ecoActive() ? 1.5 : 2);
@@ -218,8 +234,25 @@ if (navigator.getBattery) {
 // 시작 시 한 번 적용: getBattery가 없는 브라우저(iOS/macOS Safari)에선 위 sync가 안 돌아서,
 // 저장된/기본 절전 모드가 리사이즈 전까지 픽셀비에 반영되지 않던 갭을 메운다.
 applyPixelRatio();
+let statsFrames = 0, statsLastT = performance.now();
+let shadowTick = 0;
 function renderFrame() {
+    // 그림자 맵은 매 프레임 새로 구울 필요가 없다 — 2렌더에 1번(60fps 기준 30Hz)이면 PCFSoft
+    // 블러 안에서 차이가 안 보이고, depth 패스(캐스터 전부 재드로우) 비용이 반으로 준다.
+    if ((shadowTick++ & 1) === 0) renderer.shadowMap.needsUpdate = true;
     renderer.render(scene, camera);
+    if (statsOn) {
+        statsFrames++;
+        const now = performance.now();
+        if (now - statsLastT >= 500) {
+            const fps = Math.round((statsFrames * 1000) / (now - statsLastT));
+            statsFrames = 0;
+            statsLastT = now;
+            let objs = 0;
+            scene.traverse(() => objs++);
+            statsEl.textContent = `${fps} fps · ${renderer.info.render.calls} draws · ${(renderer.info.render.triangles / 1000).toFixed(1)}k tris · ${objs} objs`;
+        }
+    }
 }
 
 // Lights: hemisphere fill (sky blue above, grass green below) + a shadow-casting sun
@@ -2024,10 +2057,12 @@ function updateLibrary(delta) {
 }
 
 // ---- 분수 (④): 자체 원형 돌 둘레 + 물그릇을 갖춘 독립 분수 — 물방울이 끊임없이 솟아 떨어지고,
-// 가까이 가면 잔잔한 물소리가 난다 (파일 없는 노이즈 루프, 카메라 거리 감쇠). ----
+// 가까이 가면 잔잔한 물소리가 난다 (파일 없는 노이즈 루프, 카메라 거리 감쇠).
+// 물방울은 강수(precipPoints)와 같은 원칙의 GPU Points 하나: 프레임마다 스프라이트를 만들고
+// 버리던 옛 방식(개당 드로우콜 + GC 압박)을 버리고, 버텍스 셰이더가 wxTime으로 각 방울의
+// 포물선(p = v·t − ½g·t²)을 제 주기로 돌린다 — CPU 0, 드로우콜 1, 겉모습 동일. ----
 let fountainPr = null;
-const fountainDrops = [];
-let fountainAcc = 0, fountainHiss = null;
+let fountainHiss = null;
 function makeFountain(p) {
     fountainPr = p;
     const g = new THREE.Group();
@@ -2056,32 +2091,50 @@ function makeFountain(p) {
     const bowlWater = new THREE.Mesh(new THREE.CircleGeometry(0.12, 12).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x9fd8ff }));
     bowlWater.position.y = 0.42;
     g.add(bowlWater);
+    {
+        // 물방울 Points: 그릇(로컬 y 0.42)에서 솟아 바닥(로컬 y 0.02)에 떨어질 때까지의 포물선을
+        // 방울마다 제 수명으로 반복한다. 예전 스프라이트 시뮬과 같은 분포(속도·크기·개수 ~24 동시).
+        const N = 24, G = 3.2;
+        const pos = new Float32Array(N * 3), vel = new Float32Array(N * 3);
+        const phase = new Float32Array(N), life = new Float32Array(N), sz = new Float32Array(N);
+        for (let i = 0; i < N; i++) {
+            pos[i * 3 + 1] = 0.42;
+            const a = Math.random() * Math.PI * 2, m = 0.12 + Math.random() * 0.22;
+            const vy = 1.25 + Math.random() * 0.5;
+            vel[i * 3] = Math.cos(a) * m; vel[i * 3 + 1] = vy; vel[i * 3 + 2] = Math.sin(a) * m;
+            life[i] = (vy + Math.sqrt(vy * vy + 2 * G * 0.40)) / G;   // 0.42 + vy·t − ½G·t² = 0.02 의 양근
+            phase[i] = Math.random() * life[i];                        // 방울마다 어긋난 시작 위상
+            sz[i] = (0.05 + Math.random() * 0.04) * 2.414;             // 스프라이트 월드 크기 → gl_PointSize 환산 (fov 45)
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geo.setAttribute('aVel', new THREE.BufferAttribute(vel, 3));
+        geo.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1));
+        geo.setAttribute('aLife', new THREE.BufferAttribute(life, 1));
+        geo.setAttribute('aSize', new THREE.BufferAttribute(sz, 1));
+        const mat = new THREE.PointsMaterial({
+            map: glowTex, color: 0xbfe8ff, size: 1, transparent: true, opacity: 0.85,
+            blending: THREE.AdditiveBlending, depthWrite: false, fog: false,   // glowSprite와 동일한 룩
+        });
+        mat.onBeforeCompile = (sh) => {
+            sh.uniforms.uWxT = wxTime;
+            sh.vertexShader = 'uniform float uWxT;\nattribute vec3 aVel;\nattribute float aPhase;\nattribute float aLife;\nattribute float aSize;\n'
+                + sh.vertexShader
+                    .replace('#include <begin_vertex>',
+                        '#include <begin_vertex>\n'
+                        + 'float fT = mod(uWxT + aPhase, aLife);\n'
+                        + `transformed += vec3(aVel.x * fT, aVel.y * fT - ${(G / 2).toFixed(2)} * fT * fT, aVel.z * fT);`)
+                    .replace('gl_PointSize = size;', 'gl_PointSize = size * aSize;');
+        };
+        const drops = new THREE.Points(geo, mat);
+        drops.frustumCulled = false;   // 셰이더가 방울을 움직이니 정적 바운즈를 믿을 수 없다
+        g.add(drops);                  // 그룹의 자식 — 공사모드로 분수가 이사해도 그대로 따라간다
+    }
     return g;
 }
 function updateFountain(delta) {
     if (!fountainPr) return;
-    const baseY = terrainHeight(fountainPr.x, fountainPr.z);
-    fountainAcc += delta * 20;
-    while (fountainAcc >= 1 && fountainDrops.length < 70) {
-        fountainAcc -= 1;
-        const spr = glowSprite(0xbfe8ff, 0.05 + Math.random() * 0.04, 0.85);
-        spr.position.set(fountainPr.x, baseY + 0.42, fountainPr.z);
-        scene.add(spr);
-        const a = Math.random() * Math.PI * 2;
-        fountainDrops.push({ spr, vx: Math.cos(a) * (0.12 + Math.random() * 0.22), vy: 1.25 + Math.random() * 0.5, vz: Math.sin(a) * (0.12 + Math.random() * 0.22) });
-    }
-    for (let i = fountainDrops.length - 1; i >= 0; i--) {
-        const d = fountainDrops[i];
-        d.vy -= 3.2 * delta;
-        d.spr.position.x += d.vx * delta;
-        d.spr.position.y += d.vy * delta;
-        d.spr.position.z += d.vz * delta;
-        if (d.spr.position.y < baseY + 0.02) {
-            scene.remove(d.spr);
-            d.spr.material.dispose();
-            fountainDrops.splice(i, 1);
-        }
-    }
+    // 물방울은 GPU(Points 셰이더)가 wxTime으로 알아서 돌린다 — 여기는 물소리 감쇠만 남았다.
     try {
         if (!fountainHiss) {
             const src = audioCtx.createBufferSource();
@@ -2128,16 +2181,35 @@ function makeFlowerBasket() {
     }
     return g;
 }
+// 꽃은 InstancedMesh 두 개(줄기·머리)로 그린다 — 150송이 만발해도 드로우콜 2. 예전엔 송이마다
+// 메시 2개(+개별 재질)라 꽃밭이 자랄수록 프레임이 무거워졌다. 머리 색은 instanceColor.
+const FLOWER_CAP = 150;   // plantFlowerAt의 '가득해요' 상한과 같은 수
+let flowerStemIM = null, flowerHeadIM = null;
+const flowerTmpM = new THREE.Matrix4(), flowerTmpC = new THREE.Color();
+function ensureFlowerIM() {
+    if (flowerStemIM) return;
+    flowerStemIM = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.009, 0.011, 0.1, 6), M(0x4e9a3d), FLOWER_CAP);
+    flowerHeadIM = new THREE.InstancedMesh(new THREE.SphereGeometry(0.032, 10, 8), new THREE.MeshLambertMaterial({ color: 0xffffff }), FLOWER_CAP);
+    flowerStemIM.count = 0;
+    flowerHeadIM.count = 0;
+    flowerStemIM.frustumCulled = false;   // 인스턴스가 온 섬에 흩어진다 — 지오메트리 바운즈 무의미
+    flowerHeadIM.frustumCulled = false;
+    flowerGroup.add(flowerStemIM, flowerHeadIM);
+}
 function plantFlowerMesh(f) {
-    const fg = new THREE.Group();
-    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.011, 0.1, 6), M(0x4e9a3d));
-    stem.position.y = 0.05;
-    fg.add(stem);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.032, 10, 8), new THREE.MeshLambertMaterial({ color: f.c || 0xff8fb3 }));
-    head.position.y = 0.105;
-    fg.add(head);
-    fg.position.set(f.x, terrainHeight(f.x, f.z), f.z);
-    flowerGroup.add(fg);
+    ensureFlowerIM();
+    const i = flowerStemIM.count;
+    if (i >= FLOWER_CAP) return;
+    const y = terrainHeight(f.x, f.z);
+    flowerTmpM.makeTranslation(f.x, y + 0.05, f.z);
+    flowerStemIM.setMatrixAt(i, flowerTmpM);
+    flowerTmpM.makeTranslation(f.x, y + 0.105, f.z);
+    flowerHeadIM.setMatrixAt(i, flowerTmpM);
+    flowerHeadIM.setColorAt(i, flowerTmpC.set(f.c || 0xff8fb3));
+    flowerStemIM.count = flowerHeadIM.count = i + 1;
+    flowerStemIM.instanceMatrix.needsUpdate = true;
+    flowerHeadIM.instanceMatrix.needsUpdate = true;
+    flowerHeadIM.instanceColor.needsUpdate = true;
 }
 async function fetchFlowers() {
     try {
@@ -3378,8 +3450,49 @@ function unbakePropBeds(p) {
     p.bedEntries = null;
     p.bedBody = null;
 }
+// ---- 정적 병합 (드로우콜 다이어트): 프롭 하나가 부품 메시 5~30개로 지어지는데, 절대 움직이지
+// 않는 부품들을 재질 인스턴스별로 합쳐 그룹당 몇 개의 메시로 줄인다. 그룹(p.obj) 계층은 그대로라
+// 공사모드 이동·클릭 레이캐스트(intersectObject(pr.obj, true))·계절 재질 틴트(재질 공유)가 전부
+// 이전과 동일하게 동작한다. 제외 규칙:
+//  · 움직이거나 토글되는 부품 — 그네 시트(userData.seats)·시소 플랭크(userData.plank)·우편함
+//    깃발(mailFlag)·피아노 건반/텃밭 칸(userData.keyIdx·plotIdx — 클릭이 자식 identity를 판별)
+//  · 계절 시스템이 만지는 것 — 눈모자(seasonSnowCaps)는 스킵, 잎은 나무 타입째 제외
+//    (seasonLeaves가 지오메트리 색 버퍼를 직접 리베이크한다)
+//  · 타입째 제외: tree(계절 잎)·hugspot(링 펄스)·portal(스월)·photoboard(사진 슬롯 교체)·
+//    digsite(발굴 상태 토글) — 전부 몇 메시 안 되는 소품이라 손해도 없다
+//  · Mesh가 아닌 것(라이트·스프라이트·Points)과 visible=false(숨김 토글류)는 그냥 둔다
+const MERGE_TYPES = new Set(['house', 'bowl', 'fence', 'pond', 'sunbed', 'hammock', 'lamp', 'radio',
+    'coffee', 'food', 'monument', 'pecktree', 'well', 'capsule', 'boulder', 'cave', 'lookout',
+    'garden', 'piano', 'mailbox', 'gym', 'library', 'fountain', 'flowerbasket', 'swing', 'seesaw']);
+function mergePropGroup(root) {
+    const skip = new Set(seasonSnowCaps);
+    if (mailFlag) mailFlag.traverse((o) => skip.add(o));
+    if (root.userData.seats) for (const s of root.userData.seats) s.traverse((o) => skip.add(o));
+    if (root.userData.plank) root.userData.plank.traverse((o) => skip.add(o));
+    root.updateMatrixWorld(true);   // 아직 씬에 붙기 전(원점) — matrixWorld = 그룹 기준 상대 변환
+    const buckets = new Map();      // 재질 인스턴스 + attribute 시그니처 → 메시 목록
+    root.traverse((o) => {
+        if (!o.isMesh || !o.visible || skip.has(o)) return;
+        if (o.userData && (o.userData.keyIdx != null || o.userData.plotIdx != null)) return;
+        if (Array.isArray(o.material)) return;   // 멀티 재질은 그대로 둔다 (현재 빌더엔 없음)
+        const sig = Object.keys(o.geometry.attributes).sort().join(',') + (o.geometry.index ? '+i' : '');
+        const key = o.material.uuid + '|' + sig;
+        if (!buckets.has(key)) buckets.set(key, []);
+        buckets.get(key).push(o);
+    });
+    for (const list of buckets.values()) {
+        if (list.length < 2) continue;   // 혼자면 합칠 이유가 없다
+        const merged = mergeGeometries(list.map((m) => m.geometry.clone().applyMatrix4(m.matrixWorld)), false);
+        if (!merged) continue;           // 시그니처가 같아도 실패하면 원본 유지 (안전망)
+        const mm = new THREE.Mesh(merged, list[0].material);
+        mm.matrixAutoUpdate = false;     // 그룹 원점에 identity 고정 — 부모가 움직이면 따라간다
+        root.add(mm);
+        for (const m of list) m.parent.remove(m);
+    }
+}
 for (const p of PROPS) {
     const obj = PROP_BUILDERS[p.type](p);
+    if (MERGE_TYPES.has(p.type)) mergePropGroup(obj);
     p.obj = obj;                                     // 🔨 공사모드가 이 그룹을 집어 옮긴다
     obj.position.set(p.x, terrainHeight(p.x, p.z), p.z);
     obj.rotation.y = p.rotY || 0;
@@ -3926,6 +4039,7 @@ function setManualSeason(id) {
 const OCEAN_LEVEL = -0.52;
 let oceanMesh = null;
 let oceanPos = null;         // live position attribute, y-animated every frame
+let oceanNrm = null;         // live normal attribute — 파고 도함수로 해석적으로 채운다
 let oceanXZ = null;          // per-vertex [x, z, horizonFade] — precomputed once
 {
     const inner = ISLAND_R * 0.81, outer = 40, rings = 40, segs = 112;
@@ -3959,8 +4073,10 @@ let oceanXZ = null;          // per-vertex [x, z, horizonFade] — precomputed o
     });
     oceanMesh = new THREE.Mesh(geo, seaMat);
     oceanMesh.receiveShadow = true;
+    oceanMesh.matrixAutoUpdate = false;   // 지오메트리만 출렁인다 — 메시 변환은 identity 고정
     scene.add(oceanMesh);
     oceanPos = geo.attributes.position;
+    oceanNrm = geo.attributes.normal;     // fade 0(수평선 밖) 버텍스는 초기 (0,1,0)을 영원히 유지
 
     for (const isl of ISLANDS) {
         for (let i = 0; i < 2; i++) {
@@ -3983,19 +4099,29 @@ function updateOcean(delta) {
     oceanT += delta;
     const t = oceanT;
     const arr = oceanPos.array;
+    const nrm = oceanNrm.array;
     for (let v = 0, n = oceanXZ.length / 3; v < n; v++) {
         const fade = oceanXZ[v * 3 + 2];
         if (fade === 0) continue;                     // flat past the horizon fade — skip the math
         const x = oceanXZ[v * 3], z = oceanXZ[v * 3 + 1];
+        const a1 = x * 0.9 + t * 0.9;
+        const a2 = z * 1.15 - t * 0.75;
+        const a3 = (x * 0.55 + z * 0.83) * 1.6 + t * 1.35;
+        const a4 = x * 3.1 - z * 2.3 + t * 2.4;
         arr[v * 3 + 1] = OCEAN_LEVEL + fade * (
-            0.045 * Math.sin(x * 0.9 + t * 0.9)
-          + 0.038 * Math.sin(z * 1.15 - t * 0.75)
-          + 0.028 * Math.sin((x * 0.55 + z * 0.83) * 1.6 + t * 1.35)
-          + 0.012 * Math.sin(x * 3.1 - z * 2.3 + t * 2.4)
+            0.045 * Math.sin(a1) + 0.038 * Math.sin(a2) + 0.028 * Math.sin(a3) + 0.012 * Math.sin(a4)
         );
+        // 해석적 법선 — 위 파고의 x/z 편미분에서 직접. 예전의 computeVertexNormals(9천 삼각형
+        // 전체 순회 + 면 평균)보다 훨씬 싸고, 근사가 아니라 정확한 값이라 스페큘러가 매끈하다.
+        const dx = fade * (0.0405 * Math.cos(a1) + 0.02464 * Math.cos(a3) + 0.0372 * Math.cos(a4));
+        const dz = fade * (0.0437 * Math.cos(a2) + 0.037184 * Math.cos(a3) - 0.0276 * Math.cos(a4));
+        const inv = 1 / Math.sqrt(dx * dx + 1 + dz * dz);
+        nrm[v * 3] = -dx * inv;
+        nrm[v * 3 + 1] = inv;
+        nrm[v * 3 + 2] = -dz * inv;
     }
     oceanPos.needsUpdate = true;
-    oceanMesh.geometry.computeVertexNormals();
+    oceanNrm.needsUpdate = true;
     // Foam: swell outward, fade, restart — the two rings run half a phase apart.
     foamRings.forEach((foam, i) => {
         const ph = (t * 0.42 + i * 0.5) % 1;
@@ -5282,6 +5408,7 @@ function showBubble(text) {
     if (bubbleHideTimer) { clearTimeout(bubbleHideTimer); bubbleHideTimer = null; }
     bubbleEl.textContent = text;
     bubbleEl.style.display = 'block';
+    wakeInput();   // 펫이 말을 걸어오면 idle 30fps에서 깨어나 대답 모션이 매끄럽게 보인다
 }
 function showBubbleTyped(text) {
     if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
@@ -5415,6 +5542,18 @@ ecoBtn.addEventListener('click', () => {
     applyPixelRatio();
     syncEcoBtn();
     showToast(ecoMode ? '⚡ 절전 모드 — 30fps · 1.5x 해상도' : '✨ 고품질 모드 — 60fps · 풀 해상도');
+});
+// 📊 개발용 렌더 계측 (⚡ 더블클릭 또는 ?stats=1): fps · 드로우콜 · 트라이앵글 · 씬 오브젝트 수.
+// 최적화 전/후를 숫자로 비교하는 용도 — renderFrame()이 0.5초마다 채운다.
+const statsEl = document.createElement('div');
+statsEl.style.cssText = 'position:fixed; left:10px; top:8px; z-index:99; display:none; background:rgba(20,22,28,0.75); color:#9fe8a0; font:11px/1.5 monospace; padding:5px 9px; border-radius:8px; pointer-events:none; white-space:pre;';
+document.body.appendChild(statsEl);
+let statsOn = false;
+try { statsOn = new URLSearchParams(location.search).get('stats') === '1'; } catch (e) {}
+if (statsOn) statsEl.style.display = 'block';
+ecoBtn.addEventListener('dblclick', () => {
+    statsOn = !statsOn;
+    statsEl.style.display = statsOn ? 'block' : 'none';
 });
 // 💬 대화 기록 패널: 이 세션의 월드 대화 로그 + 펫별 서버 기억 초기화. 독 왼쪽에 뜬다.
 const chatLogPanel = document.createElement('div');
@@ -5855,6 +5994,7 @@ toastEl.style.cssText = 'position:fixed; left:50%; bottom:calc(70px + env(safe-a
 document.body.appendChild(toastEl);
 let toastTimer = null;
 function showToast(text) {
+    wakeInput();   // 토스트가 뜨는 순간(편지 도착 등)도 잠깐 60fps — 연출이 뚝뚝 끊기지 않게
     toastEl.textContent = text;
     toastEl.style.display = 'block';
     if (toastTimer) clearTimeout(toastTimer);
@@ -8313,11 +8453,11 @@ window.addEventListener('resize', () => {
 const clock = new THREE.Clock();
 let lastFrameMs = 0;
 function animate() {
-    // Adaptive pacing: 60fps while watched (focused, on mains), 30fps ambient — unfocused beside
-    // real work, ⚡ eco, or on battery. Thresholds sit safely under whole ticks of both 120Hz
-    // ProMotion (8.3ms) and 60Hz (16.7ms) panels, so no panel skips more than intended.
+    // Adaptive pacing: 60fps while watched (focused, on mains, 최근 입력 있음), 30fps ambient —
+    // unfocused beside real work, ⚡ eco, on battery, or 입력 없이 구경만 12초+. Thresholds sit
+    // safely under whole ticks of both 120Hz ProMotion (8.3ms) and 60Hz (16.7ms) panels.
     const nowMs = performance.now();
-    if (nowMs - lastFrameMs < (winFocused && !ecoActive() ? 15.5 : 31)) return;
+    if (nowMs - lastFrameMs < (winFocused && !ecoActive() && !renderIdle() ? 15.5 : 31)) return;
     lastFrameMs = nowMs;
     const delta = Math.min(clock.getDelta(), 0.1);   // clamp huge deltas after the window was hidden
     for (const p of pets) {
