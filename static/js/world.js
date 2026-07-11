@@ -4986,6 +4986,7 @@ function wireWorldFx(p) {
         ], { duration, easing: 'ease-out' }).onfinish = () => el.remove();
     };
     p.pet.heartFx = () => heartBurstAt(p);   // 💗 하트 모션은 이모지 대신 3D 하트로
+    p.pet.holidayFx = () => holidayBurstAt(p);   // 🎄 홀리데이는 3D 눈송이/색종이+금별로
     p.pet.burstEmoji = (chars, count = 14, { cx = 50, cy = 32 } = {}) => {
         const pt = fxPoint(p, cx, cy);
         const k = pt.h / PET_WIN_CHAR_H;                     // scale the whole burst with the pet
@@ -5231,6 +5232,11 @@ function playWorldMotion(p, id) {
     if (p.ai.state === 'goto' || p.ai.state === 'busy' || p.ai.state === 'held') return;   // choreography/hand-hold owns it
     if (id === 'sleep') { p.pet.sleeping = true; releaseAI(p, 4); return; }
     p.pet.sleeping = false; p.pet.autoSleeping = false;
+    if (id === 'holiday') {
+        if (p === possessed) releasePossession();          // 듀오 안무는 AI에게 맡긴다
+        worldHoliday(p);
+        return;
+    }
     if (id === 'hug' || id === 'play') {
         if (p === possessed) releasePossession();          // hand the pet back to its AI for the duo
         (id === 'hug' ? worldHug : worldPlay)(p);
@@ -5238,6 +5244,35 @@ function playWorldMotion(p, id) {
     }
     if (id === 'wave') petVoice(p);                       // 인사엔 목소리도 함께
     p.pet.action = { id, t: 0 };
+}
+
+// 🎄 홀리데이 듀오: 절친이 한가하면 걸어와 마주보고, 반박자(duoShift 0.5) 어긋난 거울
+// 스텝(dir ±1)으로 같이 춘다 — 마주본 둘이 같은 세계 방향으로 기울어 하나의 안무로 읽힌다.
+// 상대가 없거나 바쁘면 혼자 춘다. worldHug와 같은 디렉터 패턴(duoBusy·goto·faceEachOther).
+async function worldHoliday(initiator) {
+    // 축제엔 쉬던 절친도 불러낸다 — 잠·조종·손잡기만 빼고, 침대/그네/물놀이 중이면 내려서 합류.
+    const partner = pets.find((q) => q !== initiator && !q.pet.sleeping && q !== possessed && q.ai.state !== 'held');
+    if (!partner || duoBusy) { initiator.pet.action = { id: 'holiday', t: 0 }; return; }
+    duoBusy = true;
+    if (partner.bed) forceEndBed(partner);
+    if (partner.dip) endDip(partner);
+    if (initiator.bed) forceEndBed(initiator);
+    if (initiator.dip) endDip(initiator);
+    try {
+        const [ta, tb] = duoSpots(initiator, partner, 0.85);
+        if (world.isBlocked(ta.x, ta.z) || world.isBlocked(tb.x, tb.z)) {
+            initiator.pet.action = { id: 'holiday', t: 0 };
+            return;
+        }
+        await Promise.all([gotoAsync(initiator, ta.x, ta.z), gotoAsync(partner, tb.x, tb.z)]);
+        faceEachOther(initiator, partner);
+        initiator.pet.action = { id: 'holiday', t: 0, dir: 1 };
+        partner.pet.action   = { id: 'holiday', t: 0, dir: -1, duoShift: 0.5 };
+        logWorldEvent('병아리와 강아지가 마주보고 캐럴 스텝을 맞춰 췄다 🎄');
+        await sleepMs(3700);                                   // holiday DUR 3.6s
+    } finally {
+        duoBusy = false; releaseAI(initiator); releaseAI(partner);
+    }
 }
 
 async function worldHug(initiator) {
@@ -6444,6 +6479,71 @@ function updateHeartFx(delta) {
     }
 }
 
+// 🎄 홀리데이 3D FX — 눈송이(겨울)/색종이(그 외) + 금별, 풀 재사용. 위로 폭 → 살랑 낙하.
+const FESTIVE_POOL = [];
+{
+    const star = new THREE.Shape();
+    for (let i = 0; i < 10; i++) {
+        const r = i % 2 === 0 ? 0.11 : 0.045, an = (i / 10) * Math.PI * 2 - Math.PI / 2;
+        i === 0 ? star.moveTo(Math.cos(an) * r, Math.sin(an) * r) : star.lineTo(Math.cos(an) * r, Math.sin(an) * r);
+    }
+    const starGeo = new THREE.ExtrudeGeometry(star, { depth: 0.03, bevelEnabled: false, curveSegments: 4 });
+    const flakeGeo = new THREE.CircleGeometry(0.05, 6);
+    for (let i = 0; i < 12; i++) {
+        const isStar = i < 4;
+        const mat = new THREE.MeshLambertMaterial({ color: isStar ? 0xffd54f : 0xffffff, transparent: true, side: THREE.DoubleSide });
+        const m = new THREE.Mesh(isStar ? starGeo : flakeGeo, mat);
+        m.visible = false;
+        scene.add(m);
+        FESTIVE_POOL.push({ m, isStar, t: -1, delay: 0, x: 0, y: 0, z: 0, phase: Math.random() * 6.28 });
+    }
+}
+const CONFETTI_COLORS = [0xff8fb3, 0x8fd0ff, 0xb7e58a, 0xffcf7d, 0xd7a9ff];
+function jingle() {
+    if (audioCtx.state === 'suspended') return;
+    const t0 = audioCtx.currentTime;
+    [[659, 0], [659, 0.16], [659, 0.32], [784, 0.52]].forEach(([f, d]) => {   // E E E G — 캐럴 모티브
+        for (const [mul, g0] of [[1, 0.12], [3, 0.03]]) {                     // 벨 톤 = 기음+3배음
+            const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+            o.type = 'sine'; o.frequency.value = f * mul;
+            g.gain.setValueAtTime(0.0001, t0 + d);
+            g.gain.exponentialRampToValueAtTime(g0, t0 + d + 0.012);
+            g.gain.setTargetAtTime(0.0001, t0 + d + 0.04, 0.1);
+            o.connect(g); g.connect(sfxMaster);
+            o.start(t0 + d); o.stop(t0 + d + 0.7);
+        }
+    });
+}
+function holidayBurstAt(p) {
+    jingle();
+    const m = new Date().getMonth() + 1;
+    const winter = (m >= 11 || m <= 2);
+    const pos = p.mover.position;
+    for (const h of FESTIVE_POOL) {
+        if (!h.isStar) h.m.material.color.setHex(winter ? 0xffffff : CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)]);
+        h.t = 0;
+        h.delay = Math.random() * 0.25;
+        h.x = pos.x + (Math.random() - 0.5) * 0.5;
+        h.z = pos.z + (Math.random() - 0.5) * 0.4;
+        h.y = pos.y + p.height * 1.05;
+    }
+}
+function updateFestiveFx(delta) {
+    for (const h of FESTIVE_POOL) {
+        if (h.t < 0) continue;
+        h.t += delta;
+        const t = h.t - h.delay, life = 1.8;
+        if (t < 0) { h.m.visible = false; continue; }
+        if (t > life) { h.t = -1; h.m.visible = false; continue; }
+        const k = t / life;
+        h.m.visible = true;
+        const up = Math.sin(Math.min(1, k * 3) * Math.PI * 0.5) * 0.22;       // 처음 위로 폭
+        h.m.position.set(h.x + Math.sin(h.phase + k * 6) * 0.09, h.y + up - k * k * 0.55, h.z);
+        h.m.rotation.set(h.isStar ? 0 : Math.sin(h.phase + k * 8) * 0.9, h.phase + k * 5, h.isStar ? k * 4 : 0);
+        h.m.material.opacity = k < 0.75 ? 1 : 1 - (k - 0.75) / 0.25;
+    }
+}
+
 let lastVoiceAt = 0;
 function petVoice(p) {
     if (!p || audioCtx.state === 'suspended') return;
@@ -7449,6 +7549,7 @@ async function runWorldActions(p, actions) {
             if (a.kind === 'motion') {
                 if (a.id === 'hug') { if (!duoBusy && p !== possessed) await worldHug(p); }
                 else if (a.id === 'play') { if (!duoBusy && p !== possessed) await worldPlay(p); }
+                else if (a.id === 'holiday') { if (p !== possessed) await worldHoliday(p); }
                 else if (a.id === 'sleep') {
                     if (!p.dip && p !== possessed) { p.pet.sleeping = true; logWorldEvent(`${petKo(p)}가 잠들었다`); }
                 } else {
@@ -8796,6 +8897,7 @@ function animate() {
     updateDips(delta);
     updateAutoDrive(delta);
     updateHeartFx(delta);
+    updateFestiveFx(delta);
     updateAutoSleep();
     updateMeals();
     updateCrumbs(delta);

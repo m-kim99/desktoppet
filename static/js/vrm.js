@@ -1851,6 +1851,16 @@ function playGlbMotion(id) {
     if (!glbPet) return;
     if (id === 'sleep') { glbPet.sleeping = true; return; }
     glbPet.sleeping = false; glbPet.autoSleeping = false;   // any other motion wakes the pet
+    if (id === 'holiday') {
+        // Holiday is duo-capable like hug: main slides the two pet windows side-by-side and cues
+        // both halves (partner mirrored, half a beat behind). Solo carol steps when alone.
+        if (window.electronAPI && window.electronAPI.vrmHoliday) {
+            window.electronAPI.vrmHoliday().catch(() => { glbPet.action = { id: 'holiday', t: 0 }; });
+        } else {
+            glbPet.action = { id: 'holiday', t: 0 };
+        }
+        return;
+    }
     if (id === 'hug') {
         // Hug is a two-pet motion: ask main to choreograph the windows; it echoes 'vrm-hug-play'
         // back to start the per-pet half here (and on the partner). Falls back to a solo air-hug.
@@ -1879,6 +1889,15 @@ if (window.electronAPI && window.electronAPI.onVrmHugPlay) {
         if (!glbPet) return;
         glbPet.sleeping = false; glbPet.autoSleeping = false;
         glbPet.action = { id: 'hug', t: 0, role: role || 'solo', dir: dir || 1 };
+    });
+}
+
+// Main cues both windows' holiday halves (partner mirrored + half a beat behind) — or a solo dance.
+if (window.electronAPI && window.electronAPI.onVrmHolidayPlay) {
+    window.electronAPI.onVrmHolidayPlay(({ dir, duoShift } = {}) => {
+        if (!glbPet) return;
+        glbPet.sleeping = false; glbPet.autoSleeping = false;
+        glbPet.action = { id: 'holiday', t: 0, dir: dir || 1, duoShift: duoShift || 0 };
     });
 }
 

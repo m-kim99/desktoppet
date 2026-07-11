@@ -20,6 +20,7 @@ export const GLB_MOTIONS = [
     { id: 'celebrate', label: '축하 (Celebrate)' },
     { id: 'hug',       label: '포옹 (Hug)' },
     { id: 'heart',     label: '하트 (Heart)' },
+    { id: 'holiday',   label: '홀리데이 (Holiday)' },
     { id: 'play',      label: '놀이 (Play)' },
     { id: 'think',     label: '생각 (Think)' },
     { id: 'eat',       label: '먹기 (Eat)' },
@@ -268,7 +269,7 @@ export function updateGlbPetEntity(pet, delta) {
     // One-shot motions (from the motion menu / on summon). Plays for its duration, then clears and
     // falls through to idle. Each frame starts from rest so leftover idle pose doesn't bleed in.
     if (pet.action) {
-        const DUR = { wave: 2.4, happy: 1.8, think: 2.8, dance: 4.5, cheer: 3.5, celebrate: 2.6, heart: 2.6, eat: 3.2, dig: 2.8, stretch: 3.6, hug: 3.0, play: 6.0 };
+        const DUR = { wave: 2.4, happy: 1.8, think: 2.8, dance: 4.5, cheer: 3.5, celebrate: 2.6, heart: 2.6, holiday: 3.6, eat: 3.2, dig: 2.8, stretch: 3.6, hug: 3.0, play: 6.0 };
         const dur = DUR[pet.action.id] || 2.0;
         pet.action.t += delta;
         const p = pet.action.t / dur;
@@ -282,6 +283,7 @@ export function updateGlbPetEntity(pet, delta) {
             pet.wrap.rotation.x = 0;
             pet.wrap.rotation.z = 0;
             pet.wrap.scale.y = 1;   // squash&stretch 쓰는 모션(heart)이 중간에 끊겨도 원상복구
+            pet.wrap.position.x = 0;   // 스텝 이동(holiday) 원상복구
             if (pet.tail) pet.tail.rotation.y = 0;
             if (pet.beak) pet.beak.rotation.x = pet.beak.userData._restRotX || 0;
             if (pet.tongue) pet.tongue.rotation.x = pet.tongue.userData._restRotX || 0;
@@ -473,6 +475,66 @@ export function updateGlbPetEntity(pet, delta) {
                     a.last = true;
                     pet.floatEmoji('💗', { top: 20, size: 26, duration: 1600 });
                 }
+            }
+            if (pet.action.id === 'holiday') {
+                // 🎄 홀리데이 캐럴 스텝: 반짝임 속에 산타모자 뿅 → 좌우 스텝-홉 8박(기울기는
+                // 스텝 반대 위상 = 무게감, 병아리 날개는 박자 지휘·강아지는 꼬리 2배박+귀 플롭)
+                // → 마무리 큰 폴짝 정점에서 계절 파티클 팡. 듀오면 a.duoShift(반박자)와 a.dir
+                // (거울 스텝)로 마주본 둘의 안무가 하나로 읽힌다. FX는 표면별(pet.holidayFx / 이모지).
+                const a = pet.action;
+                const dir = a.dir || 1;
+                let x = 0, y = 0, tiltZ = 0, sq = 1;
+                if (!a.spark && p >= 0.06) {                     // 모자 마법: 반짝이 커버 속에 착용
+                    a.spark = true;
+                    pet.floatEmoji && pet.floatEmoji('✨', { top: 16, size: 24, duration: 900 });
+                    if (!pet.accessory) { try { setGlbPetAccessory(pet, 'santa-hat'); } catch (e) {} }
+                }
+                if (p < 0.16) {                                  // 준비 박자: 살짝 움츠렸다 펴기
+                    const k = Ease.inOutSine(p / 0.16);
+                    sq = 1 - 0.05 * Math.sin(k * Math.PI);
+                } else if (p < 0.78) {                           // 캐럴 스텝 8박
+                    const k = (p - 0.16) / 0.62;
+                    const bt = k * 8 + (a.duoShift || 0);
+                    const bi = Math.floor(bt), bf = bt - bi;
+                    const side = (bi % 2 === 0 ? 1 : -1) * dir;
+                    const pulse = Math.sin(bf * Math.PI);
+                    x = side * 0.055 * pulse;
+                    y = Math.abs(pulse) * 0.05;
+                    tiltZ = -side * 0.15 * pulse;
+                    sq = 1 + 0.03 * pulse;
+                    if (pet.wings.length) {                      // 🐤 날개 지휘: 박자마다 번갈아
+                        pet.wings.forEach((wg, i) => {
+                            const ws = (i % 2 === 0) ? 1 : -1;
+                            const lift = (ws === side ? 0.85 : 0.3) * Math.abs(pulse);
+                            wg.rotation.z = (wg.userData._restRotZ || 0) - ws * (0.25 + lift * 0.6);
+                        });
+                    } else {                                     // 🐶 꼬리 2배박 + 귀 플롭
+                        if (pet.tail) pet.tail.rotation.y = Math.sin(pet.t * 22) * 0.4;
+                        pet.ears.forEach(e2 => { e2.rotation.x = (e2.userData._restRotX || 0) + 0.22 * Math.abs(pulse); });
+                    }
+                } else {                                         // 피날레 폴짝 + 팡
+                    const k = (p - 0.78) / 0.22;
+                    y = Math.sin(k * Math.PI) * 0.15;
+                    sq = k > 0.85 ? 1 - 0.08 * Ease.inOutSine((k - 0.85) / 0.15) : 1 + 0.06 * Math.sin(k * Math.PI);
+                    if (pet.wings.length) {
+                        const spread = Math.sin(k * Math.PI);
+                        pet.wings.forEach((wg, i) => {
+                            const ws = (i % 2 === 0) ? 1 : -1;
+                            wg.rotation.z = (wg.userData._restRotZ || 0) - ws * spread * 0.95;
+                        });
+                    } else if (pet.tail) pet.tail.rotation.y = Math.sin(pet.t * 24) * 0.5;
+                    if (!a.burst && p >= 0.86) {
+                        a.burst = true;
+                        const m = new Date().getMonth() + 1;
+                        const winter = (m >= 11 || m <= 2);
+                        if (pet.holidayFx) pet.holidayFx();
+                        else pet.burstEmoji(winter ? ['❄️', '⭐', '✨'] : ['🎊', '⭐', '✨'], 12, { cx: 50, cy: 28 });
+                    }
+                }
+                pet.wrap.position.x = x;
+                pet.wrap.position.y = y;
+                pet.wrap.rotation.z = tiltZ;
+                pet.wrap.scale.y = sq;
             }
             if (pet.action.id === 'eat') {
                 // Head-down feeding. Phases: A(0–.15) lean in, B(.15–.82) eat cycles, C(.82–1) look up

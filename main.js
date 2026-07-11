@@ -1307,6 +1307,35 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
       return { ok: true };
     });
 
+    // Holiday (carol steps): the windows slide side-by-side (wider gap than the hug) and both pets
+    // dance the same 8-beat carol step — the partner half a beat behind, mirrored, so it reads as
+    // one choreography. Solo fallback when alone.
+    ipcMain.handle('vrm-holiday', async (e) => {
+      const me = BrowserWindow.fromWebContents(e.sender);
+      if (!me || me.isDestroyed()) return { ok: false };
+      const partner = findDuoPartner(me);
+      if (!partner) {
+        try { me.webContents.send('vrm-holiday-play', { dir: 1 }); } catch (er) {}
+        return { ok: true, solo: true };
+      }
+      if (duoBusy) return { ok: false, busy: true };
+      duoBusy = true;
+      const { dir, A0, B0, targetA, targetB } = duoFormation(me, partner, me.getBounds().width * 0.92); // 나란히 (포옹보다 넓게)
+      wanderingWindows.add(me); wanderingWindows.add(partner);
+      try {
+        await Promise.all([tweenBounds(me, A0, targetA, 500), tweenBounds(partner, B0, targetB, 500)]);  // approach first
+        try { me.webContents.send('vrm-holiday-play', { dir }); } catch (er) {}
+        try { partner.webContents.send('vrm-holiday-play', { dir: -dir, duoShift: 0.5 }); } catch (er) {}
+        await new Promise(r => setTimeout(r, 3750));               // dance it out (holiday DUR 3.6s)
+        await Promise.all([tweenBounds(me, targetA, A0, 500), tweenBounds(partner, targetB, B0, 500)]);   // part
+      } finally {
+        if (me && !me.isDestroyed()) { try { me.setBounds(A0); } catch (er) {} }
+        if (partner && !partner.isDestroyed()) { try { partner.setBounds(B0); } catch (er) {} }
+        wanderingWindows.delete(me); wanderingWindows.delete(partner); duoBusy = false;
+      }
+      return { ok: true };
+    });
+
     // Play (catch): set the windows a catch-distance apart, toss a ball (its own tiny window) back and
     // forth a few times — main cues each pet to throw/catch in sync with the ball — then part.
     let ballWin = null;
