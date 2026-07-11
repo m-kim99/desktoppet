@@ -5909,7 +5909,14 @@ if (statsOn) statsEl.style.display = 'block';
 // ?stats=1 전용 계측 훅 — perf 프로브가 토스트 웨이크(잠깐 60fps 후 복귀)와 장기 idle
 // (ageInput으로 마지막 입력 시각을 과거로 밀어 60초 대기 없이 15fps 티어 진입)을 재현할 때 쓰고,
 // scene은 draw call 브레이크다운 집계용, season은 계절 전환(베이크 훅·겨울 스킨) 자동 검증용이다.
-if (statsOn) window.__worldDev = { toast: (m) => showToast(m), ageInput: (ms) => { lastInputMs = performance.now() - ms; }, scene, season: (id) => setManualSeason(id) };
+if (statsOn) window.__worldDev = {
+    toast: (m) => showToast(m),
+    ageInput: (ms) => { lastInputMs = performance.now() - ms; },
+    scene,
+    season: (id) => setManualSeason(id),
+    // 펫 몸통의 화면 좌표 — 스모크의 우클릭 프로브가 격자 스캔(위치 랜덤) 대신 정확히 조준한다
+    petScreenXY: () => pets.map((p) => { const a = fxPoint(p, 50, 45); return { x: Math.round(a.x), y: Math.round(a.y) }; }),
+};
 ecoBtn.addEventListener('dblclick', () => {
     statsOn = !statsOn;
     statsEl.style.display = statsOn ? 'block' : 'none';

@@ -30,9 +30,12 @@ const check = (name, ok, warnOnly = false, detail = '') => {
     console.log(`${ok ? '  PASS' : warnOnly ? '⚠ WARN' : '✗ FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`);
 };
 const errFilter = (t) => !/VALIDATE_STATUS|favicon|manifest|\/api\/|\/ws|WebSocket|404|sounds\//i.test(t);
-const URL0 = `http://127.0.0.1:${PORT}/world.html?weather=clear`;
+// hour=14 고정: 심야에 돌리면 펫이 자동취침 중이라 우클릭 프로브가 '깨우기'로 소모된다 (시각 비결정성 제거).
+// stats=1: draws 상한 어서션용 오버레이.
+const URL0 = `http://127.0.0.1:${PORT}/world.html?weather=clear&hour=14&stats=1`;
 
-const browser = await chromium.launch({ headless: true });
+// --use-angle=metal: 실제 GPU 경로 — 없으면 SwiftShader(소프트웨어)로 떨어져 느리고 실사용과 다르다.
+const browser = await chromium.launch({ headless: true, args: ['--use-angle=metal'] });
 
 // ---- A. 데스크톱: 로드·무에러·독·공사모드 토글 ----
 {
@@ -49,6 +52,13 @@ const browser = await chromium.launch({ headless: true });
     }));
     check('desktop 월드 로드(canvas)', env.canvas);
     check('desktop 독 버튼 존재', env.dock >= 5, false, `${env.dock}개`);
+    // 월드 베이크 회귀망: 새 프롭이 MERGE_TYPES/베이크 등록을 빼먹으면 draws가 새기 시작한다.
+    // 베이크 기준 ~190 — 상한 250이면 콘텐츠 추가 여유는 있으면서 누수(수십 콜)는 잡힌다.
+    const draws = await page.evaluate(() => {
+        const t = [...document.querySelectorAll('div')].map((d) => d.textContent).find((s) => / draws · /.test(s)) || '';
+        return parseInt((t.match(/(\d+) draws/) || [])[1] || '0', 10);
+    });
+    check('draws 상한(월드 베이크)', draws > 0 && draws <= 250, false, `${draws} draws`);
     const bi = env.kids.indexOf('🔨');
     if (bi >= 0) {
         await page.evaluate((i) => document.getElementById('world-dock-ui').children[i].click(), bi);
@@ -58,14 +68,19 @@ const browser = await chromium.launch({ headless: true });
         await page.waitForTimeout(300);
         check('desktop 공사모드 토글', on);
     } else check('desktop 공사모드 토글', false, false, '🔨 버튼 없음');
-    // 펫 우클릭 프로브(펫 위치가 랜덤이라 소프트 체크)
+    // 펫 우클릭 프로브 — __worldDev.petScreenXY로 펫을 정확히 조준한다 (예전 격자 스캔은 펫 위치
+    // 랜덤에 수영·착석까지 겹치면 자주 빗나갔다). 두 마리 다 시도, 하나라도 메뉴가 뜨면 통과.
     let menu = false;
-    for (let y = 260; y < 640 && !menu; y += 45) {
-        for (let x = 200; x < 1100 && !menu; x += 45) {
-            await page.mouse.click(x, y, { button: 'right' });
-            await page.waitForTimeout(70);
+    for (let attempt = 0; attempt < 3 && !menu; attempt++) {
+        const spots = await page.evaluate(() => (window.__worldDev ? window.__worldDev.petScreenXY() : []));
+        for (const s of spots) {
+            if (s.x < 5 || s.y < 5 || s.x > 1275 || s.y > 795) continue;   // 화면 밖 펫은 다음 라운드에
+            await page.mouse.click(s.x, s.y, { button: 'right' });
+            await page.waitForTimeout(150);
             menu = await page.evaluate(() => { const m = document.getElementById('world-motion-menu'); return !!m && m.style.display === 'block'; });
+            if (menu) break;
         }
+        if (!menu) await page.waitForTimeout(800);   // 펫이 걷는 중이면 잠깐 뒤 다시
     }
     check('desktop 펫 우클릭→메뉴', menu, true);
     check('desktop JS 에러 없음', errs.length === 0, false, errs.slice(0, 2).join(' | '));
