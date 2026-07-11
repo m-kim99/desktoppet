@@ -90,6 +90,22 @@ await page.waitForTimeout(7000);   // 씬 로드 정착
     await p2.goto(`http://127.0.0.1:${PORT}/world.html?stats=1&weather=clear&hour=14`, { waitUntil: 'load' });
     await p2.waitForTimeout(19000);
     row('D ambient(무접촉 19s)', await readStats(p2), await cpuAvg(p2));
+
+    // ---- E. 장기 구경: 입력 60초+ (기대: 15fps) — ageInput 훅으로 대기 없이 재현 ----
+    const hasAge = await p2.evaluate(() => !!(window.__worldDev && window.__worldDev.ageInput));
+    if (hasAge) {
+        await p2.evaluate(() => window.__worldDev.ageInput(61000));
+        await p2.waitForTimeout(2500);
+        row('E long-idle(구경 60s+)', await readStats(p2), await cpuAvg(p2, 2));
+
+        // ---- F. 비포커스: 옆에 띄워두고 딴 일 (기대: 15fps) ----
+        await p2.evaluate(() => window.dispatchEvent(new Event('blur')));
+        await p2.waitForTimeout(2500);
+        row('F unfocused(블러)', await readStats(p2), await cpuAvg(p2, 2));
+        await p2.evaluate(() => window.dispatchEvent(new Event('focus')));
+    } else {
+        console.log('E/F                         (건너뜀 — ageInput 훅 없음: 수정 전 코드)');
+    }
     await p2.context().close();
 }
 

@@ -216,7 +216,8 @@ window.addEventListener('unhandledrejection', (e) => reportClientError(e.reason 
 
 // ♡ laptop-friendly pacing: one forward pass is already cheap, so 절전 is now about *when* we
 // draw, not how. Watched + plugged in → 60fps at full retina; window unfocused (the world usually
-// sits beside real work) → 30fps; ⚡ eco (persisted) or on battery → 30fps at 1.5x pixels.
+// sits beside real work) → 15fps; ⚡ eco (persisted) or on battery → 30fps at 1.5x pixels.
+// 티어 전체는 frameIntervalMs() 참조 — 포커스 구경 30fps, 60초+ 구경/비포커스는 15fps.
 // 📱 폰/태블릿은 절전이 기본(30fps·1.5x — 발열·배터리). 사용자가 ⚡ 버튼으로 명시적으로 껐다면
 // localStorage에 '0'이 남아 있으니 그 선택을 존중한다.
 const savedEco = localStorage.getItem('world-eco');
@@ -5819,8 +5820,9 @@ document.body.appendChild(statsEl);
 let statsOn = false;
 try { statsOn = new URLSearchParams(location.search).get('stats') === '1'; } catch (e) {}
 if (statsOn) statsEl.style.display = 'block';
-// ?stats=1 전용 계측 훅 — perf 프로브가 토스트 웨이크(잠깐 60fps 후 복귀)를 재현할 때 쓴다.
-if (statsOn) window.__worldDev = { toast: (m) => showToast(m) };
+// ?stats=1 전용 계측 훅 — perf 프로브가 토스트 웨이크(잠깐 60fps 후 복귀)와 장기 idle
+// (ageInput으로 마지막 입력 시각을 과거로 밀어 60초 대기 없이 15fps 티어 진입)을 재현할 때 쓴다.
+if (statsOn) window.__worldDev = { toast: (m) => showToast(m), ageInput: (ms) => { lastInputMs = performance.now() - ms; } };
 ecoBtn.addEventListener('dblclick', () => {
     statsOn = !statsOn;
     statsEl.style.display = statsOn ? 'block' : 'none';
@@ -8877,12 +8879,23 @@ window.addEventListener('resize', () => {
 
 const clock = new THREE.Clock();
 let lastFrameMs = 0;
+// 프레임 간격 티어 (동숲 원칙 — 균일한 낮은 fps가 출렁이는 60보다 부드럽다):
+//   활동(포커스 + 최근 입력, 절전 아님)   15.5ms → 60fps
+//   ⚡절전/배터리                          31ms   → 30fps (⚡ 버튼 안내 문구와 일치)
+//   포커스 구경(입력 12초+)               31ms   → 30fps, 60초+ 지나면 65ms → 15fps
+//   비포커스(옆에 띄워두고 딴 일)          65ms   → 15fps, 말풍선·토스트 동안만 31ms
+// 임계값은 120Hz ProMotion(8.3ms)과 60Hz(16.7ms) 틱의 정수배 바로 아래 — 페이싱이 균일하다
+// (65 < 8.3×8=66.4, 65 < 16.7×4=66.7).
+function frameIntervalMs() {
+    const now = performance.now();
+    if (!winFocused) return now < softWakeUntil ? 31 : 65;
+    if (ecoActive()) return 31;
+    if (renderIdle()) return now - lastInputMs > 60000 ? 65 : 31;
+    return 15.5;
+}
 function animate() {
-    // Adaptive pacing: 60fps while watched (focused, on mains, 최근 입력 있음), 30fps ambient —
-    // unfocused beside real work, ⚡ eco, on battery, or 입력 없이 구경만 12초+. Thresholds sit
-    // safely under whole ticks of both 120Hz ProMotion (8.3ms) and 60Hz (16.7ms) panels.
     const nowMs = performance.now();
-    if (nowMs - lastFrameMs < (winFocused && !ecoActive() && !renderIdle() ? 15.5 : 31)) return;
+    if (nowMs - lastFrameMs < frameIntervalMs()) return;
     lastFrameMs = nowMs;
     const delta = Math.min(clock.getDelta(), 0.1);   // clamp huge deltas after the window was hidden
     for (const p of pets) {

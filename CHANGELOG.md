@@ -5,6 +5,13 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Changed (발열 2/7 — ambient 프레임 티어: 안 볼 때는 15fps)
+- 프레임 게이트가 2단(60/30)에서 티어 함수(frameIntervalMs)로: 활동 60fps, ⚡절전/배터리 30fps,
+  포커스 구경 30fps → **60초+ 구경은 15fps**, **비포커스는 15fps**(말풍선·토스트 동안만 30fps).
+  동숲이 30fps 고정인 것과 같은 원칙 — 균일한 낮은 fps가 출렁이는 60보다 부드럽고, 임계값(65ms)은
+  120Hz/60Hz 틱 정수배 바로 아래라 페이싱이 균일하다. 실측: long-idle 15fps·unfocused 15fps 진입
+  확인(프로브 E/F 신설, ?stats=1 ageInput 훅).
+
 ### Fixed (발열 1/7 — 웨이크 정책: idle 30fps가 실사용에서도 걸리게)
 - **정지 커서 60fps 고착 수리**: 커서를 창 위에 둔 채 손만 떼면 콘텐츠가 커서 밑에서 움직일 때
   Chromium이 쏘는 움직임 0짜리 합성 pointermove가 12초 idle 타이머를 계속 리셋해 영영 60fps로
