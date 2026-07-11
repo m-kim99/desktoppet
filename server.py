@@ -15,8 +15,8 @@ from py.ws_manager import ws_manager
 import shortuuid
 os.environ["MEM0_TELEMETRY"] = "False"
 parser = argparse.ArgumentParser(description="Run the ASGI application server.")
-parser.add_argument("--host", default="127.0.0.1")
-parser.add_argument("--port", type=int, default=3456)
+parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
+parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "3456")))   # Railway 등 PaaS는 PORT env를 주입한다
 args, _ = parser.parse_known_args()
 
 HOST = args.host
@@ -880,6 +880,43 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+# 공개망 배포용 토큰 게이트: SAP_AUTH_TOKEN 이 설정돼 있을 때만 켜진다(로컬/Electron은 무동작).
+# http·websocket 둘 다 막고, /health 만 열어둔다. 첫 접속은 아무 URL 뒤에 ?token=... 을 붙이면
+# 쿠키(90일)를 심어줘서 이후 요청·WS 핸드셰이크가 자동 통과한다.
+_SAP_TOKEN = os.environ.get("SAP_AUTH_TOKEN", "").strip()
+if _SAP_TOKEN:
+    class _AuthGate:
+        def __init__(self, asgi_app):
+            self.app = asgi_app
+        async def __call__(self, scope, receive, send):
+            if scope["type"] not in ("http", "websocket") or scope.get("path") == "/health":
+                return await self.app(scope, receive, send)
+            headers = {k.decode("latin1").lower(): v.decode("latin1") for k, v in scope.get("headers", [])}
+            cookie_ok = f"sap_token={_SAP_TOKEN}" in headers.get("cookie", "")
+            bearer_ok = headers.get("authorization", "") == f"Bearer {_SAP_TOKEN}"
+            from urllib.parse import parse_qs
+            query_ok = parse_qs(scope.get("query_string", b"").decode("latin1")).get("token", [None])[0] == _SAP_TOKEN
+            if not (cookie_ok or bearer_ok or query_ok):
+                if scope["type"] == "websocket":
+                    return await send({"type": "websocket.close", "code": 4401})
+                return await send_401(send)
+            if query_ok and not cookie_ok and scope["type"] == "http":
+                async def send_with_cookie(message):   # ?token= 통과 시 응답에 쿠키를 심는다
+                    if message["type"] == "http.response.start":
+                        message.setdefault("headers", []).append(
+                            (b"set-cookie", f"sap_token={_SAP_TOKEN}; Path=/; Max-Age=7776000; HttpOnly; SameSite=Lax".encode("latin1")))
+                    await send(message)
+                return await self.app(scope, receive, send_with_cookie)
+            return await self.app(scope, receive, send)
+
+    async def send_401(send):
+        body = b'{"error": "unauthorized - append ?token=YOUR_TOKEN to the URL once"}'
+        await send({"type": "http.response.start", "status": 401,
+                    "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
+        await send({"type": "http.response.body", "body": body})
+
+    app.add_middleware(_AuthGate)
 
 app.add_middleware(
     CORSMiddleware,
@@ -11402,7 +11439,22 @@ async def world_save_screenshot(request: Request):
 
 # 🔨 월드 공사모드 배치 저장 — 폰/데스크톱 어느 기기에서 사물을 옮겨도 같은 배치를 보도록
 # 서버 파일 하나(config/world_layout.json)에 둔다. 클라이언트는 시작 시 GET, 이동할 때 POST.
-WORLD_LAYOUT_FILE = os.path.join(base_path, "config", "world_layout.json")
+# 월드 개인 데이터는 USER_DATA_DIR/world 에 산다 — 레포 폴더(config/)는 패키징 앱에선 읽기
+# 전용이고 Docker/Railway에선 재배포마다 초기화되기 때문. 예전 위치의 파일은 처음 접근할 때
+# 한 번 복사해와서 기존 로컬 데이터가 그대로 이어진다.
+WORLD_DATA_DIR = os.path.join(USER_DATA_DIR, "world")
+def _world_file(name):
+    os.makedirs(WORLD_DATA_DIR, exist_ok=True)
+    new = os.path.join(WORLD_DATA_DIR, name)
+    if not os.path.exists(new):
+        old = os.path.join(base_path, "config", name)
+        if os.path.exists(old):
+            try:
+                shutil.copy2(old, new)
+            except Exception as e:
+                print(f"[world] migrate {name} failed: {e}")
+    return new
+WORLD_LAYOUT_FILE = _world_file("world_layout.json")
 
 @app.get("/api/world_layout")
 async def world_get_layout():
@@ -11619,7 +11671,7 @@ async def world_chat(request: Request):
 # ---- 월드 그림일기 (㉚): 하루의 이벤트 로그를 펫 1인칭 일기로 접는다. 날짜·펫별로
 # config/world_layout.json처럼 서버 파일(config/world_diary.json)에 보관 — 폰/데스크톱 공유,
 # 같은 날 재요청은 저장본을 돌려준다(force=다시 쓰기). 페르소나/장기기억은 world_chat 것을 재사용.
-WORLD_DIARY_FILE = os.path.join(base_path, "config", "world_diary.json")
+WORLD_DIARY_FILE = _world_file("world_diary.json")
 
 
 def _world_diary_load() -> dict:
@@ -11707,8 +11759,8 @@ async def world_diary_write(request: Request):
 
 # ---- 추억의 섬 저장소 (㉓ 소원우물 / ㉔ 타임캡슐): world_layout처럼 서버 파일 — 기기 공유,
 # localStorage 초기화에도 살아남는다. LLM 불필요, 순수 파일 IO.
-WORLD_WISH_FILE = os.path.join(base_path, "config", "world_wishes.json")
-WORLD_CAPSULE_FILE = os.path.join(base_path, "config", "world_capsules.json")
+WORLD_WISH_FILE = _world_file("world_wishes.json")
+WORLD_CAPSULE_FILE = _world_file("world_capsules.json")
 
 
 def _world_json_load(path: str, key: str) -> list:
@@ -11785,7 +11837,7 @@ async def world_capsule_act(request: Request):
 
 
 # ---- 텃밭 (⑫): 밭 4칸의 상태 하나를 통째로 저장/반환 — 기기끼리 같은 밭을 본다.
-WORLD_GARDEN_FILE = os.path.join(base_path, "config", "world_garden.json")
+WORLD_GARDEN_FILE = _world_file("world_garden.json")
 
 
 @app.get("/api/world_garden")
@@ -11817,7 +11869,7 @@ async def world_garden_set(request: Request):
 
 
 # ---- 별자리 (㉞): 이름 + 별 좌표 목록 — 한 번 그리면 매일 밤 하늘에 남는다.
-WORLD_CONSTEL_FILE = os.path.join(base_path, "config", "world_constellations.json")
+WORLD_CONSTEL_FILE = _world_file("world_constellations.json")
 
 
 @app.get("/api/world_constellations")
@@ -11841,7 +11893,7 @@ async def world_constellation_add(request: Request):
 
 # ---- 우편함 (⑬): 편지를 넣으면 병아리·강아지 공동 명의로 답장을 즉시 지어두되, 실제로는
 # 4~12분 뒤에야 "배달"된 것으로 보여준다(deliverAt) — 클라이언트가 그 전까지는 숨긴다.
-WORLD_MAIL_FILE = os.path.join(base_path, "config", "world_mail.json")
+WORLD_MAIL_FILE = _world_file("world_mail.json")
 
 
 @app.get("/api/world_mail")
@@ -11885,7 +11937,7 @@ async def world_mail_send(request: Request):
 
 
 # ---- 꽃 심기 챌린지 (㉝): 심은 꽃 하나하나를 좌표+색으로 누적 — 100송이가 목표.
-WORLD_FLOWER_FILE = os.path.join(base_path, "config", "world_flowers.json")
+WORLD_FLOWER_FILE = _world_file("world_flowers.json")
 
 
 @app.get("/api/world_flowers")

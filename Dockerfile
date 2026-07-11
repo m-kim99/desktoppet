@@ -40,4 +40,5 @@ ENV HOST=0.0.0.0 \
     PYTHONUNBUFFERED=1 \
     IS_DOCKER=1
 
-CMD [".venv/bin/python", "server.py", "--host", "0.0.0.0", "--port", "3456"]
+# PaaS(Railway 등)는 PORT env를 주입한다 — 셸 폼으로 확장, 없으면 3456
+CMD .venv/bin/python server.py --host 0.0.0.0 --port ${PORT:-3456}

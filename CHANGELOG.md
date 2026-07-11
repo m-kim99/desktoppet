@@ -5,6 +5,18 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Changed (배포 준비 — Railway·패키징 겸용 백엔드 정리)
+- **월드 개인 데이터 위치 이전**: world_*.json 8종(배치·일기·소원·캡슐·텃밭·별자리·우편·꽃)이
+  레포 폴더(config/)가 아니라 USER_DATA_DIR/world 에 저장된다 — 패키징된 앱에선 앱 번들이 읽기
+  전용이고 Docker/Railway에선 재배포마다 초기화되기 때문. 예전 파일은 첫 접근 때 자동 복사
+  (기존 로컬 데이터 그대로 이어짐). git에 개인 데이터가 들어갈 걱정도 원천 차단.
+- **토큰 인증 게이트**: SAP_AUTH_TOKEN env가 설정돼 있으면 /health 제외 모든 http·websocket에
+  토큰(첫 1회 ?token= → 90일 쿠키, 또는 Bearer 헤더)을 요구한다. 미설정(로컬/Electron)이면
+  완전 무동작 — 기존 동작 불변.
+- **PORT/HOST env 존중**: Railway 등 PaaS가 주입하는 PORT를 argparse 기본값으로 읽고,
+  Dockerfile CMD도 ${PORT:-3456}로. doc/deploy-railway.md에 볼륨(/app/data)·변수 설정 가이드.
+
+
 ### Changed (퀄리티 패스 ④ — 팔레트 이탈자 보정 🎨)
 - 회색 계열 이탈자들을 파스텔 월드의 웜 베이지로: 동굴 바위(0xa89f92→0xbcaa90 계열),
   바위(0xb3ab9f→0xc2b096), 연못 돌. 멀리서 검은 판으로 읽히던 텃밭 흙은 웜 브라운 +
