@@ -32,14 +32,15 @@ export const HILLS = [
 ];
 
 // 복층집 (two-story house) anchor — the walk-space helpers in world.js (floor/loft/stairs/walls)
-// derive everything from this one entry.
-export const HOUSE = { x: 2.7, z: 2.05, rotY: -0.65, hw: 1.0, hd: 0.8, floorY: 0.05, loftY: 0.62 };
+// derive everything from this one entry. hw/hd/loftY를 바꾸면 world.js의 houseFloorY/houseBlocked
+// 하드 로컬 상수(계단 구간·다락 모서리·난간 띠·포치 기둥)와 makeHouse 지오메트리도 함께 맞출 것.
+export const HOUSE = { x: 2.7, z: 2.05, rotY: -0.65, hw: 1.3, hd: 1.04, floorY: 0.05, loftY: 0.78 };   // 리모델: 1.0×0.8 → 1.3×1.04, 다락 0.62→0.78
 
 // Terrain flattening pads — the rolling bumps settle flat inside these circles.
 // `follow`: 공사모드로 그 프롭이 이사가면 패드도 다음 로드부터 따라가는 연결 (world.js가 시작 시 동기화).
 export const FLAT_SPOTS = [
     { x: 0.0, z: 0.0, r: 1.7 },     // central plaza (hug point / monument to come)
-    { x: 2.7, z: 2.05, r: 1.7, follow: 'house-1' },    // house pad (two-story house needs a wide level base)
+    { x: 2.7, z: 2.05, r: 2.05, follow: 'house-1' },   // house pad — 리모델로 커진 집 + 앞마당 여유 (1.7→2.05)
     { x: -2.6, z: -2.9, r: 0.95 },  // pond basin (연못은 이동 불가 — 지형 함몰)
     { x: 8.2, z: 4.85, r: 1.0, follow: 'swing-1' },    // NE island swing pad (level ground under the A-frame legs)
     { x: 9.3, z: 4.0, r: 1.0, follow: 'seesaw-1' },    // NE island seesaw pad (level ground under the fulcrum + plank)
@@ -63,7 +64,7 @@ export const PROPS = [
     { type: 'tree',  x: -1.2, z:  3.7, rotY: 4.2,  r: 0.45, big: true  },
     { type: 'tree',  x:  4.1, z:  1.0, rotY: 1.3,  r: 0.45, big: false },
     { type: 'house', x:  2.7, z:  2.05, rotY: -0.65, r: 0 },   // walls/rooms block precisely (houseBlocked)
-    { type: 'bowl',  x:  1.15, z:  1.75, rotY: 0.0,  r: 0.28 },
+    { type: 'bowl',  x:  0.8,  z:  1.55, rotY: 0.0,  r: 0.28 },   // 집 확장(1.3×1.04)으로 벽에 먹혀서 앞마당 쪽으로 — 겹침·마이그레이션 여유 검산 완료
     { type: 'fence', x: -4.1, z:  0.9, rotY: 1.05, r: 0.5 },
     { type: 'pond',  x: -2.6, z: -2.9, rotY: 0.0,  r: 0.72 },
     { type: 'sunbed',  x:  4.05, z: -0.4,  rotY: -1.35, r: 0.42 },

@@ -749,28 +749,190 @@ const strataTex = canvasTex(128, 4, 1, (ctx, s) => {
         ctx.fillRect(Math.random() * s, Math.random() * s, 2 + Math.random() * 3, 2 + Math.random() * 2);
     }
 });
-const plasterTex = canvasTex(64, 2, 2, (ctx, s) => {
-    ctx.fillStyle = '#fff3e0';
+// 회벽 스터코 — 중립 톤 유지 (부스 카운터·기념비 등이 material.color로 틴트해 쓴다):
+// 미세 스펙클 + 붓자국 + 아주 옅은 얼룩으로 "칠한 벽"의 질감만 얹는다.
+const plasterTex = canvasTex(128, 2, 2, (ctx, s) => {
+    const R = seededRand(53);
+    ctx.fillStyle = '#fbf5ea';
     ctx.fillRect(0, 0, s, s);
-    for (let i = 0; i < 90; i++) {
-        ctx.fillStyle = `rgba(${Math.random() < 0.5 ? '200,170,130' : '255,255,255'},0.10)`;
-        ctx.fillRect(Math.random() * s, Math.random() * s, 1.5, 1.5);
+    for (let i = 0; i < 12; i++) {   // 넓은 얼룩 — 회벽의 미장 자국
+        const g = ctx.createRadialGradient(R() * s, R() * s, 0, R() * s, R() * s, s * (0.12 + R() * 0.2));
+        g.addColorStop(0, R() > 0.5 ? 'rgba(224,204,172,0.08)' : 'rgba(255,255,255,0.12)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, s, s);
+    }
+    for (let i = 0; i < 200; i++) {   // 모래알 스펙클
+        ctx.fillStyle = `rgba(${R() < 0.5 ? '205,180,145' : '255,255,255'},${0.06 + R() * 0.08})`;
+        ctx.fillRect(R() * s, R() * s, 1 + R() * 1.6, 1 + R() * 1.6);
+    }
+    ctx.strokeStyle = 'rgba(214,196,168,0.10)';   // 흙손 붓자국 — 완만한 호
+    ctx.lineWidth = s / 42;
+    for (let i = 0; i < 9; i++) {
+        ctx.beginPath();
+        ctx.arc(R() * s, R() * s, s * (0.1 + R() * 0.24), R() * Math.PI * 2, R() * Math.PI * 2 + 0.8 + R());
+        ctx.stroke();
     }
 });
-const roofTex = canvasTex(64, 3, 2, (ctx, s) => {
-    ctx.fillStyle = '#ef8a7a';
+// 지붕 기와 — 스캘럽 한 장 한 장을 칠한다: 장마다 톤이 다르고, 아랫단 그림자·윗변 하이라이트로
+// "겹쳐 얹힌 기와"가 읽힌다. (예전엔 균일 코랄판에 호 스트로크뿐이라 멀리서 민무늬)
+const roofTex = canvasTex(128, 4, 3, (ctx, s) => {
+    const R = seededRand(61);
+    ctx.fillStyle = '#d96f5e';
     ctx.fillRect(0, 0, s, s);
-    const row = s / 4;
-    for (let r = 0; r < 4; r++) {
-        ctx.strokeStyle = 'rgba(120,40,30,0.22)';
-        ctx.lineWidth = 2;
-        for (let q = -1; q < 5; q++) {
-            const x = q * (s / 4) + (r % 2 ? s / 8 : 0);
+    const rows = 4, cols = 4, rw = s / rows;
+    for (let r = rows; r >= 0; r--) {   // 위에서 아래로 겹치게 — 아랫장을 먼저
+        for (let q = -1; q <= cols; q++) {
+            const cx = q * (s / cols) + (r % 2 ? s / (cols * 2) : 0) + s / (cols * 2);
+            const cy = r * rw;
+            const tone = 0.88 + R() * 0.24;   // 장별 톤 편차
+            ctx.fillStyle = `rgb(${Math.round(239 * tone)},${Math.round(138 * tone)},${Math.round(122 * tone)})`;
             ctx.beginPath();
-            ctx.arc(x + s / 8, r * row, s / 8, 0, Math.PI);
+            ctx.arc(cx, cy, s / cols / 2, 0, Math.PI);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,235,225,0.5)';   // 윗변 하이라이트
+            ctx.lineWidth = s / 110;
+            ctx.beginPath();
+            ctx.arc(cx, cy, s / cols / 2 - s / 220, 0.15, Math.PI - 0.15);
+            ctx.stroke();
+            ctx.strokeStyle = 'rgba(120,40,30,0.4)';     // 아랫단 그림자선
+            ctx.lineWidth = s / 70;
+            ctx.beginPath();
+            ctx.arc(cx, cy + s / 100, s / cols / 2, 0.35, Math.PI - 0.35);
             ctx.stroke();
         }
     }
+});
+// 마루널 — 널 사이 이음선 + 널마다 톤/나뭇결. 집 바닥·다락 슬래브용.
+const plankTex = canvasTex(128, 2, 2, (ctx, s) => {
+    const R = seededRand(67);
+    const rows = 5;
+    for (let r = 0; r < rows; r++) {
+        const tone = 0.9 + R() * 0.22;
+        ctx.fillStyle = `rgb(${Math.round(206 * tone)},${Math.round(172 * tone)},${Math.round(128 * tone)})`;
+        ctx.fillRect(0, (r * s) / rows, s, s / rows);
+        ctx.strokeStyle = 'rgba(120,90,60,0.55)';   // 이음선
+        ctx.lineWidth = s / 90;
+        ctx.beginPath();
+        ctx.moveTo(0, (r * s) / rows);
+        ctx.lineTo(s, (r * s) / rows);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(150,115,80,0.3)';   // 나뭇결
+        ctx.lineWidth = s / 140;
+        for (let i = 0; i < 3; i++) {
+            const y = (r + 0.2 + R() * 0.6) * (s / rows);
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.bezierCurveTo(s * 0.3, y + (R() - 0.5) * 5, s * 0.7, y + (R() - 0.5) * 5, s, y);
+            ctx.stroke();
+        }
+        const jx = R() * s;   // 널 끝 세로 이음 — 한 줄에 하나
+        ctx.strokeStyle = 'rgba(120,90,60,0.45)';
+        ctx.lineWidth = s / 110;
+        ctx.beginPath();
+        ctx.moveTo(jx, (r * s) / rows);
+        ctx.lineTo(jx, ((r + 1) * s) / rows);
+        ctx.stroke();
+    }
+});
+// 벽돌 — 굴뚝용: 지그재그 줄눈 + 장별 톤.
+const brickTex = canvasTex(64, 1.6, 3, (ctx, s) => {
+    const R = seededRand(71);
+    ctx.fillStyle = '#d9cfc4';   // 줄눈 모르타르
+    ctx.fillRect(0, 0, s, s);
+    const rows = 5, bw = s / 2.5, bh = s / rows;
+    for (let r = 0; r < rows; r++) {
+        for (let q = -1; q < 4; q++) {
+            const x = q * bw + (r % 2 ? bw / 2 : 0);
+            const tone = 0.86 + R() * 0.3;
+            ctx.fillStyle = `rgb(${Math.round(201 * tone)},${Math.round(120 * tone)},${Math.round(105 * tone)})`;
+            ctx.fillRect(x + s / 42, r * bh + s / 42, bw - s / 21, bh - s / 21);
+        }
+    }
+});
+// 원형 러그 — 동심 링 패턴 (원기둥 윗면의 원형 UV에 맞춰 캔버스 중심 기준으로 그린다).
+const rugTex = canvasTex(128, 1, 1, (ctx, s) => {
+    const c = s / 2;
+    const rings = [
+        [0.5, '#e8b9a0'], [0.44, '#f6dfc4'], [0.36, '#efc9aa'],
+        [0.28, '#f9ead2'], [0.18, '#f2d5b4'], [0.09, '#fbf0dc'],
+    ];
+    for (const [rr, col] of rings) {
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.arc(c, c, s * rr, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(190,130,95,0.5)';   // 테두리 스티치
+    ctx.lineWidth = s / 64;
+    ctx.setLineDash([s / 32, s / 40]);
+    ctx.beginPath();
+    ctx.arc(c, c, s * 0.465, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+});
+// 벽 그림 두 점 — ① 바다와 노을 ② 병아리·강아지 하트. 액자 안 캔버스용 미니 페인팅.
+const artSeaTex = canvasTex(64, 1, 1, (ctx, s) => {
+    const sky = ctx.createLinearGradient(0, 0, 0, s * 0.62);
+    sky.addColorStop(0, '#ffd9a0');
+    sky.addColorStop(1, '#ff9d7a');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, s, s * 0.62);
+    ctx.fillStyle = '#ffe9b8';   // 해
+    ctx.beginPath(); ctx.arc(s * 0.62, s * 0.4, s * 0.13, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4a90c2';   // 바다
+    ctx.fillRect(0, s * 0.62, s, s * 0.38);
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = s / 40;
+    for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(s * (0.1 + i * 0.18), s * (0.7 + i * 0.09));
+        ctx.lineTo(s * (0.34 + i * 0.18), s * (0.7 + i * 0.09));
+        ctx.stroke();
+    }
+});
+const artPetsTex = canvasTex(64, 1, 1, (ctx, s) => {
+    ctx.fillStyle = '#fdf4e5';
+    ctx.fillRect(0, 0, s, s);
+    ctx.fillStyle = '#f7dd66';   // 병아리
+    ctx.beginPath(); ctx.arc(s * 0.32, s * 0.58, s * 0.16, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e8dccb';   // 강아지
+    ctx.beginPath(); ctx.arc(s * 0.68, s * 0.58, s * 0.18, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f78fb3';   // 하트
+    const hx = s * 0.5, hy = s * 0.28, hs = s * 0.1;
+    ctx.beginPath();
+    ctx.arc(hx - hs / 2, hy, hs / 2, 0, Math.PI * 2);
+    ctx.arc(hx + hs / 2, hy, hs / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(hx - hs, hy + hs * 0.2);
+    ctx.lineTo(hx, hy + hs * 1.1);
+    ctx.lineTo(hx + hs, hy + hs * 0.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#2b2b33';   // 눈 네 점
+    for (const [ex, ey] of [[0.27, 0.55], [0.37, 0.55], [0.63, 0.55], [0.73, 0.55]]) {
+        ctx.beginPath(); ctx.arc(s * ex, s * ey, s * 0.018, 0, Math.PI * 2); ctx.fill();
+    }
+});
+// 벽시계 문자반 — 원기둥 윗면 UV용.
+const clockTex = canvasTex(64, 1, 1, (ctx, s) => {
+    const c = s / 2;
+    ctx.fillStyle = '#fffaf0';
+    ctx.beginPath(); ctx.arc(c, c, c, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#3a3a44';
+    for (let i = 0; i < 12; i++) {   // 시각 눈금
+        const a = (i / 12) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(c + Math.cos(a) * c * 0.78, c + Math.sin(a) * c * 0.78, s * (i % 3 ? 0.02 : 0.035), 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.strokeStyle = '#3a3a44';   // 바늘 — 10시 10분
+    ctx.lineCap = 'round';
+    ctx.lineWidth = s / 22;
+    ctx.beginPath(); ctx.moveTo(c, c); ctx.lineTo(c + c * 0.38 * Math.cos(-2.09), c + c * 0.38 * Math.sin(-2.09)); ctx.stroke();
+    ctx.lineWidth = s / 30;
+    ctx.beginPath(); ctx.moveTo(c, c); ctx.lineTo(c + c * 0.58 * Math.cos(-1.05), c + c * 0.58 * Math.sin(-1.05)); ctx.stroke();
 });
 const awningTex = canvasTex(64, 3, 1, (ctx, s) => {
     for (let i = 0; i < 4; i++) {
@@ -881,12 +1043,13 @@ function houseWorld(lx, lz) {
         z: HOUSE.z - lx * HOUSE_SIN + lz * HOUSE_COS,
     };
 }
+// 리모델(1.3×1.04) 로컬 상수 — makeHouse 지오메트리와 1:1로 맞춘 값들 (기존 1.0×0.8의 ×1.3)
 function houseFloorY(x, z) {
     const { lx, lz } = houseLocal(x, z);
     if (Math.abs(lx) > HOUSE.hw || Math.abs(lz) > HOUSE.hd) return null;
-    if (lz <= -0.25) return HOUSE.loftY;                                   // loft over the back half
-    if (lx >= 0.62 && lz <= 0.55) {                                        // stair ramp along the right wall
-        const k = THREE.MathUtils.clamp((0.55 - lz) / 0.8, 0, 1);
+    if (lz <= -0.325) return HOUSE.loftY;                                  // loft over the back half
+    if (lx >= 0.81 && lz <= 0.715) {                                       // stair ramp along the right wall
+        const k = THREE.MathUtils.clamp((0.715 - lz) / 1.04, 0, 1);
         return HOUSE.floorY + k * (HOUSE.loftY - HOUSE.floorY);
     }
     return HOUSE.floorY;
@@ -896,9 +1059,9 @@ function houseBlocked(x, z) {
     if (Math.abs(lx) > HOUSE.hw + 0.1 || Math.abs(lz) > HOUSE.hd + 0.1) return false;
     if (Math.abs(lx) > HOUSE.hw - 0.06) return true;                       // side walls
     if (lz < -(HOUSE.hd - 0.06)) return true;                              // back wall
-    if (lz > -0.31 && lz < -0.19 && lx < 0.55) return true;                // loft railing / under-loft partition
-    if (Math.hypot(lx - 0.8, lz - 0.74) < 0.09) return true;               // porch posts
-    if (Math.hypot(lx + 0.8, lz - 0.74) < 0.09) return true;
+    if (lz > -0.403 && lz < -0.247 && lx < 0.715) return true;             // loft railing / under-loft partition
+    if (Math.hypot(lx - 1.04, lz - 0.962) < 0.1) return true;              // porch posts
+    if (Math.hypot(lx + 1.04, lz - 0.962) < 0.1) return true;
     return false;
 }
 
@@ -1070,104 +1233,203 @@ function makeProceduralTree(p) {
 }
 
 function makeHouse() {
-    // Two-story dollhouse: the front stays open so the camera sees inside. Geometry matches the
-    // walk-space helpers exactly — floor at 0.05, stair ramp along the right wall, loft at 0.62
-    // over the back half with a railing (gap where the stairs land).
+    // Two-story dollhouse (리모델 1.3×1.04): the front stays open so the camera sees inside.
+    // Geometry matches the walk-space helpers exactly — floor at 0.05, stair ramp along the right
+    // wall (lx 0.81~1.3, lz 0.715→-0.325), loft top at 0.78 over the back half (lz≤-0.325) with a
+    // railing (gap where the stairs land), porch posts at (±1.04, 0.962).
     const g = new THREE.Group();
     const plaster = M(0xffffff, { map: plasterTex });
     const wood = M(0xb08a60, { map: woodTex });
     const woodDark = M(0x8a6647, { map: woodTex });
-    const wallH = 1.2;
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.06, 1.6), wood);
+    const plank = M(0xd8b88a, { map: plankTex });
+    const trimWhite = M(0xfffbf2);
+    const wallH = 1.55;
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.06, 2.08), plank);
     floor.position.y = 0.02;
     g.add(floor);
-    const porch = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.05, 0.24), M(0xcfcac0));
-    porch.position.set(0, 0.025, 0.9);
+    // 포치 데크 + 계단 + 도어매트 — 현관의 "얼굴"
+    const porch = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.06, 0.5), wood);
+    porch.position.set(0, 0.03, 1.3);
     g.add(porch);
-    const wallL = new THREE.Mesh(new THREE.BoxGeometry(0.06, wallH, 1.6), plaster);
-    wallL.position.set(-1.0, wallH / 2, 0);
+    const porchStep = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.04, 0.2), woodDark);
+    porchStep.position.set(0, 0.02, 1.63);
+    g.add(porchStep);
+    const doormat = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.012, 22), M(0xffffff, { map: rugTex }));
+    doormat.position.set(0, 0.066, 1.3);
+    g.add(doormat);
+    const wallL = new THREE.Mesh(new THREE.BoxGeometry(0.06, wallH, 2.08), plaster);
+    wallL.position.set(-1.3, wallH / 2, 0);
     g.add(wallL);
     const wallR = wallL.clone();
-    wallR.position.x = 1.0;
+    wallR.position.x = 1.3;
     g.add(wallR);
-    const wallB = new THREE.Mesh(new THREE.BoxGeometry(2.06, wallH, 0.06), plaster);
-    wallB.position.set(0, wallH / 2, -0.8);
+    const wallB = new THREE.Mesh(new THREE.BoxGeometry(2.66, wallH, 0.06), plaster);
+    wallB.position.set(0, wallH / 2, -1.04);
     g.add(wallB);
-    for (const px of [-0.8, 0.8]) {
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, wallH, 10), wood);
-        post.position.set(px, wallH / 2, 0.74);
-        g.add(post);
+    // 목구조 트림: 모서리 기둥 4 + 층간 띠 + 정면 상단 인방 — 흰 박스가 "지어진 집"으로 읽히는 뼈대
+    for (const [cx, cz] of [[-1.3, -1.04], [1.3, -1.04], [-1.3, 1.04], [1.3, 1.04]]) {
+        const corner = new THREE.Mesh(new THREE.BoxGeometry(0.1, wallH + 0.02, 0.1), woodDark);
+        corner.position.set(cx, wallH / 2, cz);
+        g.add(corner);
     }
+    for (const sx of [-1, 1]) {   // 층간 띠 (측벽 바깥면)
+        const band = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.08, 2.1), woodDark);
+        band.position.set(sx * 1.325, 0.78, 0);
+        g.add(band);
+    }
+    const bandB = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.08, 0.03), woodDark);   // 층간 띠 (뒷벽)
+    bandB.position.set(0, 0.78, -1.065);
+    g.add(bandB);
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(2.66, 0.1, 0.1), wood);   // 정면 인방
+    lintel.position.set(0, wallH - 0.05, 1.0);
+    g.add(lintel);
+    for (const px of [-1.04, 1.04]) {   // 포치 기둥 (houseBlocked의 원과 1:1)
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.058, wallH, 10), wood);
+        post.position.set(px, wallH / 2, 0.962);
+        g.add(post);
+        const postCap = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), wood);
+        postCap.position.set(px, wallH + 0.02, 0.962);
+        g.add(postCap);
+    }
+    // 측면 창 — 십자 살 + 창턱 + 화단 (동숲 창의 문법)
     for (const sx of [-1, 1]) {
-        const frame = new THREE.Mesh(new RoundedBoxGeometry(0.06, 0.26, 0.26, 2, 0.02), M(0xffffff));
-        frame.position.set(sx * 1.01, 0.62, 0.3);
+        const frame = new THREE.Mesh(new RoundedBoxGeometry(0.07, 0.4, 0.4, 2, 0.025), trimWhite);
+        frame.position.set(sx * 1.31, 0.82, 0.39);
         g.add(frame);
-        const pane = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.2, 0.2), M(0xbfe3f2));
+        const pane = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.32, 0.32), M(0xbfe3f2));
         pane.position.copy(frame.position);
         g.add(pane);
+        const munV = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.32, 0.024), trimWhite);   // 세로 살
+        munV.position.copy(frame.position);
+        g.add(munV);
+        const munH = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.024, 0.32), trimWhite);   // 가로 살
+        munH.position.copy(frame.position);
+        g.add(munH);
+        const sill = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.035, 0.46), trimWhite);
+        sill.position.set(sx * 1.315, 0.6, 0.39);
+        g.add(sill);
+        const flowerBox = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.09, 0.38), woodDark);   // 창가 화단
+        flowerBox.position.set(sx * 1.34, 0.53, 0.39);
+        g.add(flowerBox);
+        for (let fi = 0; fi < 3; fi++) {
+            const fl = new THREE.Mesh(
+                new THREE.PlaneGeometry(0.075, 0.075).rotateX(-Math.PI / 2),
+                new THREE.MeshLambertMaterial({ map: flowerTex, alphaTest: 0.4, side: THREE.DoubleSide, color: [0xff8fb3, 0xffd54f, 0xff8a65][fi] }));
+            fl.position.set(sx * 1.34, 0.585, 0.28 + fi * 0.11);
+            g.add(fl);
+        }
     }
-    // loft slab (top at 0.62), stairs, railing, under-loft partition
-    const loft = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.06, 0.55), wood);
-    loft.position.set(0, 0.59, -0.525);
+    // 다락 뒷창 — 침실에 빛
+    {
+        const frame = new THREE.Mesh(new RoundedBoxGeometry(0.34, 0.34, 0.07, 2, 0.025), trimWhite);
+        frame.position.set(-0.42, 1.18, -1.05);
+        g.add(frame);
+        const pane = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.26, 0.08), M(0xbfe3f2));
+        pane.position.copy(frame.position);
+        g.add(pane);
+        const munV = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.26, 0.085), trimWhite);
+        munV.position.copy(frame.position);
+        g.add(munV);
+        const munH = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.024, 0.085), trimWhite);
+        munH.position.copy(frame.position);
+        g.add(munH);
+    }
+    // loft slab (top at 0.78), stairs, railing, under-loft partition
+    const loft = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.06, 0.715), plank);
+    loft.position.set(0, 0.75, -0.6825);
     g.add(loft);
-    const STEPS = 8;
+    const loftEdge = new THREE.Mesh(new THREE.BoxGeometry(2.02, 0.07, 0.06), woodDark);   // 다락 앞단 마감재
+    loftEdge.position.set(-0.29, 0.75, -0.325);
+    g.add(loftEdge);
+    const STEPS = 10;
     for (let i = 0; i < STEPS; i++) {
-        const h = 0.05 + ((i + 1) / STEPS) * 0.57;
-        const stp = new THREE.Mesh(new THREE.BoxGeometry(0.34, h, 0.1), woodDark);
-        stp.position.set(0.78, h / 2, 0.55 - (i + 0.5) * 0.1);
+        const h = 0.05 + ((i + 1) / STEPS) * 0.73;
+        const stp = new THREE.Mesh(new THREE.BoxGeometry(0.44, h, 0.104), woodDark);
+        stp.position.set(1.05, h / 2, 0.715 - (i + 0.5) * 0.104);
         g.add(stp);
     }
-    for (let i = 0; i <= 5; i++) {
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.28, 8), wood);
-        post.position.set(-0.95 + i * 0.3, 0.76, -0.25);
+    for (let i = 0; i <= 6; i++) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.34, 8), wood);
+        post.position.set(-1.2 + i * 0.3, 0.95, -0.325);
         g.add(post);
     }
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.04, 0.05), wood);
-    rail.position.set(-0.2, 0.9, -0.25);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(1.98, 0.05, 0.06), wood);
+    rail.position.set(-0.3, 1.14, -0.325);
     g.add(rail);
-    const partition = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.56, 0.05), plaster);
-    partition.position.set(-0.22, 0.33, -0.25);
+    const partition = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.7, 0.05), plaster);
+    partition.position.set(-0.3, 0.4, -0.325);
     g.add(partition);
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(1.72, 0.72, 4), M(0xffffff, { map: roofTex, flatShading: true }));
-    roof.position.y = wallH + 0.36;
+    // 지붕: 리페인트 기와 + 처마 페시아 + 꼭대기 피니얼
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(2.35, 0.98, 4), M(0xffffff, { map: roofTex, flatShading: true }));
+    roof.position.y = wallH + 0.49;
     roof.rotation.y = Math.PI / 4;
     g.add(roof);
-    const roofSnow = new THREE.Mesh(new THREE.ConeGeometry(1.25, 0.46, 4), snowCapMat);   // 겨울 지붕 눈이불 — 지붕보다 완만한 경사라 어디서나 살짝 도드라진다
-    roofSnow.position.y = wallH + 0.53;
+    for (const [fx, fz, fw, fd] of [[1.63, 0, 0.06, 3.3], [-1.63, 0, 0.06, 3.3], [0, 1.63, 3.3, 0.06], [0, -1.63, 3.3, 0.06]]) {
+        const fascia = new THREE.Mesh(new THREE.BoxGeometry(fw, 0.09, fd), woodDark);
+        fascia.position.set(fx, wallH + 0.02, fz);
+        g.add(fascia);
+    }
+    const finial = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 10), M(0xe8c46f));
+    finial.position.y = wallH + 0.98 + 0.04;
+    g.add(finial);
+    const roofSnow = new THREE.Mesh(new THREE.ConeGeometry(1.7, 0.64, 4), snowCapMat);   // 겨울 지붕 눈이불 — 지붕보다 완만한 경사라 어디서나 살짝 도드라진다
+    roofSnow.position.y = wallH + 0.72;
     roofSnow.rotation.y = Math.PI / 4;
     roofSnow.visible = false;
     g.add(roofSnow);
     seasonSnowCaps.push(roofSnow);
-    const chimney = new THREE.Mesh(new RoundedBoxGeometry(0.16, 0.34, 0.16, 3, 0.02), M(0xc97b6e));
-    chimney.position.set(-0.55, wallH + 0.5, -0.35);
+    const chimney = new THREE.Mesh(new RoundedBoxGeometry(0.2, 0.44, 0.2, 3, 0.02), M(0xffffff, { map: brickTex }));
+    chimney.position.set(-0.72, wallH + 0.62, -0.46);
     g.add(chimney);
+    const chimneyCap = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.07, 0.26, 2, 0.02), M(0xc4b6a0));
+    chimneyCap.position.set(-0.72, wallH + 0.87, -0.46);
+    g.add(chimneyCap);
     // ---- floor-1 furniture: sofa (sit here!), low table + reading lamp, rug, bookshelf ----
     const sofa = new THREE.Group();
-    const seat = new THREE.Mesh(new RoundedBoxGeometry(0.3, 0.16, 0.6, 3, 0.04), M(0x8fb7e8));
-    seat.position.y = 0.13;
-    sofa.add(seat);
-    const backRest = new THREE.Mesh(new RoundedBoxGeometry(0.1, 0.3, 0.6, 3, 0.04), M(0x7aa6dc));
-    backRest.position.set(-0.12, 0.2, 0);
+    const sofaBase = new THREE.Mesh(new RoundedBoxGeometry(0.4, 0.14, 0.78, 3, 0.04), M(0x7aa6dc));
+    sofaBase.position.y = 0.1;
+    sofa.add(sofaBase);
+    for (const cz of [-0.19, 0.19]) {   // 좌방석 두 장 — "앉는 자리"가 읽힌다
+        const cushion = new THREE.Mesh(new RoundedBoxGeometry(0.34, 0.09, 0.34, 3, 0.035), M(0x8fb7e8));
+        cushion.position.set(0.01, 0.19, cz);
+        sofa.add(cushion);
+    }
+    const backRest = new THREE.Mesh(new RoundedBoxGeometry(0.12, 0.4, 0.78, 3, 0.045), M(0x7aa6dc));
+    backRest.position.set(-0.17, 0.26, 0);
     sofa.add(backRest);
-    for (const az of [-0.27, 0.27]) {
-        const arm = new THREE.Mesh(new RoundedBoxGeometry(0.28, 0.1, 0.08, 2, 0.03), M(0x7aa6dc));
-        arm.position.set(0, 0.22, az);
+    for (const bz of [-0.19, 0.19]) {   // 등쿠션
+        const bp = new THREE.Mesh(new RoundedBoxGeometry(0.09, 0.26, 0.3, 3, 0.035), M(0xa5c8f0));
+        bp.position.set(-0.1, 0.33, bz);
+        bp.rotation.z = -0.18;
+        sofa.add(bp);
+    }
+    for (const az of [-0.35, 0.35]) {
+        const arm = new THREE.Mesh(new RoundedBoxGeometry(0.36, 0.13, 0.1, 2, 0.04), M(0x6f9bd2));
+        arm.position.set(0, 0.24, az);
         sofa.add(arm);
     }
-    sofa.position.set(-0.68, 0.05, 0.2);
+    for (const [lx2, lz2] of [[-0.15, -0.32], [0.15, -0.32], [-0.15, 0.32], [0.15, 0.32]]) {   // 다리
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.024, 0.06, 8), woodDark);
+        leg.position.set(lx2, 0.03, lz2);
+        sofa.add(leg);
+    }
+    sofa.position.set(-0.884, 0.05, 0.26);
     g.add(sofa);
     const table = new THREE.Group();
-    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.035, 18), wood);
-    top.position.y = 0.16;
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.04, 20), wood);
+    top.position.y = 0.18;
     table.add(top);
-    const legT = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.15, 10), woodDark);
-    legT.position.y = 0.075;
+    const legT = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.05, 0.17, 10), woodDark);
+    legT.position.y = 0.085;
     table.add(legT);
+    const legFoot = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.025, 12), woodDark);
+    legFoot.position.y = 0.012;
+    table.add(legFoot);
     const lampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.045, 0.1, 10), M(0x5a6a75));
-    lampBase.position.y = 0.23;
+    lampBase.position.set(-0.09, 0.25, -0.06);
     table.add(lampBase);
     const shade = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.08, 12, 1, true), lampGlobeMat);
-    shade.position.y = 0.31;
+    shade.position.set(-0.09, 0.33, -0.06);
     table.add(shade);
     // 탁자 위 그림일기장 📔 — 내용은 독의 📔 버튼으로 읽는다 (밤마다 펫이 쓴다).
     const diaryBook = new THREE.Group();
@@ -1179,44 +1441,98 @@ function makeHouse() {
     pageR.rotation.z = -0.09;
     const spineB = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.012, 0.115), M(0xc96f6f));
     diaryBook.add(pageL, pageR, spineB);
-    diaryBook.position.set(0.105, 0.185, 0.03);
+    diaryBook.position.set(0.11, 0.205, 0.05);
     diaryBook.rotation.y = -0.5;
     table.add(diaryBook);
-    table.position.set(0, 0.05, 0.15);
+    const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.019, 0.035, 12), M(0xfff1cf));   // 찻잔
+    cup.position.set(-0.02, 0.218, 0.13);
+    table.add(cup);
+    table.position.set(0, 0.05, 0.195);
     g.add(table);
-    const rug = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.012, 24), M(0xf6d7b0));
-    rug.position.set(-0.15, 0.056, 0.22);
+    const rug = new THREE.Mesh(new THREE.CylinderGeometry(0.56, 0.56, 0.012, 28), M(0xffffff, { map: rugTex }));
+    rug.position.set(-0.2, 0.056, 0.29);
     g.add(rug);
     const shelf = new THREE.Group();
-    const shelfBody = new THREE.Mesh(new RoundedBoxGeometry(0.14, 0.5, 0.34, 2, 0.02), woodDark);
-    shelfBody.position.y = 0.25;
+    const shelfBody = new THREE.Mesh(new RoundedBoxGeometry(0.16, 0.74, 0.44, 2, 0.02), woodDark);
+    shelfBody.position.y = 0.37;
     shelf.add(shelfBody);
-    const bookColors = [0xef8a8a, 0x8fb7e8, 0xffd54f, 0x9fd8c9, 0xb39ddb, 0xff8a65];
-    for (let i = 0; i < 6; i++) {
-        const book = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.1, 0.035), M(bookColors[i]));
-        book.position.set(0.055, 0.32 - (i % 2) * 0.14, -0.12 + (i % 3) * 0.1);
+    const bookColors = [0xef8a8a, 0x8fb7e8, 0xffd54f, 0x9fd8c9, 0xb39ddb, 0xff8a65, 0xf6c560, 0x9fd8c9];
+    for (let i = 0; i < 8; i++) {   // 두 단 가득 — 기울어진 책도 한 권씩
+        const book = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.115, 0.04), M(bookColors[i]));
+        book.position.set(0.065, i < 4 ? 0.56 : 0.28, -0.15 + (i % 4) * 0.09);
+        if (i % 4 === 3) book.rotation.x = 0.22;
         shelf.add(book);
     }
-    shelf.position.set(-0.78, 0.05, 0.52);
+    const shelfPot = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.028, 0.05, 10), M(0xc97b6e));   // 꼭대기 화분
+    shelfPot.position.set(0.02, 0.77, 0.12);
+    shelf.add(shelfPot);
+    for (let i = 0; i < 3; i++) {
+        const leafBall = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 6), M(0x5da95f));
+        leafBall.position.set(0.02 + (i - 1) * 0.022, 0.82 + (i % 2) * 0.02, 0.12 + (i - 1) * 0.014);
+        shelf.add(leafBall);
+    }
+    shelf.position.set(-1.014, 0.05, 0.676);
     g.add(shelf);
-    // ---- loft furniture: bed (sleep here!) + nightstand ----
+    // 벽 장식: 그림 두 점 + 벽시계 — "사는 집"의 마감
+    const artFrame1 = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.22, 0.03), woodDark);
+    artFrame1.position.set(-0.62, 0.5, -0.302);   // 파티션 정면 (소파 뒤 벽)
+    g.add(artFrame1);
+    const artCanvas1 = new THREE.Mesh(new THREE.PlaneGeometry(0.23, 0.17), M(0xffffff, { map: artSeaTex }));
+    artCanvas1.position.set(-0.62, 0.5, -0.284);
+    g.add(artCanvas1);
+    const clockFace = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.095, 0.025, 20), M(0xffffff, { map: clockTex }));
+    clockFace.rotation.x = Math.PI / 2;   // 윗면(문자반)이 +z를 본다
+    clockFace.position.set(0.25, 0.56, -0.297);
+    g.add(clockFace);
+    // 펜던트 조명 — 지붕에서 테이블 위로 내려오는 코드 + 글로브 (밤이면 lampGlobeMat이 켠다)
+    const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.42, 6), M(0x5a6a75));
+    cord.position.set(0, wallH - 0.21, 0.195);
+    g.add(cord);
+    const pendant = new THREE.Mesh(new THREE.SphereGeometry(0.075, 14, 12), lampGlobeMat);
+    pendant.position.set(0, wallH - 0.46, 0.195);
+    g.add(pendant);
+    // ---- loft furniture: bed (sleep here!) + nightstand — 다락 침실 ----
     const bed = new THREE.Group();
-    const bedFrame = new THREE.Mesh(new RoundedBoxGeometry(0.44, 0.1, 0.66, 3, 0.03), woodDark);
-    bedFrame.position.y = 0.07;
+    const bedFrame = new THREE.Mesh(new RoundedBoxGeometry(0.56, 0.12, 0.84, 3, 0.03), woodDark);
+    bedFrame.position.y = 0.08;
     bed.add(bedFrame);
-    const mattress = new THREE.Mesh(new RoundedBoxGeometry(0.4, 0.08, 0.6, 3, 0.03), M(0xffffff));
-    mattress.position.y = 0.14;
+    const headBoard = new THREE.Mesh(new RoundedBoxGeometry(0.56, 0.34, 0.07, 3, 0.03), woodDark);
+    headBoard.position.set(0, 0.22, -0.42);
+    bed.add(headBoard);
+    const mattress = new THREE.Mesh(new RoundedBoxGeometry(0.5, 0.1, 0.74, 3, 0.03), M(0xffffff));
+    mattress.position.y = 0.17;
     bed.add(mattress);
-    const blanket = new THREE.Mesh(new RoundedBoxGeometry(0.41, 0.05, 0.34, 3, 0.02), M(0xff8fb3));
-    blanket.position.set(0, 0.17, 0.12);
+    const blanket = new THREE.Mesh(new RoundedBoxGeometry(0.52, 0.06, 0.44, 3, 0.025), M(0xff8fb3));
+    blanket.position.set(0, 0.215, 0.16);
     bed.add(blanket);
-    const pillow = new THREE.Mesh(new RoundedBoxGeometry(0.24, 0.06, 0.14, 2, 0.025), M(0xfff3e0));
-    pillow.position.set(0, 0.19, -0.2);
-    bed.add(pillow);
-    bed.position.set(-0.45, 0.62, -0.5);
+    const blanketFold = new THREE.Mesh(new RoundedBoxGeometry(0.52, 0.03, 0.09, 2, 0.012), M(0xffc2d6));   // 접힌 이불깃
+    blanketFold.position.set(0, 0.245, -0.05);
+    bed.add(blanketFold);
+    for (const px of [-0.12, 0.12]) {   // 베개 두 개 — 둘이 자니까
+        const pillow = new THREE.Mesh(new RoundedBoxGeometry(0.2, 0.07, 0.15, 2, 0.028), M(0xfff3e0));
+        pillow.position.set(px, 0.245, -0.28);
+        pillow.rotation.y = px < 0 ? 0.08 : -0.08;
+        bed.add(pillow);
+    }
+    bed.position.set(-0.585, 0.78, -0.65);
     g.add(bed);
-    const stand = new THREE.Mesh(new RoundedBoxGeometry(0.14, 0.16, 0.14, 2, 0.02), woodDark);
-    stand.position.set(0.05, 0.7, -0.62);
+    const artFrame2 = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.28, 0.03), woodDark);   // 침대맡 그림
+    artFrame2.position.set(-0.95, 1.3, -0.99);
+    g.add(artFrame2);
+    const artCanvas2 = new THREE.Mesh(new THREE.PlaneGeometry(0.17, 0.23), M(0xffffff, { map: artPetsTex }));
+    artCanvas2.position.set(-0.95, 1.3, -0.972);
+    g.add(artCanvas2);
+    const stand = new THREE.Group();
+    const standBody = new THREE.Mesh(new RoundedBoxGeometry(0.17, 0.19, 0.17, 2, 0.02), woodDark);
+    standBody.position.y = 0.095;
+    stand.add(standBody);
+    const candle = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.05, 10), M(0xfff3e0));
+    candle.position.y = 0.215;
+    stand.add(candle);
+    const flame = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 6), M(0xffd9a0, { emissive: 0xffb066, emissiveIntensity: 0.7 }));
+    flame.position.y = 0.25;
+    stand.add(flame);
+    stand.position.set(0.065, 0.78, -0.806);
     g.add(stand);
     return g;
 }
@@ -3908,6 +4224,17 @@ function worldBake() {
         for (const m of list) { m.visible = false; worldBakeHidden.push(m); }
     }
 }
+// 집 리모델(1.0×0.8→1.3×1.04) 마이그레이션: 예전 저장 레이아웃(world_layout.json)의 소품이
+// 커진 풋프린트에 삼켜졌으면 로컬 +z(현관 밖)로 밀어낸다 — 한 번 밀리면 다음 저장에 그 자리로 굳는다.
+for (const p of PROPS) {
+    if (p.type === 'house' || !MOVABLE_TYPES.has(p.type)) continue;
+    const { lx, lz } = houseLocal(p.x, p.z);
+    const margin = (p.r || 0.2) + 0.12;
+    if (Math.abs(lx) < HOUSE.hw + margin && Math.abs(lz) < HOUSE.hd + margin) {
+        const w = houseWorld(THREE.MathUtils.clamp(lx, -HOUSE.hw + 0.3, HOUSE.hw - 0.3), HOUSE.hd + margin + 0.25);
+        p.x = w.x; p.z = w.z;
+    }
+}
 for (const p of PROPS) {
     const obj = PROP_BUILDERS[p.type](p);
     if (MERGE_TYPES.has(p.type) && !NO_MERGE_DEBUG) mergePropGroup(obj);
@@ -3919,7 +4246,7 @@ for (const p of PROPS) {
     stage.add(obj);
     if (BLOB_SIZE[p.type] || p.type === 'house') {
         const blob = new THREE.Mesh(blobGeo, blobMat);
-        if (p.type === 'house') blob.scale.set(2.4, 1, 2.0);   // shade peeking out around the slab rim
+        if (p.type === 'house') blob.scale.set(3.1, 1, 2.6);   // shade peeking out around the slab rim (리모델 1.3× 반영)
         else blob.scale.setScalar(BLOB_SIZE[p.type]);
         blob.rotation.y = p.rotY || 0;
         blob.position.set(p.x, terrainHeight(p.x, p.z) + 0.012, p.z);
@@ -3998,30 +4325,30 @@ const HOUSE_DERIVED = { cols: [], beds: [], light: null };
         PROPS.push(entry);
         HOUSE_DERIVED.cols.push({ entry, lx, lz });
     };
-    fCol(-0.68, 0.2, 0.28);    // sofa
-    fCol(0, 0.15, 0.24);       // table
-    fCol(-0.78, 0.52, 0.17);   // bookshelf
-    fCol(-0.45, -0.5, 0.3);    // loft bed
-    fCol(0.05, -0.62, 0.11);   // nightstand
-    const sofaW = houseWorld(-0.68, 0.2), sofaA = houseWorld(-0.28, 0.58);
+    fCol(-0.884, 0.26, 0.34);    // sofa (리모델 좌표 — makeHouse와 1:1)
+    fCol(0, 0.195, 0.28);        // table
+    fCol(-1.014, 0.676, 0.2);    // bookshelf
+    fCol(-0.585, -0.65, 0.36);   // loft bed
+    fCol(0.065, -0.806, 0.12);   // nightstand
+    const sofaW = houseWorld(-0.884, 0.26), sofaA = houseWorld(-0.364, 0.754);
     const sofa = {
         id: 'sofa', mode: 'sit', occupant: null, sway: 0, shelter: true,   // 비 피신 폴백 자리
-        lie: { x: sofaW.x, z: sofaW.z, y: HOUSE.floorY + 0.17, rotY: HOUSE.rotY + Math.PI / 2, tilt: -0.35 },
+        lie: { x: sofaW.x, z: sofaW.z, y: HOUSE.floorY + 0.21, rotY: HOUSE.rotY + Math.PI / 2, tilt: -0.35 },
         approach: { x: sofaA.x, z: sofaA.z },
     };
     BEDS.push(sofa);
-    HOUSE_DERIVED.beds.push({ entry: sofa, lx: -0.68, lz: 0.2, alx: -0.28, alz: 0.58 });
-    const bedW = houseWorld(-0.45, -0.5), bedA = houseWorld(0.3, -0.45);
+    HOUSE_DERIVED.beds.push({ entry: sofa, lx: -0.884, lz: 0.26, alx: -0.364, alz: 0.754 });
+    const bedW = houseWorld(-0.585, -0.65), bedA = houseWorld(0.39, -0.585);
     const loftbed = {
         id: 'loftbed', mode: 'sleep', occupant: null, sway: 0,
-        lie: { x: bedW.x, z: bedW.z, y: HOUSE.loftY + 0.16, rotY: HOUSE.rotY, tilt: -1.2 },
+        lie: { x: bedW.x, z: bedW.z, y: HOUSE.loftY + 0.2, rotY: HOUSE.rotY, tilt: -1.2 },
         approach: { x: bedA.x, z: bedA.z },
     };
     BEDS.push(loftbed);
-    HOUSE_DERIVED.beds.push({ entry: loftbed, lx: -0.45, lz: -0.5, alx: 0.3, alz: -0.45 });
-    const lampW = houseWorld(0, 0.15);
-    const indoor = new THREE.PointLight(0xffd9a0, 0, 2.4, 2);
-    indoor.position.set(lampW.x, HOUSE.floorY + 0.42, lampW.z);
+    HOUSE_DERIVED.beds.push({ entry: loftbed, lx: -0.585, lz: -0.65, alx: 0.39, alz: -0.585 });
+    const lampW = houseWorld(0, 0.195);
+    const indoor = new THREE.PointLight(0xffd9a0, 0, 3.0, 2);   // 커진 거실 — 도달 2.4→3.0, 펜던트 높이에서
+    indoor.position.set(lampW.x, HOUSE.floorY + 1.0, lampW.z);
     scene.add(indoor);
     lamps.push({ light: indoor });
     HOUSE_DERIVED.light = indoor;
@@ -4036,8 +4363,8 @@ function refreshHouseDerived() {
         b.entry.lie.x = w.x; b.entry.lie.z = w.z;
         b.entry.approach.x = a.x; b.entry.approach.z = a.z;
     }
-    const lampW = houseWorld(0, 0.15);
-    HOUSE_DERIVED.light.position.set(lampW.x, HOUSE.floorY + 0.42, lampW.z);
+    const lampW = houseWorld(0, 0.195);
+    HOUSE_DERIVED.light.position.set(lampW.x, HOUSE.floorY + 1.0, lampW.z);
 }
 
 // ---- 🚗 스포츠카: parked in the middle of the plaza. Ctrl/⌘ beside it hops in (a held/nearby
