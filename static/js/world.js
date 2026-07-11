@@ -455,7 +455,19 @@ function updateDayNight(force = false) {
     // Streetlamps fade up through dusk — and glow softly through a daytime rain (아늑함).
     const lampGlow = Math.max(1 - dayF, wxF * 0.45) * lampBrightness;
     lampGlobeMat.emissiveIntensity = 0.05 + 1.3 * lampGlow;
-    for (const l of lamps) { l.light.intensity = 6 * lampGlow; if (l.glow) l.glow.opacity = 0.9 * lampGlow; }   // the indoor reading lamp has no halo
+    // 꺼진 램프는 씬에서 뗀다: three 포워드는 셰이더에 박힌 라이트 수만큼 "모든 픽셀"이 비용을
+    // 내서, intensity 0으로 남겨두면 맑은 낮에도 포인트라이트 ~10개 값을 레티나 해상도로 낸다.
+    // 라이트 수가 바뀌는 새벽·황혼 경계 프레임에 셰이더 재컴파일이 한 번 있지만(세션당 상태별
+    // 1회 캐시) updateDayNight 스로틀 덕에 그 한 번뿐이다. 부모가 그룹인 램프(동굴 데크 등)도
+    // 있어 원래 부모를 기억해 뒀다 그 자리에 되붙인다.
+    const lampsOn = lampGlow > 0.001;
+    for (const l of lamps) {
+        const home = l.light.userData.homeParent || (l.light.userData.homeParent = l.light.parent);
+        if (lampsOn && !l.light.parent) home.add(l.light);
+        else if (!lampsOn && l.light.parent) home.remove(l.light);
+        l.light.intensity = 6 * lampGlow;
+        if (l.glow) l.glow.opacity = 0.9 * lampGlow;   // the indoor reading lamp has no halo
+    }
     sunGlow.material.color.set(0xffdf8a).lerp(new THREE.Color(0xff9d5c), glow * 0.7);   // golden-hour halo
     sunGlow.material.opacity = 0.75 * (1 - 0.85 * wxF);
 
@@ -4668,7 +4680,7 @@ function setRainHiss(vol) {
 // 0.25~1.8초 뒤 거리감 있는 천둥(합성 노이즈, 파일 없음)이 따라온다. 스톰 중 3~11초 간격.
 const lightningLight = new THREE.DirectionalLight(0xdfe8ff, 0);
 lightningLight.position.set(6, 12, -4);
-scene.add(lightningLight);
+// scene 합류는 updateWeather가 뇌우 경계(stormF 0↔양수)에서만 — 맑은 날 셰이더 라이트 수 절약
 const lightningFlashEl = document.createElement('div');
 lightningFlashEl.style.cssText = 'position:fixed; inset:0; background:linear-gradient(rgba(215,228,255,0.95), rgba(180,200,245,0.5)); opacity:0; pointer-events:none; z-index:60;';
 document.body.appendChild(lightningFlashEl);
@@ -4769,6 +4781,10 @@ function updateWeather(delta) {
         stormF = THREE.MathUtils.clamp(stormF + Math.sign(stormTarget - stormF) * delta / 4, 0, 1);   // 뇌우는 ~4s로 빠르게 내려앉는다
         updateDayNight(true);
     }
+    // 번개 라이트는 뇌우 동안만 씬에 — 상시 intensity 0으로 두면 맑은 날에도 셰이더 라이트 수에
+    // 포함돼 모든 픽셀이 값을 낸다 (램프와 같은 원리, 경계는 stormF 0↔양수).
+    if (stormF > 0 && !lightningLight.parent) scene.add(lightningLight);
+    else if (stormF === 0 && lightningLight.parent) scene.remove(lightningLight);
     wxTime.value += delta;
     const rainy = wxKind === 'rain' || wxKind === 'storm';
     rainPts.visible = rainy && wxF > 0.02;
