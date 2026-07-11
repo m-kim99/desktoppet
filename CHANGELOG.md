@@ -5,6 +5,20 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Changed (발열 4/7 — 월드 베이크: 마크식 크로스 소품 병합, 402→190 draws)
+- **bare M(color)가 색상별 공유 재질이 됐다** (extra 있으면 키에 map uuid 등 포함해 공유, unique:true로
+  옵트아웃 — 계절이 color를 만지는 잔디/자갈 인스턴스 2곳만 해당). 나무색 등 11곳에서 따로 만들던
+  woodTex 재질이 1개로.
+- **worldBake()**: 소품 경계를 넘어 같은 재질끼리 한 덩어리로 굽는다(마크 청크 메싱 원리). 원본은
+  visible=false로 남아 Raycaster(r178은 visible 무시)가 그대로 맞으므로 클릭·호버·공사 판정 무변경.
+  나무도 포함(타입 병합과 달리 원본을 지우지 않아 seasonLeaves 리베이크가 살아있음) + 다리·길 리본
+  (WORLD_STATIC_ROOTS) + 그림자 블롭(전부 1콜). 재베이크 훅: 공사모드 진입=unbake/종료=bake,
+  계절 전환 시작=unbake/페이드 완료=bake.
+- 실측: **402→190 draws**(전환·공사 중엔 원본 388~416으로 복귀 후 재베이크 확인), tris 124k→136k
+  (+10%, 병합 덩어리는 프러스텀 컬링 포기 — 이 규모에선 남는 트레이드). 낮/밤/겨울 스킨·공사 토글·
+  계절 왕복 검증. 심야 스모크의 우클릭 WARN은 자동취침(기존 시각 비결정성)이 원인 — 낮 고정 재검 PASS.
+- 디버그: ?stats=1 훅에 scene(draw 브레이크다운)·season(계절 강제) 추가.
+
 ### Changed (발열 3/7 — 오션 파도 GPU 이행)
 - 바다 4파 사인 파고와 해석 법선을 버텍스 셰이더로 이식(onBeforeCompile, 강수·분수와 같은 공유
   wxTime 시계) — CPU가 4,592정점을 매 프레임 재계산하고 position+normal ~110KB를 재업로드하던

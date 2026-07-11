@@ -360,6 +360,7 @@ if (SEASON_OVERRIDE && SEASONS[SEASON_OVERRIDE]) manualSeason = SEASON_OVERRIDE;
 const worldSeason = () => manualSeason || calendarSeason();
 let season = worldSeason();   // the season currently painted onto the scene
 let seasonBlend = null;       // in-flight 2.5s crossfade, advanced by updateSeasonBlend()
+let buildMode = false;        // 🔨 공사모드 — 핸들러들은 아래쪽에, 선언은 초기 계절 적용보다 먼저
 // Season palettes (여름 = 원본). Leaf pairs are [top, bottom] for the baked lobe gradients.
 const LEAF_AUTUMN = [[0xffc95e, 0xc07a28], [0xff9448, 0xbb5a22], [0xe8654e, 0xa03a28]];   // 금빛/주황/빨강 — 나무마다 하나
 const CHERRY_LEAF = { spring: [0xffc9de, 0xf095bb], summer: [0x8bd678, 0x4a9345], autumn: [0xff9a66, 0xc25a35], winter: [0xd3ccda, 0x968ea2] };
@@ -863,7 +864,21 @@ const SEESAW_BODIES = [];  // the tilting planks — one shared angle drives bot
 // 웜 베이지(0xc2b096~0xa08d74, 순수 회색 금지), 포인트 색은 파스텔 원색(코랄 f5a394 · 민트 93d1c8 ·
 // 하늘 a5d6ef · 분홍 f7c6d3 · 꿀 e8c46f · 버터 f7dd66). 새 프롭은 이 대역에서 고르고, 정적 부품은
 // bakeGrad(top, bottom)로 톱라이트 램프를 얹는 것이 기본 문법.
-const M = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, ...extra });
+// bare M(color)는 색상별 공유 인스턴스다(월드 베이크가 소품 경계를 넘어 병합하는 열쇠) —
+// 재질을 개별로 만지고 싶으면(색 애니메이션 등) extra를 넘기거나 전용 material을 만들 것.
+// extra가 있으면 예전처럼 호출마다 새 인스턴스라 안전하다 (tuft·pebble의 계절 틴트가 이 경우).
+const M_CACHE = new Map();
+const M = (color, extra) => {
+    if (extra && extra.unique) {   // 색·불투명도를 개별 애니메이션할 재질은 캐시 밖 (계절 틴트 등)
+        const { unique, ...rest } = extra;
+        return new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, ...rest });
+    }
+    const key = extra
+        ? color + '|' + Object.entries(extra).map(([k, v]) => k + ':' + (v && v.uuid ? v.uuid : v)).sort().join('|')
+        : color;
+    if (!M_CACHE.has(key)) M_CACHE.set(key, new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, ...(extra || {}) }));
+    return M_CACHE.get(key);
+};
 const leafMatGrad = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
 
 function makeTree(p) {
@@ -3685,6 +3700,65 @@ function mergePropGroup(root) {
     }
 }
 const NO_MERGE_DEBUG = new URLSearchParams(window.location.search).get('nomerge') === '1';   // 병합 on/off 비교용
+
+// ---- 월드 베이크 (마크의 청크 메싱 원리): 소품 경계를 넘어 같은 재질 인스턴스끼리 한 덩어리로.
+// 타입 내 병합(mergePropGroup)과 판정 규칙이 완전히 같아서 안전 범위도 같다 — 다른 점은 소품
+// 경계를 넘는다는 것뿐이고, 그걸 가능하게 하는 게 bare M(color) 공유 캐시다. 원본 메시는
+// visible=false로 남는다: Raycaster(r178)는 visible을 안 보므로 클릭·호버·공사 판정은 예전
+// 그대로 원본에 맞고, 그리기(+그림자 캐스터)만 병합본이 맡아 draw call이 준다. 공사모드 진입
+// 시 unbake(원본 복원·병합본 폐기), 종료 시 재베이크 — 블록이 바뀔 때만 청크를 다시 굽는 것.
+let worldBakeMeshes = [];
+let worldBakeHidden = [];
+// 나무는 타입 병합(원본 제거)엔 못 넣지만 — seasonLeaves가 원본 geo의 색 버퍼를 리베이크하니까 —
+// 월드 베이크(원본 숨김)엔 넣을 수 있다: 계절 전환이 시작되면 unbake로 원본을 되살려 크로스페이드를
+// 보여주고, 전환이 끝나면 새 잎색 그대로 재베이크한다 (applySeason/updateSeasonBlend의 훅).
+const BAKE_TYPES = new Set([...MERGE_TYPES, 'tree', 'rock']);
+const WORLD_STATIC_ROOTS = [];   // 소품이 아닌 정적물(다리·길 리본) — 만들 때 여기 등록하면 베이크된다
+function worldUnbake() {
+    for (const m of worldBakeMeshes) { stage.remove(m); m.geometry.dispose(); }   // 재질은 공유라 dispose 금지
+    worldBakeMeshes = [];
+    for (const m of worldBakeHidden) m.visible = true;
+    worldBakeHidden = [];
+}
+function worldBake() {
+    if (NO_MERGE_DEBUG) return;
+    if (seasonBlend) return;   // 전환 크로스페이드 중엔 원본이 그려야 한다 — 끝나는 프레임이 재베이크한다
+    worldUnbake();
+    const skip = new Set(seasonSnowCaps);
+    if (mailFlag) mailFlag.traverse((o) => skip.add(o));
+    const buckets = new Map();
+    const collect = (o) => {
+        if (!o.isMesh || o.isInstancedMesh || !o.visible || skip.has(o)) return;
+        if (o.userData && (o.userData.keyIdx != null || o.userData.plotIdx != null)) return;
+        if (Array.isArray(o.material)) return;
+        const sig = Object.keys(o.geometry.attributes).sort().join(',') + (o.geometry.index ? '+i' : '');
+        const key = o.material.uuid + '|' + sig;
+        if (!buckets.has(key)) buckets.set(key, []);
+        buckets.get(key).push(o);
+    };
+    for (const p of PROPS) {
+        if (!p.obj || !BAKE_TYPES.has(p.type)) continue;
+        if (p.obj.userData.seats) for (const s of p.obj.userData.seats) s.traverse((o) => skip.add(o));
+        if (p.obj.userData.plank) p.obj.userData.plank.traverse((o) => skip.add(o));
+        p.obj.updateMatrixWorld(true);
+        p.obj.traverse(collect);
+        if (p.blob) { p.blob.updateMatrixWorld(true); collect(p.blob); }   // 그림자 블롭: 전부 blobMat 공유 → 1콜
+    }
+    for (const r of WORLD_STATIC_ROOTS) { r.updateMatrixWorld(true); r.traverse(collect); }
+    for (const list of buckets.values()) {
+        if (list.length < 2) continue;   // 혼자면 원본이 그대로 그린다
+        const merged = mergeGeometries(list.map((m) => m.geometry.clone().applyMatrix4(m.matrixWorld)), false);
+        if (!merged) continue;           // 실패하면 원본 유지 (안전망)
+        const mm = new THREE.Mesh(merged, list[0].material);
+        mm.castShadow = list[0].castShadow;       // 버킷은 재질 단위라 동질적 — 블롭 데칼(false)은
+        mm.receiveShadow = list[0].receiveShadow; // false를, 소품(true)은 true를 그대로 잇는다
+        mm.renderOrder = list[0].renderOrder;
+        mm.matrixAutoUpdate = false;     // stage는 무변환 그룹 — world 좌표를 그대로 굳힌다
+        stage.add(mm);
+        worldBakeMeshes.push(mm);
+        for (const m of list) { m.visible = false; worldBakeHidden.push(m); }
+    }
+}
 for (const p of PROPS) {
     const obj = PROP_BUILDERS[p.type](p);
     if (MERGE_TYPES.has(p.type) && !NO_MERGE_DEBUG) mergePropGroup(obj);
@@ -4018,13 +4092,17 @@ function buildRibbon(points, width, closed) {
         const a = (i / 72) * Math.PI * 2;
         loopPts.push({ x: Math.sin(a) * ROAD_LOOP_R, z: Math.cos(a) * ROAD_LOOP_R });
     }
-    stage.add(buildRibbon(loopPts, ROAD_W, true));
+    const loopRibbon = buildRibbon(loopPts, ROAD_W, true);
+    stage.add(loopRibbon);
+    WORLD_STATIC_ROOTS.push(loopRibbon);   // 리본은 전부 roadMat 공유 — 베이크가 1콜로 합친다
     // Spokes from the plaza edge out just past the loop
     for (const a of SPOKE_ANGLES) {
         const dx = Math.sin(a), dz = Math.cos(a);
         const pts = [];
         for (let t = PLAZA_R - 0.15; t <= 3.4; t += 0.3) pts.push({ x: dx * t, z: dz * t });
-        stage.add(buildRibbon(pts, ROAD_W * 0.85, false));
+        const spoke = buildRibbon(pts, ROAD_W * 0.85, false);
+        stage.add(spoke);
+        WORLD_STATIC_ROOTS.push(spoke);
     }
     // Plaza: a stone-tiled circle at the center (terrain there is auto-leveled by its flat spot)
     const plazaGeo = new THREE.CircleGeometry(PLAZA_R, 48);
@@ -4089,6 +4167,7 @@ for (let i = 1; i < ISLANDS.length; i++) ROAD_NODES.push({ x: ISLANDS[i].x, z: I
         }
         g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
         stage.add(g);
+        WORLD_STATIC_ROOTS.push(g);   // 다리는 공유 bridgeWood 하나 — 베이크가 섬 3개 다리를 1콜로
     }
 }
 
@@ -4130,7 +4209,7 @@ for (let i = 1; i < ISLANDS.length; i++) ROAD_NODES.push({ x: ISLANDS[i].x, z: I
     // 이 재질들의 color를 애니메이트)가 그대로 살아 있으면서 밑동만 그늘진다.
     const tuftMesh = new THREE.InstancedMesh(
         bakeGrad(new THREE.ConeGeometry(0.022, 0.1, 5), 0xffffff, 0xa9b89c, { curve: 1.1 }),
-        M(0x5fae44, { vertexColors: true }), tufts.length);
+        M(0x5fae44, { vertexColors: true, unique: true }), tufts.length);   // 계절이 color를 만진다 — 공유 금지
     tufts.forEach((s, i) => {
         dummy.position.set(s.x, terrainHeight(s.x, s.z) + 0.04, s.z);
         dummy.rotation.set(rnd(-0.16, 0.16), rnd(0, Math.PI), rnd(-0.16, 0.16));
@@ -4166,7 +4245,7 @@ for (let i = 1; i < ISLANDS.length; i++) ROAD_NODES.push({ x: ISLANDS[i].x, z: I
     const pebbles = spots(46, 0.5);
     const pebbleMesh = new THREE.InstancedMesh(
         bakeGrad(new THREE.DodecahedronGeometry(0.045, 0), 0xffffff, 0x9d9588, { curve: 1.1 }),
-        M(0xbdb7ab, { vertexColors: true }), pebbles.length);
+        M(0xbdb7ab, { vertexColors: true, unique: true }), pebbles.length);   // 계절이 color를 만진다 — 공유 금지
     pebbles.forEach((s, i) => {
         dummy.position.set(s.x, terrainHeight(s.x, s.z) + 0.012, s.z);
         dummy.rotation.set(rnd(0, Math.PI), rnd(0, Math.PI), 0);
@@ -4203,6 +4282,7 @@ function leafPair(e, s) {
 }
 function applySeason(next, animate = true) {
     season = next;
+    worldUnbake();   // 잎 크로스페이드는 원본 lobe들이 그린다 — 전환이 끝나면 재베이크 (updateSeasonBlend)
     const winter = next === 'winter';
     const lobes = seasonLeaves.map((e) => {
         const [top, bottom] = leafPair(e, next);
@@ -4248,6 +4328,7 @@ function updateSeasonBlend(delta) {
         if (season !== 'winter') for (const cap of seasonSnowCaps) cap.visible = false;
         for (const f of seasonFall) f.pts.visible = season === f.when;
         seasonBlend = null;
+        if (!buildMode) worldBake();   // 새 계절 색으로 재베이크 (공사 중이면 종료 훅이 맡는다)
     }
 }
 // 🌦️ 패널의 계절 줄에서 호출: id 고정(예: 'winter'), null = 달력 자동.
@@ -5099,7 +5180,7 @@ const pointerNdc = new THREE.Vector2();
 let pressAt = null;
 // 🔨 공사모드 상태 — 본체(버튼·링·드래그 로직)는 독 UI 아래에 있고, 여기 포인터 핸들러들은
 // 모드가 켜져 있으면 펫 상호작용 대신 사물 선택/드래그로 분기한다.
-let buildMode = false;
+// (buildMode 선언 자체는 파일 상단 — 초기 계절 적용이 월드 베이크 훅에서 읽는다)
 let buildSel = null;    // 선택된 PROPS 엔트리
 let buildDrag = null;   // { id(pointerId), p, planeY, dx, dz, fromX, fromZ, rot }
 // 📱 핀치 줌: 터치 포인터를 직접 추적해 두 손가락 벌림/오므림을 휠과 같은 줌 경로(camZoom —
@@ -5810,8 +5891,9 @@ let statsOn = false;
 try { statsOn = new URLSearchParams(location.search).get('stats') === '1'; } catch (e) {}
 if (statsOn) statsEl.style.display = 'block';
 // ?stats=1 전용 계측 훅 — perf 프로브가 토스트 웨이크(잠깐 60fps 후 복귀)와 장기 idle
-// (ageInput으로 마지막 입력 시각을 과거로 밀어 60초 대기 없이 15fps 티어 진입)을 재현할 때 쓴다.
-if (statsOn) window.__worldDev = { toast: (m) => showToast(m), ageInput: (ms) => { lastInputMs = performance.now() - ms; } };
+// (ageInput으로 마지막 입력 시각을 과거로 밀어 60초 대기 없이 15fps 티어 진입)을 재현할 때 쓰고,
+// scene은 draw call 브레이크다운 집계용, season은 계절 전환(베이크 훅·겨울 스킨) 자동 검증용이다.
+if (statsOn) window.__worldDev = { toast: (m) => showToast(m), ageInput: (ms) => { lastInputMs = performance.now() - ms; }, scene, season: (id) => setManualSeason(id) };
 ecoBtn.addEventListener('dblclick', () => {
     statsOn = !statsOn;
     statsEl.style.display = statsOn ? 'block' : 'none';
@@ -6234,6 +6316,7 @@ function setBuildMode(on) {
     if (on) {
         escapeAction();                                   // 조종 해제 + 메뉴/패널 정리 (차에서도 내림)
         for (const q of pets) forceEndBed(q);             // 침대·그네·시소에서 즉시 하차
+        worldUnbake();                                    // 원본 복원 — 드래그가 소품 단위로 움직이게
         buildSelect(null);
         buildBar.style.display = 'flex';
         showToast('🔨 사물을 끌어서 옮기세요 — 놓을 곳이 빨간 링이면 못 놓아요');
@@ -6242,6 +6325,7 @@ function setBuildMode(on) {
         buildSelect(null);
         buildBar.style.display = 'none';
         saveLayout();
+        worldBake();                                      // 새 배치로 재베이크
         showToast('🔨 배치가 저장됐어요');
         if (buildDirty) {
             buildDirty = false;
@@ -8943,4 +9027,5 @@ function animate() {
     controls.update();
     renderFrame();
 }
+worldBake();   // 씬이 전부 지어진 뒤 첫 베이크 — 이후엔 공사모드 종료 때마다 재베이크
 renderer.setAnimationLoop(animate);
