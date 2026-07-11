@@ -4271,20 +4271,16 @@ function setManualSeason(id) {
 // far sea doesn't shimmer. Two foam rings lap against the cliff, swelling and fading out of phase.
 const OCEAN_LEVEL = -0.52;
 let oceanMesh = null;
-let oceanPos = null;         // live position attribute, y-animated every frame
-let oceanNrm = null;         // live normal attribute — 파고 도함수로 해석적으로 채운다
-let oceanXZ = null;          // per-vertex [x, z, horizonFade] — precomputed once
 {
     const inner = ISLAND_R * 0.81, outer = 40, rings = 40, segs = 112;
-    const positions = [], indices = [];
-    oceanXZ = [];
+    const positions = [], indices = [], fades = [];   // fade: 수평선 밖 0 → 변위·법선 모두 원값 유지
     for (let i = 0; i <= rings; i++) {
         const r = inner * Math.pow(outer / inner, i / rings);
         for (let j = 0; j < segs; j++) {
             const a = (j / segs) * Math.PI * 2;
             const x = Math.cos(a) * r, z = Math.sin(a) * r;
             positions.push(x, OCEAN_LEVEL, z);
-            oceanXZ.push(x, z, 1 - THREE.MathUtils.smoothstep(r, 24, 36));
+            fades.push(1 - THREE.MathUtils.smoothstep(r, 24, 36));
         }
     }
     for (let i = 0; i < rings; i++) {
@@ -4298,18 +4294,37 @@ let oceanXZ = null;          // per-vertex [x, z, horizonFade] — precomputed o
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('aFade', new THREE.Float32BufferAttribute(fades, 1));
     geo.setIndex(indices);
-    geo.computeVertexNormals();
+    geo.computeVertexNormals();   // 평면이라 전부 (0,1,0) — 매 프레임 셰이더가 해석 법선으로 대체
     seaMat = new THREE.MeshPhongMaterial({
         color: 0x3fa9d0, specular: 0x99ddff, shininess: 42,
         transparent: true, opacity: 0.85,     // glassy: the submerged cliff + swimmers show through
     });
+    // 파도는 GPU에서 (강수·분수와 같은 wxTime 시계): 4파 사인 변위와 그 편미분(해석 법선)을
+    // 버텍스 셰이더에 주입한다. 예전엔 CPU가 4,592정점을 매 프레임 다시 계산하고 position+normal
+    // ~110KB를 재업로드했다(발열) — 이제 CPU 몫은 공유 uniform 1개뿐이다. 상수는 CPU 버전과
+    // 동일해야 한다(수영 펫 등이 파고를 CPU에서 다시 샘플링하게 되면 이 식과 맞출 것).
+    seaMat.onBeforeCompile = (shader) => {
+        shader.uniforms.uWxT = wxTime;
+        shader.vertexShader = 'uniform float uWxT;\nattribute float aFade;\n' + shader.vertexShader
+            .replace('#include <beginnormal_vertex>', [
+                'float wvA1 = position.x * 0.9 + uWxT * 0.9;',
+                'float wvA2 = position.z * 1.15 - uWxT * 0.75;',
+                'float wvA3 = (position.x * 0.55 + position.z * 0.83) * 1.6 + uWxT * 1.35;',
+                'float wvA4 = position.x * 3.1 - position.z * 2.3 + uWxT * 2.4;',
+                'float wvDx = aFade * (0.0405 * cos(wvA1) + 0.02464 * cos(wvA3) + 0.0372 * cos(wvA4));',
+                'float wvDz = aFade * (0.0437 * cos(wvA2) + 0.037184 * cos(wvA3) - 0.0276 * cos(wvA4));',
+                'vec3 objectNormal = normalize(vec3(-wvDx, 1.0, -wvDz));',
+            ].join('\n'))
+            .replace('#include <begin_vertex>',
+                'vec3 transformed = vec3(position);\n'
+                + 'transformed.y += aFade * (0.045 * sin(wvA1) + 0.038 * sin(wvA2) + 0.028 * sin(wvA3) + 0.012 * sin(wvA4));');
+    };
     oceanMesh = new THREE.Mesh(geo, seaMat);
     oceanMesh.receiveShadow = true;
     oceanMesh.matrixAutoUpdate = false;   // 지오메트리만 출렁인다 — 메시 변환은 identity 고정
     scene.add(oceanMesh);
-    oceanPos = geo.attributes.position;
-    oceanNrm = geo.attributes.normal;     // fade 0(수평선 밖) 버텍스는 초기 (0,1,0)을 영원히 유지
 
     for (const isl of ISLANDS) {
         for (let i = 0; i < 2; i++) {
@@ -4326,35 +4341,9 @@ let oceanXZ = null;          // per-vertex [x, z, horizonFade] — precomputed o
     updateDayNight(true);            // tint the fresh sea/foam for the current hour
 }
 
-let oceanT = 0;
-function updateOcean(delta) {
-    if (!oceanPos) return;
-    oceanT += delta;
-    const t = oceanT;
-    const arr = oceanPos.array;
-    const nrm = oceanNrm.array;
-    for (let v = 0, n = oceanXZ.length / 3; v < n; v++) {
-        const fade = oceanXZ[v * 3 + 2];
-        if (fade === 0) continue;                     // flat past the horizon fade — skip the math
-        const x = oceanXZ[v * 3], z = oceanXZ[v * 3 + 1];
-        const a1 = x * 0.9 + t * 0.9;
-        const a2 = z * 1.15 - t * 0.75;
-        const a3 = (x * 0.55 + z * 0.83) * 1.6 + t * 1.35;
-        const a4 = x * 3.1 - z * 2.3 + t * 2.4;
-        arr[v * 3 + 1] = OCEAN_LEVEL + fade * (
-            0.045 * Math.sin(a1) + 0.038 * Math.sin(a2) + 0.028 * Math.sin(a3) + 0.012 * Math.sin(a4)
-        );
-        // 해석적 법선 — 위 파고의 x/z 편미분에서 직접. 예전의 computeVertexNormals(9천 삼각형
-        // 전체 순회 + 면 평균)보다 훨씬 싸고, 근사가 아니라 정확한 값이라 스페큘러가 매끈하다.
-        const dx = fade * (0.0405 * Math.cos(a1) + 0.02464 * Math.cos(a3) + 0.0372 * Math.cos(a4));
-        const dz = fade * (0.0437 * Math.cos(a2) + 0.037184 * Math.cos(a3) - 0.0276 * Math.cos(a4));
-        const inv = 1 / Math.sqrt(dx * dx + 1 + dz * dz);
-        nrm[v * 3] = -dx * inv;
-        nrm[v * 3 + 1] = inv;
-        nrm[v * 3 + 2] = -dz * inv;
-    }
-    oceanPos.needsUpdate = true;
-    oceanNrm.needsUpdate = true;
+function updateOcean() {
+    // 파고·법선은 버텍스 셰이더가 wxTime으로 계산한다 — CPU 몫은 거품 링 2개짜리 루프뿐.
+    const t = wxTime.value;
     // Foam: swell outward, fade, restart — the two rings run half a phase apart.
     foamRings.forEach((foam, i) => {
         const ph = (t * 0.42 + i * 0.5) % 1;
@@ -8934,7 +8923,7 @@ function animate() {
     updateSeasonBlend(delta);                // 계절 크로스페이드 — 전환 중에만 일한다
     updateDayNight();                        // throttled inside (repaints ~2×/min)
     maybeAutoDiary();                        // 22시 이후 하루 한 번, 그날의 그림일기를 스스로 쓴다
-    updateOcean(delta);
+    updateOcean();
     if (ballFlight) {
         ballFlight.t += delta;
         const k = Math.min(1, ballFlight.t / ballFlight.dur);

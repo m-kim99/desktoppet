@@ -5,6 +5,13 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Changed (발열 3/7 — 오션 파도 GPU 이행)
+- 바다 4파 사인 파고와 해석 법선을 버텍스 셰이더로 이식(onBeforeCompile, 강수·분수와 같은 공유
+  wxTime 시계) — CPU가 4,592정점을 매 프레임 재계산하고 position+normal ~110KB를 재업로드하던
+  것이 uniform 1개로 줄었다. updateOcean에는 거품 링 2개만 남음. 상수는 CPU 버전과 동일(수영
+  펫이 파고를 CPU 샘플링하게 되면 이 식과 맞출 것). 검증: 셰이더 에러 없음, 근해 수면 클립
+  2초 diff로 파도 움직임 확인, 낮 전경/저각도 룩 동일.
+
 ### Changed (발열 2/7 — ambient 프레임 티어: 안 볼 때는 15fps)
 - 프레임 게이트가 2단(60/30)에서 티어 함수(frameIntervalMs)로: 활동 60fps, ⚡절전/배터리 30fps,
   포커스 구경 30fps → **60초+ 구경은 15fps**, **비포커스는 15fps**(말풍선·토스트 동안만 30fps).
