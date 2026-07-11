@@ -5,6 +5,18 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Fixed (발열 1/7 — 웨이크 정책: idle 30fps가 실사용에서도 걸리게)
+- **정지 커서 60fps 고착 수리**: 커서를 창 위에 둔 채 손만 떼면 콘텐츠가 커서 밑에서 움직일 때
+  Chromium이 쏘는 움직임 0짜리 합성 pointermove가 12초 idle 타이머를 계속 리셋해 영영 60fps로
+  돌던 버그(실측 20초+ 유지). 이제 실제 움직임(movementX/Y≠0)만 입력으로 친다 — 터치는 기기별로
+  movement가 0으로 와서 pointerType으로 무조건 통과(모바일 조작 회귀 없음).
+- **말풍선·토스트의 12초 풀 리셋 제거**: showBubble/showToast가 wakeInput 대신 wakeSoft(4s/3s)로
+  잠깐만 깨운다 — 선제대화가 있는 한 60fps가 기본 상태가 되던 누수. 실측: 토스트 직후 60fps →
+  6초 뒤 30fps 복귀 (전엔 12초+ 유지).
+- **npm run perf:world**: headless(Metal GPU) 발열 프로브 신설 — active/parked/toast/ambient
+  시나리오별 fps·draws·CPU%를 찍어 최적화 전후를 숫자로 비교한다(?stats=1 한정 __worldDev.toast
+  훅 포함). 기준선: active 60fps/CPU 34%, ambient 30fps/CPU 36%, 402 draws.
+
 ### Fixed (홀리데이 후 납작 병아리)
 - 홀리데이 피날레의 착지 스쿼시가 0.92배로 눌린 채 모션이 끝나 펫이 살짝 납작하게 남던 버그 —
   반사인 곡선으로 눌렸다가 정확히 1.0으로 복귀하며 끝난다. 방어선으로 모든 모션 종료 시

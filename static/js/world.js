@@ -227,13 +227,23 @@ window.addEventListener('focus', () => { winFocused = true; });
 window.addEventListener('blur', () => { winFocused = false; });
 // 입력 idle: 포커스여도 12초간 입력이 없으면 30fps(구경 모드), 입력 즉시 60fps 복귀.
 // 저더가 제일 잘 보이는 카메라 조작은 입력 그 자체라 언제나 60fps다. 공사모드·줌 홀드는
-// idle로 치지 않고, 펫이 말을 걸어오면(말풍선·토스트) 잠깐 깨워 모션이 매끄럽게 보이게 한다.
+// idle로 치지 않고, 펫이 말을 걸어오면(말풍선·토스트) wakeSoft로 몇 초만 깨운다 — 12초
+// 타이머를 통째로 리셋하면 선제대화가 있는 한 60fps가 기본 상태가 돼버린다(발열).
 let lastInputMs = performance.now();
+let softWakeUntil = 0;   // 말풍선·토스트용 짧은 웨이크의 만료 시각
 const wakeInput = () => { lastInputMs = performance.now(); };
-for (const ev of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart']) {
+const wakeSoft = (ms) => { softWakeUntil = Math.max(softWakeUntil, performance.now() + ms); };
+for (const ev of ['pointerdown', 'wheel', 'keydown', 'touchstart']) {
     window.addEventListener(ev, wakeInput, { passive: true, capture: true });
 }
-const renderIdle = () => !buildMode && !heldZoom && performance.now() - lastInputMs > 12000;
+// pointermove만 따로: 커서 밑에서 콘텐츠가 움직이면 Chromium이 움직임 0짜리 합성 move를
+// 쏜다 — 커서를 창 위에 둔 채 손만 떼도 idle에 영영 못 들어가던 원인. 실제 움직임만 입력으로
+// 치되, 터치는 기기에 따라 movement가 0으로 오니 pointerType으로 무조건 통과시킨다.
+window.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch' || e.movementX !== 0 || e.movementY !== 0) wakeInput();
+}, { passive: true, capture: true });
+const renderIdle = () => !buildMode && !heldZoom
+    && performance.now() - lastInputMs > 12000 && performance.now() >= softWakeUntil;
 const ecoActive = () => ecoMode || onBattery;
 function applyPixelRatio() {
     const pr = Math.min(window.devicePixelRatio, ecoActive() ? 1.5 : 2);
@@ -5666,7 +5676,7 @@ function showBubble(text) {
     if (bubbleHideTimer) { clearTimeout(bubbleHideTimer); bubbleHideTimer = null; }
     bubbleEl.textContent = text;
     bubbleEl.style.display = 'block';
-    wakeInput();   // 펫이 말을 걸어오면 idle 30fps에서 깨어나 대답 모션이 매끄럽게 보인다
+    wakeSoft(4000);   // 펫이 말을 걸어오면 4초만 60fps — 대답 모션 시작이 매끄럽게 보일 만큼만
 }
 function showBubbleTyped(text) {
     if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
@@ -5809,6 +5819,8 @@ document.body.appendChild(statsEl);
 let statsOn = false;
 try { statsOn = new URLSearchParams(location.search).get('stats') === '1'; } catch (e) {}
 if (statsOn) statsEl.style.display = 'block';
+// ?stats=1 전용 계측 훅 — perf 프로브가 토스트 웨이크(잠깐 60fps 후 복귀)를 재현할 때 쓴다.
+if (statsOn) window.__worldDev = { toast: (m) => showToast(m) };
 ecoBtn.addEventListener('dblclick', () => {
     statsOn = !statsOn;
     statsEl.style.display = statsOn ? 'block' : 'none';
@@ -6280,7 +6292,7 @@ toastEl.style.cssText = 'position:fixed; left:50%; bottom:calc(70px + env(safe-a
 document.body.appendChild(toastEl);
 let toastTimer = null;
 function showToast(text) {
-    wakeInput();   // 토스트가 뜨는 순간(편지 도착 등)도 잠깐 60fps — 연출이 뚝뚝 끊기지 않게
+    wakeSoft(3000);   // 토스트가 뜨는 순간(편지 도착 등)도 3초만 60fps — 연출이 뚝뚝 끊기지 않게
     toastEl.textContent = text;
     toastEl.style.display = 'block';
     if (toastTimer) clearTimeout(toastTimer);
