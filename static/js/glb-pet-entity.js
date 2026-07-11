@@ -515,7 +515,7 @@ export function updateGlbPetEntity(pet, delta) {
                 } else {                                         // 피날레 폴짝 + 팡
                     const k = (p - 0.78) / 0.22;
                     y = Math.sin(k * Math.PI) * 0.15;
-                    sq = k > 0.85 ? 1 - 0.08 * Ease.inOutSine((k - 0.85) / 0.15) : 1 + 0.06 * Math.sin(k * Math.PI);
+                    sq = k > 0.85 ? 1 - 0.08 * Math.sin((k - 0.85) / 0.15 * Math.PI) : 1 + 0.06 * Math.sin(k * Math.PI);   // 반사인 → k=1에서 정확히 1 (납작 잔류 버그 수리)
                     if (pet.wings.length) {
                         const spread = Math.sin(k * Math.PI);
                         pet.wings.forEach((wg, i) => {
@@ -704,6 +704,8 @@ export function updateGlbPetEntity(pet, delta) {
             }
             return;
         }
+        pet.wrap.scale.y = 1;      // squash/스텝을 쓰는 모션이 어떤 값으로 끝나도 원상복구
+        pet.wrap.position.x = 0;
         pet.action = null;   // done → fall through to idle
         pet.wrap.rotation.y = Math.PI;   // undo any spin (happy)
     }
