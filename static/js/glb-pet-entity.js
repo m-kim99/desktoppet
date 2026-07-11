@@ -19,6 +19,7 @@ export const GLB_MOTIONS = [
     { id: 'cheer',     label: '응원 (Cheer)' },
     { id: 'celebrate', label: '축하 (Celebrate)' },
     { id: 'hug',       label: '포옹 (Hug)' },
+    { id: 'heart',     label: '하트 (Heart)' },
     { id: 'play',      label: '놀이 (Play)' },
     { id: 'think',     label: '생각 (Think)' },
     { id: 'eat',       label: '먹기 (Eat)' },
@@ -267,7 +268,7 @@ export function updateGlbPetEntity(pet, delta) {
     // One-shot motions (from the motion menu / on summon). Plays for its duration, then clears and
     // falls through to idle. Each frame starts from rest so leftover idle pose doesn't bleed in.
     if (pet.action) {
-        const DUR = { wave: 2.4, happy: 1.8, think: 2.8, dance: 4.5, cheer: 3.5, celebrate: 2.6, eat: 3.2, dig: 2.8, stretch: 3.6, hug: 3.0, play: 6.0 };
+        const DUR = { wave: 2.4, happy: 1.8, think: 2.8, dance: 4.5, cheer: 3.5, celebrate: 2.6, heart: 2.6, eat: 3.2, dig: 2.8, stretch: 3.6, hug: 3.0, play: 6.0 };
         const dur = DUR[pet.action.id] || 2.0;
         pet.action.t += delta;
         const p = pet.action.t / dur;
@@ -280,6 +281,7 @@ export function updateGlbPetEntity(pet, delta) {
             pet.wrap.position.y = 0;
             pet.wrap.rotation.x = 0;
             pet.wrap.rotation.z = 0;
+            pet.wrap.scale.y = 1;   // squash&stretch 쓰는 모션(heart)이 중간에 끊겨도 원상복구
             if (pet.tail) pet.tail.rotation.y = 0;
             if (pet.beak) pet.beak.rotation.x = pet.beak.userData._restRotX || 0;
             if (pet.tongue) pet.tongue.rotation.x = pet.tongue.userData._restRotX || 0;
@@ -419,6 +421,58 @@ export function updateGlbPetEntity(pet, delta) {
                 }
                 if (pet.tail) pet.tail.rotation.y = Math.sin(pet.t * 16) * 0.3;
                 if (!a.burst && p >= 0.4) { a.burst = true; pet.burstEmoji(['🎉','🎊','✨','🎈'], 16, { cx: 50, cy: 30 }); }
+            }
+            if (pet.action.id === 'heart') {
+                // 💗 사랑 고백: 움츠림(anticipation) → 갸웃·갸웃("너 좋아" 리듬, outBack) → 폴짝
+                // 점프 + 정점에서 하트 팡 → 감쇠 진동 스쿼시로 착지. 병아리는 양 날개를 가슴 앞으로
+                // 모으고(하트 모양), 강아지는 고개를 젖히며 꼬리 만개. 눈은 ^^ 스마일 스퀸트.
+                // FX: 월드가 pet.heartFx(3D 하트 풀)를 꽂아주면 그걸, 아니면(펫 창) 이모지 버스트.
+                const a = pet.action;
+                let y = 0, tiltZ = 0, sq = 1;
+                if (p < 0.14) {
+                    const k = Ease.inOutSine(p / 0.14);
+                    y = -0.025 * k; sq = 1 - 0.07 * k;
+                } else if (p < 0.32) {
+                    const k = (p - 0.14) / 0.18;
+                    tiltZ = Ease.outBack(k) * 0.24;
+                    sq = 0.93 + 0.07 * Ease.inOutSine(k);
+                    y = -0.025 * (1 - k);
+                } else if (p < 0.5) {
+                    tiltZ = 0.24 - Ease.inOutSine((p - 0.32) / 0.18) * 0.46;
+                } else if (p < 0.72) {
+                    const k = (p - 0.5) / 0.22;
+                    tiltZ = -0.22 * (1 - k);
+                    y = Math.sin(k * Math.PI) * 0.17;
+                    sq = 1 + 0.08 * Math.sin(k * Math.PI);              // 공중에서 살짝 늘어남
+                } else {
+                    const k = (p - 0.72) / 0.28;
+                    sq = 1 - 0.09 * Math.exp(-k * 5) * Math.cos(k * 14);   // 착지 감쇠 진동
+                }
+                pet.wrap.position.y = y;
+                pet.wrap.rotation.z = tiltZ;
+                pet.wrap.scale.y = sq;
+                const warm = Math.sin(Math.min(1, p / 0.9) * Math.PI);
+                pet.eyes.forEach(ey => { ey.scale.y = ey.userData._restScaleY * (1 - 0.72 * warm); });   // ^^
+                if (pet.wings.length) {
+                    const inw = p < 0.72 ? Ease.inOutSine(Math.min(1, p / 0.3)) : 1 - Ease.inOutSine((p - 0.72) / 0.28);
+                    const flap = (p >= 0.5 && p < 0.72) ? Math.abs(Math.sin((p - 0.5) / 0.22 * Math.PI * 3)) * 0.45 : 0;
+                    pet.wings.forEach((wg, i) => {
+                        const side = (i % 2 === 0) ? 1 : -1;
+                        wg.rotation.z = (wg.userData._restRotZ || 0) - side * (inw * 0.75 + flap);
+                    });
+                } else {
+                    pet.wrap.rotation.x = -0.18 * warm;                  // 고개 젖히기
+                    if (pet.tail) pet.tail.rotation.y = Math.sin(pet.t * 20) * (0.25 + 0.35 * warm);
+                }
+                if (!a.burst && p >= 0.61) {                             // 점프 정점: 팡
+                    a.burst = true;
+                    if (pet.heartFx) pet.heartFx();
+                    else pet.burstEmoji(['💗', '💕', '💖'], 10, { cx: 50, cy: 26 });
+                }
+                if (!a.last && p >= 0.86 && pet.floatEmoji) {            // 잔여 하트 한 개 톡
+                    a.last = true;
+                    pet.floatEmoji('💗', { top: 20, size: 26, duration: 1600 });
+                }
             }
             if (pet.action.id === 'eat') {
                 // Head-down feeding. Phases: A(0–.15) lean in, B(.15–.82) eat cycles, C(.82–1) look up

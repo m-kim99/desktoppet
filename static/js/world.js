@@ -4985,6 +4985,7 @@ function wireWorldFx(p) {
             { transform: `translate(calc(-50% + ${dx}px), calc(-50% - 48px)) rotate(10deg)`, opacity: 0 },
         ], { duration, easing: 'ease-out' }).onfinish = () => el.remove();
     };
+    p.pet.heartFx = () => heartBurstAt(p);   // 💗 하트 모션은 이모지 대신 3D 하트로
     p.pet.burstEmoji = (chars, count = 14, { cx = 50, cy = 32 } = {}) => {
         const pt = fxPoint(p, cx, cy);
         const k = pt.h / PET_WIN_CHAR_H;                     // scale the whole burst with the pet
@@ -6382,6 +6383,67 @@ for (const petName of ['chick', 'puppy']) {
         }
     }
 }
+// 💗 하트 모션 3D FX — 진짜 입체 하트(Extrude+bevel) 8개 풀 재사용(생성/폐기 금지 — 발열 규칙).
+// 정점에서 팡: 개별 위상 sway로 떠오르며 천천히 돌고(빛을 받아 반짝), 큰 메인 하트 하나가
+// 잠깐 머물다 사라진다. 차임 2음(완전5도 상승 벨)이 같은 프레임에 울린다.
+const HEART_POOL = [];
+{
+    const hs = new THREE.Shape();
+    hs.moveTo(0.25, 0.25); hs.bezierCurveTo(0.25, 0.25, 0.2, 0, 0, 0); hs.bezierCurveTo(-0.3, 0, -0.3, 0.35, -0.3, 0.35);
+    hs.bezierCurveTo(-0.3, 0.55, -0.1, 0.77, 0.25, 0.95); hs.bezierCurveTo(0.6, 0.77, 0.8, 0.55, 0.8, 0.35);
+    hs.bezierCurveTo(0.8, 0.35, 0.8, 0, 0.5, 0); hs.bezierCurveTo(0.35, 0, 0.25, 0.25, 0.25, 0.25);
+    const hg = new THREE.ExtrudeGeometry(hs, { depth: 0.22, bevelEnabled: true, bevelSize: 0.06, bevelThickness: 0.05, bevelSegments: 2, curveSegments: 10 });
+    hg.center(); hg.rotateZ(Math.PI); hg.scale(0.16, 0.16, 0.16);
+    for (let i = 0; i < 8; i++) {
+        const mat = new THREE.MeshLambertMaterial({ color: i % 2 ? 0xffb3c9 : 0xff7fa8, transparent: true });
+        const m = new THREE.Mesh(hg, mat);
+        m.visible = false;
+        scene.add(m);
+        HEART_POOL.push({ m, t: -1, delay: 0, x: 0, y: 0, z: 0, phase: Math.random() * 6.28, big: i === 0 });
+    }
+}
+function heartChime() {
+    if (audioCtx.state === 'suspended') return;
+    const t0 = audioCtx.currentTime;
+    [[1318, 0], [1975, 0.09]].forEach(([f, d]) => {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t0 + d);
+        g.gain.exponentialRampToValueAtTime(0.13, t0 + d + 0.015);
+        g.gain.setTargetAtTime(0.0001, t0 + d + 0.05, 0.09);
+        o.connect(g); g.connect(sfxMaster);
+        o.start(t0 + d); o.stop(t0 + d + 0.6);
+    });
+}
+function heartBurstAt(p) {
+    heartChime();
+    const pos = p.mover.position;
+    for (const h of HEART_POOL) {
+        h.t = 0;
+        h.delay = h.big ? 0.12 : Math.random() * 0.22;
+        h.x = pos.x + (Math.random() - 0.5) * 0.26;
+        h.z = pos.z + (Math.random() - 0.5) * 0.2;
+        h.y = pos.y + p.height * 0.95;
+    }
+}
+const heartOutBack = (x) => { const c = 1.7, q = x - 1; return 1 + (c + 1) * q * q * q + c * q * q; };
+function updateHeartFx(delta) {
+    for (const h of HEART_POOL) {
+        if (h.t < 0) continue;
+        h.t += delta;
+        const t = h.t - h.delay, life = h.big ? 1.6 : 1.15;
+        if (t < 0) { h.m.visible = false; continue; }
+        if (t > life) { h.t = -1; h.m.visible = false; continue; }
+        const k = t / life;
+        h.m.visible = true;
+        const base = h.big ? 1.5 : 0.7 + (h.phase % 0.45);
+        h.m.scale.setScalar(Math.max(0.02, base * (k < 0.18 ? heartOutBack(k / 0.18) : 1)));
+        h.m.position.set(h.x + Math.sin(h.phase + k * 5) * 0.05, h.y + k * (h.big ? 0.3 : 0.5), h.z);
+        h.m.rotation.y = h.phase + k * (h.big ? 2.2 : 4.2);
+        h.m.material.opacity = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
+    }
+}
+
 let lastVoiceAt = 0;
 function petVoice(p) {
     if (!p || audioCtx.state === 'suspended') return;
@@ -8733,6 +8795,7 @@ function animate() {
     if (Date.now() > mailPollAt) { mailPollAt = Date.now() + 20000; updateMailFlag(); }
     updateDips(delta);
     updateAutoDrive(delta);
+    updateHeartFx(delta);
     updateAutoSleep();
     updateMeals();
     updateCrumbs(delta);
