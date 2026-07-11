@@ -550,40 +550,168 @@ function canvasTex(size, repeatX, repeatY, draw) {
     tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
 }
-const grassTex = canvasTex(128, 1, 1, (ctx, s) => {
-    ctx.fillStyle = '#7cc351';
+// 시드 고정 난수 — 텍스처가 로드마다 달라지지 않게 (전후 비교·스크린샷 재현성)
+function seededRand(seed) {
+    let sd = seed;
+    return () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+}
+// 잔디: 동숲식 삼각 패턴의 고밀도판 — 톤 4종을 섞고 위치·크기를 지터해서 "타일 카펫" 반복감을
+// 깬다. 밑에 저주파 얼룩, 위에 가는 잎날 스트로크. (256px, 월드 1.25m 반복은 그대로)
+const grassTex = canvasTex(256, 1, 1, (ctx, s) => {
+    const R = seededRand(7);
+    ctx.fillStyle = '#79c04f';
     ctx.fillRect(0, 0, s, s);
-    const cell = s / 8;
-    for (let r = 0; r < 8; r++) {
-        for (let q = 0; q < 8; q++) {
-            const x = q * cell + (r % 2 ? cell / 2 : 0);
-            const y = r * cell;
-            ctx.fillStyle = (r + q) % 3 ? 'rgba(255,255,255,0.10)' : 'rgba(25,75,15,0.10)';
+    for (let i = 0; i < 26; i++) {   // 저주파 얼룩 — 셀 경계와 무관한 큰 붓터치
+        const g = ctx.createRadialGradient(R() * s, R() * s, 0, R() * s, R() * s, s * (0.12 + R() * 0.16));
+        const warm = R() > 0.5;
+        g.addColorStop(0, warm ? 'rgba(168,205,90,0.16)' : 'rgba(88,168,96,0.15)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, s, s);
+    }
+    const cell = s / 10;
+    const tones = ['rgba(255,255,240,0.13)', 'rgba(214,240,140,0.15)', 'rgba(40,105,30,0.13)', 'rgba(25,75,15,0.10)'];
+    for (let r = 0; r < 10; r++) {
+        for (let q = 0; q < 10; q++) {
+            if (R() < 0.14) continue;   // 빈 칸 — 규칙성 깨기
+            const x = q * cell + (r % 2 ? cell / 2 : 0) + (R() - 0.5) * cell * 0.34;
+            const y = r * cell + (R() - 0.5) * cell * 0.3;
+            const k = 0.72 + R() * 0.44;
+            ctx.fillStyle = tones[Math.floor(R() * tones.length)];
             ctx.beginPath();
-            ctx.moveTo(x + cell * 0.5, y + cell * 0.2);
-            ctx.lineTo(x + cell * 0.8, y + cell * 0.64);
-            ctx.lineTo(x + cell * 0.2, y + cell * 0.64);
+            ctx.moveTo(x + cell * 0.5, y + cell * (0.62 - 0.42 * k));
+            ctx.lineTo(x + cell * (0.5 + 0.3 * k), y + cell * 0.62);
+            ctx.lineTo(x + cell * (0.5 - 0.3 * k), y + cell * 0.62);
             ctx.closePath();
             ctx.fill();
         }
     }
+    ctx.strokeStyle = 'rgba(226,248,168,0.35)';   // 가는 잎날 — 근경에서 "풀"로 읽히는 디테일
+    ctx.lineWidth = s / 170;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 44; i++) {
+        const x = R() * s, y = R() * s, h = s * (0.02 + R() * 0.03), lean = (R() - 0.5) * h;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.quadraticCurveTo(x + lean * 0.3, y - h * 0.6, x + lean, y - h);
+        ctx.stroke();
+    }
 });
-const snowGroundTex = canvasTex(128, 1, 1, (ctx, s) => {   // 겨울 설원 — grassTex와 같은 AC 삼각 패턴의 눈 팔레트판
+const snowGroundTex = canvasTex(256, 1, 1, (ctx, s) => {   // 겨울 설원 — grassTex와 같은 패턴 문법의 눈 팔레트판
+    const R = seededRand(11);
     ctx.fillStyle = '#eef3fb';
     ctx.fillRect(0, 0, s, s);
-    const cell = s / 8;
-    for (let r = 0; r < 8; r++) {
-        for (let q = 0; q < 8; q++) {
-            const x = q * cell + (r % 2 ? cell / 2 : 0);
-            const y = r * cell;
-            ctx.fillStyle = (r + q) % 3 ? 'rgba(255,255,255,0.55)' : 'rgba(150,172,208,0.16)';
+    for (let i = 0; i < 18; i++) {   // 바람이 쓸어놓은 자국 — 저주파 명암
+        const g = ctx.createRadialGradient(R() * s, R() * s, 0, R() * s, R() * s, s * (0.14 + R() * 0.16));
+        g.addColorStop(0, R() > 0.5 ? 'rgba(255,255,255,0.30)' : 'rgba(176,194,224,0.14)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, s, s);
+    }
+    const cell = s / 10;
+    const tones = ['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.35)', 'rgba(150,172,208,0.15)', 'rgba(132,156,196,0.10)'];
+    for (let r = 0; r < 10; r++) {
+        for (let q = 0; q < 10; q++) {
+            if (R() < 0.16) continue;
+            const x = q * cell + (r % 2 ? cell / 2 : 0) + (R() - 0.5) * cell * 0.34;
+            const y = r * cell + (R() - 0.5) * cell * 0.3;
+            const k = 0.72 + R() * 0.44;
+            ctx.fillStyle = tones[Math.floor(R() * tones.length)];
             ctx.beginPath();
-            ctx.moveTo(x + cell * 0.5, y + cell * 0.2);
-            ctx.lineTo(x + cell * 0.8, y + cell * 0.64);
-            ctx.lineTo(x + cell * 0.2, y + cell * 0.64);
+            ctx.moveTo(x + cell * 0.5, y + cell * (0.62 - 0.42 * k));
+            ctx.lineTo(x + cell * (0.5 + 0.3 * k), y + cell * 0.62);
+            ctx.lineTo(x + cell * (0.5 - 0.3 * k), y + cell * 0.62);
             ctx.closePath();
             ctx.fill();
         }
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';   // 반짝이 결정 몇 점
+    for (let i = 0; i < 14; i++) {
+        ctx.beginPath();
+        ctx.arc(R() * s, R() * s, s / 200 + R() * s / 260, 0, Math.PI * 2);
+        ctx.fill();
+    }
+});
+// 풀잎 다발 스프라이트 — 루미넌스(흰~회)로 그려서 material.color(계절 틴트)가 색을 입힌다.
+// 원뿔 콘 잔디를 대체하는 십자 quad에 얹는 알파 텍스처.
+const bladeTex = canvasTex(64, 1, 1, (ctx, s) => {
+    const R = seededRand(23);
+    ctx.clearRect(0, 0, s, s);
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 7; i++) {   // 잎날 7장 — 아래는 그늘, 끝은 밝게
+        const x0 = s * (0.22 + 0.56 * (i / 6)) + (R() - 0.5) * s * 0.06;
+        const lean = (i / 6 - 0.5) * s * 0.5 + (R() - 0.5) * s * 0.12;
+        const h = s * (0.5 + R() * 0.42);
+        const w = s * (0.055 + R() * 0.03);
+        const grad = ctx.createLinearGradient(0, s, 0, s - h);
+        grad.addColorStop(0, 'rgba(105,112,100,1)');    // 밑동 그늘
+        grad.addColorStop(0.55, 'rgba(190,198,182,1)');
+        grad.addColorStop(1, 'rgba(246,250,238,1)');     // 잎끝 하이라이트
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(x0 - w, s);
+        ctx.quadraticCurveTo(x0 - w * 0.4 + lean * 0.4, s - h * 0.55, x0 + lean, s - h);
+        ctx.quadraticCurveTo(x0 + w * 0.4 + lean * 0.4, s - h * 0.55, x0 + w, s);
+        ctx.closePath();
+        ctx.fill();
+    }
+});
+// 꽃송이 스프라이트 — 루미넌스 꽃잎(instanceColor·계절 틴트가 착색) + 웜 옐로 수술.
+const flowerTex = canvasTex(48, 1, 1, (ctx, s) => {
+    ctx.clearRect(0, 0, s, s);
+    const cx = s / 2, cy = s / 2;
+    for (let i = 0; i < 6; i++) {   // 꽃잎 6장
+        const a = (i / 6) * Math.PI * 2;
+        const px = cx + Math.cos(a) * s * 0.27, py = cy + Math.sin(a) * s * 0.27;
+        const g = ctx.createRadialGradient(px, py, 0, px, py, s * 0.21);
+        g.addColorStop(0, 'rgba(255,255,255,1)');
+        g.addColorStop(0.75, 'rgba(226,222,214,1)');
+        g.addColorStop(1, 'rgba(226,222,214,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(px, py, s * 0.21, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    const c = ctx.createRadialGradient(cx, cy, 0, cx, cy, s * 0.15);   // 수술 — 고정 웜톤 (틴트와 곱해도 노랗게 남는다)
+    c.addColorStop(0, 'rgba(255,214,110,1)');
+    c.addColorStop(1, 'rgba(230,168,64,1)');
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.arc(cx, cy, s * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+});
+// 섬 기슭 거품 링의 알파맵 — 매끈한 도넛 대신 스캘럽·끊김이 있는 유기적 거품선.
+// RingGeometry의 평면 UV(외접원 기준)에 맞춰 캔버스 가장자리 밴드(반지름 0.86~1.0)에 그린다.
+const foamTex = canvasTex(128, 1, 1, (ctx, s) => {
+    const R = seededRand(31);
+    ctx.clearRect(0, 0, s, s);
+    const cx = s / 2;
+    for (let i = 0; i < 150; i++) {   // 링 경로를 따라 방울 뭉치 — 겹치면 띠, 빈 곳은 끊김
+        const a = R() * Math.PI * 2;
+        const rr = s * (0.435 + R() * 0.05);
+        if (R() < 0.15) continue;
+        ctx.fillStyle = `rgba(255,255,255,${0.5 + R() * 0.5})`;
+        ctx.beginPath();
+        ctx.arc(cx + Math.cos(a) * rr, cx + Math.sin(a) * rr, s * (0.012 + R() * 0.022), 0, Math.PI * 2);
+        ctx.fill();
+    }
+});
+// 연못물 — 중심으로 갈수록 깊어지는 라디얼 그라데이션 (플라스틱 원판 → 물).
+const pondTex = canvasTex(128, 1, 1, (ctx, s) => {
+    const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+    g.addColorStop(0, '#2e7ba6');     // 깊은 중심
+    g.addColorStop(0.55, '#4aa3c8');
+    g.addColorStop(0.85, '#7fd0e8');  // 얕은 가장자리
+    g.addColorStop(1, '#a5e2f0');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, s, s);
+    const R = seededRand(41);
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';   // 잔물결 호
+    ctx.lineWidth = s / 90;
+    for (let i = 0; i < 8; i++) {
+        ctx.beginPath();
+        ctx.arc(s / 2, s / 2, s * (0.12 + R() * 0.33), R() * Math.PI * 2, R() * Math.PI * 2 + 0.6 + R() * 0.9);
+        ctx.stroke();
     }
 });
 const petalTex = canvasTex(32, 1, 1, (ctx) => {   // 벚꽃잎 스프라이트 — 봄의 벚나무가 흩날린다
@@ -1141,15 +1269,24 @@ function makePond() {
     g.add(sand);
     const water = new THREE.Mesh(
         new THREE.CylinderGeometry(0.585, 0.585, 0.045, 36),
-        M(0x6ec6e8, { transparent: true, opacity: 0.68 })   // see the sandy basin + paddling feet
+        // 깊이 그라데이션(중심 진청 → 가장자리 여울) + 살짝 매끈한 표면 — 플라스틱 원판을 물로.
+        // 투명은 유지: 모래 바닥과 발장구가 비쳐 보인다.
+        new THREE.MeshStandardMaterial({ map: pondTex, transparent: true, opacity: 0.8, roughness: 0.32, metalness: 0 })
     );
     water.position.y = 0.038;
     g.add(water);
-    const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.014, 16), M(0x66bb6a));
-    pad.position.set(0.16, 0.066, -0.12);
-    g.add(pad);
-    const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.032, 10, 8), M(0xff8fb3));
-    bloom.position.set(0.16, 0.085, -0.12);
+    // 수련잎: 노치(파이 컷) 있는 잎 3장 — 원기둥 단추 하나였던 걸 잎으로.
+    const padMat = M(0x5da95f);
+    for (const [px, pz, rot, sc] of [[0.16, -0.12, 0.6, 1], [-0.2, 0.16, 2.8, 0.8], [0.05, 0.33, 4.4, 0.65]]) {
+        const pad = new THREE.Mesh(new THREE.CircleGeometry(0.088 * sc, 18, 0.35, Math.PI * 1.78).rotateX(-Math.PI / 2), padMat);
+        pad.position.set(px, 0.063, pz);
+        pad.rotation.y = rot;
+        g.add(pad);
+    }
+    const bloom = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.085, 0.085).rotateX(-Math.PI / 2),
+        new THREE.MeshLambertMaterial({ map: flowerTex, alphaTest: 0.4, side: THREE.DoubleSide, color: 0xff8fb3 }));
+    bloom.position.set(0.16, 0.075, -0.12);
     g.add(bloom);
     const stoneM = M(0xc4b6a0);   // 팔레트 ④: 웜 스톤
     for (const [x, z, s] of [[-0.62, 0.28, 1], [0.05, 0.68, 0.8], [0.6, -0.35, 0.9]]) {
@@ -2406,11 +2543,11 @@ const flowerTmpM = new THREE.Matrix4(), flowerTmpC = new THREE.Color();
 function ensureFlowerIM() {
     if (flowerStemIM) return;
     flowerStemIM = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.009, 0.011, 0.1, 6), M(0x4e9a3d), FLOWER_CAP);
-    // 머리는 흰~회 루미넌스 램프를 굽고 vertexColors로 켠다 — instanceColor(꽃색)와 곱해져
-    // "위는 밝고 아래는 그늘진" 동숲식 셰이딩이 모든 꽃색에 공짜로 얹힌다.
+    // 머리 = 수평 꽃송이 quad — flowerTex(루미넌스 꽃잎 + 웜 수술)에 instanceColor(꽃색)가 곱해진다.
+    // 들꽃(headMesh)과 같은 문법: 구슬 막대사탕이 아니라 꽃잎이 보이는 꽃.
     flowerHeadIM = new THREE.InstancedMesh(
-        bakeGrad(new THREE.SphereGeometry(0.032, 10, 8), 0xffffff, 0xb2a898, { curve: 1.2 }),
-        new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true }), FLOWER_CAP);
+        new THREE.PlaneGeometry(0.095, 0.095).rotateX(-Math.PI / 2),
+        new THREE.MeshLambertMaterial({ map: flowerTex, alphaTest: 0.4, side: THREE.DoubleSide, color: 0xffffff }), FLOWER_CAP);
     flowerStemIM.count = 0;
     flowerHeadIM.count = 0;
     flowerStemIM.frustumCulled = false;   // 인스턴스가 온 섬에 흩어진다 — 지오메트리 바운즈 무의미
@@ -4217,27 +4354,35 @@ for (let i = 1; i < ISLANDS.length; i++) ROAD_NODES.push({ x: ISLANDS[i].x, z: I
     };
 
     const tufts = clusters(68, 4, 7, 0.42, 0.45);   // ~370포기가 4~7포기씩 다발로
-    // 루미넌스 램프(흰~회)를 굽고 vertexColors로 material.color와 곱한다 — 계절 틴트(applySeason이
-    // 이 재질들의 color를 애니메이트)가 그대로 살아 있으면서 밑동만 그늘진다.
+    // 십자 quad 풀잎(게임 잔디의 표준형): 진초록 원뿔 콘이 근경에서 스파이크로 읽히던 걸 대체.
+    // bladeTex는 루미넌스로 그려서 material.color(계절 틴트, applySeason이 애니메이트)가 착색한다.
+    // alphaTest라 투명 정렬 불요 — 여전히 1 드로우콜. 그림자는 끈다(알파 quad는 사각형 그림자를 만든다).
+    const bladeGeo = mergeGeometries([
+        new THREE.PlaneGeometry(0.17, 0.12).translate(0, 0.058, 0),
+        new THREE.PlaneGeometry(0.17, 0.12).rotateY(Math.PI / 2).translate(0, 0.058, 0),
+    ]);
     const tuftMesh = new THREE.InstancedMesh(
-        bakeGrad(new THREE.ConeGeometry(0.022, 0.1, 5), 0xffffff, 0xa9b89c, { curve: 1.1 }),
-        M(0x5fae44, { vertexColors: true, unique: true }), tufts.length);   // 계절이 color를 만진다 — 공유 금지
+        bladeGeo,
+        new THREE.MeshLambertMaterial({ map: bladeTex, alphaTest: 0.45, side: THREE.DoubleSide, color: 0x5fae44 }),   // 계절이 color를 만진다 — 전용 재질
+        tufts.length);
     tufts.forEach((s, i) => {
-        dummy.position.set(s.x, terrainHeight(s.x, s.z) + 0.04, s.z);
-        dummy.rotation.set(rnd(-0.16, 0.16), rnd(0, Math.PI), rnd(-0.16, 0.16));
+        dummy.position.set(s.x, terrainHeight(s.x, s.z) + 0.002, s.z);
+        dummy.rotation.set(rnd(-0.14, 0.14), rnd(0, Math.PI), rnd(-0.14, 0.14));
         dummy.scale.setScalar(rnd(0.7, 1.5));
         dummy.updateMatrix();
         tuftMesh.setMatrixAt(i, dummy.matrix);
     });
-    tuftMesh.castShadow = true;
     stage.add(tuftMesh);
 
     const petals = [0xff8fb3, 0xffd54f, 0xffffff, 0xb39ddb, 0xff8a65];
     const blooms = clusters(17, 3, 6, 0.3, 0.5);    // 들꽃도 화단처럼 3~6송이 다발로
     const stemMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.008, 0.01, 0.09, 6), M(0x4e9a3d), blooms.length);
+    // 꽃머리 = 수평 꽃송이 quad (flowerTex 루미넌스 꽃잎 × instanceColor) — 구슬 막대사탕 탈피.
+    // 카메라가 위에서 내려다보는 월드라 수평 디스크가 제일 "꽃"으로 읽힌다. 살짝 랜덤 틸트.
     const headMesh = new THREE.InstancedMesh(
-        bakeGrad(new THREE.SphereGeometry(0.028, 10, 8), 0xffffff, 0xb2a898, { curve: 1.2 }),
-        new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true }), blooms.length);
+        new THREE.PlaneGeometry(0.085, 0.085).rotateX(-Math.PI / 2),
+        new THREE.MeshLambertMaterial({ map: flowerTex, alphaTest: 0.4, side: THREE.DoubleSide, color: 0xffffff }),   // 계절이 color를 만진다 — 전용 재질
+        blooms.length);
     blooms.forEach((s, i) => {
         const y = terrainHeight(s.x, s.z);
         dummy.rotation.set(0, 0, 0);
@@ -4246,11 +4391,11 @@ for (let i = 1; i < ISLANDS.length; i++) ROAD_NODES.push({ x: ISLANDS[i].x, z: I
         dummy.updateMatrix();
         stemMesh.setMatrixAt(i, dummy.matrix);
         dummy.position.set(s.x, y + 0.095, s.z);
+        dummy.rotation.set(rnd(-0.22, 0.22), rnd(0, Math.PI), rnd(-0.22, 0.22));
         dummy.updateMatrix();
         headMesh.setMatrixAt(i, dummy.matrix);
         headMesh.setColorAt(i, new THREE.Color(petals[(s.ci ?? i) % petals.length]));
     });
-    headMesh.castShadow = true;
     stage.add(stemMesh);
     stage.add(headMesh);
 
@@ -4366,7 +4511,7 @@ const OCEAN_LEVEL = -0.52;
 let oceanMesh = null;
 {
     const inner = ISLAND_R * 0.81, outer = 40, rings = 40, segs = 112;
-    const positions = [], indices = [], fades = [];   // fade: 수평선 밖 0 → 변위·법선 모두 원값 유지
+    const positions = [], indices = [], fades = [], colors = [];   // fade: 수평선 밖 0 → 변위·법선 모두 원값 유지
     for (let i = 0; i <= rings; i++) {
         const r = inner * Math.pow(outer / inner, i / rings);
         for (let j = 0; j < segs; j++) {
@@ -4374,6 +4519,16 @@ let oceanMesh = null;
             const x = Math.cos(a) * r, z = Math.sin(a) * r;
             positions.push(x, OCEAN_LEVEL, z);
             fades.push(1 - THREE.MathUtils.smoothstep(r, 24, 36));
+            // 기슭 여울: 가장 가까운 섬 기슭까지의 거리로 근해를 밝고 초록끼 돌게, 원양은 살짝
+            // 깊게 — 곱셈(1.0 근방) 정점색이라 낮/밤/계절 물빛(seaMat.color)과 그대로 합성된다.
+            let minD = Infinity;
+            for (const q of ISLANDS) {
+                const d = Math.hypot(x - q.x, z - q.z) - q.r;
+                if (d < minD) minD = d;
+            }
+            const shore = 1 - THREE.MathUtils.smoothstep(minD, 0.1, 2.6);
+            const deep = THREE.MathUtils.smoothstep(minD, 2.6, 15);
+            colors.push(1 + shore * 0.2 - deep * 0.1, 1 + shore * 0.26 - deep * 0.05, 1 + shore * 0.14);
         }
     }
     for (let i = 0; i < rings; i++) {
@@ -4388,10 +4543,11 @@ let oceanMesh = null;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geo.setAttribute('aFade', new THREE.Float32BufferAttribute(fades, 1));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     geo.setIndex(indices);
     geo.computeVertexNormals();   // 평면이라 전부 (0,1,0) — 매 프레임 셰이더가 해석 법선으로 대체
     seaMat = new THREE.MeshPhongMaterial({
-        color: 0x3fa9d0, specular: 0x99ddff, shininess: 42,
+        color: 0x3fa9d0, specular: 0x99ddff, shininess: 42, vertexColors: true,   // 기슭 여울 정점색
         transparent: true, opacity: 0.85,     // glassy: the submerged cliff + swimmers show through
     });
     // 파도는 GPU에서 (강수·분수와 같은 wxTime 시계): 4파 사인 변위와 그 편미분(해석 법선)을
@@ -4423,7 +4579,8 @@ let oceanMesh = null;
         for (let i = 0; i < 2; i++) {
             const foam = new THREE.Mesh(
                 new THREE.RingGeometry(isl.r * 0.82, isl.r * 0.93, 96),
-                new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthWrite: false })
+                // alphaMap(foamTex): 매끈한 도넛 띠 → 방울이 뭉치고 끊기는 유기적 거품선
+                new THREE.MeshBasicMaterial({ color: 0xffffff, alphaMap: foamTex, transparent: true, opacity: 0.4, depthWrite: false })
             );
             foam.rotation.x = -Math.PI / 2;
             foam.position.set(isl.x, OCEAN_LEVEL + 0.035, isl.z);
