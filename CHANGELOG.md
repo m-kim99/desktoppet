@@ -5,6 +5,12 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Changed (브랜딩 — Desktop Pet World v1.0.0)
+- 앱 이름 Super-Agent-Party → **Desktop Pet World**, 버전 1.0.0 (package.json productName/version,
+  트레이 툴팁). dmg 파일명도 Desktop Pet World-1.0.0-Mac.dmg 로.
+- **아이콘 전면 교체**: 실제 병아리·강아지 GLB를 three.js로 렌더(파스텔 하늘·잔디 그라데이션,
+  스쿼클)해 icon.icns(전 사이즈)·icon.png·트레이 아이콘(32px 투명)까지 통일.
+
 ### Added (배포 가이드 통합 + 원커맨드 빌드)
 - **doc/deploy-guide.md**: 배포 표면 2종(데스크톱 dmg / 웹 백엔드)을 한 파일로 — dmg 빌드·GitHub
   Releases 절차, 업데이트 시 재빌드 정책(개발은 소스로, 릴리즈 때만 굽기), 웹은 상황별 3길

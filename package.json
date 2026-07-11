@@ -1,6 +1,6 @@
 {
   "name": "super-agent-party",
-  "version": "v0.4.2-preview",
+  "version": "1.0.0",
   "description": "超级智能体派对v0.4.2-preview | 轻松链接一切!",
   "main": "main.js",
   "asar": true,
@@ -30,7 +30,7 @@
   "license": "AGPL-3.0",
   "build": {
     "appId": "com.superagent.party",
-    "productName": "Super-Agent-Party",
+    "productName": "Desktop Pet World",
     "copyright": "Copyright © 2025 Heshengtao",
     "publish": {
       "provider": "github",
@@ -166,5 +166,6 @@
     "osc": "^2.4.5",
     "tar": ">=7.5.11",
     "picomatch": ">=4.0.4"
-  }
+  },
+  "productName": "Desktop Pet World"
 }
