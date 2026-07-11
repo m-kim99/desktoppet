@@ -12,7 +12,8 @@
     "build:win": "electron-builder -w",
     "build:mac": "electron-builder -m",
     "build:linux": "electron-builder -l",
-    "pack": "electron-builder --dir"
+    "pack": "electron-builder --dir",
+    "dist:mac": ".venv/bin/pyinstaller server.spec --noconfirm && electron-builder --mac"
   },
   "keywords": [
     "AI",

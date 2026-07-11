@@ -5,6 +5,13 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Added (배포 가이드 통합 + 원커맨드 빌드)
+- **doc/deploy-guide.md**: 배포 표면 2종(데스크톱 dmg / 웹 백엔드)을 한 파일로 — dmg 빌드·GitHub
+  Releases 절차, 업데이트 시 재빌드 정책(개발은 소스로, 릴리즈 때만 굽기), 웹은 상황별 3길
+  (Tailscale=내 폰만·공짜 / Cloudflare Tunnel=맥 상시구동+도메인 / Railway=맥 꺼도 동작).
+  deploy-railway.md는 이 파일로 흡수.
+- **npm run dist:mac**: PyInstaller→electron-builder 두 단계를 한 줄로.
+
 ### Changed (배포 준비 — Railway·패키징 겸용 백엔드 정리)
 - **월드 개인 데이터 위치 이전**: world_*.json 8종(배치·일기·소원·캡슐·텃밭·별자리·우편·꽃)이
   레포 폴더(config/)가 아니라 USER_DATA_DIR/world 에 저장된다 — 패키징된 앱에선 앱 번들이 읽기
