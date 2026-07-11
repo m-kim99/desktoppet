@@ -2333,9 +2333,11 @@ clock.start();
 
 // ♡ 프레임 페이싱 (world.js와 같은 원칙): 데스크톱 펫 창은 하루 종일 떠 있는데, rAF를 그대로
 // 두면 ProMotion 패널에서 120fps로 돈다. 활동 중(포인터·모션 재생·말하기·VMC·XR)에만 60fps,
-// 가만히 숨 쉬는 idle은 30fps — 이 콘텐츠에선 겉모습 차이가 없고 상시 발열만 줄어든다.
+// 활동 직후 idle은 30fps, 30초 넘게 조용하면 15fps — 작은 창의 숨쉬기·깜빡임은 15fps로도
+// 충분히 읽히고, 하루 종일 떠 있는 창이라 이 바닥값이 상시 발열을 결정한다.
 let vrmLastFrameMs = 0;
 let vrmLastActiveMs = performance.now();
+let vrmLastBusyMs = performance.now();   // vrmActive가 마지막으로 참이었던 시각 — 15fps 티어 판정
 function vrmWake() { vrmLastActiveMs = performance.now(); }
 for (const ev of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart']) {
     window.addEventListener(ev, vrmWake, { passive: true, capture: true });
@@ -2346,6 +2348,11 @@ function vrmActive() {
     if (glbPet && glbPet.action) return true;                    // GLB 펫 모션 재생 중 (춤·인사…)
     return performance.now() - vrmLastActiveMs < 4000;           // 입력·말하기 후 4초의 여운
 }
+function vrmFrameIntervalMs() {
+    const now = performance.now();
+    if (vrmActive()) { vrmLastBusyMs = now; return 15.5; }
+    return now - vrmLastBusyMs > 30000 ? 65 : 31;   // 65 < 8.3×8=66.4 / 16.7×4=66.7 — 페이싱 균일
+}
 let currentLookYaw = 0;   // Left/right yaw (Y axis)
 let currentLookPitch = 0; // Up/down pitch (X axis)
 
@@ -2355,10 +2362,10 @@ let debugSphere, debugCamera, debugControls;
 function animate() {
     requestAnimationFrame(animate);
 
-    // 60/30fps 게이트 — 스킵한 시간은 다음 프레임 delta에 흡수되고, clamp가 오래 멈춘 뒤의
+    // 60/30/15fps 게이트 — 스킵한 시간은 다음 프레임 delta에 흡수되고, clamp가 오래 멈춘 뒤의
     // 물리 폭주를 막는다 (기존엔 클램프 없이도 매 프레임이라 문제가 없었을 뿐).
     const nowMs = performance.now();
-    if (nowMs - vrmLastFrameMs < (vrmActive() ? 15.5 : 31)) return;
+    if (nowMs - vrmLastFrameMs < vrmFrameIntervalMs()) return;
     vrmLastFrameMs = nowMs;
 
     const deltaTime = Math.min(clock.getDelta(), 0.1);
