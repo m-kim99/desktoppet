@@ -11476,6 +11476,72 @@ async def world_set_layout(request: Request):
         json.dump(layout, f, ensure_ascii=False, indent=2)
     return {"ok": True}
 
+# 💾 월드 백업/복원 — 되돌릴 수 없는 개인 데이터(배치·일기·소원·캡슐·텃밭·별자리·우편·꽃 +
+# 펫별 대화 기억)를 zip 하나로. 맥 교체·재설치 대비용. 복원은 경로 검증 후 그대로 풀어놓는다.
+_BACKUP_DIRS = {"world": WORLD_DATA_DIR, "world_chat": os.path.join(USER_DATA_DIR, "world_chat")}
+
+@app.get("/api/world_backup")
+async def world_backup_export():
+    import io, zipfile, time as _t
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for prefix, d in _BACKUP_DIRS.items():
+            if not os.path.isdir(d):
+                continue
+            for fn in sorted(os.listdir(d)):
+                fp = os.path.join(d, fn)
+                if os.path.isfile(fp) and fn.endswith(".json"):
+                    z.write(fp, f"{prefix}/{fn}")
+    buf.seek(0)
+    name = f"pet-world-backup-{_t.strftime('%Y%m%d-%H%M%S')}.zip"
+    return Response(content=buf.read(), media_type="application/zip",
+                    headers={"Content-Disposition": f"attachment; filename={name}"})
+
+@app.post("/api/world_backup")
+async def world_backup_import(request: Request):
+    import io, zipfile
+    body = await request.body()
+    restored = 0
+    try:
+        with zipfile.ZipFile(io.BytesIO(body)) as z:
+            for info in z.infolist():
+                parts = info.filename.split("/", 1)
+                if len(parts) != 2 or parts[0] not in _BACKUP_DIRS:
+                    continue
+                fn = os.path.basename(parts[1])                    # 경로 조작 차단
+                if not fn.endswith(".json"):
+                    continue
+                d = _BACKUP_DIRS[parts[0]]
+                os.makedirs(d, exist_ok=True)
+                with open(os.path.join(d, fn), "wb") as f:
+                    f.write(z.read(info))
+                restored += 1
+    except zipfile.BadZipFile:
+        return JSONResponse({"error": "zip 파일이 아니에요"}, status_code=400)
+    return {"ok": True, "restored": restored}
+
+# ⚠️ 클라이언트 오류 수집 — 폰에선 콘솔이 안 보이니 월드가 오류를 여기로 보낸다. 200KB 넘으면
+# 절반을 잘라 무한 증식을 막는다.
+WORLD_ERRLOG_FILE = os.path.join(WORLD_DATA_DIR, "client-errors.log")
+
+@app.post("/api/world_log")
+async def world_client_log(request: Request):
+    import time as _t
+    try:
+        data = await request.json()
+        line = f"[{_t.strftime('%Y-%m-%d %H:%M:%S')}] {str(data.get('ua', ''))[:60]} | {str(data.get('msg', ''))[:500]}\n"
+        os.makedirs(WORLD_DATA_DIR, exist_ok=True)
+        if os.path.exists(WORLD_ERRLOG_FILE) and os.path.getsize(WORLD_ERRLOG_FILE) > 200_000:
+            with open(WORLD_ERRLOG_FILE, "r", encoding="utf-8", errors="ignore") as f:
+                keep = f.read()[-100_000:]
+            with open(WORLD_ERRLOG_FILE, "w", encoding="utf-8") as f:
+                f.write(keep)
+        with open(WORLD_ERRLOG_FILE, "a", encoding="utf-8") as f:
+            f.write(line)
+    except Exception:
+        pass
+    return {"ok": True}
+
 # ---- 월드 채팅 (P1/P2): a dedicated LLM session for the pet world, fully separate from the main
 # chat pipeline. Per-pet history + a rolling summary live in USER_DATA_DIR/world_chat/{pet}.json.
 # Each turn the world client sends a Korean world-state snapshot + recent world events; the reply

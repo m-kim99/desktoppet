@@ -196,6 +196,24 @@ moonMesh.add(glowSprite(0xbcd2ff, 3.2, 0.5));
 // 마우스 동작이 그대로 유지되게 한다.
 const IS_TOUCH = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || navigator.maxTouchPoints > 0;
 
+// ⚠️ 에러 가시성: 폰에선 콘솔이 안 보이니 스크립트 오류를 토스트로 띄우고 서버 로그
+// (/api/world_log → USER_DATA_DIR/world/client-errors.log)로 보낸다. 같은 메시지 도배 방지.
+let lastErrAt = 0, lastErrMsg = '';
+function reportClientError(msg) {
+    try {
+        const m = String(msg || '').slice(0, 300);
+        if (!m || (m === lastErrMsg && Date.now() - lastErrAt < 30000)) return;
+        lastErrAt = Date.now(); lastErrMsg = m;
+        try { showToast(`⚠️ 오류가 났어요: ${m.slice(0, 80)}`); } catch (e) {}
+        fetch('/api/world_log', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ msg: m, ua: navigator.userAgent }),
+        }).catch(() => {});
+    } catch (e) {}
+}
+window.addEventListener('error', (e) => reportClientError(e.message || e.error));
+window.addEventListener('unhandledrejection', (e) => reportClientError(e.reason && (e.reason.message || e.reason)));
+
 // ♡ laptop-friendly pacing: one forward pass is already cheap, so 절전 is now about *when* we
 // draw, not how. Watched + plugged in → 60fps at full retina; window unfocused (the world usually
 // sits beside real work) → 30fps; ⚡ eco (persisted) or on battery → 30fps at 1.5x pixels.
@@ -5811,6 +5829,34 @@ chatLogFootLabel.style.cssText = 'flex:1;';
 chatLogFoot.appendChild(chatLogFootLabel);
 chatLogFoot.appendChild(memResetBtn('chick', '병아리'));
 chatLogFoot.appendChild(memResetBtn('puppy', '강아지'));
+// 💾 백업/복원 — 배치·소원·일기·기억을 zip 하나로 (맥 교체·재설치 대비)
+const bkBtn = document.createElement('button');
+bkBtn.textContent = '💾';
+bkBtn.title = '월드 데이터 백업 (zip 다운로드)';
+bkBtn.style.cssText = 'border:none; border-radius:8px; background:rgba(255,255,255,0.1); color:#fff; font-size:11px; padding:4px 8px; cursor:pointer;';
+bkBtn.onclick = () => { location.href = '/api/world_backup'; };
+chatLogFoot.appendChild(bkBtn);
+const rsInput = document.createElement('input');
+rsInput.type = 'file';
+rsInput.accept = '.zip';
+rsInput.style.display = 'none';
+document.body.appendChild(rsInput);
+const rsBtn = document.createElement('button');
+rsBtn.textContent = '📥';
+rsBtn.title = '백업 zip에서 복원';
+rsBtn.style.cssText = bkBtn.style.cssText;
+rsBtn.onclick = () => rsInput.click();
+rsInput.onchange = async () => {
+    const f = rsInput.files && rsInput.files[0];
+    rsInput.value = '';
+    if (!f) return;
+    try {
+        const res = await fetch('/api/world_backup', { method: 'POST', body: f });
+        const j = await res.json();
+        showToast(j && j.ok ? `📥 ${j.restored}개 파일 복원 — 새로고침하면 적용돼요` : `복원 실패: ${(j && j.error) || res.status}`);
+    } catch (e) { showToast('복원 실패 — 백엔드 연결을 확인해줘'); }
+};
+chatLogFoot.appendChild(rsBtn);
 chatLogPanel.appendChild(chatLogFoot);
 document.body.appendChild(chatLogPanel);
 chatLogPanel.addEventListener('pointerdown', (e) => e.stopPropagation());

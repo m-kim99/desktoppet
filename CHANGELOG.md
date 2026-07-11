@@ -5,6 +5,16 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Added (안정성 3종 — 테스트·백업·에러 가시성)
+- **npm run test:world**: Playwright 스모크 테스트 정식 편입(scripts/world-smoke.mjs) — 정적 서버를
+  스스로 띄워 앱 없이 30초 안에 데스크톱 로드·무에러·공사모드 토글·모바일 터치 UI·저장 레이아웃
+  적용을 검증한다. 사물 하나 추가할 때마다 이 한 줄로 회귀 확인.
+- **💾 백업/복원**: 💬 패널 하단에서 월드 개인 데이터(배치·일기·소원·캡슐·텃밭·별자리·우편·꽃 +
+  펫별 대화 기억)를 zip으로 내려받고(📥) 되돌린다 — /api/world_backup GET/POST, 복원은 경로
+  검증 후 world/·world_chat/만 풀어놓는다. 맥 교체·재설치 대비.
+- **에러 가시성**: 스크립트 오류를 토스트로 보여주고(폰엔 콘솔이 없다) /api/world_log →
+  USER_DATA_DIR/world/client-errors.log 로 적재(200KB 롤링, 같은 메시지 30초 도배 방지).
+
 ### Changed (브랜딩 — Desktop Pet World v1.0.0)
 - 앱 이름 Super-Agent-Party → **Desktop Pet World**, 버전 1.0.0 (package.json productName/version,
   트레이 툴팁). dmg 파일명도 Desktop Pet World-1.0.0-Mac.dmg 로.
