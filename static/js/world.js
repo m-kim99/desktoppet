@@ -8401,6 +8401,7 @@ let possessed = null;
 const heldKeys = new Set();
 let jumpVy = 0;
 let airborne = false;
+let airJumpUsed = false;   // 더블점프 — 공중에서 1회, 착지하면 리셋
 let running = false;    // Shift toggles 걷기 ↔ 달리기 (2×)
 
 const selectRing = new THREE.Mesh(
@@ -8513,7 +8514,7 @@ function possessPet(p) {
     selectRing.visible = true;
     controlHint.textContent = IS_TOUCH
         ? `🎮 ${p.name === 'chick' ? '병아리' : '강아지'} 조종 중 — 조이스틱 이동(끝까지 밀면 달리기) · 🦘 점프 · ✋ 상호작용 · ✕ 해제`
-        : `🎮 ${p.name === 'chick' ? '병아리' : '강아지'} 조종 중 — 방향키 이동 · Space 점프 · Esc 해제`;
+        : `🎮 ${p.name === 'chick' ? '병아리' : '강아지'} 조종 중 — 방향키 이동 · Space 점프(공중 더블) · Esc 해제`;
     controlHint.style.display = 'block';
     if (touchUI) touchUI.style.display = 'block';
 }
@@ -8521,7 +8522,7 @@ function releasePossession() {
     if (!possessed) return;
     const p = possessed;
     possessed = null;
-    airborne = false; jumpVy = 0;
+    airborne = false; jumpVy = 0; airJumpUsed = false;
     seaHop = null;
     if (carDrive) exitCar();
     releaseHandHold();
@@ -8539,9 +8540,26 @@ function releasePossession() {
 const ARROW_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 // 조종 액션 3종 — 키보드(Space·Ctrl/⌘·Esc)와 터치 버튼(🦘·✋·✕)이 같은 함수를 부른다.
 function doJump() {
-    if (!possessed || airborne) return;
-    airborne = true;
-    jumpVy = possessed.swimming ? 1.7 : 3.0;                      // splash-hop in water · 뭍 점프 2.5→3.0 (~0.64m — 테이블·차 지붕·우물이 닿는다)
+    if (!possessed) return;
+    if (!airborne) {
+        airborne = true;
+        airJumpUsed = false;
+        jumpVy = possessed.swimming ? 1.7 : 3.0;                  // splash-hop in water · 뭍 점프 2.5→3.0 (~0.64m — 테이블·차 지붕·우물이 닿는다)
+        return;
+    }
+    if (airJumpUsed) return;
+    // 더블점프 (시중 게임 문법): 공중에서 한 번 더 — 살짝 약한 추진, 발밑에 공기 폴짝 이펙트.
+    // 정점에서 쓰면 합산 ~1.15m — 부스 지붕·우편함까지 닿는 사다리 한 칸이 된다.
+    airJumpUsed = true;
+    jumpVy = 2.7;
+    const p = possessed;
+    for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        const spr = glowSprite(0xffffff, 0.09 + Math.random() * 0.05, 0.8);
+        spr.position.set(p.mover.position.x + Math.cos(a) * 0.09, p.mover.position.y + 0.03, p.mover.position.z + Math.sin(a) * 0.09);
+        scene.add(spr);
+        hugBurst.push({ spr, vx: Math.cos(a) * 0.5, vy: -0.15, vz: Math.sin(a) * 0.5, t: 0.35 });
+    }
 }
 function escapeAction() {
     releasePossession();
@@ -8747,7 +8765,7 @@ function updatePlayer(delta) {
         p.mover.position.z = THREE.MathUtils.lerp(seaHop.fz, seaHop.tz, e);
         p.mover.position.y = THREE.MathUtils.lerp(seaHop.fy, seaHop.ty, e) + Math.sin(k * Math.PI) * 0.55;
         p.pet.walking = false;
-        if (k >= 1) { seaHop = null; p.swimming = false; p.mover.rotation.x = 0; airborne = false; jumpVy = 0; }
+        if (k >= 1) { seaHop = null; p.swimming = false; p.mover.rotation.x = 0; airborne = false; jumpVy = 0; airJumpUsed = false; }
         return;
     }
     if (carDrive) {
@@ -8819,7 +8837,7 @@ function updatePlayer(delta) {
         p.mover.position.y += jumpVy * delta;
         if (p.mover.position.y <= sup.y && jumpVy < 0) {
             p.mover.position.y = sup.y;
-            airborne = false; jumpVy = 0;
+            airborne = false; jumpVy = 0; airJumpUsed = false;
             if (sup.medium !== 'land') {
                 spawnSplash(p.mover.position.x, sup.y + p.height * 0.42, p.mover.position.z);
             } else {
