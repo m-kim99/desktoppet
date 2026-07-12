@@ -2954,16 +2954,16 @@ function updateSandPlay(delta) {
         const fx = Math.sin(s0.lie.rotY), fz = Math.cos(s0.lie.rotY);
         const rx = Math.cos(s0.lie.rotY), rz = -Math.sin(s0.lie.rotY);
         const dig = Math.sin(wxTime.value * 3.4);   // 파기 스윙 박자
-        sandShovel.position.set(
-            s0.lie.x + fx * 0.17 + rx * 0.09,
-            s0.lie.y - 0.06 + Math.max(0, dig) * 0.05,
-            s0.lie.z + fz * 0.17 + rz * 0.09);
+        sandShovel.position.set(   // 앞발 바로 앞 — 손에 쥔 것처럼 몸에 붙인다
+            s0.lie.x + fx * 0.12 + rx * 0.055,
+            s0.lie.y + 0.015 + Math.max(0, dig) * 0.035,
+            s0.lie.z + fz * 0.12 + rz * 0.055);
         sandShovel.rotation.y = s0.lie.rotY;
         sandShovel.rotation.x = 0.45 + dig * 0.5;
         if (Math.random() < delta / 2.2) {   // 퍼낸 모래가 폴폴
             for (let i = 0; i < 2; i++) {
                 const spr = glowSprite(0xd9c49a, 0.05 + Math.random() * 0.04, 0.8);
-                spr.position.set(sandShovel.position.x + (Math.random() - 0.5) * 0.06, s0.lie.y - 0.08, sandShovel.position.z + (Math.random() - 0.5) * 0.06);
+                spr.position.set(sandShovel.position.x + (Math.random() - 0.5) * 0.06, s0.lie.y + 0.02, sandShovel.position.z + (Math.random() - 0.5) * 0.06);
                 scene.add(spr);
                 hugBurst.push({ spr, vx: fx * 0.25 + (Math.random() - 0.5) * 0.2, vy: 0.35, vz: fz * 0.25 + (Math.random() - 0.5) * 0.2, t: 0.4 });
             }
@@ -2979,7 +2979,7 @@ function updateSandPlay(delta) {
         if (Math.random() < delta / 2.8) {   // 성벽 토닥토닥 — 손끝에서 모래 반짝
             const fx = Math.sin(s1.lie.rotY), fz = Math.cos(s1.lie.rotY);
             const spr = glowSprite(0xe8d8b0, 0.05, 0.75);
-            spr.position.set(s1.lie.x + fx * 0.2, s1.lie.y - 0.05, s1.lie.z + fz * 0.2);
+            spr.position.set(s1.lie.x + fx * 0.16, s1.lie.y + 0.04, s1.lie.z + fz * 0.16);
             scene.add(spr);
             hugBurst.push({ spr, vx: (Math.random() - 0.5) * 0.2, vy: 0.25, vz: (Math.random() - 0.5) * 0.2, t: 0.35 });
         }
@@ -4658,7 +4658,8 @@ for (const p of PROPS) {
             const faceCastle = Math.atan2(sandPr.x - w.x, sandPr.z - w.z);   // 성을 바라보고 앉는다
             BEDS.push({
                 id: `sandspot-${i}`, mode: 'sit', occupant: null, sway: 0,
-                lie: { x: w.x, z: w.z, y: terrainHeight(w.x, w.z) + 0.16, rotY: faceCastle, tilt: -0.35 },
+                // +0.16은 쿠션/의자 높이 관습 — 맨모래에 그대로 쓰면 공중에 붕 뜬다. 바닥 앉기 +0.03.
+                lie: { x: w.x, z: w.z, y: terrainHeight(w.x, w.z) + 0.03, rotY: faceCastle, tilt: -0.35 },
                 approach: { x: ap.x, z: ap.z },
             });
         });
@@ -7112,6 +7113,19 @@ const buildBtn = dockBtn('🔨', '공사 모드 — 사물 옮기기');
 const syncBuildBtn = () => { buildBtn.style.background = buildMode ? 'rgba(214,150,52,0.92)' : 'rgba(30,32,40,0.88)'; };
 buildBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
 buildBtn.addEventListener('click', () => setBuildMode(!buildMode));
+// 🐤🐶 펫 바로가기: 누르면 카메라가 그 펫에게 날아가며(팔로우 캠) 즉시 조종 시작 — 같은 버튼을
+// 다시 누르면 해제. 다른 펫 조종 중에 누르면 그 펫으로 갈아탄다.
+function possessByName(name) {
+    const p = pets.find((q) => q.name === name);
+    if (!p) return;
+    if (possessed === p) { escapeAction(); return; }   // 토글 해제 (메뉴·패널 정리 포함)
+    if (buildMode) setBuildMode(false);                // 공사 중이면 저장하고 나와서 조종
+    possessPet(p);
+}
+const chickBtn = dockBtn('🐤', '병아리 조종하기 — 다시 누르면 해제');
+chickBtn.onclick = () => possessByName('chick');
+const puppyBtn = dockBtn('🐶', '강아지 조종하기 — 다시 누르면 해제');
+puppyBtn.onclick = () => possessByName('puppy');
 bindZoomBtn(dockBtn('＋', '확대 (키보드 + 키)'), -1);
 bindZoomBtn(dockBtn('－', '축소 (키보드 - 키)'), 1);
 document.body.appendChild(dockUI);
