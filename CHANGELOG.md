@@ -5,6 +5,13 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Fixed (등반 크래시 — Sprite.raycast의 camera 요구)
+- 사물에 올라가려는 순간 앱 전체가 멈추던 오류(Cannot read properties of null (reading
+  'matrixWorld')) — 소품 그룹 안의 Sprite(할로 등)는 raycast 때 raycaster.camera를 읽는데 등반
+  레이캐스터에 카메라를 안 넣었었다. camera 지정 + 스프라이트 히트 제외(빌보드는 바닥이 아님) +
+  소품 단위 try/catch 가드(특이 자식이 던져도 앱이 얼지 않게, 1회 로그). 헤드리스 재현 테스트:
+  빙의→달리기·점프 8초 pageerror 0건.
+
 ### Added (마크식 등반 — 조종 펫이 사물 위에 올라선다)
 - 조종 모드에서 점프(Space/🦘)로 소품 위에 올라서고 위를 걸을 수 있다: 옆면은 벽(bonk),
   윗면은 길 — 발이 윗면 높이 이상일 때만 차단원을 통과·착지한다(지붕 밑에서 뚫고 올라가기 방지).

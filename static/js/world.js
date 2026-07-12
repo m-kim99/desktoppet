@@ -8660,10 +8660,12 @@ const _climbD = new THREE.Vector3(0, -1, 0);
 function propTopAt(x, z, fromY) {
     _climbO.set(x, fromY, z);
     climbRay.set(_climbO, _climbD);
+    climbRay.camera = camera;   // 서브트리에 Sprite가 있으면 Sprite.raycast가 camera를 읽는다 — 없으면 null.matrixWorld 크래시 (실제로 터졌음)
     climbRay.far = fromY + 2;
     let best = null;
     const take = (hits) => {
         for (const h of hits) {
+            if (h.object.isSprite) continue;   // 빌보드는 바닥이 아니다
             const y = h.point.y;
             if (y <= fromY + 0.001 && y > 0.04 && (best === null || y > best)) best = y;   // 지면 데칼(블롭·리본)은 제외
         }
@@ -8673,7 +8675,11 @@ function propTopAt(x, z, fromY) {
         const rr = (q.type === 'house' ? 2.2 : Math.max(q.r || 0, 0.5)) + 0.5;   // 차(carCollider)도 PROPS라 지붕 포함
         const dx = x - q.x, dz = z - q.z;
         if (dx * dx + dz * dz > rr * rr) continue;
-        take(climbRay.intersectObject(q.obj, true));
+        // 등반은 매 프레임 핫루프 — 특이한 자식 하나가 던져도 앱이 얼지 않게 소품 단위 가드 (1회 로그)
+        try { take(climbRay.intersectObject(q.obj, true)); }
+        catch (e) {
+            if (!propTopAt._warned) { propTopAt._warned = true; reportClientError(`propTopAt(${q.type}): ${e && e.message}`); }
+        }
     }
     return best;
 }
