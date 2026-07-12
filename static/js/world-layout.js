@@ -16,6 +16,9 @@ export const ISLANDS = [
     { x: 8.2,   z: 4.18,  r: 3.2 },      // NE island — 놀이터 (그네·시소·운동 공간), 2.2→3.2로 확장해 여유 확보
     { x: -8.06, z: -3.53, r: 2.9 },      // SW island — 추억의 섬 (기념비·쪼아쪼아나무·소원우물·타임캡슐)
     { x: 7.9,   z: -5.6,  r: 3.5 },      // SE island — 모험의 섬 (언덕·동굴·전망대·보물 모래밭), 위성 중 최대
+    // 휴양지 모래섬 — 다리 없음(보트/수영으로만): kind:'sand'가 지면 텍스처·해변 경사·발소리를
+    // 가른다. buildRouteWalk는 다리 없는 섬에서 직선 폴백(가드 있음) — AI 배회는 여길 목표로 안 잡는다.
+    { x: -3.2,  z: 11.8,  r: 2.6, kind: 'sand' },
 ];
 // 주의: buildRoute가 BRIDGES[섬 인덱스-1]로 다리를 찾는다 — 다리 순서는 위 위성섬 순서와 같아야 한다.
 export const BRIDGES = [
@@ -47,6 +50,7 @@ export const FLAT_SPOTS = [
     { x: 6.6, z: 5.68, r: 1.15, follow: 'gym-1' },     // NE island gym pad — 매트/아령이 구릉에 뚫리지 않게 (그네·시소 패드와 같은 원리)
     { x: -8.06, z: -3.53, r: 1.55 },   // 추억의 섬 중앙 뜰 — 기념비·소원우물·타임캡슐이 반듯하게 선다
     { x: 7.55, z: -5.55, r: 1.15 },    // 모험의 섬 동굴 포켓 — 언덕 남서면을 파서 만든 평탄 바닥
+    { x: -3.3, z: 11.6, r: 0.6 },      // 휴양지 섬 모래성 받침 — 사구 굴곡 위에 반듯하게
 ];
 
 // Props: type + position + blocking radius (`r` is the circle collider pets steer around; the
@@ -128,4 +132,11 @@ export const PROPS = [
     // 링(r≈2.7~3.3)에 가장자리가 걸렸다 (마지막 6종 겹침 검사에 차/도로가 빠져 있었음).
     { type: 'fountain',      x:  0.4,  z: -4.3,  rotY: 0,     r: 0.55 },
     { type: 'flowerbasket',  x:  0.9,  z:  2.6,  rotY: 1.3,   r: 0.15 },
+    // 휴양지 모래섬 (다리 없음 — 보트/수영 전용): 야자수 4그루 링 배치 + 모래성. 이동 불가
+    // (MOVABLE_TYPES 밖 — 공사모드가 물 건너 캔버스를 다룰 이유가 없다). 겹침 검산 완료.
+    { type: 'palm', x: -4.6, z: 11.2, rotY: 0.6, r: 0.4 },
+    { type: 'palm', x: -2.2, z: 13.0, rotY: 2.1, r: 0.4 },
+    { type: 'palm', x: -1.9, z: 10.9, rotY: 4.0, r: 0.4 },
+    { type: 'palm', x: -4.3, z: 12.8, rotY: 5.2, r: 0.4 },
+    { type: 'sandcastle', x: -3.3, z: 11.6, rotY: 0.9, r: 0.38 },
 ];

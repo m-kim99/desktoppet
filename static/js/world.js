@@ -638,6 +638,46 @@ const snowGroundTex = canvasTex(256, 1, 1, (ctx, s) => {   // 겨울 설원 — 
         ctx.fill();
     }
 });
+// 휴양지 모래 — 알갱이 스펙클(밀도 높게) + 바람이 쓸어놓은 물결 라인 + 드문 조가비 점.
+// grassTex와 같은 월드 평면 매핑(1.25m 반복)으로 섬 지면·해변 경사 둘 다 쓴다.
+const sandTopTex = canvasTex(256, 1, 1, (ctx, s) => {
+    const R = seededRand(83);
+    ctx.fillStyle = '#eedcae';
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 20; i++) {   // 저주파 명암 — 사구의 미묘한 톤
+        const g = ctx.createRadialGradient(R() * s, R() * s, 0, R() * s, R() * s, s * (0.12 + R() * 0.18));
+        g.addColorStop(0, R() > 0.5 ? 'rgba(255,244,214,0.16)' : 'rgba(196,164,116,0.13)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, s, s);
+    }
+    for (let i = 0; i < 900; i++) {   // 모래 알갱이
+        const warm = R();
+        ctx.fillStyle = warm < 0.45 ? `rgba(178,142,92,${0.1 + R() * 0.14})`
+            : warm < 0.9 ? `rgba(255,250,230,${0.1 + R() * 0.12})` : `rgba(230,150,120,${0.08 + R() * 0.08})`;
+        ctx.fillRect(R() * s, R() * s, 1 + R(), 1 + R());
+    }
+    ctx.lineCap = 'round';   // 바람 물결 라인 — 어두운 골과 밝은 등을 쌍으로
+    for (let i = 0; i < 9; i++) {
+        const y0 = R() * s, amp = s * (0.01 + R() * 0.015), ph = R() * Math.PI * 2;
+        for (const [off, col, w] of [[0, 'rgba(186,152,102,0.22)', s / 110], [s / 90, 'rgba(255,246,222,0.20)', s / 140]]) {
+            ctx.strokeStyle = col;
+            ctx.lineWidth = w;
+            ctx.beginPath();
+            for (let x = 0; x <= s; x += s / 24) {
+                const y = y0 + off + Math.sin((x / s) * Math.PI * 4 + ph) * amp;
+                if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+    }
+    for (let i = 0; i < 7; i++) {   // 드문 조가비/산호 점
+        ctx.fillStyle = R() > 0.5 ? 'rgba(255,255,255,0.75)' : 'rgba(245,170,150,0.6)';
+        ctx.beginPath();
+        ctx.arc(R() * s, R() * s, s / 130 + R() * s / 160, 0, Math.PI * 2);
+        ctx.fill();
+    }
+});
 // 꽃송이 스프라이트 — 루미넌스 꽃잎(instanceColor·계절 틴트가 착색) + 웜 옐로 수술.
 const flowerTex = canvasTex(48, 1, 1, (ctx, s) => {
     ctx.clearRect(0, 0, s, s);
@@ -1094,11 +1134,14 @@ function terrainHeight(x, z) {
 // displaced by terrainHeight (AC triangle texture + near-white vertex patches, resolution scaled
 // to the island's radius) over a lathed strata cliff tapering to a rounded tip.
 function buildIslandMeshes(isl) {
+    const sand = isl.kind === 'sand';   // 휴양지 모래섬 — 텍스처·얼룩 팔레트·해변 경사·스커트 톤이 갈린다
     const rings = Math.max(16, Math.round(isl.r * 6.5));
     const segs = Math.max(48, Math.round(isl.r * 18));
     const positions = [], colors = [], uvs = [], indices = [];
-    const base = new THREE.Color(0.93, 0.95, 0.88), light = new THREE.Color(1.07, 1.1, 1.0);
-    const warmG = new THREE.Color(1.1, 1.05, 0.8), coolG = new THREE.Color(0.8, 0.94, 1.02);
+    const base = sand ? new THREE.Color(0.97, 0.95, 0.9) : new THREE.Color(0.93, 0.95, 0.88);
+    const light = sand ? new THREE.Color(1.06, 1.04, 0.98) : new THREE.Color(1.07, 1.1, 1.0);
+    const warmG = sand ? new THREE.Color(1.09, 1.02, 0.88) : new THREE.Color(1.1, 1.05, 0.8);
+    const coolG = sand ? new THREE.Color(0.9, 0.9, 0.96) : new THREE.Color(0.8, 0.94, 1.02);
     const c = new THREE.Color();
     for (let i = 0; i <= rings; i++) {
         const r = (i / rings) * isl.r;
@@ -1127,7 +1170,8 @@ function buildIslandMeshes(isl) {
         const x = isl.x + Math.cos(a) * isl.r * 1.004, z = isl.z + Math.sin(a) * isl.r * 1.004;
         positions.push(x, -0.26, z);
         uvs.push(x * 0.8, z * 0.8);
-        colors.push(0.52, 0.47, 0.4);   // 흙그늘 톤 — 지층 절벽과 이어지는 어두운 립
+        if (sand) colors.push(0.86, 0.78, 0.62);   // 젖은 모래 톤 — 물가로 이어지는 립
+        else colors.push(0.52, 0.47, 0.4);         // 흙그늘 톤 — 지층 절벽과 이어지는 어두운 립
     }
     for (let i = 0; i < rings; i++) {
         for (let j = 0; j < segs; j++) {
@@ -1153,12 +1197,20 @@ function buildIslandMeshes(isl) {
     geo.computeVertexNormals();
     // DoubleSide: 물이 반투명이라 수면 너머로 섬 껍데기의 뒷면이 보이는 각도가 있다 — 한 면
     // 컬링이면 그 자리가 "뚫린 것"처럼 하늘/건너편이 비친다. 잔디·절벽 둘 다 양면으로.
-    const grass = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: grassTex, vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide }));
+    const grass = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: sand ? sandTopTex : grassTex, vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide }));
     grass.receiveShadow = true;
     stage.add(grass);
-    seasonGrass.push(grass);   // the season system re-tints this (and snow-swaps its texture)
+    if (!sand) seasonGrass.push(grass);   // the season system re-tints this (and snow-swaps its texture) — 열대 휴양지는 사계절 모래
 
-    const pts = [
+    // 모래섬은 절벽 대신 해변 경사 — 립이 완만하게 물속 모래턱으로 이어진다 (지층 밴드 없음)
+    const pts = sand ? [
+        new THREE.Vector2(isl.r, 0.004),
+        new THREE.Vector2(isl.r * 1.03, -0.14),
+        new THREE.Vector2(isl.r * 0.99, -0.34),
+        new THREE.Vector2(isl.r * 0.84, -0.62),
+        new THREE.Vector2(isl.r * 0.55, -0.9),
+        new THREE.Vector2(0.05, -1.05),
+    ] : [
         new THREE.Vector2(isl.r, 0.004),
         new THREE.Vector2(isl.r * 0.995, -0.12),
         new THREE.Vector2(isl.r * 0.93, -0.42),
@@ -1168,7 +1220,9 @@ function buildIslandMeshes(isl) {
     ];
     const cliff = new THREE.Mesh(
         new THREE.LatheGeometry(pts, Math.max(48, Math.round(isl.r * 14))),
-        new THREE.MeshStandardMaterial({ map: strataTex, roughness: 1, metalness: 0, flatShading: true, side: THREE.DoubleSide })
+        sand
+            ? new THREE.MeshStandardMaterial({ map: sandTopTex, color: 0xf2e3bd, roughness: 1, metalness: 0, side: THREE.DoubleSide })
+            : new THREE.MeshStandardMaterial({ map: strataTex, roughness: 1, metalness: 0, flatShading: true, side: THREE.DoubleSide })
     );
     cliff.position.set(isl.x, 0, isl.z);
     cliff.castShadow = true;         // islands shade the sea at low sun
@@ -1248,6 +1302,84 @@ function makeProceduralTree(p) {
         const petals = precipPoints(90, petalTex, 0.055, 0.2, 0.4, 0.3, 1.05, 1.4, 1.5, g);
         seasonFall.push({ pts: petals, when: 'spring' });
     }
+    return g;
+}
+
+// 🌴 야자수 (휴양지 모래섬): 굽은 트렁크(마디 세그먼트) + 프론드 8장 + 코코넛. 열대 상록이라
+// 계절 시스템(seasonLeaves/snowCaps)에 등록하지 않는다 — 겨울에도 초록.
+function makePalm() {
+    const g = new THREE.Group();
+    const trunkMat = M(0xb08a60, { map: woodTex });
+    const ringMat = M(0x8a6647, { map: woodTex });
+    const SEG = 5;
+    for (let i = 0; i < SEG; i++) {
+        const t = i / (SEG - 1);
+        const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.052 - t * 0.012, 0.062 - t * 0.012, 0.19, 8), trunkMat);
+        seg.position.set(0.3 * t * t, 0.09 + i * 0.165, 0);   // 야자수 특유의 완만한 휨 (+x 로컬)
+        seg.rotation.z = -0.14 * t;
+        g.add(seg);
+        const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.066 - t * 0.012, 0.066 - t * 0.012, 0.03, 8), ringMat);   // 마디 밴드
+        ring.position.set(0.3 * t * t, 0.005 + i * 0.165, 0);
+        ring.rotation.z = -0.14 * t;
+        g.add(ring);
+    }
+    const crownX = 0.3, crownY = 0.95;   // 트렁크 끝
+    for (let i = 0; i < 8; i++) {   // 프론드 — 납작하게 눌러 늘인 잎, 바깥으로 처진다 (dapple 질감 공유)
+        const a = (i / 8) * Math.PI * 2 + 0.25;
+        const frond = new THREE.Mesh(gradSphereGeo(0.3, 0x8fd06c, 0x3f8f3a), leafMatGrad);
+        frond.scale.set(0.34, 0.075, 1);
+        frond.position.set(crownX + Math.cos(a) * 0.3, crownY + 0.04 - 0.03 * Math.sin(i * 2.3), Math.sin(a) * 0.3);
+        frond.rotation.y = -a;
+        frond.rotation.z = 0.42 + (i % 2) * 0.14;   // 처짐 각 — 두 단으로 층지게
+        g.add(frond);
+    }
+    const coconutMat = M(0x8a6647);
+    for (const [cx, cz] of [[0.08, 0.05], [-0.04, 0.09], [0.02, -0.09]]) {
+        const nut = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), coconutMat);
+        nut.position.set(crownX + cx, crownY - 0.05, cz);
+        g.add(nut);
+    }
+    return g;
+}
+// 🏰 모래성 (휴양지 모래섬): 양동이로 찍은 성 — 원기둥 킵 + 코너 타워 4 + 성벽 + 총안 + 깃발.
+// 전부 모래 램프(bakeGrad) 정적 조형이라 월드 베이크에 흡수된다.
+function makeSandcastle() {
+    const g = new THREE.Group();
+    const sTop = 0xf6e7c2, sBot = 0xc9ad82;
+    const mound = GM(new THREE.CylinderGeometry(0.42, 0.5, 0.07, 18), sTop, sBot);   // 받침 모래둔덕
+    mound.position.y = 0.035;
+    g.add(mound);
+    const keep = GM(new THREE.CylinderGeometry(0.13, 0.155, 0.3, 12), sTop, sBot, { curve: 1.2 });   // 중앙 킵
+    keep.position.y = 0.22;
+    g.add(keep);
+    for (let i = 0; i < 5; i++) {   // 킵 흉벽(총안)
+        const a = (i / 5) * Math.PI * 2;
+        const merlon = GM(new THREE.BoxGeometry(0.05, 0.05, 0.035), sTop, sBot);
+        merlon.position.set(Math.cos(a) * 0.115, 0.395, Math.sin(a) * 0.115);
+        merlon.rotation.y = -a;
+        g.add(merlon);
+    }
+    const towerPos = [[0.3, 0.3], [-0.3, 0.3], [0.3, -0.3], [-0.3, -0.3]];
+    for (const [tx, tz] of towerPos) {   // 코너 타워 + 고깔 지붕
+        const tower = GM(new THREE.CylinderGeometry(0.07, 0.085, 0.2, 10), sTop, sBot, { curve: 1.2 });
+        tower.position.set(tx, 0.17, tz);
+        g.add(tower);
+        const cone = GM(new THREE.ConeGeometry(0.085, 0.09, 10), sTop, sBot);
+        cone.position.set(tx, 0.315, tz);
+        g.add(cone);
+    }
+    for (const [[ax, az], [bx, bz]] of [[towerPos[0], towerPos[1]], [towerPos[1], towerPos[3]], [towerPos[3], towerPos[2]], [towerPos[2], towerPos[0]]]) {
+        const wall = GM(new THREE.BoxGeometry(Math.hypot(bx - ax, bz - az) - 0.12, 0.11, 0.06), sTop, sBot);   // 성벽
+        wall.position.set((ax + bx) / 2, 0.125, (az + bz) / 2);
+        wall.rotation.y = Math.atan2(bx - ax, bz - az) + Math.PI / 2;
+        g.add(wall);
+    }
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.14, 6), M(0xb08a60, { map: woodTex }));   // 깃대
+    pole.position.y = 0.475;
+    g.add(pole);
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.09, 0.055), new THREE.MeshLambertMaterial({ color: 0xf05a5a, side: THREE.DoubleSide }));
+    flag.position.set(0.048, 0.52, 0);
+    g.add(flag);
     return g;
 }
 
@@ -3932,8 +4064,11 @@ const HOVER_PROMPTS = {
     library: () => '📚 도서관 코너 — 클릭하면 펫이 와서 책을 읽어요',
     fountain: () => '⛲ 분수',
     flowerbasket: () => (flowerMode ? '🌸 꽃심기 모드 켜짐 — 다시 클릭하면 꺼요' : `🌸 꽃심기 바구니 — 클릭해서 심기 모드 (${flowersData.length}/100)`),
+    boat: () => '🚣 노 젓는 보트 — 조종 중 ⌘로 타기 (절친 동승 가능)',
+    sandcastle: () => '🏰 모래성',
+    palm: () => '🌴 야자수',
 };
-const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, piano: 1.05, photoboard: 1.55, mailbox: 0.75, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35 };
+const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, piano: 1.05, photoboard: 1.55, mailbox: 0.75, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, sandcastle: 0.65, palm: 1.2 };
 const hoverEl = document.createElement('div');
 hoverEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); z-index:88; pointer-events:none; background:rgba(30,32,40,0.88); color:#fff; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
 document.body.appendChild(hoverEl);
@@ -4065,7 +4200,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointerleave', () => { hoverActive = false; });
 fetchCapsules();   // 부팅 시 한 번 — 개봉 알림용
 
-const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket };
+const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket, palm: makePalm, sandcastle: makeSandcastle };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -4177,7 +4312,7 @@ function unbakePropBeds(p) {
 //  · Mesh가 아닌 것(라이트·스프라이트·Points)과 visible=false(숨김 토글류)는 그냥 둔다
 const MERGE_TYPES = new Set(['house', 'bowl', 'fence', 'pond', 'sunbed', 'hammock', 'lamp', 'radio',
     'coffee', 'food', 'monument', 'pecktree', 'well', 'capsule', 'boulder', 'cave', 'lookout',
-    'garden', 'piano', 'mailbox', 'gym', 'library', 'fountain', 'flowerbasket', 'swing', 'seesaw']);
+    'garden', 'piano', 'mailbox', 'gym', 'library', 'fountain', 'flowerbasket', 'swing', 'seesaw', 'palm', 'sandcastle']);
 function mergePropGroup(root) {
     const skip = new Set(seasonSnowCaps);
     if (mailFlag) mailFlag.traverse((o) => skip.add(o));
@@ -4472,6 +4607,76 @@ function carBlocked(nx, nz) {
     }
     return false;
 }
+
+// ---- 🚣 노 젓는 보트 상태 + 모델: 본섬 북쪽 물가에 정박 — 휴양지 모래섬으로 가는 발.
+// 기본 정박 (1.1, 6.0): 기슭 걷기 한계(r-0.35)에서 승선 반경 1.25 안 — 뭍에서 바로 탄다 (검산). ----
+const BOAT = { x: 1.1, z: 6.0, heading: -0.4, vel: 0 };
+{   // 🔨 저장된 정박 위치 — 차와 같은 방식 (boat-1)
+    const o = savedLayout['boat-1'];
+    if (o && Number.isFinite(o.x) && Number.isFinite(o.z)) {
+        BOAT.x = o.x; BOAT.z = o.z;
+        if (Number.isFinite(o.rotY)) BOAT.heading = o.rotY;
+    }
+}
+const boatCollider = { type: 'boat', layoutId: 'boat-1', x: BOAT.x, z: BOAT.z, rotY: 0, r: 0.5, def: { x: 1.1, z: 6.0, rotY: -0.4 } };
+PROPS.push(boatCollider);
+let boatRide = null;    // { driver, passenger, row, lastPh } while someone is rowing
+function makeBoat() {
+    const g = new THREE.Group();
+    // 선체: 반구를 눌러 늘인 셸 — 안팎이 다 보이는 조형이라 양면(gradMatDS) 규칙을 따른다
+    const hull = new THREE.Mesh(
+        bakeGrad(new THREE.SphereGeometry(0.5, 16, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), 0xb9835a, 0x6f4a2c),
+        gradMatDS);
+    hull.scale.set(0.62, 0.56, 1.3);
+    hull.position.y = 0.2;
+    g.add(hull);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.045, 8, 22).rotateX(Math.PI / 2), M(0x8a6647, { map: woodTex }));   // 뱃전 테
+    rim.scale.set(0.62, 1, 1.3);
+    rim.position.y = 0.2;
+    g.add(rim);
+    const deck = new THREE.Mesh(new THREE.CircleGeometry(0.44, 18).rotateX(-Math.PI / 2), M(0xd8b88a, { map: plankTex }));   // 바닥 마루
+    deck.scale.set(0.58, 1, 1.22);
+    deck.position.y = 0.04;
+    g.add(deck);
+    for (const bz of [-0.12, 0.34]) {   // 가로 벤치 둘 (노잡이 + 뱃머리 절친)
+        const bench = new THREE.Mesh(new RoundedBoxGeometry(0.5, 0.05, 0.16, 2, 0.02), M(0xb08a60, { map: woodTex }));
+        bench.position.set(0, 0.16, bz);
+        g.add(bench);
+    }
+    g.userData.oars = [];
+    for (const side of [-1, 1]) {   // 노 — 오르락(rotation.x)과 벌림(rotation.z)을 stepBoat가 젓는다
+        const oar = new THREE.Group();
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.72, 7), M(0xb08a60, { map: woodTex }));
+        shaft.rotation.z = Math.PI / 2;
+        shaft.position.x = side * 0.3;
+        oar.add(shaft);
+        const blade = new THREE.Mesh(new RoundedBoxGeometry(0.05, 0.02, 0.16, 2, 0.01), M(0x8a6647, { map: woodTex }));
+        blade.position.set(side * 0.62, -0.02, 0);
+        blade.rotation.x = 0.5;
+        oar.add(blade);
+        const lock = new THREE.Mesh(new THREE.TorusGeometry(0.026, 0.009, 6, 10), M(0xe8c46f));   // 노걸이
+        lock.position.set(side * 0.31, 0.025, 0);
+        oar.add(lock);
+        const base = side * 0.32;   // 살짝 벌어진 기본 자세
+        oar.rotation.z = base;
+        oar.position.set(0, 0.22, -0.12);
+        g.add(oar);
+        g.userData.oars.push({ grp: oar, side, base });
+    }
+    const lantern = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), lampGlobeMat);   // 고물 랜턴 — 밤이면 은은히
+    lantern.position.set(0, 0.34, -0.56);
+    g.add(lantern);
+    const lanternPole = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.012, 0.16, 6), M(0x8a6647, { map: woodTex }));
+    lanternPole.position.set(0, 0.26, -0.56);
+    g.add(lanternPole);
+    return g;
+}
+const boatGroup = makeBoat();
+boatCollider.obj = boatGroup;                       // 호버 라벨 + propTopAt(뱃전에 올라서기)용
+boatGroup.position.set(BOAT.x, -0.5, BOAT.z);       // 정확한 파고는 첫 updateBoatIdle이 잡는다 (OCEAN_LEVEL은 아직 TDZ)
+boatGroup.rotation.y = BOAT.heading;
+boatGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+stage.add(boatGroup);
 
 // ---- World interface: the ONLY way pets sense the ground/space (keeps them portable) ----
 const world = {
@@ -5012,7 +5217,7 @@ function updateOcean() {
 // (heat budget: the world stays a single forward pass + two tiny point clouds). Rain = streak
 // sprites, snow = flakes on a sine drift. A rainbow rises over the sea when rain ends in daylight,
 // and the rain hiss is synthesized noise through the sfx chain — no files, same as the water. ----
-const WX_AREA_R = 14, WX_TOP = 8.5, WX_H = 9.5;   // drop cylinder: covers all four islands (모험의 섬 가장자리 13.2까지)
+const WX_AREA_R = 16, WX_TOP = 8.5, WX_H = 9.5;   // drop cylinder: covers all four islands (모험의 섬 가장자리 13.2까지)
 function precipTexture(draw) {
     const cv = document.createElement('canvas');
     cv.width = cv.height = 32;
@@ -5518,6 +5723,8 @@ function updateWander(p, delta) {
 function buildRouteWalk(from, to) {
     const a = islandOf(from.x, from.z), b = islandOf(to.x, to.z);
     if (a === b || a === -1 || b === -1) return [{ x: to.x, z: to.z }];
+    // 다리 없는 섬(휴양지 모래섬) — 직선 폴백: 물가에서 blocked → arrive-anyway가 곱게 포기한다
+    if ((a !== 0 && !BRIDGES[a - 1]) || (b !== 0 && !BRIDGES[b - 1])) return [{ x: to.x, z: to.z }];
     const route = [];
     if (a !== 0) { const br = BRIDGES[a - 1]; route.push({ ...br.outer }, { ...br.inner }); }
     if (b !== 0) { const br = BRIDGES[b - 1]; route.push({ ...br.inner }, { ...br.outer }); }
@@ -6244,7 +6451,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니' };
+const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -6271,6 +6478,8 @@ function petStatusLine(p) {
     const parts = [`위치: ${describeSpot(pos.x, pos.z)}`];
     if (carDrive && carDrive.driver === p) parts.push('스포츠카 운전 중');
     else if (carDrive && carDrive.passenger === p) parts.push('스포츠카 조수석에 타는 중');
+    if (boatRide && boatRide.driver === p) parts.push('보트에서 노 젓는 중');
+    else if (boatRide && boatRide.passenger === p) parts.push('보트 뱃머리에 타는 중');
     else if (p.bed && p.bedPhase === 'lying') {
         const ko = BED_KO[p.bed.id] || p.bed.id;
         parts.push(p.bed.mode === 'swing' || p.bed.mode === 'seesaw' ? `${ko} 타는 중`
@@ -6924,10 +7133,10 @@ function saveLayoutSoon() { buildDirty = true; clearTimeout(saveLayoutTimer); sa
 function saveLayout() {
     const out = {};
     for (const q of PROPS) {
-        if (!q.layoutId || !(MOVABLE_TYPES.has(q.type) || q.type === 'car')) continue;
+        if (!q.layoutId || !(MOVABLE_TYPES.has(q.type) || q.type === 'car' || q.type === 'boat')) continue;
         out[q.layoutId] = {
             x: +q.x.toFixed(3), z: +q.z.toFixed(3),
-            rotY: +(((q.type === 'car' ? CAR.heading : q.rotY) || 0)).toFixed(3),
+            rotY: +(((q.type === 'car' ? CAR.heading : q.type === 'boat' ? BOAT.heading : q.rotY) || 0)).toFixed(3),
         };
     }
     try { localStorage.setItem('world-layout', JSON.stringify(out)); } catch (err) {}
@@ -7321,8 +7530,9 @@ const STEP_FILES = {
     grass: [0, 1, 2, 3, 4].map((i) => `/sounds/steps/footstep_grass_00${i}.ogg`),
     road:  [0, 1, 2, 3, 4].map((i) => `/sounds/steps/footstep_concrete_00${i}.ogg`),
     wood:  [0, 1, 2, 3, 4].map((i) => `/sounds/steps/footstep_wood_00${i}.ogg`),
+    sand:  [],   // 파일 없음 — 아래 합성 폴백(바스락 노이즈)이 늘 담당
 };
-const stepBuffers = { grass: [], road: [], wood: [] };
+const stepBuffers = { grass: [], road: [], wood: [], sand: [] };
 
 function synthNoiseBuffer(dur, shape) {
     const buf = audioCtx.createBuffer(1, Math.max(1, Math.ceil(audioCtx.sampleRate * dur)), audioCtx.sampleRate);
@@ -7361,7 +7571,9 @@ async function loadStepBuffer(url) {
         }
         if (!stepBuffers[key].length) {
             // Synth fallback so surfaces always make SOME sound even without files.
-            stepBuffers[key].push(synthNoiseBuffer(key === 'grass' ? 0.16 : 0.11, (t) => Math.pow(1 - t, key === 'road' ? 3 : 2)));
+            stepBuffers[key].push(key === 'sand'
+                ? synthNoiseBuffer(0.2, (t) => Math.pow(1 - t, 1.5) * (t < 0.05 ? t / 0.05 : 1) * (0.75 + 0.25 * Math.sin(t * 90)))   // 모래 바스락 — 길고 부드러운 입자 감쇠 + 잘그락 결
+                : synthNoiseBuffer(key === 'grass' ? 0.16 : 0.11, (t) => Math.pow(1 - t, key === 'road' ? 3 : 2)));
         }
     }
 })();
@@ -7389,7 +7601,7 @@ function playStep(surface, vol) {
     const set = stepBuffers[surface] || stepBuffers.grass;
     if (!set || !set.length) return;
     const buf = set[Math.floor(Math.random() * set.length)];
-    const filt = surface === 'grass' ? 2600 : surface === 'wood' ? 2000 : 0;
+    const filt = surface === 'grass' ? 2600 : surface === 'wood' ? 2000 : surface === 'sand' ? 1500 : 0;   // 모래는 낮게 눌러 포슬포슬
     playBuffer(buf, { vol: vol * (0.85 + Math.random() * 0.3), rate: 0.9 + Math.random() * 0.2, filterFreq: filt });
 }
 function attAtPoint(x, z) {
@@ -7455,6 +7667,8 @@ function surfaceFor(p) {
     if (onBridge(x, z)) return 'wood';
     if (houseFloorY(x, z) !== null) return 'wood';         // house floors are wooden
     if (isOnRoad(x, z, -0.06)) return 'road';              // strict: only clearly ON the pavement
+    const isl = islandOf(x, z);
+    if (isl >= 0 && ISLANDS[isl].kind === 'sand') return 'sand';   // 휴양지 모래 — 바스락
     return 'grass';
 }
 // Footsteps fire on the gait phase: feet swing on sin(t*8), so a footfall lands each half-period —
@@ -8526,6 +8740,7 @@ function releasePossession() {
     airborne = false; jumpVy = 0; jumpsLeft = 2;
     seaHop = null;
     if (carDrive) exitCar();
+    if (boatRide) exitBoat(true);   // 강제 하선 — 거절 없이 (절친은 기슭 or 물에)
     releaseHandHold();
     running = false;
     snapToLand(p);
@@ -8572,8 +8787,10 @@ function doInteract() {
     // hand; enter/exit the car; tuck into a bed; open the coffee/food/radio panels; or cycle a
     // streetlamp — in that priority order.
     if (!possessed) return;
+    if (boatRide) { exitBoat(); return; }
     if (possessed.swimming === 'sea') {
         const pos = possessed.mover.position;
+        if (Math.hypot(pos.x - BOAT.x, pos.z - BOAT.z) < 1.15) { enterBoat(); return; }   // 헤엄쳐 와서 승선
         const spot = nearestClimbSpot(pos);
         if (spot && !seaHop) {
             seaHop = { fx: pos.x, fy: pos.y, fz: pos.z, tx: spot.tx, tz: spot.tz, ty: spot.ty, t: 0 };
@@ -8585,6 +8802,10 @@ function doInteract() {
     if (carDrive) { exitCar(); return; }
     if (Math.hypot(possessed.mover.position.x - CAR.x, possessed.mover.position.z - CAR.z) < 1.15) {
         enterCar();
+        return;
+    }
+    if (Math.hypot(possessed.mover.position.x - BOAT.x, possessed.mover.position.z - BOAT.z) < 1.25) {
+        enterBoat();   // 물가에 정박한 보트 — 뭍에서 폴짝 올라탄다
         return;
     }
     if (handHold) { releaseHandHold(); return; }
@@ -8655,7 +8876,7 @@ window.addEventListener('blur', () => { heldKeys.clear(); resetTouchStick(); });
 // in water the pet floats half-submerged with a gentle bob, leans forward and paddles.
 const pondPropRef = PROPS.find((q) => q.type === 'pond');
 const POND_WATER_Y = terrainHeight(pondPropRef.x, pondPropRef.z) + 0.06;
-const SWIM_LEASH = 13;                           // roomy enough to reach the satellite islands
+const SWIM_LEASH = 18;                           // 위성섬 + 휴양지 모래섬(중심 12.2, r 2.6)까지 수영 가능
 let seaHop = null;                               // climb-back tween { fx,fy,fz, tx,ty,tz, t }
 
 function playerBlocked(nx, nz) {
@@ -8779,6 +9000,21 @@ function updatePlayer(delta) {
             ? `🚗 ${p.name === 'chick' ? '병아리' : '강아지'} 운전 중${carDrive.passenger ? ' 👥' : ''} — 스틱 가속·핸들 · ✋ 내리기 · ✕ 해제`
             : `🚗 ${p.name === 'chick' ? '병아리' : '강아지'} 운전 중${carDrive.passenger ? ' 👥' : ''} — ↑↓ 가속·후진 · ←→ 핸들 · Ctrl/⌘ 내리기 · Esc 해제`;
         if (controlHint.textContent !== driveHint) controlHint.textContent = driveHint;
+        return;
+    }
+    if (boatRide) {
+        // 노 젓기: ↑/↓ 전진·후진, ←/→ 방향 (차와 같은 키, 물의 관성)
+        let acc = 0;
+        if (heldKeys.has('ArrowUp')) acc += 1.9;
+        if (heldKeys.has('ArrowDown')) acc -= 1.4;
+        if (touchMove.active) acc += 1.9 * Math.max(0, touchMove.z) - 1.4 * Math.max(0, -touchMove.z);
+        let steer = (heldKeys.has('ArrowLeft') ? 1 : 0) - (heldKeys.has('ArrowRight') ? 1 : 0);
+        if (touchMove.active) steer = THREE.MathUtils.clamp(steer - touchMove.x, -1, 1);
+        stepBoat(acc, steer, delta, p);
+        const rowHint = IS_TOUCH
+            ? `🚣 ${p.name === 'chick' ? '병아리' : '강아지'} 노 젓는 중${boatRide.passenger ? ' 👥' : ''} — 스틱 젓기·방향 · ✋ 내리기 · ✕ 해제`
+            : `🚣 ${p.name === 'chick' ? '병아리' : '강아지'} 노 젓는 중${boatRide.passenger ? ' 👥' : ''} — ↑↓ 노 젓기·후진 · ←→ 방향 · Ctrl/⌘ 내리기(물로 퐁당) · Esc 해제`;
+        if (controlHint.textContent !== rowHint) controlHint.textContent = rowHint;
         return;
     }
     let ix = 0, iz = 0;
@@ -9237,6 +9473,122 @@ function updateAutoDrive(delta) {
         logWorldEvent(`${petKo(driver)}가 드라이브를 마치고 내렸다`);
     }
 }
+
+// ---- 🚣 노 젓는 보트: 물 위의 스포츠카 — ⌘로 타고(절친이 곁에 있으면 뱃머리에 동승), ↑↓ 노
+// 젓기·후진, ←→ 방향. 물 위 어디든 정박(위치는 boat-1로 저장), ⌘로 내리면 그 자리에서 수영
+// 시작. 절친이 타고 있으면 기슭 근처에서만 하선(먼바다에 AI 혼자 띄우지 않기). ----
+function waveYAt(x, z) {
+    // 오션 버텍스 셰이더와 동일 상수 (그 주석의 약속 — 바꾸면 셰이더와 함께) · fade는 근해 1로 본다
+    const t = wxTime.value;
+    const a1 = x * 0.9 + t * 0.9;
+    const a2 = z * 1.15 - t * 0.75;
+    const a3 = (x * 0.55 + z * 0.83) * 1.6 + t * 1.35;
+    const a4 = x * 3.1 - z * 2.3 + t * 2.4;
+    return OCEAN_LEVEL + 0.045 * Math.sin(a1) + 0.038 * Math.sin(a2) + 0.028 * Math.sin(a3) + 0.012 * Math.sin(a4);
+}
+function boatBlocked(nx, nz) {
+    if (islandOf(nx, nz) >= 0) return true;               // 섬에 얹히지 않는다 (기슭까지는 접근)
+    if (Math.hypot(nx, nz) > 18) return true;             // 수평선 평탄 구간 전까지 (SWIM_LEASH와 동일)
+    return false;
+}
+function enterBoat() {
+    const driver = possessed;
+    if (!driver) return;
+    let passenger = null;
+    const friend = pets.find((q) => q !== driver);
+    const friendClose = friend && Math.hypot(friend.mover.position.x - BOAT.x, friend.mover.position.z - BOAT.z) < 1.6;
+    if (friend && !friend.bed && !friend.dip && !friend.pet.sleeping
+        && ((handHold && handHold.partner === friend) || (friendClose && (friend.ai.state === 'idle' || friend.ai.state === 'walk')))) {
+        if (handHold) handHold = null;
+        releaseAI(friend);
+        friend.ai.state = 'held';
+        passenger = friend;
+    }
+    boatRide = { driver, passenger, row: 0, lastPh: 0 };
+    running = false;
+    driver.swimming = false;
+    logWorldEvent(`${petKo(driver)}가 보트에 올라 노를 잡았다${passenger ? ' (절친도 뱃머리에!)' : ''}`);
+}
+function exitBoat(force = false) {
+    if (!boatRide) return;
+    const { driver, passenger } = boatRide;
+    if (passenger) {
+        // 절친 하선은 기슭 근처에서만 — 자리가 있으면 절친을 뭍에 올려주고 나서 조종 펫이 내린다
+        const spot = nearestClimbSpot({ x: BOAT.x, z: BOAT.z });
+        if (!spot && !force) { showToast('🚣 절친이 타고 있어요 — 뭍 가까이에서 내려요'); return; }
+        if (spot) {
+            passenger.mover.position.set(spot.tx, spot.ty, spot.tz);
+            passenger.swimming = false;
+        } else {
+            passenger.mover.position.set(BOAT.x + 0.6, waveYAt(BOAT.x + 0.6, BOAT.z) + 0.02 - passenger.height * 0.45, BOAT.z);
+            passenger.swimming = 'sea';   // 강제 해제(Esc) — 절친도 물에 퐁당 (둥둥 떠서 기다린다)
+        }
+        passenger.mover.rotation.x = 0;
+        passenger.mover.rotation.z = 0;
+        if (passenger.ai.state === 'held') releaseAI(passenger);
+    }
+    boatRide = null;
+    BOAT.vel = 0;
+    const rX = Math.cos(BOAT.heading), rZ = -Math.sin(BOAT.heading);
+    const dx = BOAT.x - rX * 0.8, dz = BOAT.z - rZ * 0.8;   // 뱃전 옆 물로 퐁당
+    driver.mover.position.set(dx, waveYAt(dx, dz) + 0.02 - driver.height * 0.45, dz);
+    driver.mover.rotation.x = 0;
+    driver.mover.rotation.z = 0;
+    driver.swimming = 'sea';                                // 보트에서 내리면 어디서든 수영
+    spawnSplash(dx, waveYAt(dx, dz) + driver.height * 0.42, dz);
+    playSplashSound(dx, dz);
+    logWorldEvent(`${petKo(driver)}가 보트에서 내려 바다에 퐁당 뛰어들었다`);
+    saveLayout();                                           // 정박 위치 저장 — 물 위 어디든 주차
+}
+// 보트 물리 한 스텝 — 차보다 무겁고 미끄럽다 (관성 활공), 노는 속도에 맞춰 젓는다.
+function stepBoat(acc, steer, delta, driver) {
+    const maxV = driver.speed * 3.2;
+    BOAT.vel += acc * delta;
+    BOAT.vel *= Math.pow(0.5, delta);                      // 물 저항 — 놓으면 스르르 활공
+    BOAT.vel = THREE.MathUtils.clamp(BOAT.vel, -maxV * 0.35, maxV);
+    BOAT.heading += steer * delta * 1.7 * THREE.MathUtils.clamp(BOAT.vel / maxV, -1, 1);
+    const nx = BOAT.x + Math.sin(BOAT.heading) * BOAT.vel * delta;
+    const nz = BOAT.z + Math.cos(BOAT.heading) * BOAT.vel * delta;
+    if (!boatBlocked(nx, nz)) { BOAT.x = nx; BOAT.z = nz; }
+    else BOAT.vel = 0;                                     // 기슭에 닿으면 멈춘다 — 내려서 수영/상륙
+    boatCollider.x = BOAT.x;
+    boatCollider.z = BOAT.z;
+    const by = waveYAt(BOAT.x, BOAT.z) + 0.02;
+    boatGroup.position.set(BOAT.x, by, BOAT.z);
+    boatGroup.rotation.set(Math.sin(wxTime.value * 1.1) * 0.02, BOAT.heading, steer * -0.05 + Math.sin(wxTime.value * 0.9) * 0.02);
+    // 노 젓기 — 속도에 비례해 젓고, 스트로크가 넘어갈 때 물소리 한 번
+    boatRide.row += Math.abs(BOAT.vel) * delta * 5 + (Math.abs(acc) > 0.1 ? delta * 2.2 : 0);
+    const ph = Math.floor(boatRide.row / Math.PI);
+    for (const oar of boatGroup.userData.oars) {
+        oar.grp.rotation.x = Math.sin(boatRide.row) * 0.45;
+        oar.grp.rotation.z = oar.base + Math.cos(boatRide.row) * 0.12 * oar.side;
+    }
+    if (ph !== boatRide.lastPh && Math.abs(BOAT.vel) > 0.25) {
+        boatRide.lastPh = ph;
+        playBuffer(swishBuf, { vol: 0.4 * attAtPoint(BOAT.x, BOAT.z), rate: 0.75 + Math.random() * 0.2, filterFreq: 900 });
+    }
+    const rX = Math.cos(BOAT.heading), rZ = -Math.sin(BOAT.heading);
+    const seatPet = (q, fwd) => {
+        q.mover.position.set(
+            BOAT.x + Math.sin(BOAT.heading) * fwd,
+            by + 0.14,
+            BOAT.z + Math.cos(BOAT.heading) * fwd
+        );
+        q.mover.rotation.y = BOAT.heading;
+        q.mover.rotation.x = 0;
+        q.mover.rotation.z = 0;
+        q.pet.walking = false;
+        q.swimming = false;
+    };
+    seatPet(driver, -0.08);
+    if (boatRide.passenger) seatPet(boatRide.passenger, 0.36);
+}
+// 정박 중 보트: 파도 위에서 살랑살랑 (항해 중엔 stepBoat가 놓는다)
+function updateBoatIdle() {
+    if (boatRide) return;
+    boatGroup.position.set(BOAT.x, waveYAt(BOAT.x, BOAT.z) + 0.02, BOAT.z);
+    boatGroup.rotation.set(Math.sin(wxTime.value * 0.8) * 0.02, BOAT.heading, Math.sin(wxTime.value * 0.65 + 1.3) * 0.025);
+}
 function updateHandHold(delta) {
     if (!handHold) return;
     const leader = possessed;
@@ -9655,6 +10007,7 @@ function animate() {
     }
     updateDips(delta);
     updateAutoDrive(delta);
+    updateBoatIdle();                        // 정박 보트의 파도 위 살랑임 (항해 중엔 stepBoat 담당)
     updateHeartFx(delta);
     updateFestiveFx(delta);
     updateAutoSleep();
