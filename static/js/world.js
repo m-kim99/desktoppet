@@ -8942,8 +8942,8 @@ if (IS_TOUCH) {
         return b;
     };
     actionBtn('✕', 44, () => escapeAction());                     // Esc
-    actionBtn('✋', 48, () => doInteract());                      // Ctrl/⌘ — 독(📷) 버튼과 같은 크기
     actionBtn('🦘', 48, () => doJump());                          // Space
+    actionBtn('✋', 48, () => doInteract());                      // Ctrl/⌘ — 독(📷) 버튼과 같은 크기
     touchUI.appendChild(btnCol);
     document.body.appendChild(touchUI);
 }
