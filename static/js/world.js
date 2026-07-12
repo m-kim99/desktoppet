@@ -2681,6 +2681,7 @@ function updateMailFlag() {
 }
 let mailPollAt = 0;
 let gardenPollAt = 0;   // 텃밭 성장 티커 (animate에서 10초마다 단계 변화 감지)
+let petSaveAt = 0;      // 펫 이어하기 저장 티커 (8초 — 크래시/강제종료에도 최근 위치 보존)
 mailSend.onclick = async () => {
     const text = mailInput.value.trim();
     if (!text) { showToast('📮 편지 내용을 먼저 적어주세요'); return; }
@@ -5766,14 +5767,56 @@ const PETS = [
 ];
 const pets = [];   // filled as each model loads: { name, speed, pet, mover, ai }
 
+// 이어하기 (심즈+동숲 하이브리드): 위치·방향·침대·수영 상태를 8초마다+창 닫힐 때 저장하고,
+// 켜면 그 자리에서 하던 모습으로 복원한다 — 활동의 "지금 뭐 할 시간인가"는 이미 실제 시계
+// 기반(식사·취침·낮밤)이라, 위치만 이어주면 시계 시스템이 나머지를 자연스럽게 이어받는다.
+const savedPets = (() => { try { return JSON.parse(localStorage.getItem('world-pets') || 'null'); } catch (e) { return null; } })();
+function savePetState() {
+    try {
+        const out = { ts: Date.now() };
+        for (const p of pets) {
+            out[p.name] = {
+                x: +p.mover.position.x.toFixed(3),
+                z: +p.mover.position.z.toFixed(3),
+                rotY: +p.mover.rotation.y.toFixed(3),
+                bed: p.bed && p.bedPhase === 'lying' ? p.bed.id : null,
+                swim: p.swimming || null,
+            };
+        }
+        localStorage.setItem('world-pets', JSON.stringify(out));
+    } catch (e) {}
+}
+window.addEventListener('pagehide', savePetState);
+
 for (const def of PETS) {
     const mover = new THREE.Group();
     mover.position.set(def.spawn.x, world.groundHeightAt(def.spawn.x, def.spawn.z), def.spawn.z);
     scene.add(mover);
     createGlbPetEntity(def.url, { targetHeight: def.height, parent: mover }).then(pet => {
         mover.rotation.y = Math.random() * Math.PI * 2;      // face somewhere, after limb classification
-        pet.action = { id: 'wave', t: 0 };                    // greet on moving in
         const entry = { name: def.name, speed: def.speed, height: def.height, pet, mover, ai: makeWanderAI() };
+        const sv = savedPets && savedPets[def.name];
+        let restored = false;
+        if (sv && Number.isFinite(sv.x) && Number.isFinite(sv.z)) {
+            if (sv.swim === 'pond' && Math.hypot(sv.x - pondPropRef.x, sv.z - pondPropRef.z) < 0.6) {
+                mover.position.set(sv.x, POND_WATER_Y - def.height * 0.45, sv.z);   // 연못에서 물놀이하던 채로
+                entry.swimming = 'pond';
+                restored = true;
+            } else if (islandOf(sv.x, sv.z) >= 0 && !world.isBlocked(sv.x, sv.z)) {
+                mover.position.set(sv.x, world.groundHeightAt(sv.x, sv.z), sv.z);   // 뭍의 그 자리에서
+                restored = true;
+            } else if (islandOf(sv.x, sv.z) < 0 && Math.hypot(sv.x, sv.z) <= SWIM_LEASH) {
+                mover.position.set(sv.x, OCEAN_LEVEL + 0.02 - def.height * 0.45, sv.z);   // 바다 수영하던 채로
+                entry.swimming = 'sea';
+                restored = true;
+            }
+            if (restored && Number.isFinite(sv.rotY)) mover.rotation.y = sv.rotY;
+            if (restored && sv.bed) {
+                const bed = BEDS.find((b) => b.id === sv.bed && !b.occupant);   // 앉던/자던 자리가 비어 있으면 다시
+                if (bed) setTimeout(() => { if (!entry.bed && entry.ai.state !== 'player') mountBed(entry, bed); }, 700);
+            }
+        }
+        if (!restored) pet.action = { id: 'wave', t: 0 };   // 첫 이사 인사 — 이어하기엔 하던 대로 조용히
         wireWorldFx(entry);
         pets.push(entry);
     }).catch(e => console.error('[World] pet load failed', def.url, e));
@@ -10284,6 +10327,7 @@ function animate() {
         gardenPollAt = Date.now() + 10000;
         if (gardenGroups && gardenPlots.map((pl) => gardenStage(pl)).join('') !== gardenStageHash) refreshGardenVisuals();
     }
+    if (Date.now() > petSaveAt) { petSaveAt = Date.now() + 8000; savePetState(); }   // 이어하기 — pagehide가 마지막 저장을 보강
     updateDips(delta);
     updateAutoDrive(delta);
     updateBoatIdle();                        // 정박 보트의 파도 위 살랑임 (항해 중엔 stepBoat 담당)
