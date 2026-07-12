@@ -2944,12 +2944,18 @@ function mkShovel() {
     scene.add(g);
     return g;
 }
+// 앉기 다리 접기: 엔티티가 매 프레임 다리를 리셋하므로(updateGlbPetEntity가 먼저 돈다) 앉아
+// 있는 동안 여기서 덮어쓰기만 하면 되고, 일어나면 자동 복원된다. -1.35 ≈ 앞으로 눕힌 다리.
+function sandSitLegs(p) {
+    for (const f of p.pet.feet) f.rotation.x = (f.userData._restRotX || 0) - 1.35;
+}
 function updateSandPlay(delta) {
     const s0 = BEDS.find((b) => b.id === 'sandspot-0');
     if (!s0) return;
     if (!sandShovel) sandShovel = mkShovel();
     const p0 = s0.occupant;
     if (p0 && p0.bedPhase === 'lying') {
+        sandSitLegs(p0);
         sandShovel.visible = true;
         const fx = Math.sin(s0.lie.rotY), fz = Math.cos(s0.lie.rotY);
         const rx = Math.cos(s0.lie.rotY), rz = -Math.sin(s0.lie.rotY);
@@ -2976,14 +2982,16 @@ function updateSandPlay(delta) {
     const s1 = BEDS.find((b) => b.id === 'sandspot-1');
     const p1 = s1 && s1.occupant;
     if (p1 && p1.bedPhase === 'lying') {
-        if (Math.random() < delta / 2.8) {   // 성벽 토닥토닥 — 손끝에서 모래 반짝
+        sandSitLegs(p1);
+        if (Math.random() < delta / 2.8) {   // 맨손으로 같이 판다 — 손끝에서 모래 반짝
             const fx = Math.sin(s1.lie.rotY), fz = Math.cos(s1.lie.rotY);
             const spr = glowSprite(0xe8d8b0, 0.05, 0.75);
             spr.position.set(s1.lie.x + fx * 0.16, s1.lie.y + 0.1, s1.lie.z + fz * 0.16);
             scene.add(spr);
             hugBurst.push({ spr, vx: (Math.random() - 0.5) * 0.2, vy: 0.25, vz: (Math.random() - 0.5) * 0.2, t: 0.35 });
         }
-        if (!p1.pet.action && Math.random() < delta / 6) p1.pet.action = { id: 'happy', t: 0 };
+        // 빙글 도는 happy는 앉은 채 보면 어색하다(사용자 피드백) — 삽 없이 같이 파는 dig 모션으로
+        if (!p1.pet.action && Math.random() < delta / 5) p1.pet.action = { id: 'dig', t: 0 };
         if (p1._sandUntil && Date.now() > p1._sandUntil) { p1._sandUntil = 0; p1.bedExit = true; }
     }
 }
@@ -4658,9 +4666,9 @@ for (const p of PROPS) {
             const faceCastle = Math.atan2(sandPr.x - w.x, sandPr.z - w.z);   // 성을 바라보고 앉는다
             BEDS.push({
                 id: `sandspot-${i}`, mode: 'sit', occupant: null, sway: 0,
-                // 시트 앉기(tilt만)는 맨모래에선 "서서 기대는" 자세로 읽힌다 — 몸을 모래에 살짝
-                // 가라앉혀(-0.06) 다리를 묻고, 더 뒤로 기대(-0.52) 엉덩이 붙인 모래놀이 자세로.
-                lie: { x: w.x, z: w.z, y: terrainHeight(w.x, w.z) - 0.06, rotY: faceCastle, tilt: -0.52 },
+                // 실무 게임식 앉기: 몸은 곧게(tilt 0) + 다리만 앞으로 눕힌다(updateSandPlay가
+                // 매 프레임 feet.rotation.x를 접음 — 일어나면 엔티티가 원위치). 몸은 살짝 가라앉혀 접지.
+                lie: { x: w.x, z: w.z, y: terrainHeight(w.x, w.z) - 0.06, rotY: faceCastle, tilt: 0 },
                 approach: { x: ap.x, z: ap.z },
             });
         });
