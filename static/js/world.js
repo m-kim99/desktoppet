@@ -678,6 +678,39 @@ const sandTopTex = canvasTex(256, 1, 1, (ctx, s) => {
         ctx.fill();
     }
 });
+// 야자수 프론드 — 중심 스파인 + 양쪽으로 갈라지는 잎살(끝으로 갈수록 짧아짐)을 알파로 그린다.
+// 벤트 스트립 지오메트리에 얹으면 톱니 실루엣의 진짜 야자잎이 된다.
+const frondTex = canvasTex(128, 1, 1, (ctx, s) => {
+    const R = seededRand(97);
+    ctx.clearRect(0, 0, s, s);
+    const midY = s / 2;
+    ctx.strokeStyle = '#3f7a34';   // 스파인
+    ctx.lineWidth = s / 26;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, midY);
+    ctx.lineTo(s * 0.98, midY);
+    ctx.stroke();
+    for (let i = 0; i < 15; i++) {   // 잎살 쌍 — 뿌리 쪽 길고 끝 쪽 짧다, 살짝 뒤로 눕는다
+        const t = i / 15;
+        const x = s * (0.04 + t * 0.9);
+        const len = s * 0.42 * (1 - t * 0.62) * (0.85 + R() * 0.3);
+        for (const side of [-1, 1]) {
+            const g2 = ctx.createLinearGradient(x, midY, x + s * 0.1, midY + side * len);
+            g2.addColorStop(0, '#5da44b');
+            g2.addColorStop(1, '#7fce69');
+            ctx.strokeStyle = g2;
+            ctx.lineWidth = s / 22 * (1 - t * 0.4);
+            ctx.beginPath();
+            ctx.moveTo(x, midY);
+            ctx.quadraticCurveTo(x + s * 0.06, midY + side * len * 0.55, x + s * 0.11, midY + side * len);
+            ctx.stroke();
+        }
+    }
+});
+const palmFrondMat = new THREE.MeshLambertMaterial({ map: frondTex, alphaTest: 0.4, side: THREE.DoubleSide });
+// 알파 재질의 그림자는 기본이 "사각 판때기" — 톱니 모양대로 떨어지게 알파 인지 깊이 재질을 쓴다
+const palmFrondDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: frondTex, alphaTest: 0.4 });
 // 꽃송이 스프라이트 — 루미넌스 꽃잎(instanceColor·계절 틴트가 착색) + 웜 옐로 수술.
 const flowerTex = canvasTex(48, 1, 1, (ctx, s) => {
     ctx.clearRect(0, 0, s, s);
@@ -1114,6 +1147,18 @@ function terrainHeight(x, z) {
     for (const isl of ISLANDS) {
         const rr = Math.hypot(x - isl.x, z - isl.z);
         if (rr >= isl.r) continue;
+        if (isl.kind === 'sand') {
+            // 해변 프로파일: 중심의 낮은 사구 → 바깥 띠는 물밑으로 잠긴다 (f≈0.95쯤에서 수면
+            // -0.52와 교차) — 섬이 물 위에 "떠 있는" 대신 물가선이 모래 중턱을 지나가고, 파도와
+            // 조수를 따라 밀렸다 쓸렸다 한다. 위엔 잔물결 사구 굴곡만 살짝.
+            const f = rr / isl.r;
+            let h = 0.07 - 0.65 * THREE.MathUtils.smoothstep(f, 0.4, 1.08)
+                  + 0.018 * Math.sin(x * 3.1 + 0.7) * Math.sin(z * 2.7 - 1.2);
+            for (const s of FLAT_SPOTS) {
+                h *= THREE.MathUtils.smoothstep(Math.hypot(x - s.x, z - s.z), s.r * 0.55, s.r);
+            }
+            return h;
+        }
         let h = 0.05 * Math.sin(x * 1.7 + 1.3) * Math.sin(z * 1.9 - 0.7)
               + 0.04 * Math.sin((x + z) * 1.1 + 2.1) + 0.045;
         // 언덕: 고원형 봉우리 (정상 35%는 평평 — 데크 자리, 사면은 걸어 오르는 완경사)
@@ -1168,9 +1213,9 @@ function buildIslandMeshes(isl) {
     for (let j = 0; j < segs; j++) {
         const a = (j / segs) * Math.PI * 2;
         const x = isl.x + Math.cos(a) * isl.r * 1.004, z = isl.z + Math.sin(a) * isl.r * 1.004;
-        positions.push(x, -0.26, z);
+        positions.push(x, sand ? -0.74 : -0.26, z);   // 모래섬 테두리는 이미 물밑(-0.55) — 스커트도 더 아래로
         uvs.push(x * 0.8, z * 0.8);
-        if (sand) colors.push(0.86, 0.78, 0.62);   // 젖은 모래 톤 — 물가로 이어지는 립
+        if (sand) colors.push(0.8, 0.72, 0.56);    // 젖은 모래 톤 — 물밑 모래턱으로 이어진다
         else colors.push(0.52, 0.47, 0.4);         // 흙그늘 톤 — 지층 절벽과 이어지는 어두운 립
     }
     for (let i = 0; i < rings; i++) {
@@ -1202,14 +1247,13 @@ function buildIslandMeshes(isl) {
     stage.add(grass);
     if (!sand) seasonGrass.push(grass);   // the season system re-tints this (and snow-swaps its texture) — 열대 휴양지는 사계절 모래
 
-    // 모래섬은 절벽 대신 해변 경사 — 립이 완만하게 물속 모래턱으로 이어진다 (지층 밴드 없음)
+    // 모래섬은 절벽 대신 해변 경사 — 지면 테두리(이미 물밑 -0.55)에서 물속 모래턱으로 이어진다
     const pts = sand ? [
-        new THREE.Vector2(isl.r, 0.004),
-        new THREE.Vector2(isl.r * 1.03, -0.14),
-        new THREE.Vector2(isl.r * 0.99, -0.34),
-        new THREE.Vector2(isl.r * 0.84, -0.62),
-        new THREE.Vector2(isl.r * 0.55, -0.9),
-        new THREE.Vector2(0.05, -1.05),
+        new THREE.Vector2(isl.r, -0.54),
+        new THREE.Vector2(isl.r * 1.005, -0.64),
+        new THREE.Vector2(isl.r * 0.9, -0.82),
+        new THREE.Vector2(isl.r * 0.55, -0.98),
+        new THREE.Vector2(0.05, -1.06),
     ] : [
         new THREE.Vector2(isl.r, 0.004),
         new THREE.Vector2(isl.r * 0.995, -0.12),
@@ -1305,38 +1349,66 @@ function makeProceduralTree(p) {
     return g;
 }
 
-// 🌴 야자수 (휴양지 모래섬): 굽은 트렁크(마디 세그먼트) + 프론드 8장 + 코코넛. 열대 상록이라
-// 계절 시스템(seasonLeaves/snowCaps)에 등록하지 않는다 — 겨울에도 초록.
+// 🌴 야자수 (휴양지 모래섬): 통짜 굽은 트렁크(정점 벤딩 — 이음새 없음) + 커브를 타는 마디 링 +
+// 톱니 알파 프론드 9장(잎맥 텍스처, 처짐 커브, 알파 인지 그림자). 열대 상록이라 계절 시스템
+// (seasonLeaves/snowCaps)에 등록하지 않는다 — 겨울에도 초록.
 function makePalm() {
     const g = new THREE.Group();
-    const trunkMat = M(0xb08a60, { map: woodTex });
+    const bend = (t) => 0.34 * t * t;   // +x로 휘는 야자수 커브 (t = 0..1 높이 비율)
+    const TRUNK_H = 0.98;
+    // 트렁크: 원기둥 하나를 커브로 벤딩 — 세그먼트 조립이 아니라서 "분리된 몸통"이 없다
+    const trunkGeo = new THREE.CylinderGeometry(0.042, 0.064, TRUNK_H, 9, 8).translate(0, TRUNK_H / 2, 0);
+    {
+        const pos = trunkGeo.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+            const t = pos.getY(i) / TRUNK_H;
+            pos.setX(i, pos.getX(i) + bend(t));
+        }
+        trunkGeo.computeVertexNormals();
+    }
+    const trunk = new THREE.Mesh(bakeGrad(trunkGeo, 0xbf9264, 0x775134, { curve: 1.2 }), gradMat);
+    g.add(trunk);
     const ringMat = M(0x8a6647, { map: woodTex });
-    const SEG = 5;
-    for (let i = 0; i < SEG; i++) {
-        const t = i / (SEG - 1);
-        const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.052 - t * 0.012, 0.062 - t * 0.012, 0.19, 8), trunkMat);
-        seg.position.set(0.3 * t * t, 0.09 + i * 0.165, 0);   // 야자수 특유의 완만한 휨 (+x 로컬)
-        seg.rotation.z = -0.14 * t;
-        g.add(seg);
-        const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.066 - t * 0.012, 0.066 - t * 0.012, 0.03, 8), ringMat);   // 마디 밴드
-        ring.position.set(0.3 * t * t, 0.005 + i * 0.165, 0);
-        ring.rotation.z = -0.14 * t;
+    for (let i = 1; i <= 5; i++) {   // 마디 링 — 같은 커브 위에 앉아 트렁크를 감싼다
+        const t = i / 6;
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.062 - t * 0.017, 0.011, 6, 12).rotateX(Math.PI / 2), ringMat);
+        ring.position.set(bend(t), t * TRUNK_H, 0);
+        ring.rotation.z = -0.55 * t;   // 커브 기울기 따라 눕는다
         g.add(ring);
     }
-    const crownX = 0.3, crownY = 0.95;   // 트렁크 끝
-    for (let i = 0; i < 8; i++) {   // 프론드 — 납작하게 눌러 늘인 잎, 바깥으로 처진다 (dapple 질감 공유)
-        const a = (i / 8) * Math.PI * 2 + 0.25;
-        const frond = new THREE.Mesh(gradSphereGeo(0.3, 0x8fd06c, 0x3f8f3a), leafMatGrad);
-        frond.scale.set(0.34, 0.075, 1);
-        frond.position.set(crownX + Math.cos(a) * 0.3, crownY + 0.04 - 0.03 * Math.sin(i * 2.3), Math.sin(a) * 0.3);
+    // 프론드: 벤트 스트립(끝으로 갈수록 좁아지고 처짐) + frondTex 톱니 잎 — 방사형 9장
+    const crownX = bend(1), crownY = TRUNK_H;
+    const frondGeo = new THREE.PlaneGeometry(0.68, 0.2, 8, 1).translate(0.34, 0, 0);
+    {
+        const pos = frondGeo.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+            const t = pos.getX(i) / 0.68;
+            pos.setY(i, pos.getY(i) * (1 - 0.45 * t));   // 끝 테이퍼
+        }
+        frondGeo.rotateX(-Math.PI / 2);                  // XZ 평면으로 (길이 x · 폭 z)
+        for (let i = 0; i < pos.count; i++) {
+            const t = pos.getX(i) / 0.68;
+            pos.setY(i, 0.1 * t - 0.42 * t * t);         // 살짝 들렸다가 끝이 처지는 야자잎 커브
+        }
+        frondGeo.computeVertexNormals();
+    }
+    for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2 + 0.3;
+        const frond = new THREE.Mesh(frondGeo, palmFrondMat);
+        frond.customDepthMaterial = palmFrondDepth;      // 그림자도 톱니 모양대로
+        frond.position.set(crownX, crownY + 0.02, 0);
         frond.rotation.y = -a;
-        frond.rotation.z = 0.42 + (i % 2) * 0.14;   // 처짐 각 — 두 단으로 층지게
+        frond.rotation.z = -0.08 - (i % 3) * 0.1;        // 세 단으로 층지게
+        frond.scale.setScalar(0.85 + ((i * 37) % 10) / 10 * 0.3);
         g.add(frond);
     }
-    const coconutMat = M(0x8a6647);
-    for (const [cx, cz] of [[0.08, 0.05], [-0.04, 0.09], [0.02, -0.09]]) {
-        const nut = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), coconutMat);
-        nut.position.set(crownX + cx, crownY - 0.05, cz);
+    const crownBase = new THREE.Mesh(new THREE.SphereGeometry(0.062, 10, 8), ringMat);   // 잎 밑동 뭉치
+    crownBase.position.set(crownX, crownY + 0.01, 0);
+    g.add(crownBase);
+    const coconutMat = M(0x9a7a56);
+    for (const [cx, cz] of [[0.07, 0.045], [-0.035, 0.08], [0.02, -0.08]]) {
+        const nut = new THREE.Mesh(new THREE.SphereGeometry(0.042, 10, 8), coconutMat);
+        nut.position.set(crownX + cx, crownY - 0.045, cz);
         g.add(nut);
     }
     return g;
@@ -4398,6 +4470,7 @@ function worldBake() {
         mm.castShadow = list[0].castShadow;       // 버킷은 재질 단위라 동질적 — 블롭 데칼(false)은
         mm.receiveShadow = list[0].receiveShadow; // false를, 소품(true)은 true를 그대로 잇는다
         mm.renderOrder = list[0].renderOrder;
+        if (list[0].customDepthMaterial) mm.customDepthMaterial = list[0].customDepthMaterial;   // 알파 그림자(야자잎) 승계
         mm.matrixAutoUpdate = false;     // stage는 무변환 그룹 — world 좌표를 그대로 굳힌다
         stage.add(mm);
         worldBakeMeshes.push(mm);
@@ -5162,7 +5235,8 @@ let oceanMesh = null;
             ].join('\n'))
             .replace('#include <begin_vertex>',
                 'vec3 transformed = vec3(position);\n'
-                + 'transformed.y += aFade * (0.045 * sin(wvA1) + 0.038 * sin(wvA2) + 0.028 * sin(wvA3) + 0.012 * sin(wvA4));\n'
+                // 마지막 항 = 조수 (≈5분 주기 ±5.5cm) — waveYAt/tideOffset과 동일 상수 (밀물썰물)
+                + 'transformed.y += aFade * (0.045 * sin(wvA1) + 0.038 * sin(wvA2) + 0.028 * sin(wvA3) + 0.012 * sin(wvA4) + sin(uWxT * 0.021) * 0.055);\n'
                 + 'vSeaXZ = position.xz;\n'
                 + 'vSeaFade = aFade;');
         shader.fragmentShader = 'uniform float uWxT;\nvarying vec2 vSeaXZ;\nvarying float vSeaFade;\n' + shader.fragmentShader
@@ -5185,8 +5259,9 @@ let oceanMesh = null;
 
     for (const isl of ISLANDS) {
         for (let i = 0; i < 2; i++) {
+            const sandy = isl.kind === 'sand';   // 해변은 물가선(f≈0.95)에 맞춰 — 젖은 모래에 밀려오는 서프
             const foam = new THREE.Mesh(
-                new THREE.RingGeometry(isl.r * 0.82, isl.r * 0.93, 96),
+                new THREE.RingGeometry(isl.r * (sandy ? 0.88 : 0.82), isl.r * (sandy ? 1.0 : 0.93), 96),
                 // alphaMap(foamTex): 매끈한 도넛 띠 → 방울이 뭉치고 끊기는 유기적 거품선
                 new THREE.MeshBasicMaterial({ color: 0xffffff, alphaMap: foamTex, transparent: true, opacity: 0.4, depthWrite: false })
             );
@@ -6011,6 +6086,7 @@ window.addEventListener('pointercancel', endTouch);
 renderer.domElement.addEventListener('pointerup', (e) => {
     hideMenu();
     hideSipMenu();
+    hideBoatMenu();
     if (!pressAt) return;
     const moved = Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y);
     const held = performance.now() - pressAt.t;
@@ -6035,6 +6111,11 @@ renderer.domElement.addEventListener('pointerup', (e) => {
             }
             return;
         }
+    }
+    // 🚣 노 젓는 중 배를 우클릭 = 친구 태우기 메뉴 (소품 클릭 처리보다 먼저)
+    if (e.button === 2 && boatRide && !boatRide.passenger && raycaster.intersectObject(boatGroup, true).length) {
+        showBoatMenu(e.clientX, e.clientY);
+        return;
     }
     // 추억의 섬 소품 (쪼아쪼아나무·소원우물·타임캡슐): 클릭/탭으로 상호작용 — 드래그는 위의
     // slop 판정에서 이미 걸러졌으니 좌클릭 탭도 카메라와 안 싸운다.
@@ -8933,7 +9014,7 @@ function playerSupportY(p, x, z) {
         if (hf !== null) base = { y: hf, medium: 'land' };
         else if (hit) base = { y: bridgeDeckY(hit), medium: 'land' };
         else {
-            base = { y: OCEAN_LEVEL + 0.02 - p.height * 0.45, medium: 'sea' };
+            base = { y: OCEAN_LEVEL + tideOffset() + 0.02 - p.height * 0.45, medium: 'sea' };   // 수영 높이도 조수를 탄다
             for (const s of ISLANDS) {
                 if (Math.hypot(x - s.x, z - s.z) < s.r - 0.05) {
                     base = { y: terrainHeight(x, z), medium: 'land' };
@@ -9477,6 +9558,9 @@ function updateAutoDrive(delta) {
 // ---- 🚣 노 젓는 보트: 물 위의 스포츠카 — ⌘로 타고(절친이 곁에 있으면 뱃머리에 동승), ↑↓ 노
 // 젓기·후진, ←→ 방향. 물 위 어디든 정박(위치는 boat-1로 저장), ⌘로 내리면 그 자리에서 수영
 // 시작. 절친이 타고 있으면 기슭 근처에서만 하선(먼바다에 AI 혼자 띄우지 않기). ----
+function tideOffset() {   // 밀물썰물 — ≈5분 주기 ±5.5cm (셰이더의 sin(uWxT*0.021)*0.055와 동일)
+    return Math.sin(wxTime.value * 0.021) * 0.055;
+}
 function waveYAt(x, z) {
     // 오션 버텍스 셰이더와 동일 상수 (그 주석의 약속 — 바꾸면 셰이더와 함께) · fade는 근해 1로 본다
     const t = wxTime.value;
@@ -9484,7 +9568,7 @@ function waveYAt(x, z) {
     const a2 = z * 1.15 - t * 0.75;
     const a3 = (x * 0.55 + z * 0.83) * 1.6 + t * 1.35;
     const a4 = x * 3.1 - z * 2.3 + t * 2.4;
-    return OCEAN_LEVEL + 0.045 * Math.sin(a1) + 0.038 * Math.sin(a2) + 0.028 * Math.sin(a3) + 0.012 * Math.sin(a4);
+    return OCEAN_LEVEL + tideOffset() + 0.045 * Math.sin(a1) + 0.038 * Math.sin(a2) + 0.028 * Math.sin(a3) + 0.012 * Math.sin(a4);
 }
 function boatBlocked(nx, nz) {
     if (islandOf(nx, nz) >= 0) return true;               // 섬에 얹히지 않는다 (기슭까지는 접근)
@@ -9588,6 +9672,52 @@ function updateBoatIdle() {
     if (boatRide) return;
     boatGroup.position.set(BOAT.x, waveYAt(BOAT.x, BOAT.z) + 0.02, BOAT.z);
     boatGroup.rotation.set(Math.sin(wxTime.value * 0.8) * 0.02, BOAT.heading, Math.sin(wxTime.value * 0.65 + 1.3) * 0.025);
+}
+// 🚣 보트 우클릭 메뉴 — 노 젓는 중에 배를 우클릭하면 "친구 태우기": 절친이 물가까지 걸어와
+// 배에 오른다 (배가 기슭에서 멀면 못 닿는다고 알려준다).
+const boatMenu = document.createElement('div');
+boatMenu.id = 'world-boat-menu';
+boatMenu.style.cssText = 'position:fixed; display:none; z-index:130; background:rgba(30,32,40,0.94); border-radius:10px; padding:6px; box-shadow:0 6px 18px rgba(0,0,0,0.35);';
+const boatMenuBtn = document.createElement('button');
+boatMenuBtn.textContent = '👥 친구 태우기';
+boatMenuBtn.style.cssText = 'display:block; background:none; border:none; color:#fff; font-size:13px; padding:7px 12px; border-radius:7px; cursor:pointer; font-family:sans-serif;';
+boatMenuBtn.onmouseenter = () => { boatMenuBtn.style.background = 'rgba(255,255,255,0.14)'; };
+boatMenuBtn.onmouseleave = () => { boatMenuBtn.style.background = 'none'; };
+boatMenuBtn.onclick = () => { hideBoatMenu(); summonPassenger(); };
+boatMenu.appendChild(boatMenuBtn);
+document.body.appendChild(boatMenu);
+function showBoatMenu(x, y) {
+    boatMenu.style.left = `${Math.min(x, window.innerWidth - 150)}px`;
+    boatMenu.style.top = `${Math.min(y, window.innerHeight - 60)}px`;
+    boatMenu.style.display = 'block';
+}
+function hideBoatMenu() { boatMenu.style.display = 'none'; }
+function summonPassenger() {
+    if (!boatRide || boatRide.passenger) return;
+    const friend = pets.find((q) => q !== boatRide.driver);
+    if (!friend || friend.bed || friend.pet.sleeping || friend.dip || friend.swimming) {
+        showToast('👥 지금은 올 수 있는 친구가 없어요');
+        return;
+    }
+    releaseAI(friend);
+    friend.ai.state = 'goto';
+    friend.ai.target = { x: BOAT.x, z: BOAT.z };
+    friend.ai.waypoints = buildRoute(friend.mover.position, { x: BOAT.x, z: BOAT.z });
+    friend.ai.stall = 0;
+    friend.ai.onArrive = () => {
+        if (!boatRide || boatRide.passenger) { releaseAI(friend); return; }
+        if (Math.hypot(friend.mover.position.x - BOAT.x, friend.mover.position.z - BOAT.z) < 1.7) {
+            friend.ai.state = 'held';
+            friend.swimming = false;
+            boatRide.passenger = friend;
+            showToast('👥 절친이 뱃머리에 올라탔어요!');
+            logWorldEvent(`${petKo(friend)}가 보트 뱃머리에 올라탔다`);
+        } else {
+            releaseAI(friend);
+            showToast('👥 절친이 물가까지 왔는데 배가 멀어요 — 기슭에 더 가까이 대주세요');
+        }
+    };
+    showToast('👥 절친을 불렀어요 — 물가로 걸어오는 중');
 }
 function updateHandHold(delta) {
     if (!handHold) return;
