@@ -955,23 +955,20 @@ function gradColors(g, top, bottom) {
     }
     return cols;
 }
-// 잎 로브: 매끈한 구 → 올록볼록 퍼프(동숲 크라운의 "브로콜리" 실루엣). 방향 기반 저주파 럼프로
-// 정점을 방사형 변위하고, 볼록한 데는 밝게/골은 어둡게(dapple) 구워서 질감이 읽히게 한다.
-// 씸(경도 0/2π 중복 정점)은 위치가 같아 변위도 같으므로 크랙 없음.
+// 잎 로브: 실루엣은 원래의 매끈한 구(사용자 픽 — 변위 버전은 롤백). 질감은 색으로만:
+// 방향 기반 노이즈로 "볼록한 데 밝고 골 어두운" dapple을 정점색에 굽는다 — 형태 불변,
+// 잎 뭉치의 얼룩덜룩함만 얹힌다. dapple은 userData로 남아 계절 리베이크에도 보존.
 function gradSphereGeo(r, topHex, bottomHex) {
-    const g = new THREE.SphereGeometry(r, 20, 15);
+    const g = new THREE.SphereGeometry(r, 18, 14);
     const pos = g.attributes.position;
     const dap = new Float32Array(pos.count);
     const v = new THREE.Vector3();
     for (let i = 0; i < pos.count; i++) {
         v.set(pos.getX(i), pos.getY(i), pos.getZ(i)).divideScalar(r);   // 단위 방향
         const n = Math.sin(v.x * 5.3 + v.y * 3.9) * Math.sin(v.y * 4.5 - v.z * 6.1) * Math.sin(v.z * 5.1 + v.x * 3.3)
-                + 0.5 * Math.sin(v.x * 9.7 - v.y * 8.1) * Math.sin(v.z * 10.3 + v.y * 7.7);   // 큰 럼프 + 잔 보풀
-        const k = 1 + 0.1 * n;
-        pos.setXYZ(i, pos.getX(i) * k, pos.getY(i) * k, pos.getZ(i) * k);
-        dap[i] = 1 + 0.15 * n;
+                + 0.5 * Math.sin(v.x * 9.7 - v.y * 8.1) * Math.sin(v.z * 10.3 + v.y * 7.7);   // 큰 얼룩 + 잔 얼룩
+        dap[i] = 1 + 0.17 * n;
     }
-    g.computeVertexNormals();
     g.userData.dapple = dap;
     g.setAttribute('color', new THREE.Float32BufferAttribute(gradColors(g, topHex, bottomHex), 3));
     return g;
@@ -1216,21 +1213,9 @@ let seasonTreeNo = 0;   // stable per-tree pick from the autumn palette trio
 function makeProceduralTree(p) {
     const g = new THREE.Group();
     const cherry = !!(p && p.cherry);
-    // 트렁크: 민무늬 원기둥 → 밑동 플레어 있는 Lathe + 크라운으로 뻗는 가지 스텁 둘 (동숲 문법)
-    const trunkMat = M(cherry ? 0x8a5a48 : 0x9a6a45, { map: woodTex });
-    const trunkPts = [];
-    for (let i = 0; i <= 6; i++) {
-        const t = i / 6;
-        trunkPts.push(new THREE.Vector2(0.058 + 0.052 * Math.pow(1 - t, 2.8) + 0.008 * t, t * 0.5));
-    }
-    const trunk = new THREE.Mesh(new THREE.LatheGeometry(trunkPts, 10), trunkMat);
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.095, 0.46, 10), M(cherry ? 0x8a5a48 : 0x9a6a45, { map: woodTex }));
+    trunk.position.y = 0.23;
     g.add(trunk);
-    for (const [ang, tilt] of [[0.7, 0.5], [3.6, -0.45]]) {
-        const branch = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.03, 0.24, 7), trunkMat);
-        branch.position.set(Math.cos(ang) * 0.1, 0.5, Math.sin(ang) * 0.1);
-        branch.rotation.set(Math.sin(ang) * 0.5, 0, tilt);
-        g.add(branch);
-    }
     // Fluffy crown: overlapping spheres with a baked top-lit gradient; the big (non-cherry) tree
     // gets berries. Every lobe registers with the season system — 잎 리베이크 + 겨울 눈모자 — and
     // a cherry tree carries its own falling-petal cloud (spring only), tree-local so it follows
@@ -1245,7 +1230,7 @@ function makeProceduralTree(p) {
         s.position.set(x, y, z);
         g.add(s);
         seasonLeaves.push({ geo, orig: [top, bottom], cherry, treeNo, li });
-        const cap = new THREE.Mesh(new THREE.SphereGeometry(r * 1.13, 16, 6, 0, Math.PI * 2, 0, Math.PI * 0.4), snowCapMat);
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(r * 1.045, 16, 6, 0, Math.PI * 2, 0, Math.PI * 0.4), snowCapMat);
         cap.position.set(x, y, z);
         cap.visible = false;
         g.add(cap);
@@ -2387,46 +2372,55 @@ let mailFlag = null, mailData = [], mailReadTs = 0;
 try { mailReadTs = parseInt(localStorage.getItem('world-mail-read') || '0', 10) || 0; } catch (e) {}
 function makeMailbox() {
     const g = new THREE.Group();
-    // 동숲식 조형: 테이퍼 기둥 + 발치 둔덕, 통통한 몸통 위에 돔 뚜껑, 볼록한 투입구와 손잡이.
-    const post = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.042, 0.058, 0.5, 10), 0xa8845e, 0x6f5238, { curve: 1.3 }), gradMatWood);
-    post.position.y = 0.25;
+    // 리모델: "덩어리 모음" 탈피 — 클래식 터널형 우체통. 반원 지붕+직벽 프로파일을 통짜
+    // Extrude(베벨)로 뽑아 이음새·캡 없이 매끈하고, 문판·테두리·투입구·걸쇠가 정면의 "얼굴"을
+    // 만든다. 발치 둔덕·덤불 블롭은 제거(징검돌만 유지), 깃발(mailFlag) 애니메이션은 그대로.
+    const post = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.034, 0.046, 0.52, 12), 0xa8845e, 0x6f5238, { curve: 1.3 }), gradMatWood);
+    post.position.y = 0.26;
     g.add(post);
-    const foot = GM(new THREE.SphereGeometry(0.075, 12, 8), 0x9a7a56, 0x6f5238);
-    foot.scale.y = 0.42;
-    foot.position.y = 0.015;
-    g.add(foot);
-    const box = GM(new RoundedBoxGeometry(0.26, 0.2, 0.19, 4, 0.06), 0xe97c63, 0xa8483c, { curve: 1.15 });
-    box.position.y = 0.58;
-    g.add(box);
-    const lid = GM(new THREE.SphereGeometry(0.148, 16, 9, 0, Math.PI * 2, 0, Math.PI / 2), 0xd4695a, 0x8e372e);
-    lid.scale.set(0.95, 0.52, 0.72);
-    lid.position.y = 0.672;
-    g.add(lid);
-    const slot = GM(new RoundedBoxGeometry(0.14, 0.036, 0.022, 2, 0.012), 0xfdf7e8, 0xd8ccb4);
-    slot.position.set(0, 0.615, 0.093);
+    const basePlate = GM(new THREE.CylinderGeometry(0.075, 0.09, 0.032, 12), 0x9a7a56, 0x6f5238);
+    basePlate.position.y = 0.016;
+    g.add(basePlate);
+    const tunnel = new THREE.Shape();   // 정면에서 본 몸통 단면: ⌒ 위 반원 + 직벽
+    tunnel.moveTo(-0.105, 0);
+    tunnel.lineTo(-0.105, 0.085);
+    tunnel.absarc(0, 0.085, 0.105, Math.PI, 0, true);
+    tunnel.lineTo(0.105, 0);
+    tunnel.closePath();
+    const bodyGeo = new THREE.ExtrudeGeometry(tunnel, { depth: 0.24, bevelEnabled: true, bevelThickness: 0.014, bevelSize: 0.012, bevelSegments: 3, curveSegments: 16 });
+    bodyGeo.translate(0, 0, -0.12);    // 프로파일 면이 곧 정면(+z) — 깊이만 가운데로
+    const body = new THREE.Mesh(bakeGrad(bodyGeo, 0xf08a70, 0xaf4f3e, { curve: 1.1 }), gradMat);
+    body.position.y = 0.52;
+    g.add(body);
+    const doorShape = new THREE.Shape();   // 문판 — 몸통 단면의 축소판 (테두리가 자연히 남는다)
+    doorShape.moveTo(-0.078, 0.014);
+    doorShape.lineTo(-0.078, 0.085);
+    doorShape.absarc(0, 0.085, 0.078, Math.PI, 0, true);
+    doorShape.lineTo(0.078, 0.014);
+    doorShape.closePath();
+    const doorGeo = new THREE.ExtrudeGeometry(doorShape, { depth: 0.014, bevelEnabled: true, bevelThickness: 0.006, bevelSize: 0.006, bevelSegments: 2, curveSegments: 14 });
+    const door = new THREE.Mesh(bakeGrad(doorGeo, 0xfdf7e8, 0xd8c7ae), gradMat);
+    door.position.set(0, 0.52, 0.128);   // 몸통 정면(z≈0.134)에 얹힘 — 테두리가 몸통색으로 남는다
+    g.add(door);
+    const slot = GM(new RoundedBoxGeometry(0.096, 0.02, 0.016, 2, 0.008), 0x6b5644, 0x4a3a2c);   // 투입구
+    slot.position.set(0, 0.645, 0.152);
     g.add(slot);
-    const knob = GM(new THREE.SphereGeometry(0.022, 10, 8), 0xfdf7e8, 0xcabfa6);
-    knob.position.set(0, 0.552, 0.098);
-    g.add(knob);
-    // 비네트: 징검돌 두 장 + 덤불 한 쌍 — 우편함이 소품 하나가 아니라 "길가의 한 장면"이 된다.
+    const latch = GM(new THREE.SphereGeometry(0.018, 10, 8), 0xe8c46f, 0xb08d43);   // 꿀색 걸쇠
+    latch.position.set(0, 0.555, 0.155);
+    g.add(latch);
+    // 징검돌 두 장 — 길가 장면의 발끝만 남긴다
     for (const [sx, sz, sr] of [[0.02, 0.34, 0.085], [-0.1, 0.6, 0.068]]) {
         const step = GM(new THREE.CylinderGeometry(sr, sr * 1.08, 0.022, 10), 0xd8cbb4, 0xa89a82);
         step.position.set(sx, 0.011, sz);
         g.add(step);
     }
-    for (const [bx, bz, br] of [[-0.3, 0.12, 0.11], [0.32, 0.2, 0.085]]) {
-        const bush = GM(new THREE.SphereGeometry(br, 12, 9), 0x8fd06c, 0x4e8a3c, { curve: 1.2 });
-        bush.scale.y = 0.72;
-        bush.position.set(bx, br * 0.55, bz);
-        g.add(bush);
-    }
     mailFlag = new THREE.Group();
-    const arm = new THREE.Mesh(new RoundedBoxGeometry(0.035, 0.15, 0.024, 2, 0.012), M(0xf2c53d));
+    const arm = new THREE.Mesh(new RoundedBoxGeometry(0.032, 0.15, 0.022, 2, 0.011), M(0xf2c53d));
     arm.position.y = 0.075;
-    const tip = new THREE.Mesh(new RoundedBoxGeometry(0.085, 0.055, 0.024, 2, 0.012), M(0xf2c53d));
-    tip.position.set(0.03, 0.15, 0);
+    const tip = new THREE.Mesh(new RoundedBoxGeometry(0.08, 0.052, 0.022, 2, 0.011), M(0xf2c53d));
+    tip.position.set(0.028, 0.15, 0);
     mailFlag.add(arm, tip);
-    mailFlag.position.set(0.13, 0.6, 0);
+    mailFlag.position.set(0.118, 0.56, 0.05);   // 몸통 옆구리 — 접힘/기립 애니메이션은 기존 그대로
     mailFlag.rotation.z = -1.5;   // 평소엔 접힘 — 답장이 오면 선다
     g.add(mailFlag);
     return g;
@@ -2479,6 +2473,7 @@ function updateMailFlag() {
     }
 }
 let mailPollAt = 0;
+let gardenPollAt = 0;   // 텃밭 성장 티커 (animate에서 10초마다 단계 변화 감지)
 mailSend.onclick = async () => {
     const text = mailInput.value.trim();
     if (!text) { showToast('📮 편지 내용을 먼저 적어주세요'); return; }
@@ -3593,7 +3588,7 @@ function makePeckTree() {
         const s = new THREE.Mesh(gradSphereGeo(r, top, bottom), leafMatGrad);
         s.position.set(x, y, z);
         g.add(s);
-        const cap = new THREE.Mesh(new THREE.SphereGeometry(r * 1.13, 16, 6, 0, Math.PI * 2, 0, Math.PI * 0.4), snowCapMat);
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(r * 1.045, 16, 6, 0, Math.PI * 2, 0, Math.PI * 0.4), snowCapMat);
         cap.position.set(x, y, z);
         cap.visible = false;
         g.add(cap);
@@ -4239,6 +4234,11 @@ function worldBake() {
         if (!p.obj || !BAKE_TYPES.has(p.type)) continue;
         if (p.obj.userData.seats) for (const s of p.obj.userData.seats) s.traverse((o) => skip.add(o));
         if (p.obj.userData.plank) p.obj.userData.plank.traverse((o) => skip.add(o));
+        // plotIdx/keyIdx 노드의 서브트리 전체 제외 — 텃밭 작물 비주얼(plotIdx 그룹의 자식,
+        // 자기 자신엔 태그 없음)이 재베이크에 병합·숨김되면 수확해도 "구운 유령"이 남는다.
+        p.obj.traverse((o) => {
+            if (o.userData && (o.userData.plotIdx != null || o.userData.keyIdx != null)) o.traverse((q) => skip.add(q));
+        });
         p.obj.updateMatrixWorld(true);
         p.obj.traverse(collect);
         if (p.blob) { p.blob.updateMatrixWorld(true); collect(p.blob); }   // 그림자 블롭: 전부 blobMat 공유 → 1콜
@@ -9564,6 +9564,12 @@ function animate() {
     updateFountain(delta);
     updateFireflies(delta);
     if (Date.now() > mailPollAt) { mailPollAt = Date.now() + 20000; updateMailFlag(); }
+    // 텃밭 성장 티커: gardenStageHash는 만들어졌는데 비교하는 코드가 없었다 — 씨앗이 자라도
+    // (다시 클릭하기 전엔) 화면에 안 나타나던 원인. 10초마다 단계 변화를 감지해 다시 그린다.
+    if (Date.now() > gardenPollAt) {
+        gardenPollAt = Date.now() + 10000;
+        if (gardenGroups && gardenPlots.map((pl) => gardenStage(pl)).join('') !== gardenStageHash) refreshGardenVisuals();
+    }
     updateDips(delta);
     updateAutoDrive(delta);
     updateHeartFx(delta);
