@@ -5,6 +5,15 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Fixed (등반 마감 — 방향 의존 + 나무 위 공중부양)
+- **방향에 따라 못 올라가던 문제**: 충돌원은 소품 중심의 원인데 길쭉한 메시(선베드 등)의 짧은
+  쪽에선 원 경계와 메시 사이에 빈 띠가 생겨 그 띠에서 벽 판정 — 공중에서는 "표면이 없는 칸은
+  통과"(마크 규칙)로 바꿔 어느 방향에서 점프하든 올라선다. 지상 보행 규칙은 그대로.
+- **나무 위 공중부양**: 계절 꽃잎/낙엽 Points 구름이 여름엔 안 보여도 레이캐스트엔 잡히고
+  (Raycaster는 visible 무시) Points 기본 threshold가 1m라 크라운 위 허공이 바닥으로 잡혔다 —
+  메시 히트만 바닥으로 인정(Sprite·Points 제외), 꺼진 겨울 눈모자(투명 캡)도 제외. 이제 발이
+  올라선 사물 표면에 바로 붙는다.
+
 ### Fixed (등반 크래시 — Sprite.raycast의 camera 요구)
 - 사물에 올라가려는 순간 앱 전체가 멈추던 오류(Cannot read properties of null (reading
   'matrixWorld')) — 소품 그룹 안의 Sprite(할로 등)는 raycast 때 raycaster.camera를 읽는데 등반

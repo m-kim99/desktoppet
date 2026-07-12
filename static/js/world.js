@@ -8665,7 +8665,10 @@ function propTopAt(x, z, fromY) {
     let best = null;
     const take = (hits) => {
         for (const h of hits) {
-            if (h.object.isSprite) continue;   // 빌보드는 바닥이 아니다
+            // 메시 윗면만 바닥이다 — Sprite(빌보드)·Points(꽃잎/낙엽 구름: 여름엔 invisible이어도
+            // 레이캐스트엔 잡히고 threshold 1m라 허공을 바닥으로 만든다 → 나무 위 공중부양의 원인)
+            if (!h.object.isMesh) continue;
+            if (h.object.material === snowCapMat && !h.object.visible) continue;   // 꺼진 계절 눈모자(투명)도 바닥 아님
             const y = h.point.y;
             if (y <= fromY + 0.001 && y > 0.04 && (best === null || y > best)) best = y;   // 지면 데칼(블롭·리본)은 제외
         }
@@ -8793,9 +8796,11 @@ function updatePlayer(delta) {
                 }
             } else {
                 // 마크식: 소품의 옆면은 벽(bonk), 윗면은 길 — 발이 그 윗면 높이 이상이면
-                // 차단원 위로 지나간다 (점프 중 넘어가기 + 윗면 걷기가 이 한 줄로 성립).
+                // 차단원 위로 지나간다. 표면이 아예 없는 칸(t=null)은 공중에서만 통과: 충돌원은
+                // 소품 중심의 원이라 길쭉한 메시(선베드 등)의 짧은 쪽에선 경계와 메시 사이에
+                // 빈 띠가 생기는데, 예전엔 그 띠에서 벽 판정이 나 "방향에 따라 못 올라가는" 원인.
                 const t = propTopAt(nx, nz, p.mover.position.y + 0.06);
-                if (t !== null && p.mover.position.y >= t - 0.07) {
+                if ((t !== null && p.mover.position.y >= t - 0.07) || (airborne && t === null)) {
                     p.mover.position.x = nx;
                     p.mover.position.z = nz;
                 }
