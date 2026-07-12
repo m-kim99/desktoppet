@@ -2954,16 +2954,16 @@ function updateSandPlay(delta) {
         const fx = Math.sin(s0.lie.rotY), fz = Math.cos(s0.lie.rotY);
         const rx = Math.cos(s0.lie.rotY), rz = -Math.sin(s0.lie.rotY);
         const dig = Math.sin(wxTime.value * 3.4);   // 파기 스윙 박자
-        sandShovel.position.set(   // 앞발 바로 앞 — 손에 쥔 것처럼 몸에 붙인다
-            s0.lie.x + fx * 0.12 + rx * 0.055,
-            s0.lie.y + 0.015 + Math.max(0, dig) * 0.035,
-            s0.lie.z + fz * 0.12 + rz * 0.055);
+        sandShovel.position.set(   // 기대앉은 몸의 날개/앞발 높이(+0.1), 코앞(전방 0.09) — 쥔 것처럼
+            s0.lie.x + fx * 0.09 + rx * 0.04,
+            s0.lie.y + 0.1 + Math.max(0, dig) * 0.03,
+            s0.lie.z + fz * 0.09 + rz * 0.04);
         sandShovel.rotation.y = s0.lie.rotY;
-        sandShovel.rotation.x = 0.45 + dig * 0.5;
+        sandShovel.rotation.x = 0.5 + dig * 0.45;
         if (Math.random() < delta / 2.2) {   // 퍼낸 모래가 폴폴
             for (let i = 0; i < 2; i++) {
                 const spr = glowSprite(0xd9c49a, 0.05 + Math.random() * 0.04, 0.8);
-                spr.position.set(sandShovel.position.x + (Math.random() - 0.5) * 0.06, s0.lie.y + 0.02, sandShovel.position.z + (Math.random() - 0.5) * 0.06);
+                spr.position.set(sandShovel.position.x + (Math.random() - 0.5) * 0.06, s0.lie.y + 0.08, sandShovel.position.z + (Math.random() - 0.5) * 0.06);
                 scene.add(spr);
                 hugBurst.push({ spr, vx: fx * 0.25 + (Math.random() - 0.5) * 0.2, vy: 0.35, vz: fz * 0.25 + (Math.random() - 0.5) * 0.2, t: 0.4 });
             }
@@ -2979,7 +2979,7 @@ function updateSandPlay(delta) {
         if (Math.random() < delta / 2.8) {   // 성벽 토닥토닥 — 손끝에서 모래 반짝
             const fx = Math.sin(s1.lie.rotY), fz = Math.cos(s1.lie.rotY);
             const spr = glowSprite(0xe8d8b0, 0.05, 0.75);
-            spr.position.set(s1.lie.x + fx * 0.16, s1.lie.y + 0.04, s1.lie.z + fz * 0.16);
+            spr.position.set(s1.lie.x + fx * 0.16, s1.lie.y + 0.1, s1.lie.z + fz * 0.16);
             scene.add(spr);
             hugBurst.push({ spr, vx: (Math.random() - 0.5) * 0.2, vy: 0.25, vz: (Math.random() - 0.5) * 0.2, t: 0.35 });
         }
@@ -4658,8 +4658,9 @@ for (const p of PROPS) {
             const faceCastle = Math.atan2(sandPr.x - w.x, sandPr.z - w.z);   // 성을 바라보고 앉는다
             BEDS.push({
                 id: `sandspot-${i}`, mode: 'sit', occupant: null, sway: 0,
-                // +0.16은 쿠션/의자 높이 관습 — 맨모래에 그대로 쓰면 공중에 붕 뜬다. 바닥 앉기 +0.03.
-                lie: { x: w.x, z: w.z, y: terrainHeight(w.x, w.z) + 0.03, rotY: faceCastle, tilt: -0.35 },
+                // 시트 앉기(tilt만)는 맨모래에선 "서서 기대는" 자세로 읽힌다 — 몸을 모래에 살짝
+                // 가라앉혀(-0.06) 다리를 묻고, 더 뒤로 기대(-0.52) 엉덩이 붙인 모래놀이 자세로.
+                lie: { x: w.x, z: w.z, y: terrainHeight(w.x, w.z) - 0.06, rotY: faceCastle, tilt: -0.52 },
                 approach: { x: ap.x, z: ap.z },
             });
         });
@@ -9232,7 +9233,7 @@ function updatePlayer(delta) {
             while (diff < -Math.PI) diff += Math.PI * 2;
             p.mover.rotation.y += THREE.MathUtils.clamp(diff, -delta * 7, delta * 7);
             const run = running || (touchMove.active && touchMove.mag > 0.7);   // 📱 스틱을 70% 넘게 밀면 달리기
-            const step = p.speed * (p.swimming ? 1.05 : run ? 3.0 : 1.5) * delta;   // 달리기 = 걷기 ×2
+            const step = p.speed * (p.swimming ? (run ? 2.6 : 1.4) : run ? 3.0 : 1.5) * delta;   // 달리기 = 걷기 ×2 · 수영도 Shift 스프린트 (1.05→1.4/2.6)
             const nx = p.mover.position.x + dir.x * step;
             const nz = p.mover.position.z + dir.z * step;
             if (!playerBlocked(nx, nz)) {
