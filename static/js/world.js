@@ -632,30 +632,6 @@ const snowGroundTex = canvasTex(256, 1, 1, (ctx, s) => {   // 겨울 설원 — 
         ctx.fill();
     }
 });
-// 풀잎 다발 스프라이트 — 루미넌스(흰~회)로 그려서 material.color(계절 틴트)가 색을 입힌다.
-// 원뿔 콘 잔디를 대체하는 십자 quad에 얹는 알파 텍스처.
-const bladeTex = canvasTex(64, 1, 1, (ctx, s) => {
-    const R = seededRand(23);
-    ctx.clearRect(0, 0, s, s);
-    ctx.lineCap = 'round';
-    for (let i = 0; i < 7; i++) {   // 잎날 7장 — 아래는 그늘, 끝은 밝게
-        const x0 = s * (0.22 + 0.56 * (i / 6)) + (R() - 0.5) * s * 0.06;
-        const lean = (i / 6 - 0.5) * s * 0.5 + (R() - 0.5) * s * 0.12;
-        const h = s * (0.5 + R() * 0.42);
-        const w = s * (0.055 + R() * 0.03);
-        const grad = ctx.createLinearGradient(0, s, 0, s - h);
-        grad.addColorStop(0, 'rgba(105,112,100,1)');    // 밑동 그늘
-        grad.addColorStop(0.55, 'rgba(190,198,182,1)');
-        grad.addColorStop(1, 'rgba(246,250,238,1)');     // 잎끝 하이라이트
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.moveTo(x0 - w, s);
-        ctx.quadraticCurveTo(x0 - w * 0.4 + lean * 0.4, s - h * 0.55, x0 + lean, s - h);
-        ctx.quadraticCurveTo(x0 + w * 0.4 + lean * 0.4, s - h * 0.55, x0 + w, s);
-        ctx.closePath();
-        ctx.fill();
-    }
-});
 // 꽃송이 스프라이트 — 루미넌스 꽃잎(instanceColor·계절 틴트가 착색) + 웜 옐로 수술.
 const flowerTex = canvasTex(48, 1, 1, (ctx, s) => {
     ctx.clearRect(0, 0, s, s);
@@ -4681,24 +4657,38 @@ for (let i = 1; i < ISLANDS.length; i++) ROAD_NODES.push({ x: ISLANDS[i].x, z: I
     };
 
     const tufts = clusters(68, 4, 7, 0.42, 0.45);   // ~370포기가 4~7포기씩 다발로
-    // 십자 quad 풀잎(게임 잔디의 표준형): 진초록 원뿔 콘이 근경에서 스파이크로 읽히던 걸 대체.
-    // bladeTex는 루미넌스로 그려서 material.color(계절 틴트, applySeason이 애니메이트)가 착색한다.
-    // alphaTest라 투명 정렬 불요 — 여전히 1 드로우콜. 그림자는 끈다(알파 quad는 사각형 그림자를 만든다).
-    const bladeGeo = mergeGeometries([
-        new THREE.PlaneGeometry(0.17, 0.12).translate(0, 0.058, 0),
-        new THREE.PlaneGeometry(0.17, 0.12).rotateY(Math.PI / 2).translate(0, 0.058, 0),
-    ]);
-    const tuftMesh = new THREE.InstancedMesh(
-        bladeGeo,
-        new THREE.MeshLambertMaterial({ map: bladeTex, alphaTest: 0.45, side: THREE.DoubleSide, color: 0x5fae44 }),   // 계절이 color를 만진다 — 전용 재질
-        tufts.length);
+    // 원뿔 잔디(사용자 픽 — quad 풀잎에서 복귀), 대신 "자연스럽게" 세 겹:
+    //  ① 포기 = 원뿔 3개 다발 (꼿꼿한 중심 + 반대로 기운 곁가지 둘) — 스파이크가 아니라 포기로 읽힌다
+    //  ② 다발(ci)마다 체격이 다르다 (0.66~1.4 — 무성한 데와 성긴 데)
+    //  ③ 포기마다 키/퍼짐 독립 스케일 + 기울기 + 밝기·색조 지터(instanceColor)
+    // bakeGrad 램프(밑동 그늘) × instanceColor × material.color(계절 틴트) — 전부 곱셈이라 공존.
+    const tuftCone = (r, h, lean, ax, dx, dz) => {
+        const geo = new THREE.ConeGeometry(r, h, 5).translate(0, h / 2, 0);   // 밑동을 원점에 — 기울여도 뿌리가 땅에
+        geo.rotateZ(lean);
+        geo.rotateX(ax);
+        geo.translate(dx, 0, dz);
+        return geo;
+    };
+    const tuftGeo = bakeGrad(mergeGeometries([
+        tuftCone(0.02, 0.11, 0.05, -0.03, 0, 0),
+        tuftCone(0.0145, 0.072, 0.42, 0.14, 0.015, 0.007),
+        tuftCone(0.016, 0.086, -0.38, -0.1, -0.014, -0.006),
+    ]), 0xffffff, 0xa9b89c, { curve: 1.1 });
+    const tuftMesh = new THREE.InstancedMesh(tuftGeo, M(0x5fae44, { vertexColors: true, unique: true }), tufts.length);   // 계절이 color를 만진다 — 공유 금지
+    const clumpK = (ci) => Math.abs(Math.sin((ci + 1) * 78.233) * 43758.5453) % 1;   // 다발 고유 체격 0..1
+    const tuftC = new THREE.Color();
     tufts.forEach((s, i) => {
+        const build = 0.66 + clumpK(s.ci) * 0.74;                        // 다발 체격
+        const sxz = build * rnd(0.8, 1.25), sy = build * rnd(0.7, 1.55); // 포기별 퍼짐/키 독립
         dummy.position.set(s.x, terrainHeight(s.x, s.z) + 0.002, s.z);
-        dummy.rotation.set(rnd(-0.14, 0.14), rnd(0, Math.PI), rnd(-0.14, 0.14));
-        dummy.scale.setScalar(rnd(0.7, 1.5));
+        dummy.rotation.set(rnd(-0.16, 0.16), rnd(0, Math.PI * 2), rnd(-0.16, 0.16));
+        dummy.scale.set(sxz, sy, sxz);
         dummy.updateMatrix();
         tuftMesh.setMatrixAt(i, dummy.matrix);
+        const b = rnd(0.88, 1.1);                                        // 밝기 + 웜/쿨 색조 지터
+        tuftMesh.setColorAt(i, tuftC.setRGB(b * rnd(0.92, 1.06), b, b * rnd(0.86, 1.0)));
     });
+    tuftMesh.castShadow = true;
     stage.add(tuftMesh);
 
     const petals = [0xff8fb3, 0xffd54f, 0xffffff, 0xb39ddb, 0xff8a65];
@@ -4874,16 +4864,19 @@ let oceanMesh = null;
     geo.setIndex(indices);
     geo.computeVertexNormals();   // 평면이라 전부 (0,1,0) — 매 프레임 셰이더가 해석 법선으로 대체
     seaMat = new THREE.MeshPhongMaterial({
-        color: 0x3fa9d0, specular: 0x99ddff, shininess: 42, vertexColors: true,   // 기슭 여울 정점색
+        color: 0x3fa9d0, specular: 0xaee6ff, shininess: 68, vertexColors: true,   // 기슭 여울 정점색 · 물비늘용으로 하이라이트 약간 타이트하게 (42→68)
         transparent: true, opacity: 0.85,     // glassy: the submerged cliff + swimmers show through
     });
     // 파도는 GPU에서 (강수·분수와 같은 wxTime 시계): 4파 사인 변위와 그 편미분(해석 법선)을
     // 버텍스 셰이더에 주입한다. 예전엔 CPU가 4,592정점을 매 프레임 다시 계산하고 position+normal
     // ~110KB를 재업로드했다(발열) — 이제 CPU 몫은 공유 uniform 1개뿐이다. 상수는 CPU 버전과
     // 동일해야 한다(수영 펫 등이 파고를 CPU에서 다시 샘플링하게 되면 이 식과 맞출 것).
+    // 물비늘(sun glitter)은 프래그먼트에서: 월드 xz 기반 고주파 사인 리플 3겹으로 픽셀 노멀을
+    // 잘게 흔들면 스페큘러가 파도 위에서 반짝반짝 부서진다 — 정점(4.6k)으론 못 내는 입자감을
+    // 픽셀 단위로 공짜에 가깝게. 수평선 페이드(aFade→varying)로 원양에선 잦아들어 앨리어싱 방지.
     seaMat.onBeforeCompile = (shader) => {
         shader.uniforms.uWxT = wxTime;
-        shader.vertexShader = 'uniform float uWxT;\nattribute float aFade;\n' + shader.vertexShader
+        shader.vertexShader = 'uniform float uWxT;\nattribute float aFade;\nvarying vec2 vSeaXZ;\nvarying float vSeaFade;\n' + shader.vertexShader
             .replace('#include <beginnormal_vertex>', [
                 'float wvA1 = position.x * 0.9 + uWxT * 0.9;',
                 'float wvA2 = position.z * 1.15 - uWxT * 0.75;',
@@ -4895,7 +4888,17 @@ let oceanMesh = null;
             ].join('\n'))
             .replace('#include <begin_vertex>',
                 'vec3 transformed = vec3(position);\n'
-                + 'transformed.y += aFade * (0.045 * sin(wvA1) + 0.038 * sin(wvA2) + 0.028 * sin(wvA3) + 0.012 * sin(wvA4));');
+                + 'transformed.y += aFade * (0.045 * sin(wvA1) + 0.038 * sin(wvA2) + 0.028 * sin(wvA3) + 0.012 * sin(wvA4));\n'
+                + 'vSeaXZ = position.xz;\n'
+                + 'vSeaFade = aFade;');
+        shader.fragmentShader = 'uniform float uWxT;\nvarying vec2 vSeaXZ;\nvarying float vSeaFade;\n' + shader.fragmentShader
+            .replace('#include <normal_fragment_begin>', [
+                '#include <normal_fragment_begin>',
+                'float spkA = sin(vSeaXZ.x * 14.0 + uWxT * 1.7) * sin(vSeaXZ.y * 17.0 - uWxT * 1.3);',
+                'float spkB = sin(vSeaXZ.x * 23.0 - vSeaXZ.y * 19.0 + uWxT * 2.3);',
+                'float spkC = sin((vSeaXZ.x + vSeaXZ.y) * 31.0 + uWxT * 3.1);',
+                'normal = normalize(normal + vec3(spkA * 0.055 + spkB * 0.04, 0.0, spkB * 0.045 - spkC * 0.05) * vSeaFade);',
+            ].join('\n'));
     };
     oceanMesh = new THREE.Mesh(geo, seaMat);
     oceanMesh.receiveShadow = true;
