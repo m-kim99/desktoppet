@@ -1193,7 +1193,10 @@ function buildIslandMeshes(isl) {
         for (let j = 0; j < segs; j++) {
             const a = (j / segs) * Math.PI * 2;
             const x = isl.x + Math.cos(a) * r, z = isl.z + Math.sin(a) * r;
-            const y = terrainHeight(x, z);
+            // 높이는 경계 살짝 안쪽에서 샘플 — terrainHeight는 rr ≥ r에서 0으로 떨어져서, 최외곽
+            // 링이 해변 높이(-0.55)에서 0으로 튀며 섬 테두리에 사다리꼴 왕관 톱니를 세웠었다.
+            const hr = Math.min(r, isl.r - 0.002);
+            const y = terrainHeight(isl.x + Math.cos(a) * hr, isl.z + Math.sin(a) * hr);
             positions.push(x, y, z);
             uvs.push(x * 0.8, z * 0.8);                 // planar world mapping — pattern flows across islands
             const patch = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1;
@@ -4684,14 +4687,16 @@ function carBlocked(nx, nz) {
 // ---- 🚣 노 젓는 보트 상태 + 모델: 본섬 북쪽 물가에 정박 — 휴양지 모래섬으로 가는 발.
 // 기본 정박 (1.1, 6.0): 기슭 걷기 한계(r-0.35)에서 승선 반경 1.25 안 — 뭍에서 바로 탄다 (검산). ----
 const BOAT = { x: 1.1, z: 6.0, heading: -0.4, vel: 0 };
-{   // 🔨 저장된 정박 위치 — 차와 같은 방식 (boat-1)
-    const o = savedLayout['boat-1'];
-    if (o && Number.isFinite(o.x) && Number.isFinite(o.z)) {
+{   // 🔨 저장된 정박 위치 — 차와 같은 방식. 키를 boat-2로 세대교체: 초기 배포 때 모래섬 곁에
+    // 저장된 boat-1 정박들을 리셋해 "초기 위치 = 메인 땅 물가"로 되돌린다 (사용자 요청).
+    // 이후 정박은 boat-2로 정상 저장·복원된다. 육지에 찍힌 저장값(비정상)은 무시.
+    const o = savedLayout['boat-2'];
+    if (o && Number.isFinite(o.x) && Number.isFinite(o.z) && islandOf(o.x, o.z) < 0) {
         BOAT.x = o.x; BOAT.z = o.z;
         if (Number.isFinite(o.rotY)) BOAT.heading = o.rotY;
     }
 }
-const boatCollider = { type: 'boat', layoutId: 'boat-1', x: BOAT.x, z: BOAT.z, rotY: 0, r: 0.5, def: { x: 1.1, z: 6.0, rotY: -0.4 } };
+const boatCollider = { type: 'boat', layoutId: 'boat-2', x: BOAT.x, z: BOAT.z, rotY: 0, r: 0.5, def: { x: 1.1, z: 6.0, rotY: -0.4 } };
 PROPS.push(boatCollider);
 let boatRide = null;    // { driver, passenger, row, lastPh } while someone is rowing
 function makeBoat() {
@@ -9692,32 +9697,57 @@ function showBoatMenu(x, y) {
     boatMenu.style.display = 'block';
 }
 function hideBoatMenu() { boatMenu.style.display = 'none'; }
+let boatHop = null;   // { q, fx, fy, fz, t } — 절친이 물가에서 뱃머리로 그리는 승선 아크
 function summonPassenger() {
-    if (!boatRide || boatRide.passenger) return;
+    if (!boatRide || boatRide.passenger || boatHop) return;
     const friend = pets.find((q) => q !== boatRide.driver);
-    if (!friend || friend.bed || friend.pet.sleeping || friend.dip || friend.swimming) {
-        showToast('👥 지금은 올 수 있는 친구가 없어요');
-        return;
-    }
+    if (!friend) { showToast('👥 부를 친구가 없어요'); return; }
+    // 어디서 뭘 하고 있든 부르면 온다 — 자던 친구는 깨우고, 해먹·그네·시소·물놀이는 곱게 끝낸다.
+    friend.pet.sleeping = false;
+    friend.pet.autoSleeping = false;
+    if (friend.bed) forceEndBed(friend);
+    if (friend.dip) endDip(friend);
     releaseAI(friend);
-    friend.ai.state = 'goto';
-    friend.ai.target = { x: BOAT.x, z: BOAT.z };
-    friend.ai.waypoints = buildRoute(friend.mover.position, { x: BOAT.x, z: BOAT.z });
-    friend.ai.stall = 0;
-    friend.ai.onArrive = () => {
-        if (!boatRide || boatRide.passenger) { releaseAI(friend); return; }
-        if (Math.hypot(friend.mover.position.x - BOAT.x, friend.mover.position.z - BOAT.z) < 1.7) {
-            friend.ai.state = 'held';
-            friend.swimming = false;
-            boatRide.passenger = friend;
-            showToast('👥 절친이 뱃머리에 올라탔어요!');
-            logWorldEvent(`${petKo(friend)}가 보트 뱃머리에 올라탔다`);
-        } else {
-            releaseAI(friend);
-            showToast('👥 절친이 물가까지 왔는데 배가 멀어요 — 기슭에 더 가까이 대주세요');
-        }
-    };
-    showToast('👥 절친을 불렀어요 — 물가로 걸어오는 중');
+    friend.ai.state = 'held';
+    friend.swimming = false;
+    // 걸어오면 멀고 장애물에 막힌다(실사용 확인) — 배에서 제일 가까운 물가로 순간이동 후 폴짝.
+    let spot = null, best = Infinity;
+    for (const s of ISLANDS) {
+        const dx = BOAT.x - s.x, dz = BOAT.z - s.z;
+        const d = Math.hypot(dx, dz) || 1;
+        const k = (s.r - 0.5) / d;
+        const tx = s.x + dx * k, tz = s.z + dz * k;
+        const dd = Math.hypot(BOAT.x - tx, BOAT.z - tz);
+        if (dd < best) { best = dd; spot = { tx, tz }; }
+    }
+    const fy = world.groundHeightAt(spot.tx, spot.tz);
+    friend.mover.position.set(spot.tx, fy, spot.tz);
+    friend.mover.rotation.x = 0;
+    friend.mover.rotation.z = 0;
+    boatHop = { q: friend, fx: spot.tx, fy, fz: spot.tz, t: 0 };
+    showToast('👥 절친이 포르르 나타나 배로 폴짝!');
+    logWorldEvent(`${petKo(friend)}가 보트 뱃머리로 폴짝 올라탔다`);
+}
+function updateBoatHop(delta) {
+    if (!boatHop) return;
+    boatHop.t += delta;
+    const k = Math.min(1, boatHop.t / 0.6);
+    const e = k * k * (3 - 2 * k);
+    const q = boatHop.q;
+    // 목표 = 뱃머리 좌석 — 배가 움직여도 따라잡는다
+    const ty = waveYAt(BOAT.x, BOAT.z) + 0.16;
+    const tx = BOAT.x + Math.sin(BOAT.heading) * 0.36, tz = BOAT.z + Math.cos(BOAT.heading) * 0.36;
+    q.mover.position.set(
+        THREE.MathUtils.lerp(boatHop.fx, tx, e),
+        THREE.MathUtils.lerp(boatHop.fy, ty, e) + Math.sin(k * Math.PI) * 0.55,
+        THREE.MathUtils.lerp(boatHop.fz, tz, e));
+    q.mover.rotation.y = BOAT.heading;
+    q.pet.walking = false;
+    if (k >= 1) {
+        boatHop = null;
+        if (boatRide && !boatRide.passenger) boatRide.passenger = q;
+        else { q.swimming = false; releaseAI(q); snapToLand(q); }   // 그 사이 하선했으면 뭍으로
+    }
 }
 function updateHandHold(delta) {
     if (!handHold) return;
@@ -10138,6 +10168,7 @@ function animate() {
     updateDips(delta);
     updateAutoDrive(delta);
     updateBoatIdle();                        // 정박 보트의 파도 위 살랑임 (항해 중엔 stepBoat 담당)
+    updateBoatHop(delta);                    // 절친 승선 아크 — 물가에서 뱃머리로 폴짝
     updateHeartFx(delta);
     updateFestiveFx(delta);
     updateAutoSleep();
