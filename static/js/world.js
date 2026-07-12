@@ -3441,11 +3441,22 @@ function onGardenClick(pr, hit) {
         if (o.userData && o.userData.plotIdx != null) { idx = o.userData.plotIdx; break; }
         o = o.parent;
     }
+    const cy = Math.cos(pr.rotY || 0), sy = Math.sin(pr.rotY || 0);
+    // 픽킹 패드(0.5×0.38)를 못 맞히면 흙판·틀에 맞아 안내 토스트만 나와 "작동 안 함"으로 읽혔다 —
+    // 텃밭 어디를 찍었든 히트 지점에서 가장 가까운 밭 칸으로 해석한다 (의도는 자명하니까).
+    if (idx < 0 && hit && hit.point) {
+        let best = Infinity;
+        GARDEN_PLOTS_LOCAL.forEach(([plx, plz], i) => {
+            const px = pr.x + plx * cy + plz * sy, pz = pr.z - plx * sy + plz * cy;
+            const d = Math.hypot(hit.point.x - px, hit.point.z - pz);
+            if (d < best) { best = d; idx = i; }
+        });
+        if (best > 1.1) idx = -1;   // 텃밭 몸통에서 한참 벗어난 히트만 안내로
+    }
     if (idx < 0) { showToast('🌱 밭 한 칸을 콕 집어 클릭해 보세요'); return; }
     const pl = gardenPlots[idx];
     const st = gardenStage(pl);
     const [lx, lz] = GARDEN_PLOTS_LOCAL[idx];
-    const cy = Math.cos(pr.rotY || 0), sy = Math.sin(pr.rotY || 0);
     const wx = pr.x + lx * cy + lz * sy, wz = pr.z - lx * sy + lz * cy;
     if (st === 0) {
         const crop = GARDEN_CROPS[Math.floor(Math.random() * GARDEN_CROPS.length)];
@@ -8530,7 +8541,7 @@ const ARROW_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 function doJump() {
     if (!possessed || airborne) return;
     airborne = true;
-    jumpVy = possessed.swimming ? 1.7 : 2.5;                      // splash-hop in water
+    jumpVy = possessed.swimming ? 1.7 : 3.0;                      // splash-hop in water · 뭍 점프 2.5→3.0 (~0.64m — 테이블·차 지붕·우물이 닿는다)
 }
 function escapeAction() {
     releasePossession();
@@ -8639,20 +8650,57 @@ function playerBlocked(nx, nz) {
     }
     return false;                                                 // no rim fence — diving is allowed
 }
-function playerSupportY(p, x, z) {
-    if (Math.hypot(x - pondPropRef.x, z - pondPropRef.z) < 0.55) {
-        return { y: POND_WATER_Y - p.height * 0.45, medium: 'pond' };
+// 마크식 등반: 발밑(+살짝 위)에서 아래로 쏜 레이가 맞는 소품 윗면의 y — "어떤 사물이든 위에 설 수
+// 있다"의 지지면. 근처 소품의 원본 메시에만 쏜다(베이크로 숨겨져도 Raycaster는 visible 무시 —
+// 병합 메시는 삼각형이 수만 개라 브루트포스 레이캐스트가 비싸서 절대 금지). 조종 펫 전용이라
+// 프레임당 1~2회, 소품 몇 개 대상이면 공짜 수준.
+const climbRay = new THREE.Raycaster();
+const _climbO = new THREE.Vector3();
+const _climbD = new THREE.Vector3(0, -1, 0);
+function propTopAt(x, z, fromY) {
+    _climbO.set(x, fromY, z);
+    climbRay.set(_climbO, _climbD);
+    climbRay.far = fromY + 2;
+    let best = null;
+    const take = (hits) => {
+        for (const h of hits) {
+            const y = h.point.y;
+            if (y <= fromY + 0.001 && y > 0.04 && (best === null || y > best)) best = y;   // 지면 데칼(블롭·리본)은 제외
+        }
+    };
+    for (const q of PROPS) {
+        if (!q.obj || q.type === 'pond' || q.type === 'hugspot') continue;   // 수영장·바닥 데칼은 못 올라선다
+        const rr = (q.type === 'house' ? 2.2 : Math.max(q.r || 0, 0.5)) + 0.5;   // 차(carCollider)도 PROPS라 지붕 포함
+        const dx = x - q.x, dz = z - q.z;
+        if (dx * dx + dz * dz > rr * rr) continue;
+        take(climbRay.intersectObject(q.obj, true));
     }
-    const hf = houseFloorY(x, z);
-    if (hf !== null) return { y: hf, medium: 'land' };
-    const hit = onBridge(x, z);
-    if (hit) return { y: bridgeDeckY(hit), medium: 'land' };
-    for (const s of ISLANDS) {
-        if (Math.hypot(x - s.x, z - s.z) < s.r - 0.05) {
-            return { y: terrainHeight(x, z), medium: 'land' };
+    return best;
+}
+function playerSupportY(p, x, z) {
+    let base;
+    if (Math.hypot(x - pondPropRef.x, z - pondPropRef.z) < 0.55) {
+        base = { y: POND_WATER_Y - p.height * 0.45, medium: 'pond' };
+    } else {
+        const hf = houseFloorY(x, z);
+        const hit = hf === null && onBridge(x, z);
+        if (hf !== null) base = { y: hf, medium: 'land' };
+        else if (hit) base = { y: bridgeDeckY(hit), medium: 'land' };
+        else {
+            base = { y: OCEAN_LEVEL + 0.02 - p.height * 0.45, medium: 'sea' };
+            for (const s of ISLANDS) {
+                if (Math.hypot(x - s.x, z - s.z) < s.r - 0.05) {
+                    base = { y: terrainHeight(x, z), medium: 'land' };
+                    break;
+                }
+            }
         }
     }
-    return { y: OCEAN_LEVEL + 0.02 - p.height * 0.45, medium: 'sea' };
+    // 발이 소품 윗면 이상일 때만 그 윗면이 지지면이 된다 — 아래에서 점프해 지붕을 "뚫고" 올라서는
+    // 순간이동 방지 (fromY를 발높이 기준으로 좁게 잡는 것이 핵심).
+    const top = propTopAt(x, z, p.mover.position.y + 0.06);
+    if (top !== null && top > base.y + 0.02) return { y: top, medium: 'land' };
+    return base;
 }
 // Closest climbable rim while swimming — works for every island in the archipelago.
 function nearestClimbSpot(pos) {
@@ -8734,6 +8782,14 @@ function updatePlayer(delta) {
                 const stepGy = world.groundHeightAt(nx, nz);
                 const curGy = world.groundHeightAt(p.mover.position.x, p.mover.position.z);
                 if (p.swimming || airborne || Math.abs(stepGy - curGy) <= 0.26) {   // ledges need the stairs
+                    p.mover.position.x = nx;
+                    p.mover.position.z = nz;
+                }
+            } else {
+                // 마크식: 소품의 옆면은 벽(bonk), 윗면은 길 — 발이 그 윗면 높이 이상이면
+                // 차단원 위로 지나간다 (점프 중 넘어가기 + 윗면 걷기가 이 한 줄로 성립).
+                const t = propTopAt(nx, nz, p.mover.position.y + 0.06);
+                if (t !== null && p.mover.position.y >= t - 0.07) {
                     p.mover.position.x = nx;
                     p.mover.position.z = nz;
                 }
