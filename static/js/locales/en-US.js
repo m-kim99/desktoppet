@@ -1,4 +1,7 @@
 window.lang_enUS = {
+        'upload': 'Upload',
+        'backToDefaultView': 'Back to default view',
+        'refreshFailed': 'Refresh failed',
         'chat': 'Chat',
         'mainModel': 'Main Model',
         'tools': 'Tools',

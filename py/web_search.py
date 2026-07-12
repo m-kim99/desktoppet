@@ -173,14 +173,14 @@ async def bochaai_search(query):
             else:
                 return f"请求失败，状态码：{response.status_code}，响应内容：{response.text}"
         except Exception as e:
-            print(f"博查得搜索错误: {str(e)}")
+            print(f"Bocha search error: {str(e)}")
             return ""
 
     try:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, sync_search)
     except Exception as e:
-        print(f"异步执行错误: {e}")
+        print(f"Async execution error: {e}")
         return ""
 
 bochaai_tool = {

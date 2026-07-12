@@ -85,7 +85,7 @@ class BehaviorEngine:
             self.counters.clear()
             logging.info(f"[BehaviorEngine] 平台 {platform} 已上线，重置引擎计时器以激活任务")
         
-        print(f"[BehaviorEngine] 已注册平台: {handler}")
+        print(f"[BehaviorEngine] registered platform: {handler}")
 
     def update_config(self, settings: Union[BehaviorSettings, dict], platform_targets: Dict[str, List[str]] = None):
         """热更新配置"""

@@ -1369,7 +1369,7 @@ let vue_methods = {
         const codeContent = codeBlock.querySelector('code')?.textContent?.trim();
         if (!codeContent) {
           console.warn('⚠️ 空代码内容', codeBlock);
-          this.showErrorToast('代码内容为空');
+          this.showErrorToast('코드 내용이 비어 있습니다');
           return;
         }
         // Find/create the preview container within codeBlock
@@ -1514,7 +1514,7 @@ let vue_methods = {
             await new Promise(resolve => setTimeout(resolve, 500 * retryCount));
             await attemptRender();
           } else {
-            throw new Error(`Mermaid渲染失败: ${err.message}`);
+            throw new Error(`Mermaid 렌더링 실패: ${err.message}`);
           }
         }
       };
@@ -1527,7 +1527,7 @@ let vue_methods = {
         <div class="error-alert">
           <i class="fa-solid fa-triangle-exclamation"></i>
           <div>
-            <h4>预览渲染失败</h4>
+            <h4>미리보기 렌더링 실패</h4>
             <code>${error.message}</code>
           </div>
         </div>
@@ -2410,7 +2410,7 @@ let vue_methods = {
         }
 
         // Build the file-links string
-        const fileLinks_content = fileLinks.map(fileLink => `\n[文件名：${fileLink.name}\n文件链接: ${fileLink.path}]`).join('\n') || '';
+        const fileLinks_content = fileLinks.map(fileLink => `\n[파일명: ${fileLink.name}\n파일 링크: ${fileLink.path}]`).join('\n') || '';
         const fileLinks_list = Array.isArray(fileLinks) ? fileLinks.map(fileLink => fileLink.path).flat() : []
         this.fileLinks = this.fileLinks.concat(fileLinks_list)
 
@@ -3679,8 +3679,8 @@ let vue_methods = {
           }
         }
         const ttsMsg = (newttsList.length === 0 || !this.ttsSettings?.enabled)
-          ? '如果被翻译的文字与目标语言一致，则返回原文即可'
-          : `你还需要在翻译的同时，添加对应的音色标签。如果被翻译的文字与目标语言一致，则只需要添加对应的音色标签。注意！不要使用<!--  -->这会导致部分文字不可见！你可以使用以下音色：\n${newttsList.join(', ')}\n，当你生成回答时，将不同的旁白或角色的文字用<音色名></音色名>括起来，以表示这些话是使用这个音色，以控制不同TTS转换成对应音色。对于没有对应音色的部分，可以不括。即使音色名称不为英文，还是可以照样使用<音色名>使用该音色的文本</音色名>来启用对应音色。注意！如果是你扮演的角色的名字在音色列表里，你必须用这个音色标签将你扮演的角色说话的部分括起来！只要是非人物说话的部分，都视为旁白！角色音色应该标记在人物说话的前后！例如：<Narrator>现在是下午三点，她说道：</Narrator><角色名>”天气真好哇！“</角色名><Narrator>说完她伸了个懒腰。</Narrator>\n\n`;
+          ? 'If the text to translate is already in the target language, just return it unchanged.'
+          : `You must also add the corresponding voice tags while translating. If the text to translate is already in the target language, you only need to add the voice tags. Note! Do NOT use <!--  --> as it makes some text invisible! You may use the following voices:\n${newttsList.join(', ')}\n. When you generate your reply, wrap narration or character text with <VoiceName></VoiceName> to indicate that text uses that voice, so each part is converted by the matching TTS voice. Parts with no matching voice may be left unwrapped. Even if a voice name is not in English, you can still use <VoiceName>text in that voice</VoiceName> to enable it. Note! If the name of the character you are playing is in the voice list, you MUST wrap the parts spoken by your character with that voice tag! Any part not spoken by a character is treated as narration! The character voice tag should mark the start and end of the character's speech! For example: <Narrator>It is now three in the afternoon. She said:</Narrator><CharacterName>"What lovely weather!"</CharacterName><Narrator>and then she stretched.</Narrator>\n\n`;
 
         // 3. Start the streaming request
         const response = await fetch('/simple_chat', {
@@ -3691,11 +3691,11 @@ let vue_methods = {
             messages: [
               {
                 role: 'system',
-                content: `你是一位专业翻译，请将用户提供的任何内容严格翻译为${this.target_lang}，保持原有格式（如Markdown、换行等），不要添加任何额外内容。只需返回翻译结果。${ttsMsg}`
+                content: `You are a professional translator. Strictly translate any content the user provides into ${this.target_lang}, preserving the original formatting (Markdown, line breaks, etc.) and adding nothing extra. Return only the translation result.${ttsMsg}`
               },
               {
                 role: 'user',
-                content: `请翻译以下内容到${this.target_lang}：\n\n${originalContent}`
+                content: `Translate the following into ${this.target_lang}:\n\n${originalContent}`
               }
             ],
             stream: true,
@@ -3870,13 +3870,13 @@ let vue_methods = {
           // Error handling (depends on the backend implementation)
           if (response.type === 'save_error') {
             this.ws.removeEventListener('message', handler);
-            reject(new Error('保存失败'));
+            reject(new Error('저장 실패'));
           }
         };
         // Set a 10-second timeout
         const timeout = setTimeout(() => {
           this.ws.removeEventListener('message', handler);
-          reject(new Error('保存超时'));
+          reject(new Error('저장 시간 초과'));
         }, 10000);
         this.ws.addEventListener('message', handler);
       });
@@ -3941,13 +3941,13 @@ let vue_methods = {
           // Error handling (depends on the backend implementation)
           if (response.type === 'save_error') {
             this.ws.removeEventListener('message', handler);
-            reject(new Error('保存失败'));
+            reject(new Error('저장 실패'));
           }
         };
         // Set a 10-second timeout
         const timeout = setTimeout(() => {
           this.ws.removeEventListener('message', handler);
-          reject(new Error('保存超时'));
+          reject(new Error('저장 시간 초과'));
         }, 10000);
         this.ws.addEventListener('message', handler);
       });
@@ -4933,7 +4933,7 @@ let vue_methods = {
             body: JSON.stringify({ kbId }),
           });
           
-          if (!startResponse.ok) throw new Error('启动失败');
+          if (!startResponse.ok) throw new Error('시작 실패');
           // 2. Poll the status
           const checkStatus = async () => {
             try {
@@ -5018,7 +5018,7 @@ let vue_methods = {
           body: JSON.stringify({ kbId }),
         });
 
-        if (!Response.ok) throw new Error('删除失败');
+        if (!Response.ok) throw new Error('삭제 실패');
 
         // Save settings
         await this.autoSaveSettings();
@@ -5602,7 +5602,7 @@ let vue_methods = {
         });
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.detail || '删除失败');
+          throw new Error(errorData.detail || '삭제 실패');
         }
         
         showNotification(this.t('mcpDeleted'), 'success')
@@ -6084,7 +6084,7 @@ let vue_methods = {
           // ******** Key point ********
           if (!resp.ok) {                           // Both 4xx and 5xx land here
             const txt = await resp.text();
-            throw new Error(`Embedding 接口异常 ${resp.status}: ${txt}`);
+            throw new Error(`Embedding 인터페이스 오류 ${resp.status}: ${txt}`);
           }
 
           const { dims } = await resp.json();
@@ -9258,7 +9258,7 @@ handleCreateSlackSeparator(val) {
                 this.VTSConfig.enabled = false;
                 // Show an error prompt guiding the user to enable VTS
                 showNotification(
-                  msg.data.message || '请确保 VTube Studio 已开启 API 访问权限', 
+                  msg.data.message || 'VTube Studio에서 API 접근 권한을 켰는지 확인하세요', 
                   'error', 
                   'VTS connection failed'
                 );
@@ -10735,7 +10735,7 @@ resumeRead() {
 
     async ClickToListen(SampleText,voice='default') {
       if (!SampleText) {
-        SampleText ='super agent party链接一切！'
+        SampleText ='super agent party가 모든 것을 연결합니다!'
       }
 
     try {
@@ -10834,7 +10834,7 @@ resumeRead() {
     async createCombinedAudio(chunks) {
       if (!chunks || chunks.length === 0) return;
 
-      showNotification(this.t('audioProcessingStarted') || '正在处理音频...');
+      showNotification(this.t('audioProcessingStarted') || '오디오 처리 중...');
 
       try {
         // ================= Key step: detect the real format =================
@@ -11374,7 +11374,7 @@ stopTTSActivities() {
     this.newTTSConfig = {
       name: '',
       enabled: true,
-      SampleText: 'super agent party链接一切！',
+      SampleText: 'super agent party가 모든 것을 연결합니다!',
       engine: 'moss',
       edgettsLanguage: 'zh-CN',
       edgettsGender: 'Female',
@@ -11956,7 +11956,7 @@ isTargetPlatform(behavior, platformKey) {
         if (this.ttsSettings.newtts[key].enabled) newttsList.push(key);
       }
     }
-    const ttsPrompt = '如果被翻译的文字与目标语言一致，则返回原文即可'
+    const ttsPrompt = 'If the text to translate is already in the target language, just return it unchanged.'
 
     try {
       const res = await fetch('/simple_chat', {
@@ -11967,11 +11967,11 @@ isTargetPlatform(behavior, platformKey) {
           messages: [
             {
               role: 'system',
-              content: `你是一位专业翻译，请将用户提供的任何内容严格翻译为${this.target_lang}，保持原有格式（如Markdown、换行等），不要添加任何额外内容。只需返回翻译结果。${ttsPrompt}`
+              content: `You are a professional translator. Strictly translate any content the user provides into ${this.target_lang}, preserving the original formatting (Markdown, line breaks, etc.) and adding nothing extra. Return only the translation result.${ttsPrompt}`
             },
             {
               role: 'user',
-              content: `请翻译以下内容到${this.target_lang}：\n\n${this.sourceText}`
+              content: `Translate the following into ${this.target_lang}:\n\n${this.sourceText}`
             }
           ],
           stream: true,
@@ -12053,29 +12053,29 @@ isTargetPlatform(behavior, platformKey) {
     const controller = new AbortController();
     this.QuickGenAbortController = controller;
 
-    const systemPrompt = `你是一名专业的角色设计师。  
-  生成的角色卡内容必须与用户输入的语言保持一致。 比如，用户输入的是中文，那么角色卡内容也必须是中文。如果用户输入的是英文，那么角色卡内容也必须是英文。以此类推！
-  用户会提供一个简短的创意，你必须仅回复一段**有效的 JSON**，并放在一个标准的Markdown 代码块中。  
-  JSON的值必须用双引号括起来，而值内部的内容如果需要引号，一律改成单引号。
-  mesExample包含5-10轮示例，alternateGreetings包含5-10条开场白，characterBook包含10条以上的关键词和内容。
-  JSON 结构必须为：
+    const systemPrompt = `You are a professional character designer.  
+  The generated character-card content must match the language the user inputs. For example, if the user inputs Korean, the content must be Korean; if English, it must be English; and so on!
+  The user will provide a short concept. You must reply with only a single piece of **valid JSON**, placed inside a standard Markdown code block.  
+  JSON values must be wrapped in double quotes; if content inside a value needs quotes, always change them to single quotes.
+  mesExample contains 5-10 example turns, alternateGreetings contains 5-10 opening lines, and characterBook contains 10 or more keyword entries with content.
+  The JSON structure must be:
 
     {
-      "name": "角色名称",
-      "description": "简要背景/世界观设定，尽可能详细",
-      "personality": "性格特征",
-      "mesExample": "展示 5-10 轮聊天示例，对话示例中禁止出现非对话表达（不要出现心理描写、动作描写等等，只要纯说话的部分），格式：用户:xxx\n角色:xxx",
-      "systemPrompt": "用于驱动角色的系统提示",
-      "firstMes": "角色的第一句问候语，问候语禁止出现非对话表达（不要出现心理描写、动作描写等等，只要纯说话的部分）",
-      "alternateGreetings": ["可选问候2","可选问候3"],
+      "name": "Character name",
+      "description": "Brief background / worldview, as detailed as possible",
+      "personality": "Personality traits",
+      "mesExample": "Show 5-10 chat example turns. Non-dialogue expressions are forbidden in the examples (no inner-thought or action descriptions, etc.—only the spoken parts). Format: User:xxx\nCharacter:xxx",
+      "systemPrompt": "System prompt used to drive the character",
+      "firstMes": "The character's first greeting; the greeting must not contain non-dialogue expressions (no inner-thought or action descriptions, etc.—only the spoken parts)",
+      "alternateGreetings": ["Optional greeting 2","Optional greeting 3"],
       "characterBook": [
-          {"keysRaw":"关键词1\n关键词2","content":"这里填入当用户提到关键词1或关键词2时，需要返回给AI看的内容……"},
-          {"keysRaw":"关键词3","content":"这里填入当用户提到关键词3时，需要返回给AI看的内容……"}
+          {"keysRaw":"Keyword1\nKeyword2","content":"Content to return to the AI when the user mentions Keyword1 or Keyword2..."},
+          {"keysRaw":"Keyword3","content":"Content to return to the AI when the user mentions Keyword3..."}
       ]
     }
 
-  所有字段都必须提供；characterBook也请尽可能的丰富，最好可以在10条以上，每条的字数可以不用太多。alternateGreetings最好也有5条以上。
-  绝不可包含 avatar 字段。`;
+  All fields are required; make characterBook as rich as possible—ideally 10+ entries, though each can be short. alternateGreetings should ideally have 5+ entries too.
+  Never include an avatar field.`;
 
     try {
       const res = await fetch('/simple_chat', {
@@ -12137,7 +12137,7 @@ isTargetPlatform(behavior, platformKey) {
       try {
         json = JSON.parse(raw);
       } catch (e) {
-        throw new Error('AI 返回的不是合法 JSON：' + e.message);
+        throw new Error('AI가 올바른 JSON을 반환하지 않았습니다: ' + e.message);
       }
 
       // 3. Write into newMemory and save
@@ -12200,9 +12200,9 @@ isTargetPlatform(behavior, platformKey) {
           messages: [
             {
               role: 'system',
-              content: `你需要将用户发给你的简短的系统提示词优化成可以驱动大模型更好的工作的详细的系统提示词。
-  注意！生成的系统提示词必须与用户输入的语言保持一致。如果用户说英文，你就必须生成英文的系统提示词；如果用户说中文，你就必须生成中文的系统提示词。以此类推！
-  你可以从这几个方面来写，但也不要限于这些方面：角色名、角色定位、核心能力、回答风格、约束、输出格式示例等等`,
+              content: `You must optimize the short system prompt the user sends into a detailed system prompt that drives the LLM to perform better.
+  Note! The generated system prompt must match the language the user inputs. If the user speaks English, you must generate an English system prompt; if the user speaks Chinese, you must generate a Chinese one; and so on!
+  You may write from (but are not limited to) these aspects: character name, character positioning, core abilities, answer style, constraints, and output-format examples.`,
             },
             {
               role: 'user',
@@ -12317,9 +12317,9 @@ isTargetPlatform(behavior, platformKey) {
           messages: [
             {
               role: 'system',
-              content: `你需要将用户发给你的简短的系统提示词优化成可以驱动大模型更好的工作的详细的系统提示词。
-  注意！生成的系统提示词必须与用户输入的语言保持一致。如果用户说英文，你就必须生成英文的系统提示词；如果用户说中文，你就必须生成中文的系统提示词。以此类推！
-  你可以从这几个方面来写，但也不要限于这些方面：角色名、角色定位、核心能力、回答风格、约束、输出格式示例等等`
+              content: `You must optimize the short system prompt the user sends into a detailed system prompt that drives the LLM to perform better.
+  Note! The generated system prompt must match the language the user inputs. If the user speaks English, you must generate an English system prompt; if the user speaks Chinese, you must generate a Chinese one; and so on!
+  You may write from (but are not limited to) these aspects: character name, character positioning, core abilities, answer style, constraints, and output-format examples.`
             },
             {
               role: 'user',
@@ -12796,7 +12796,7 @@ clearSegments() {
       const response = await fetch('/api/extensions/list');
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || '获取扩展列表失败');
+        throw new Error(errorData.detail || '확장 목록 가져오기 실패');
       }
       
       const data = await response.json();
@@ -12980,7 +12980,7 @@ clearSegments() {
       await fetch(`/api/extensions/${ext.id}/stop-node`, { method: 'POST' }).catch(() => {});
       try {
         const res = await fetch(`/api/extensions/${ext.id}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error('删除失败');
+        if (!res.ok) throw new Error('삭제 실패');
         showNotification(this.t('deleteSuccess'), 'success');
         this.scanExtensions(); // Refresh the list
       } catch (e) {
@@ -13014,10 +13014,10 @@ clearSegments() {
              setTimeout(poll, 1000); // Check again after 1 second
           } else {
              // Unknown status; maybe it restarted or the ID is wrong
-             onError("任务状态丢失");
+             onError("작업 상태 손실");
           }
         } catch (e) {
-          onError("网络请求错误");
+          onError("네트워크 요청 오류");
         }
       };
       // Start the first poll
@@ -13097,7 +13097,7 @@ clearSegments() {
         if (res.status === 409) throw new Error(this.t('extensionExists'));
         if (!res.ok) {
           const data = await res.json();
-          throw new Error(data.detail || '上传失败');
+          throw new Error(data.detail || '업로드 실패');
         }
         
         const resData = await res.json();
@@ -13168,8 +13168,8 @@ async togglePlugin(plugin) {
           }),
         });
 
-        if (res.status === 409) throw new Error('插件已存在');
-        if (!res.ok) throw new Error('请求失败');
+        if (res.status === 409) throw new Error('플러그인이 이미 존재합니다');
+        if (!res.ok) throw new Error('요청 실패');
         
         const resData = await res.json();
         const extId = resData.ext_id;
@@ -13209,7 +13209,7 @@ async togglePlugin(plugin) {
     this.fetchRemotePlugins().then(() => {
       // After the request completes
       this.refreshing = false;
-      this.refreshButtonText = this.t('refreshedSuccess') || '已刷新';
+      this.refreshButtonText = this.t('refreshedSuccess') || '새로고침됨';
       
       // Restore the button text after 2 seconds
       setTimeout(() => {
@@ -13218,7 +13218,7 @@ async togglePlugin(plugin) {
     }).catch(error => {
       // Handle the error case
       this.refreshing = false;
-      this.refreshButtonText = this.t('refreshFailed') || '刷新失败';
+      this.refreshButtonText = this.t('refreshFailed') || '새로고침 실패';
       
       // Restore the button text after 2 seconds
       setTimeout(() => {
@@ -13640,7 +13640,7 @@ collapseSidePanel() {
       this.startMossPolling()
     } catch (e) {
       this.mossDownloading = false
-      showNotification(this.t('modelDownloadFailed') || '下载失败', 'error')
+      showNotification(this.t('modelDownloadFailed') || '다운로드 실패', 'error')
     }
   },
 
@@ -13665,9 +13665,9 @@ collapseSidePanel() {
           
           if (data.exists) {
             this.mossPercent = 100 // Force it to 100% on completion
-            showNotification(this.t('modelDownloadSuccess') || 'MOSS 模型下载成功')
+            showNotification(this.t('modelDownloadSuccess') || 'MOSS 모델 다운로드 성공')
           } else if (data.download_error) {
-            showNotification((this.t('modelDownloadFailed') || '下载失败: ') + data.download_error, 'error')
+            showNotification((this.t('modelDownloadFailed') || '다운로드 실패: ') + data.download_error, 'error')
           }
         }
       } catch (err) {
@@ -13681,10 +13681,10 @@ collapseSidePanel() {
     try {
       const res = await fetch('/moss-model/remove', { method: 'DELETE' })
       if (!res.ok) throw new Error()
-      showNotification(this.t('deleteSuccess') || '模型删除成功')
+      showNotification(this.t('deleteSuccess') || '모델 삭제 성공')
       this.mossModelExists = false
     } catch {
-      showNotification(this.t('deleteFailed') || '模型删除失败', 'error')
+      showNotification(this.t('deleteFailed') || '모델 삭제 실패', 'error')
     }
   },
 
@@ -14007,14 +14007,14 @@ collapseSidePanel() {
         btn.className = 'table-download-btn';
         // Use the fa-file-excel icon; more intuitive
         btn.innerHTML = '<i class="fa-solid fa-file-excel"></i> XLSX';
-        btn.title = '导出为 Excel 文件';
+        btn.title = 'Excel 파일로 내보내기';
         
         // 3. Bind the click event (calls the new exceljs logic)
         btn.onclick = async (e) => {
           e.stopPropagation();
           // Add loading-state feedback (optional)
           const originalText = btn.innerHTML;
-          btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 导出中...';
+          btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 내보내는 중...';
           btn.disabled = true;
           
           try {
@@ -14087,7 +14087,7 @@ collapseSidePanel() {
     if (btn.disabled) return; // Prevent duplicate clicks
 
     const originalHtml = btn.innerHTML;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 导出中...';
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 내보내는 중...';
     btn.disabled = true;
 
     try {
@@ -14107,7 +14107,7 @@ collapseSidePanel() {
    */
   async downloadTableAsXLSX(tableElement) {
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('数据导出');
+    const worksheet = workbook.addWorksheet('데이터 내보내기');
 
     // --- 1. Extract the HTML table data ---
     const rows = tableElement.querySelectorAll('tr');
@@ -14131,7 +14131,7 @@ collapseSidePanel() {
     // 2.1 Style the header row (first row)
     const headerRow = worksheet.getRow(1);
     headerRow.font = { 
-      name: '微软雅黑', 
+      name: 'Malgun Gothic',
       bold: true, 
       color: { argb: 'FFFFFFFF' } // White text
     };
@@ -14735,10 +14735,10 @@ collapseSidePanel() {
             window.electronAPI.showContextMenu(menuType, data);
         });
         webview.send('set-i18n', {
-            translate: this.t('translate') || '翻译',
-            askAI: this.t('ask_ai') || '问 AI',
-            read: this.t('read') || '朗读',
-            copy: this.t('copy') || '复制'
+            translate: this.t('translate') || '번역',
+            askAI: this.t('ask_ai') || 'AI에게 질문',
+            read: this.t('read') || '읽어주기',
+            copy: this.t('copy') || '복사'
         });
         //webview.openDevTools();
     },
@@ -16570,7 +16570,7 @@ async handleRefreshSkills() {
     async handleCancelTask(taskId) {
         try {
             await fetch(`/v1/tasks/cancel/${taskId}`, { method: 'POST' });
-            showNotification(this.t('cancelSuccess') || '取消任务成功');
+            showNotification(this.t('cancelSuccess') || '작업 취소 성공');
             this.fetchTasks();
         } catch (e) { console.error(e); }
     },
@@ -16584,7 +16584,7 @@ async handleRefreshSkills() {
             });
             
             if (res.ok) {
-                showNotification(this.t('deleteSuccess') || '删除任务成功');
+                showNotification(this.t('deleteSuccess') || '작업 삭제 성공');
                 this.fetchTasks(); // Refresh the list
             } else {
                 console.error("Delete failed with status:", res.status);
@@ -16807,7 +16807,7 @@ closeTaskCenter() {
         
         // 1. Call the error function you provided 
         // This message uses the ready-made t('pleaseSelectWorkspaceFirst') from your template
-        const errorMsg = this.t ? this.t('pleaseSelectWorkspaceFirst') : '请先配置 Workspace 工作区路径';
+        const errorMsg = this.t ? this.t('pleaseSelectWorkspaceFirst') : '먼저 Workspace 경로를 설정하세요';
         showNotification(errorMsg, 'error', 'Error');
 
         // 2. Force the toggle back to off (blocking startup)
@@ -16969,7 +16969,7 @@ closeTaskCenter() {
         if (res.success) {
           return resolve(res.data);
         } else {
-          this.$message?.error(this.t('readDirError') || '读取工作区目录失败: ' + res.error);
+          this.$message?.error(this.t('readDirError') || '워크스페이스 디렉토리 읽기 실패: ' + res.error);
           return resolve([]);
         }
       } catch (error) {
@@ -16985,7 +16985,7 @@ closeTaskCenter() {
         if (res.success) {
           return resolve(res.data);
         } else {
-          this.$message?.error(this.t('readDirError') || '读取子目录失败: ' + res.error);
+          this.$message?.error(this.t('readDirError') || '하위 디렉토리 읽기 실패: ' + res.error);
           return resolve([]);
         }
       } catch (error) {
@@ -17009,11 +17009,11 @@ closeTaskCenter() {
     try {
       // Show a confirm dialog (compatible with Element Plus's this.$confirm)
       await this.$confirm(
-        (this.t('confirmDelete') || '确认将该文件放入回收站吗？') + `\n${data.name}`,
-        this.t('warning') || '警告',
+        (this.t('confirmDelete') || '이 파일을 휴지통으로 보낼까요?') + `\n${data.name}`,
+        this.t('warning') || '경고',
         { 
-          confirmButtonText: this.t('confirm') || '确定', 
-          cancelButtonText: this.t('cancel') || '取消', 
+          confirmButtonText: this.t('confirm') || '확인', 
+          cancelButtonText: this.t('cancel') || '취소', 
           type: 'warning' 
         }
       );
@@ -17227,9 +17227,9 @@ closeTaskCenter() {
 
   // 5. Delete a user's data
   deleteAffectionData(userName) {
-    this.$confirm(this.t('confirmDelete') || '确认删除该用户数据吗？', this.t('warning') || '警告', {
-      confirmButtonText: this.t('confirm') || '确定',
-      cancelButtonText: this.t('cancel') || '取消', 
+    this.$confirm(this.t('confirmDelete') || '이 사용자 데이터를 삭제할까요?', this.t('warning') || '경고', {
+      confirmButtonText: this.t('confirm') || '확인',
+      cancelButtonText: this.t('cancel') || '취소', 
       type: 'warning'
     }).then(() => {
       const index = this.affectionDataList.findIndex(item => item.userName === userName);
@@ -17397,11 +17397,11 @@ async generateRandomTopic() {
         messages: [
           {
             role: 'system',
-            content: '你是一个有趣的话题发起人。请根据当前热门技术、科幻、哲学或日常生活，生成一个简短、有趣、能引起讨论的对话开头或问题。只需要返回话题文字本身，不要有任何多余的修饰。'
+            content: 'You are an engaging topic starter. Based on current trending technology, sci-fi, philosophy, or everyday life, generate a short, fun conversation opener or question that sparks discussion. Return only the topic text itself, with no extra decoration.'
           },
           {
             role: 'user',
-            content: `给我一个有趣的话题，请使用${this.currentLanguage}语言。`
+            content: `Give me an interesting topic, in ${this.currentLanguage}.`
           }
         ],
         temperature: 1,

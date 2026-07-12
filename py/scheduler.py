@@ -10,14 +10,14 @@ class AgentScheduler:
         self.settings = settings_ref
 
     async def start_loop(self):
-        print("⏰ [调度中心] 启动成功，监控已就绪...")
+        print("⏰ [Scheduler] started, monitoring ready...")
         while True:
             try:
                 workspace_dir = self.settings.get("CLISettings", {}).get("cc_path")
                 if workspace_dir and os.path.exists(workspace_dir):
                     await self._scan_and_trigger(workspace_dir)
             except Exception as e:
-                print(f"❌ [调度中心] 轮询异常: {e}")
+                print(f"❌ [Scheduler] polling error: {e}")
             
             await asyncio.sleep(30) # Check once every 30 seconds
 
@@ -87,7 +87,7 @@ class AgentScheduler:
 
     async def _execute(self, task, workspace_dir, extra_context):
         """执行任务并更新状态"""
-        print(f"🚀 [调度中心] 触发任务: {task.title} (ID: {task.task_id})")
+        print(f"🚀 [Scheduler] triggering task: {task.title} (ID: {task.task_id})")
         task_center = await get_task_center(workspace_dir)
         
         # Prepare a fresh round of logs

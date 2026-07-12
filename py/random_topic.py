@@ -89,7 +89,7 @@ async def get_random_topics(
         # --- Parsing logic ends ---
 
     except requests.exceptions.RequestException as e:
-        print(f"请求发生错误: {e}")
+        print(f"Request error: {e}")
         return f"⚠️ 网络请求错误: {str(e)}"
     except Exception as e:
         return f"⚠️ 处理数据时发生错误: {str(e)}"
@@ -126,7 +126,7 @@ async def get_categories(
         data = response.json()
         return data.get("data", [])
     except requests.exceptions.RequestException as e:
-        print(f"请求发生错误: {e}")
+        print(f"Request error: {e}")
         return []
     
 

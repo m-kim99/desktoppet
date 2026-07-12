@@ -55,7 +55,7 @@ def robust_rmtree(path: Path):
         try:
             shutil.rmtree(path, ignore_errors=True)
         except Exception as e:
-            print(f"删除目录 {path} 失败: {e}")
+            print(f"Delete directory {path} failed: {e}")
 
 def parse_github_url(url: str):
     """

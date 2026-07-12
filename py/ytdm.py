@@ -49,7 +49,7 @@ class YouTubeDMClient:
         self._chat_id = self._get_live_chat_id()
         print('[YouTube] got chat_id:', self._chat_id)   # <- New
         if not self._chat_id:
-            print('[YouTube] 未开播，线程退出')
+            print('[YouTube] not live; thread exiting')
             return
 
         while not self._stop_evt.is_set():

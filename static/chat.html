@@ -519,8 +519,8 @@ function updateElement(el, rawMarkdown, formatFn) {
             @click="openWorkspace()"
             v-show="isElectron">
             <div class="extension-info">
-              <h3>{{ t('workspace') || '工作区文件' }}</h3>
-              <p>{{ t('workspaceDescription') || '管理与查看本地工作区文件树' }}</p>
+              <h3>{{ t('workspace') || '워크스페이스 파일' }}</h3>
+              <p>{{ t('workspaceDescription') || '로컬 워크스페이스 파일 트리 관리·보기' }}</p>
             </div>
           </el-card>
           
@@ -795,7 +795,7 @@ function updateElement(el, rawMarkdown, formatFn) {
             <div class="guide-card" @click="createNewTask">
               <div class="card-icon cyan"><i class="fa-solid fa-list-check"></i></div>
               <div class="card-info">
-                <h3>{{ t('createNewTask') || '创建新任务' }}</h3>
+                <h3>{{ t('createNewTask') || '새 작업 만들기' }}</h3>
               </div>
             </div>
 
@@ -1854,7 +1854,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                           class="status-pill-dropdown"
                         >
                           <div class="status-pill">
-                            <el-tooltip :content="t('chatUIMode') || '聊天模式'" placement="top" :show-after="500">
+                            <el-tooltip :content="t('chatUIMode') || '채팅 모드'" placement="top" :show-after="500">
                               <span style="display: inline-flex; align-items: center; gap: 6px;">
                                 <i :class="{
                                   'fa-solid fa-bolt': systemSettings.chatMode === 'standard',
@@ -1863,9 +1863,9 @@ function updateElement(el, rawMarkdown, formatFn) {
                                 }"></i>
                                 <span class="pill-text">
                                   {{ 
-                                    systemSettings.chatMode === 'standard' ? (t('chatUIStandard') || '经典模式') : 
-                                    systemSettings.chatMode === 'entertainment' ? (t('chatUIEntertainment') || '娱乐模式') : 
-                                    (t('chatUIWork') || '办公模式') 
+                                    systemSettings.chatMode === 'standard' ? (t('chatUIStandard') || '클래식 모드') : 
+                                    systemSettings.chatMode === 'entertainment' ? (t('chatUIEntertainment') || '엔터테인먼트 모드') : 
+                                    (t('chatUIWork') || '오피스 모드') 
                                   }}
                                 </span>
                               </span>
@@ -1876,15 +1876,15 @@ function updateElement(el, rawMarkdown, formatFn) {
                             <el-dropdown-menu>
                               <el-dropdown-item @click="systemSettings.chatMode = 'standard'; autoSaveSettings()">
                                 <i class="fa-solid fa-bolt" style="margin-right: 6px;"></i>
-                                {{ t('chatUIStandard') || '经典模式' }}
+                                {{ t('chatUIStandard') || '클래식 모드' }}
                               </el-dropdown-item>
                               <el-dropdown-item @click="systemSettings.chatMode = 'entertainment'; autoSaveSettings()">
                                 <i class="fa-solid fa-face-smile" style="margin-right: 6px;"></i>
-                                {{ t('chatUIEntertainment') || '娱乐模式' }}
+                                {{ t('chatUIEntertainment') || '엔터테인먼트 모드' }}
                               </el-dropdown-item>
                               <el-dropdown-item @click="systemSettings.chatMode = 'work'; autoSaveSettings()">
                                 <i class="fa-solid fa-gem" style="margin-right: 6px;"></i>
-                                {{ t('chatUIWork') || '办公模式' }}
+                                {{ t('chatUIWork') || '오피스 모드' }}
                               </el-dropdown-item>
                             </el-dropdown-menu>
                           </template>
@@ -2026,7 +2026,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                       <!-- 固定主页书签 -->
                       <div class="vscode-tab" :class="{ active: !currentExtension }" @click="resetToDefaultView()">
                           <i class="fa-solid fa-shapes tab-icon"></i>
-                          <span class="tab-title">{{ t('extensionsView') || '扩展视图' }}</span>
+                          <span class="tab-title">{{ t('extensionsView') || '확장 보기' }}</span>
                       </div>
 
                       <!-- 动态扩展书签 -->
@@ -2052,37 +2052,37 @@ function updateElement(el, rawMarkdown, formatFn) {
                           <button v-if="activeSideView === 'tasks' && !viewingTaskDetail" 
                                   class="floating-back-btn" 
                                   @click="closeTaskCenter" 
-                                  :title="t('back') || '返回'">
+                                  :title="t('back') || '뒤로'">
                               <i class="fa-solid fa-chevron-left"></i>
                           </button>
                           
                           <button v-if="activeSideView === 'tasks' && viewingTaskDetail" 
                                   class="floating-back-btn" 
                                   @click="closeTaskDetail" 
-                                  :title="t('back') || '返回'">
+                                  :title="t('back') || '뒤로'">
                               <i class="fa-solid fa-chevron-left"></i>
                           </button>
                           
                           <button v-if="activeSideView === 'workspace'" 
                                   class="floating-back-btn" 
                                   @click="activeSideView = 'list'" 
-                                  :title="t('back') || '返回'">
+                                  :title="t('back') || '뒤로'">
                               <i class="fa-solid fa-chevron-left"></i>
                           </button>
                           
                           <button v-if="activeSideView === 'toolDetail'" 
                                   class="floating-back-btn" 
                                   @click="closeToolBlockDetail" 
-                                  :title="t('back') || '返回'">
+                                  :title="t('back') || '뒤로'">
                               <i class="fa-solid fa-chevron-left"></i>
                           </button>
 
                           <!-- 工作区右上角操作按钮组 -->
                           <div v-if="activeSideView === 'workspace'" class="floating-actions-group">
-                              <button class="floating-action-btn" @click="handleRootUpload" :title="t('upload') || '上传'">
+                              <button class="floating-action-btn" @click="handleRootUpload" :title="t('upload') || '업로드'">
                                   <i class="fa-solid fa-cloud-arrow-up"></i>
                               </button>
-                              <button class="floating-action-btn" @click="refreshWorkspaceTree" :title="t('refresh') || '刷新'">
+                              <button class="floating-action-btn" @click="refreshWorkspaceTree" :title="t('refresh') || '새로고침'">
                                   <i class="fa-solid fa-rotate-right"></i>
                               </button>
                           </div>
@@ -2090,11 +2090,11 @@ function updateElement(el, rawMarkdown, formatFn) {
                           <!-- ✨ 浮动按钮层（固定于侧边栏面板，不随内容滚动） -->
                           <!-- 任务列表视图：返回按钮 + 右上角新建按钮 -->
                           <template v-if="activeSideView === 'tasks' && !viewingTaskDetail">
-                              <button class="floating-back-btn" @click="closeTaskCenter" :title="t('back') || '返回'">
+                              <button class="floating-back-btn" @click="closeTaskCenter" :title="t('back') || '뒤로'">
                                   <i class="fa-solid fa-chevron-left"></i>
                               </button>
                               <div class="floating-actions-group">
-                                  <button class="floating-action-btn" @click="openCreateTaskDialog" :title="t('createNewTask') || '新建任务'">
+                                  <button class="floating-action-btn" @click="openCreateTaskDialog" :title="t('createNewTask') || '새 작업'">
                                       <i class="fa-solid fa-plus"></i>
                                   </button>
                               </div>
@@ -2104,20 +2104,20 @@ function updateElement(el, rawMarkdown, formatFn) {
                           <button v-if="activeSideView === 'tasks' && viewingTaskDetail" 
                                   class="floating-back-btn" 
                                   @click="closeTaskDetail" 
-                                  :title="t('back') || '返回'">
+                                  :title="t('back') || '뒤로'">
                               <i class="fa-solid fa-chevron-left"></i>
                           </button>
 
                           <!-- 工作区视图：返回按钮 + 右上角操作组（上传/刷新） -->
                           <template v-if="activeSideView === 'workspace'">
-                              <button class="floating-back-btn" @click="activeSideView = 'list'" :title="t('back') || '返回'">
+                              <button class="floating-back-btn" @click="activeSideView = 'list'" :title="t('back') || '뒤로'">
                                   <i class="fa-solid fa-chevron-left"></i>
                               </button>
                               <div class="floating-actions-group">
-                                  <button class="floating-action-btn" @click="handleRootUpload" :title="t('upload') || '上传'">
+                                  <button class="floating-action-btn" @click="handleRootUpload" :title="t('upload') || '업로드'">
                                       <i class="fa-solid fa-cloud-arrow-up"></i>
                                   </button>
-                                  <button class="floating-action-btn" @click="refreshWorkspaceTree" :title="t('refresh') || '刷新'">
+                                  <button class="floating-action-btn" @click="refreshWorkspaceTree" :title="t('refresh') || '새로고침'">
                                       <i class="fa-solid fa-rotate-right"></i>
                                   </button>
                               </div>
@@ -2127,7 +2127,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                           <button v-if="activeSideView === 'toolDetail'" 
                                   class="floating-back-btn" 
                                   @click="closeToolBlockDetail" 
-                                  :title="t('back') || '返回'">
+                                  :title="t('back') || '뒤로'">
                               <i class="fa-solid fa-chevron-left"></i>
                           </button>
 
@@ -2164,14 +2164,14 @@ function updateElement(el, rawMarkdown, formatFn) {
                                                           <i class="fa-regular fa-clock"></i> {{ formatTaskTime(viewingTaskDetail.created_at) }}
                                                       </span>
                                                       <el-button v-if="viewingTaskDetail.result" type="success" size="small" @click="openTaskResult(viewingTaskDetail)" style="border-radius: 20px;">
-                                                          <i class="fa-solid fa-square-poll-vertical"></i> {{ t('viewFinalResult') || '查看最终产出' }}
+                                                          <i class="fa-solid fa-square-poll-vertical"></i> {{ t('viewFinalResult') || '최종 결과 보기' }}
                                                       </el-button>
                                                   </div>
                                               </el-card>
                                           </div>
-                                          <el-divider content-position="left" style="margin: 12px 0;">{{ t('executionHistory') || '执行记录' }}</el-divider>
+                                          <el-divider content-position="left" style="margin: 12px 0;">{{ t('executionHistory') || '실행 기록' }}</el-divider>
                                           <div class="timeline-wrapper">
-                                              <el-empty v-if="!viewingTaskDetail.context || !viewingTaskDetail.context.history || viewingTaskDetail.context.history.length === 0" :description="t('noHistoryYet') || '暂无执行动态'"></el-empty>
+                                              <el-empty v-if="!viewingTaskDetail.context || !viewingTaskDetail.context.history || viewingTaskDetail.context.history.length === 0" :description="t('noHistoryYet') || '실행 내역 없음'"></el-empty>
                                               <el-timeline v-else>
                                                   <el-timeline-item v-for="(log, index) in viewingTaskDetail.context.history" :key="index" :type="log.includes('❌') ? 'danger' : (log.includes('✅') ? 'success' : 'primary')" size="large">
                                                       <div class="history-log-item markdown-body" style="font-size: 13px; line-height: 1.6; background: var(--el-bg-color-page); padding: 8px 12px; border-radius: 6px;">
@@ -2180,7 +2180,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                                                   </el-timeline-item>
                                                   <el-timeline-item v-if="viewingTaskDetail.status === 'running'" color="#409EFF">
                                                       <template #dot><i class="fa-solid fa-spinner fa-spin"></i></template>
-                                                      <div style="color: var(--el-color-primary); font-size: 13px; font-style: italic;">{{ t('taskExecuting') || '任务执行中...' }} ({{ viewingTaskDetail.progress }}%)</div>
+                                                      <div style="color: var(--el-color-primary); font-size: 13px; font-style: italic;">{{ t('taskExecuting') || '작업 실행 중...' }} ({{ viewingTaskDetail.progress }}%)</div>
                                                   </el-timeline-item>
                                               </el-timeline>
                                           </div>
@@ -2241,7 +2241,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                                   <div class="workspace-content-wrapper" style="flex: 1; overflow-y: auto; padding: 48px 16px 16px 16px;">
                                       <div v-if="!CLISettings.cc_path" style="padding: 40px 20px; text-align: center;">
                                           <el-empty :description="t('noWorkspaceConfigured')">
-                                              <el-button type="primary" @click="browseDirectory" style="border-radius: 20px;">选择文件夹</el-button>
+                                              <el-button type="primary" @click="browseDirectory" style="border-radius: 20px;">폴더 선택</el-button>
                                           </el-empty>
                                       </div>
                                       <div v-else style="height: 100%; box-sizing: border-box;">
@@ -2288,7 +2288,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                                       <div class="extension-info"><h3>{{ t('taskCenter') }}</h3><p>{{ t('taskCenterDescription') }}</p></div>
                                   </el-card>
                                   <el-card class="extension-card workspace-card" @click="openWorkspace()" v-show="isElectron">
-                                      <div class="extension-info"><h3>{{ t('workspace') || '工作区文件' }}</h3><p>{{ t('workspaceDescription') || '管理与查看本地工作区文件树' }}</p></div>
+                                      <div class="extension-info"><h3>{{ t('workspace') || '워크스페이스 파일' }}</h3><p>{{ t('workspaceDescription') || '로컬 워크스페이스 파일 트리 관리·보기' }}</p></div>
                                   </el-card>
                                   <!-- 分隔线 -->
                                   <div class="extensions-divider" style="margin-bottom: 12px;">
@@ -2300,7 +2300,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                                       <div style="flex: 1; min-width: 0;">
                                           <el-input 
                                               v-model="searchExtensionQuery" 
-                                              :placeholder="t('search') || '搜索扩展...'" 
+                                              :placeholder="t('search') || '확장 검색...'" 
                                               clearable
                                               style="width: 100%;"
                                           >
@@ -2345,7 +2345,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                           <!-- 2. 已打开的扩展 Iframe 多开视图 -->
                           <template v-for="ext in openedExtensions" :key="ext.id">
                               <div v-show="currentExtension && currentExtension.id === ext.id" class="ext-iframe-wrapper" style="height: 100%;">
-                                  <div class="ext-floating-close-btn" :class="{ 'is-active': extButtonVisible }" @mousemove="handleExtMouseMove" @click="resetToDefaultView()" :title="t('backToDefaultView') || '返回默认视图'">
+                                  <div class="ext-floating-close-btn" :class="{ 'is-active': extButtonVisible }" @mousemove="handleExtMouseMove" @click="resetToDefaultView()" :title="t('backToDefaultView') || '기본 보기로 돌아가기'">
                                       <i class="fa-solid fa-arrow-left"></i> 
                                   </div>
                                   <iframe class="side-panel-iframe" :src="ext.iframeUrl || (currentExtension.id === ext.id ? sidePanelURL : '')" frameborder="0" allowfullscreen></iframe>
@@ -2375,7 +2375,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                 <div style="display: flex; height: 70vh; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; overflow: hidden; margin: -10px 0;">
                   <!-- 左侧：执行批次 -->
                   <div v-if="selectedTaskHistory?.length > 1" style="width: 200px; background: var(--el-bg-color-page); border-right: 1px solid var(--el-border-color-lighter); display: flex; flex-direction: column;">
-                      <div style="padding: 10px; font-weight: bold; font-size: 13px; border-bottom: 1px solid var(--el-border-color-lighter);">{{ t('executionHistory') || '执行记录' }}</div>
+                      <div style="padding: 10px; font-weight: bold; font-size: 13px; border-bottom: 1px solid var(--el-border-color-lighter);">{{ t('executionHistory') || '실행 기록' }}</div>
                       <el-scrollbar style="flex: 1;">
                           <div style="padding: 8px;">
                               <div v-for="(item, idx) in selectedTaskHistory" 
@@ -2408,7 +2408,7 @@ function updateElement(el, rawMarkdown, formatFn) {
               <!-- 任务配置 Dialog -->
               <el-dialog append-to-body
                 v-model="showCreateTaskDialog"
-                :title="isEditing ? t('editTask') || '编辑任务' : t('createNewTask')"
+                :title="isEditing ? t('editTask') || '작업 편집' : t('createNewTask')"
                 width="80%"
                 class="mcp-dialog"
                 destroy-on-close
@@ -2491,7 +2491,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                   <span class="dialog-footer">
                     <el-button @click="showCreateTaskDialog = false">{{ t('cancel') }}</el-button>
                     <el-button type="primary" :loading="isCreatingTask" @click="submitTaskForm">
-                      {{ isEditing ? (t('confirmEdit') || '保存并重新运行') : (newTaskForm.task_type === 'once' ? t('createAndRun') : t('confirmSave')) }}
+                      {{ isEditing ? (t('confirmEdit') || '저장 후 다시 실행') : (newTaskForm.task_type === 'once' ? t('createAndRun') : t('confirmSave')) }}
                     </el-button>
                   </span>
                 </template>
@@ -3002,16 +3002,16 @@ function updateElement(el, rawMarkdown, formatFn) {
         <!-- logo页面 -->
           <div class="license-notice">
             <h1>Super Agent Party v0.4.2-preview</h1>
-            <h3>开源协议声明 / Open Source License</h3>
+            <h3>오픈소스 라이선스 / Open Source License</h3>
             <div class="notice-section">
-              <p>❗ 注意！本项目是基于AGPL协议开源的，请遵守AGPL协议，以避免不必要的法律问题！</p>
+              <p>❗ 주의! 이 프로젝트는 AGPL 라이선스 기반 오픈소스입니다. 불필요한 법적 문제를 피하려면 AGPL 라이선스를 준수하세요!</p>
               <p>❗ Attention! This project is open source based on the AGPL agreement, please abide by the AGPL agreement to avoid unnecessary legal problems!</p>
             </div>
 
             <div class="contact-section">
-              <h3>联系我们 / Contact</h3>
+              <h3>문의 / Contact</h3>
               <div class="contact-card">
-                <p>商业授权咨询：
+                <p>상업용 라이선스 문의:
                   <a href="mailto:hst97@qq.com" class="contact-link">hst97@qq.com</a>
                 </p>
                 <p>Commercial License：
@@ -3053,7 +3053,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                 <a href="https://space.bilibili.com/26978344" 
                   target="_blank" 
                   class="social-link">
-                  @派酱llm-party
+                  @Paijiang-llm-party
                 </a>
               </div>
 
@@ -3076,16 +3076,16 @@ function updateElement(el, rawMarkdown, formatFn) {
               </div>
 
               <div class="link-item">
-                <span>QQ交流群：</span>
+                <span>QQ 그룹:</span>
                 <span class="qq-group">931057213</span>
               </div>
 
               <div class="link-item">
-                <span>中文使用指南：</span>
+                <span>중국어 가이드:</span>
                 <a href="https://gcnij7egmcww.feishu.cn/wiki/DPRKwdetCiYBhPkPpXWcugujnRc" 
                   target="_blank" 
                   class="social-link">
-                  点击访问
+                  방문하기
                 </a>
               </div>
 

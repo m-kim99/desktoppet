@@ -20,7 +20,7 @@ async def load_affection_data():
                 return json.load(f)
         return await asyncio.to_thread(_read)
     except Exception as e:
-        print(f"[Affection] 读取数据失败: {e}")
+        print(f"[Affection] failed to read data: {e}")
         return {}
 
 async def save_affection_data(data):
@@ -32,7 +32,7 @@ async def save_affection_data(data):
                 json.dump(data, f, ensure_ascii=False, indent=4)
         await asyncio.to_thread(_write)
     except Exception as e:
-        print(f"[Affection] 保存数据失败: {e}")
+        print(f"[Affection] failed to save data: {e}")
 
 async def extract_and_update_affection(full_content):
     """从AI完整的回复中提取 <user=xxx love=xxx> 并更新数据"""
@@ -62,4 +62,4 @@ async def extract_and_update_affection(full_content):
         
         data[user_name].update(new_stats)
         await save_affection_data(data)
-        print(f"✨ [好感度系统] 用户 {user_name} 状态已更新: {new_stats}")
+        print(f"✨ [Affinity system] user {user_name} status updated: {new_stats}")

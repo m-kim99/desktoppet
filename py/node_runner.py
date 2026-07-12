@@ -49,9 +49,9 @@ class NodeExtension:
         run_env["NODE_EXTENSION_ID"] = self.ext_id 
         # 0. Quick check: node_modules exists and is newer than package.json
         if nm_folder.is_dir() and nm_folder.stat().st_mtime >= pkg_file.stat().st_mtime:
-            print(f"[{self.ext_id}] node_modules 已存在，跳过 npm install")
+            print(f"[{self.ext_id}] node_modules already exists, skipping npm install")
         else:
-            print(f"[{self.ext_id}] 首次/依赖变更，执行 npm install")
+            print(f"[{self.ext_id}] first run / deps changed, running npm install")
             # 1. Start npm install
             # Note the *npm_cmd list unpacking here
             proc = await asyncio.create_subprocess_exec(

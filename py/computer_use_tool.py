@@ -17,7 +17,7 @@ try:
     GUI_AVAILABLE = True
 except (KeyError, ImportError, Exception) as e:
     # In Docker/headless environments, ignore the error and just print a warning
-    print(f"⚠️ [Warning] 桌面鼠标键盘工具已禁用 (缺少 DISPLAY): {e}")
+    print(f"⚠️ [Warning] Desktop mouse/keyboard tool disabled (missing DISPLAY): {e}")
 
 # Interceptor: if the LLM tries to use mouse/keyboard inside Docker, return a message instead of crashing
 def require_gui(func):
@@ -291,7 +291,7 @@ async def keyboard_hold(keys: List[str], duration: float) -> str:
                 time.sleep(sleep_time)
                 elapsed = time.time() - start_time
         except Exception as e:
-            print(f"按住按键时出错: {e}")
+            print(f"Error while holding key: {e}")
         finally:
             for key in reversed(keys):
                 try:

@@ -3284,7 +3284,7 @@ function addcontrolPanel() {
                 user-select: none; pointer-events: auto; backdrop-filter: blur(10px);
             `;
             const hideDesc = await t('AutoHideDescription');
-            hideButton.title = hideDesc || '鼠标悬停自动隐藏';
+            hideButton.title = hideDesc || '마우스를 올리면 자동 숨김';
             updateHideButtonState();
         }
 
@@ -3292,11 +3292,11 @@ function addcontrolPanel() {
             if (isAutoHideActive) {
                 hideButton.innerHTML = '<i class="fas fa-eye-slash"></i>';
                 hideButton.style.color = '#ffc107';
-                hideButton.title = await t('AutoHideEnabled') || '自动隐藏已启用，点击关闭';
+                hideButton.title = await t('AutoHideEnabled') || '자동 숨김 켜짐, 클릭하면 끄기';
             } else {
                 hideButton.innerHTML = '<i class="fas fa-eye"></i>';
                 hideButton.style.color = '#6c757d';
-                hideButton.title = await t('AutoHideDescription') || '鼠标悬停自动隐藏，点击启用';
+                hideButton.title = await t('AutoHideDescription') || '마우스를 올리면 자동 숨김, 클릭하면 켜기';
             }
         }
 
@@ -3499,7 +3499,7 @@ function addcontrolPanel() {
                 subPanel.style.pointerEvents = 'auto';
                 moreButton.innerHTML = '<i class="fas fa-caret-right"></i>';
                 moreButton.style.color = '#007bff';
-                moreButton.title = await t('collapse') || '收起面板';
+                moreButton.title = await t('collapse') || '패널 접기';
             } else {
                 subPanel.style.opacity = '0';
                 subPanel.style.visibility = 'hidden';
@@ -3507,7 +3507,7 @@ function addcontrolPanel() {
                 subPanel.style.pointerEvents = 'none';
                 moreButton.innerHTML = '<i class="fas fa-ellipsis-v"></i>';
                 moreButton.style.color = '#333';
-                moreButton.title = await t('MoreOptions') || '更多功能';
+                moreButton.title = await t('MoreOptions') || '더보기';
             }
             showTooltip(moreButton, moreButton.title);
         }
@@ -3521,7 +3521,7 @@ function addcontrolPanel() {
             moreButton.style.background = 'rgba(255,255,255,1)';
             moreButton.style.transform = 'scale(1.1)';
             moreButton.style.boxShadow = '0 6px 16px rgba(0,0,0,0.2)';
-            if (!moreButton.title) moreButton.title = await t('MoreOptions') || '更多功能';
+            if (!moreButton.title) moreButton.title = await t('MoreOptions') || '더보기';
             showTooltip(moreButton, moreButton.title);
         });
         moreButton.addEventListener('mouseleave', () => {
@@ -3898,7 +3898,7 @@ function addcontrolPanel() {
 
         // 2. Initial hover tooltip (uses the t translation function in your code)
         (async () => {
-            const initialTitle = await t('EnableVoiceInput') || '开启语音输入';
+            const initialTitle = await t('EnableVoiceInput') || '음성 입력 켜기';
             voiceControlBtn.title = initialTitle;
             addHoverEffect(voiceControlBtn, initialTitle); // Call your existing tooltip-enhancement function
         })();
@@ -3910,8 +3910,8 @@ function addcontrolPanel() {
             
             // Get the new title text
             const activeTitle = pttVisible 
-                ? (await t('DisableVoiceInput') || '关闭语音输入') 
-                : (await t('EnableVoiceInput') || '开启语音输入');
+                ? (await t('DisableVoiceInput') || '음성 입력 끄기') 
+                : (await t('EnableVoiceInput') || '음성 입력 켜기');
 
            if (pttVisible) {
                 fBtn.classList.add('visible');
@@ -3953,7 +3953,7 @@ function addcontrolPanel() {
         });
 
         (async () => {
-            const initialTitle = await t('EnableTextInput') || '开启文字输入';
+            const initialTitle = await t('EnableTextInput') || '텍스트 입력 켜기';
             textControlBtn.title = initialTitle;
             addHoverEffect(textControlBtn, initialTitle);
         })();
@@ -3963,8 +3963,8 @@ function addcontrolPanel() {
             const visible = setVrmTextInputVisible();
 
             const activeTitle = visible
-                ? (await t('DisableTextInput') || '关闭文字输入')
-                : (await t('EnableTextInput') || '开启文字输入');
+                ? (await t('DisableTextInput') || '텍스트 입력 끄기')
+                : (await t('EnableTextInput') || '텍스트 입력 켜기');
 
             textControlBtn.title = activeTitle;
             showTooltip(textControlBtn, activeTitle);
@@ -4179,9 +4179,9 @@ function addcontrolPanel() {
                 case 3: moveModeBtn.title = await t('ModeScale') || 'Scale Mode'; break;
             }
             const vText = pttVisible ? await t('DisableVoiceInput') : await t('EnableVoiceInput');
-            addHoverEffect(voiceControlBtn, vText || (pttVisible ? '关闭语音输入' : '开启语音输入'));
+            addHoverEffect(voiceControlBtn, vText || (pttVisible ? '음성 입력 끄기' : '음성 입력 켜기'));
             const tText = textInputVisible ? await t('DisableTextInput') : await t('EnableTextInput');
-            addHoverEffect(textControlBtn, tText || (textInputVisible ? '关闭文字输入' : '开启文字输入'));
+            addHoverEffect(textControlBtn, tText || (textInputVisible ? '텍스트 입력 끄기' : '텍스트 입력 켜기'));
         }
         setInterval(updateButtonTooltips, 1000);
 

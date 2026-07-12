@@ -196,7 +196,7 @@ class AsyncGeminiAsOpenAI:
                     if models:
                         return ModelList(models)
             except Exception as e:
-                print(f"动态获取 Gemini 模型列表失败 (已启动兜底机制): {e}")
+                print(f"Dynamic fetch of Gemini model list failed (fallback engaged): {e}")
 
             # Static fallback
             fallback_models = []

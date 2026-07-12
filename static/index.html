@@ -600,8 +600,8 @@ function updateElement(el, rawMarkdown, formatFn) {
             @click="openWorkspace()"
             v-show="isElectron">
             <div class="extension-info">
-              <h3>{{ t('workspace') || '工作区文件' }}</h3>
-              <p>{{ t('workspaceDescription') || '管理与查看本地工作区文件树' }}</p>
+              <h3>{{ t('workspace') || '워크스페이스 파일' }}</h3>
+              <p>{{ t('workspaceDescription') || '로컬 워크스페이스 파일 트리 관리·보기' }}</p>
             </div>
           </el-card>
           
@@ -618,7 +618,7 @@ function updateElement(el, rawMarkdown, formatFn) {
             <div style="flex: 1; min-width: 0;">
               <el-input 
                 v-model="searchExtensionQuery" 
-                :placeholder="t('search') || '搜索扩展...'" 
+                :placeholder="t('search') || '확장 검색...'" 
                 clearable
                 style="width: 100%;"
               >
@@ -854,7 +854,7 @@ function updateElement(el, rawMarkdown, formatFn) {
             <div class="guide-card" @click="createNewTask">
               <div class="card-icon cyan"><i class="fa-solid fa-list-check"></i></div>
               <div class="card-info">
-                <h3>{{ t('createNewTask') || '创建新任务' }}</h3>
+                <h3>{{ t('createNewTask') || '새 작업 만들기' }}</h3>
               </div>
             </div>
 
@@ -862,7 +862,7 @@ function updateElement(el, rawMarkdown, formatFn) {
             <div class="guide-card" @click="openAiBrowser">
               <div class="card-icon indigo"  v-if="isElectron"><i class="fa-solid fa-compass"></i></div>
               <div class="card-info">
-                <h3>{{ t('aiBrowser') || 'AI 浏览器' }}</h3>
+                <h3>{{ t('aiBrowser') || 'AI 브라우저' }}</h3>
               </div>
             </div>
 
@@ -870,7 +870,7 @@ function updateElement(el, rawMarkdown, formatFn) {
             <div class="guide-card" @click="connectToChatApp">
               <div class="card-icon orange"><i class="fa-solid fa-share-nodes"></i></div>
               <div class="card-info">
-                <h3>{{ t('connectChatApp') || '连接到聊天软件' }}</h3>
+                <h3>{{ t('connectChatApp') || '채팅 앱에 연결' }}</h3>
               </div>
             </div>
 
@@ -878,7 +878,7 @@ function updateElement(el, rawMarkdown, formatFn) {
             <div class="guide-card" @click="connectToVTS">
               <div class="card-icon vts-purple"><i class="fa-solid fa-child"></i></div>
               <div class="card-info">
-                <h3>{{ t('connectToVTS') || '连接到 VTube Studio' }}</h3>
+                <h3>{{ t('connectToVTS') || 'VTube Studio에 연결' }}</h3>
               </div>
             </div>
 
@@ -887,7 +887,7 @@ function updateElement(el, rawMarkdown, formatFn) {
             <div class="guide-card" @click="startLiveStream">
               <div class="card-icon red"><i class="fa-solid fa-tower-broadcast"></i></div>
               <div class="card-info">
-                <h3>{{ t('startLiveStream') || '开始直播' }}</h3>
+                <h3>{{ t('startLiveStream') || '방송 시작' }}</h3>
               </div>
             </div>
 
@@ -895,7 +895,7 @@ function updateElement(el, rawMarkdown, formatFn) {
             <div class="guide-card" @click="gotoAddExtension">
               <div class="card-icon teal"><i class="fa-solid fa-plus"></i></div>
               <div class="card-info">
-                <h3>{{ t('addNewExtension') || '添加扩展' }}</h3>
+                <h3>{{ t('addNewExtension') || '확장 추가' }}</h3>
               </div>
             </div>
 
@@ -1997,7 +1997,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                           class="status-pill-dropdown"
                         >
                           <div class="status-pill">
-                            <el-tooltip :content="t('chatUIMode') || '聊天模式'" placement="top" :show-after="500">
+                            <el-tooltip :content="t('chatUIMode') || '채팅 모드'" placement="top" :show-after="500">
                               <span style="display: inline-flex; align-items: center; gap: 6px;">
                                 <i :class="{
                                   'fa-solid fa-bolt': systemSettings.chatMode === 'standard',
@@ -2006,9 +2006,9 @@ function updateElement(el, rawMarkdown, formatFn) {
                                 }"></i>
                                 <span class="pill-text">
                                   {{ 
-                                    systemSettings.chatMode === 'standard' ? (t('chatUIStandard') || '经典模式') : 
-                                    systemSettings.chatMode === 'entertainment' ? (t('chatUIEntertainment') || '娱乐模式') : 
-                                    (t('chatUIWork') || '办公模式') 
+                                    systemSettings.chatMode === 'standard' ? (t('chatUIStandard') || '클래식 모드') : 
+                                    systemSettings.chatMode === 'entertainment' ? (t('chatUIEntertainment') || '엔터테인먼트 모드') : 
+                                    (t('chatUIWork') || '오피스 모드') 
                                   }}
                                 </span>
                               </span>
@@ -2019,15 +2019,15 @@ function updateElement(el, rawMarkdown, formatFn) {
                             <el-dropdown-menu>
                               <el-dropdown-item @click="systemSettings.chatMode = 'standard'; autoSaveSettings()">
                                 <i class="fa-solid fa-bolt" style="margin-right: 6px;"></i>
-                                {{ t('chatUIStandard') || '经典模式' }}
+                                {{ t('chatUIStandard') || '클래식 모드' }}
                               </el-dropdown-item>
                               <el-dropdown-item @click="systemSettings.chatMode = 'entertainment'; autoSaveSettings()">
                                 <i class="fa-solid fa-face-smile" style="margin-right: 6px;"></i>
-                                {{ t('chatUIEntertainment') || '娱乐模式' }}
+                                {{ t('chatUIEntertainment') || '엔터테인먼트 모드' }}
                               </el-dropdown-item>
                               <el-dropdown-item @click="systemSettings.chatMode = 'work'; autoSaveSettings()">
                                 <i class="fa-solid fa-gem" style="margin-right: 6px;"></i>
-                                {{ t('chatUIWork') || '办公模式' }}
+                                {{ t('chatUIWork') || '오피스 모드' }}
                               </el-dropdown-item>
                             </el-dropdown-menu>
                           </template>
@@ -2169,7 +2169,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                       <!-- 固定主页书签 -->
                       <div class="vscode-tab" :class="{ active: !currentExtension }" @click="resetToDefaultView()">
                           <i class="fa-solid fa-shapes tab-icon"></i>
-                          <span class="tab-title">{{ t('extensionsView') || '扩展视图' }}</span>
+                          <span class="tab-title">{{ t('extensionsView') || '확장 보기' }}</span>
                       </div>
 
                       <!-- 动态扩展书签 -->
@@ -2195,37 +2195,37 @@ function updateElement(el, rawMarkdown, formatFn) {
                           <button v-if="activeSideView === 'tasks' && !viewingTaskDetail" 
                                   class="floating-back-btn" 
                                   @click="closeTaskCenter" 
-                                  :title="t('back') || '返回'">
+                                  :title="t('back') || '뒤로'">
                               <i class="fa-solid fa-chevron-left"></i>
                           </button>
                           
                           <button v-if="activeSideView === 'tasks' && viewingTaskDetail" 
                                   class="floating-back-btn" 
                                   @click="closeTaskDetail" 
-                                  :title="t('back') || '返回'">
+                                  :title="t('back') || '뒤로'">
                               <i class="fa-solid fa-chevron-left"></i>
                           </button>
                           
                           <button v-if="activeSideView === 'workspace'" 
                                   class="floating-back-btn" 
                                   @click="activeSideView = 'list'" 
-                                  :title="t('back') || '返回'">
+                                  :title="t('back') || '뒤로'">
                               <i class="fa-solid fa-chevron-left"></i>
                           </button>
                           
                           <button v-if="activeSideView === 'toolDetail'" 
                                   class="floating-back-btn" 
                                   @click="closeToolBlockDetail" 
-                                  :title="t('back') || '返回'">
+                                  :title="t('back') || '뒤로'">
                               <i class="fa-solid fa-chevron-left"></i>
                           </button>
 
                           <!-- 工作区右上角操作按钮组 -->
                           <div v-if="activeSideView === 'workspace'" class="floating-actions-group">
-                              <button class="floating-action-btn" @click="handleRootUpload" :title="t('upload') || '上传'">
+                              <button class="floating-action-btn" @click="handleRootUpload" :title="t('upload') || '업로드'">
                                   <i class="fa-solid fa-cloud-arrow-up"></i>
                               </button>
-                              <button class="floating-action-btn" @click="refreshWorkspaceTree" :title="t('refresh') || '刷新'">
+                              <button class="floating-action-btn" @click="refreshWorkspaceTree" :title="t('refresh') || '새로고침'">
                                   <i class="fa-solid fa-rotate-right"></i>
                               </button>
                           </div>
@@ -2233,11 +2233,11 @@ function updateElement(el, rawMarkdown, formatFn) {
                           <!-- ✨ 浮动按钮层（固定于侧边栏面板，不随内容滚动） -->
                           <!-- 任务列表视图：返回按钮 + 右上角新建按钮 -->
                           <template v-if="activeSideView === 'tasks' && !viewingTaskDetail">
-                              <button class="floating-back-btn" @click="closeTaskCenter" :title="t('back') || '返回'">
+                              <button class="floating-back-btn" @click="closeTaskCenter" :title="t('back') || '뒤로'">
                                   <i class="fa-solid fa-chevron-left"></i>
                               </button>
                               <div class="floating-actions-group">
-                                  <button class="floating-action-btn" @click="openCreateTaskDialog" :title="t('createNewTask') || '新建任务'">
+                                  <button class="floating-action-btn" @click="openCreateTaskDialog" :title="t('createNewTask') || '새 작업'">
                                       <i class="fa-solid fa-plus"></i>
                                   </button>
                               </div>
@@ -2247,20 +2247,20 @@ function updateElement(el, rawMarkdown, formatFn) {
                           <button v-if="activeSideView === 'tasks' && viewingTaskDetail" 
                                   class="floating-back-btn" 
                                   @click="closeTaskDetail" 
-                                  :title="t('back') || '返回'">
+                                  :title="t('back') || '뒤로'">
                               <i class="fa-solid fa-chevron-left"></i>
                           </button>
 
                           <!-- 工作区视图：返回按钮 + 右上角操作组（上传/刷新） -->
                           <template v-if="activeSideView === 'workspace'">
-                              <button class="floating-back-btn" @click="activeSideView = 'list'" :title="t('back') || '返回'">
+                              <button class="floating-back-btn" @click="activeSideView = 'list'" :title="t('back') || '뒤로'">
                                   <i class="fa-solid fa-chevron-left"></i>
                               </button>
                               <div class="floating-actions-group">
-                                  <button class="floating-action-btn" @click="handleRootUpload" :title="t('upload') || '上传'">
+                                  <button class="floating-action-btn" @click="handleRootUpload" :title="t('upload') || '업로드'">
                                       <i class="fa-solid fa-cloud-arrow-up"></i>
                                   </button>
-                                  <button class="floating-action-btn" @click="refreshWorkspaceTree" :title="t('refresh') || '刷新'">
+                                  <button class="floating-action-btn" @click="refreshWorkspaceTree" :title="t('refresh') || '새로고침'">
                                       <i class="fa-solid fa-rotate-right"></i>
                                   </button>
                               </div>
@@ -2270,7 +2270,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                           <button v-if="activeSideView === 'toolDetail'" 
                                   class="floating-back-btn" 
                                   @click="closeToolBlockDetail" 
-                                  :title="t('back') || '返回'">
+                                  :title="t('back') || '뒤로'">
                               <i class="fa-solid fa-chevron-left"></i>
                           </button>
 
@@ -2307,14 +2307,14 @@ function updateElement(el, rawMarkdown, formatFn) {
                                                           <i class="fa-regular fa-clock"></i> {{ formatTaskTime(viewingTaskDetail.created_at) }}
                                                       </span>
                                                       <el-button v-if="viewingTaskDetail.result" type="success" size="small" @click="openTaskResult(viewingTaskDetail)" style="border-radius: 20px;">
-                                                          <i class="fa-solid fa-square-poll-vertical"></i> {{ t('viewFinalResult') || '查看最终产出' }}
+                                                          <i class="fa-solid fa-square-poll-vertical"></i> {{ t('viewFinalResult') || '최종 결과 보기' }}
                                                       </el-button>
                                                   </div>
                                               </el-card>
                                           </div>
-                                          <el-divider content-position="left" style="margin: 12px 0;">{{ t('executionHistory') || '执行记录' }}</el-divider>
+                                          <el-divider content-position="left" style="margin: 12px 0;">{{ t('executionHistory') || '실행 기록' }}</el-divider>
                                           <div class="timeline-wrapper">
-                                              <el-empty v-if="!viewingTaskDetail.context || !viewingTaskDetail.context.history || viewingTaskDetail.context.history.length === 0" :description="t('noHistoryYet') || '暂无执行动态'"></el-empty>
+                                              <el-empty v-if="!viewingTaskDetail.context || !viewingTaskDetail.context.history || viewingTaskDetail.context.history.length === 0" :description="t('noHistoryYet') || '실행 내역 없음'"></el-empty>
                                               <el-timeline v-else>
                                                   <el-timeline-item v-for="(log, index) in viewingTaskDetail.context.history" :key="index" :type="log.includes('❌') ? 'danger' : (log.includes('✅') ? 'success' : 'primary')" size="large">
                                                       <div class="history-log-item markdown-body" style="font-size: 13px; line-height: 1.6; background: var(--el-bg-color-page); padding: 8px 12px; border-radius: 6px;">
@@ -2323,7 +2323,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                                                   </el-timeline-item>
                                                   <el-timeline-item v-if="viewingTaskDetail.status === 'running'" color="#409EFF">
                                                       <template #dot><i class="fa-solid fa-spinner fa-spin"></i></template>
-                                                      <div style="color: var(--el-color-primary); font-size: 13px; font-style: italic;">{{ t('taskExecuting') || '任务执行中...' }} ({{ viewingTaskDetail.progress }}%)</div>
+                                                      <div style="color: var(--el-color-primary); font-size: 13px; font-style: italic;">{{ t('taskExecuting') || '작업 실행 중...' }} ({{ viewingTaskDetail.progress }}%)</div>
                                                   </el-timeline-item>
                                               </el-timeline>
                                           </div>
@@ -2431,7 +2431,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                                       <div class="extension-info"><h3>{{ t('taskCenter') }}</h3><p>{{ t('taskCenterDescription') }}</p></div>
                                   </el-card>
                                   <el-card class="extension-card workspace-card" @click="openWorkspace()" v-show="isElectron">
-                                      <div class="extension-info"><h3>{{ t('workspace') || '工作区文件' }}</h3><p>{{ t('workspaceDescription') || '管理与查看本地工作区文件树' }}</p></div>
+                                      <div class="extension-info"><h3>{{ t('workspace') || '워크스페이스 파일' }}</h3><p>{{ t('workspaceDescription') || '로컬 워크스페이스 파일 트리 관리·보기' }}</p></div>
                                   </el-card>
                                   <!-- 分隔线 -->
                                   <div class="extensions-divider" style="margin-bottom: 12px;">
@@ -2443,7 +2443,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                                       <div style="flex: 1; min-width: 0;">
                                           <el-input 
                                               v-model="searchExtensionQuery" 
-                                              :placeholder="t('search') || '搜索扩展...'" 
+                                              :placeholder="t('search') || '확장 검색...'" 
                                               clearable
                                               style="width: 100%;"
                                           >
@@ -2488,7 +2488,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                           <!-- 2. 已打开的扩展 Iframe 多开视图 -->
                           <template v-for="ext in openedExtensions" :key="ext.id">
                               <div v-show="currentExtension && currentExtension.id === ext.id" class="ext-iframe-wrapper" style="height: 100%;">
-                                  <div class="ext-floating-close-btn" :class="{ 'is-active': extButtonVisible }" @mousemove="handleExtMouseMove" @click="resetToDefaultView()" :title="t('backToDefaultView') || '返回默认视图'">
+                                  <div class="ext-floating-close-btn" :class="{ 'is-active': extButtonVisible }" @mousemove="handleExtMouseMove" @click="resetToDefaultView()" :title="t('backToDefaultView') || '기본 보기로 돌아가기'">
                                       <i class="fa-solid fa-arrow-left"></i> 
                                   </div>
                                   <iframe class="side-panel-iframe" :src="ext.iframeUrl || (currentExtension.id === ext.id ? sidePanelURL : '')" frameborder="0" allowfullscreen></iframe>
@@ -2518,7 +2518,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                 <div style="display: flex; height: 70vh; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; overflow: hidden; margin: -10px 0;">
                   <!-- 左侧：执行批次 -->
                   <div v-if="selectedTaskHistory?.length > 1" style="width: 200px; background: var(--el-bg-color-page); border-right: 1px solid var(--el-border-color-lighter); display: flex; flex-direction: column;">
-                      <div style="padding: 10px; font-weight: bold; font-size: 13px; border-bottom: 1px solid var(--el-border-color-lighter);">{{ t('executionHistory') || '执行记录' }}</div>
+                      <div style="padding: 10px; font-weight: bold; font-size: 13px; border-bottom: 1px solid var(--el-border-color-lighter);">{{ t('executionHistory') || '실행 기록' }}</div>
                       <el-scrollbar style="flex: 1;">
                           <div style="padding: 8px;">
                               <div v-for="(item, idx) in selectedTaskHistory" 
@@ -2551,7 +2551,7 @@ function updateElement(el, rawMarkdown, formatFn) {
               <!-- 任务配置 Dialog -->
               <el-dialog append-to-body
                 v-model="showCreateTaskDialog"
-                :title="isEditing ? t('editTask') || '编辑任务' : t('createNewTask')"
+                :title="isEditing ? t('editTask') || '작업 편집' : t('createNewTask')"
                 width="80%"
                 class="mcp-dialog"
                 destroy-on-close
@@ -2634,7 +2634,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                   <span class="dialog-footer">
                     <el-button @click="showCreateTaskDialog = false">{{ t('cancel') }}</el-button>
                     <el-button type="primary" :loading="isCreatingTask" @click="submitTaskForm">
-                      {{ isEditing ? (t('confirmEdit') || '保存并重新运行') : (newTaskForm.task_type === 'once' ? t('createAndRun') : t('confirmSave')) }}
+                      {{ isEditing ? (t('confirmEdit') || '저장 후 다시 실행') : (newTaskForm.task_type === 'once' ? t('createAndRun') : t('confirmSave')) }}
                     </el-button>
                   </span>
                 </template>
@@ -4120,7 +4120,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                     
                     <div class="tool-content">
                       <!-- 默认音色选择 -->
-                      <el-form-item :label="t('DefaultVoice') || '默认音色'" class="form-item-align">
+                      <el-form-item :label="t('DefaultVoice') || '기본 음색'" class="form-item-align">
                         <el-select v-model="newTTSConfig.mossVoice" @change="autoSaveSettings" class="full-width-input">
                           <!-- 中文音色 -->
                           <el-option label="Junhao (zh-male)" value="Junhao"></el-option>
@@ -4149,7 +4149,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                       </el-form-item>
 
                       <!-- 语速滑动条 -->
-                      <el-form-item :label="t('TTSRate') || '语速'" class="form-item-align">
+                      <el-form-item :label="t('TTSRate') || '말 속도'" class="form-item-align">
                         <el-slider
                           v-model="newTTSConfig.mossSpeed"
                           :min="0.5"
@@ -4161,14 +4161,14 @@ function updateElement(el, rawMarkdown, formatFn) {
                       </el-form-item>
 
                       <!-- 音色克隆：复用已有提示音频选择框 -->
-                      <el-form-item :label="t('promptAudio') || '参考音频 (音色克隆)'" class="form-item-align">
+                      <el-form-item :label="t('promptAudio') || '참조 오디오 (음색 복제)'" class="form-item-align">
                         <el-select
                           v-model="newTTSConfig.gsvRefAudioPath"
                           @change="handleRefAudioPathChange(newTTSConfig.gsvRefAudioPath,'model')"
                           class="full-width-input"
                           clearable
                         >
-                          <el-option :key="null" :value="null" :label="t('noRefAudio') || '不使用参考音频'"></el-option>
+                          <el-option :key="null" :value="null" :label="t('noRefAudio') || '참조 오디오 사용 안 함'"></el-option>
                           <el-option
                             v-for="audio in ttsSettings.gsvAudioOptions"
                             :key="audio.path"
@@ -4184,7 +4184,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                       </el-form-item>
                       
                       <el-button @click="showGsvRefAudioPathDialog = true;currentUploadType='audio'" type="primary" class="add-server-btn" style="margin-bottom: 15px;">
-                        <i class="fa-solid fa-plus"></i> {{ t('addRefAudio') || '添加参考音频' }}
+                        <i class="fa-solid fa-plus"></i> {{ t('addRefAudio') || '참조 오디오 추가' }}
                       </el-button>
 
                     </div>
@@ -5709,14 +5709,14 @@ function updateElement(el, rawMarkdown, formatFn) {
                 <el-tabs v-model="activeAffectionTab" @tab-change="handleAffectionTabChange">
                   
                   <!-- Tab 1: 系统配置 -->
-                  <el-tab-pane :label="t('affectionSettings') || '系统配置'" name="config">
+                  <el-tab-pane :label="t('affectionSettings') || '시스템 설정'" name="config">
                     <el-form :model="loveSettings" class="settings-form" label-position="top">
                       <div class="tool-item">
                         <div class="tool-header">
                           <div class="header-left">
                             <span>
                               <el-icon><i class="fa-solid fa-heart"></i></el-icon>
-                              {{ t('affectionSystem') || '羁绊与数值系统' }}
+                              {{ t('affectionSystem') || '유대·수치 시스템' }}
                             </span>
                           </div>
                           <el-switch v-model="loveSettings.enabled" @change="autoSaveSettings"/>
@@ -5731,13 +5731,13 @@ function updateElement(el, rawMarkdown, formatFn) {
                             </template>
                           </el-alert>
 
-                          <el-form-item :label="t('affectionDimensions') || '数值维度设置 (Dimensions)'">
+                          <el-form-item :label="t('affectionDimensions') || '수치 차원 설정 (Dimensions)'">
                             <div class="events-management-list" style="width: 100%;">
                               <div v-for="(dim, idx) in loveSettings.dimensions" :key="idx" class="event-row-item" style="margin-bottom: 10px; display: flex; gap: 10px;">
                                 <div class="input-col" style="flex: 1;">
                                   <el-input
                                     v-model="loveSettings.dimensions[idx]"
-                                    :placeholder="t('dimensionPlaceholder') || '例如：love, Familiarity, trust...'"
+                                    :placeholder="t('dimensionPlaceholder') || '예: love, Familiarity, trust...'"
                                     @change="autoSaveSettings"
                                   />
                                 </div>
@@ -5748,17 +5748,17 @@ function updateElement(el, rawMarkdown, formatFn) {
                                 </div>
                               </div>
                               <el-button type="primary" class="add-server-btn" @click="addLoveDimension" style="margin-top: 5px;">
-                                <i class="fa-solid fa-plus"></i> {{ t('addDimension') || '添加维度' }}
+                                <i class="fa-solid fa-plus"></i> {{ t('addDimension') || '차원 추가' }}
                               </el-button>
                             </div>
                           </el-form-item>
                           <el-divider></el-divider>
-                          <el-form-item :label="t('affectionPrompt') || '系统更新规则 (Prompt)'">
+                          <el-form-item :label="t('affectionPrompt') || '시스템 업데이트 규칙 (Prompt)'">
                             <el-input
                               v-model="loveSettings.prompt"
                               type="textarea"
                               :rows="12"
-                              :placeholder="t('affectionPromptPlaceholder') || '请详细描述AI应该如何根据对话调整各个维度...'"
+                              :placeholder="t('affectionPromptPlaceholder') || 'AI가 대화에 따라 각 차원을 어떻게 조정할지 자세히 설명하세요...'"
                               @change="autoSaveSettings"
                             />
                           </el-form-item>
@@ -5768,7 +5768,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                   </el-tab-pane>
 
                   <!-- Tab 2: 数据管理 -->
-                  <el-tab-pane :label="t('affectionData') || '数据管理'" name="data">
+                  <el-tab-pane :label="t('affectionData') || '데이터 관리'" name="data">
                     <div class="tool-item">
                       <div class="tool-content">
                         <!-- 顶部工具栏 -->
@@ -5777,7 +5777,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                           <div style="flex: 1; max-width: 300px; min-width: 150px;">
                             <el-input 
                               v-model="affectionSearchQuery" 
-                              :placeholder="t('searchUser') || '搜索用户名...'" 
+                              :placeholder="t('searchUser') || '사용자 이름 검색...'" 
                               clearable 
                             >
                               <template #prefix>
@@ -5792,7 +5792,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                               <i class="fa-solid fa-rotate-right"></i>
                             </el-button>
                             <el-button type="primary" @click="openAffectionDataDialog()">
-                              <i class="fa-solid fa-plus"></i> {{ t('addUserData') || '添加用户数据' }}
+                              <i class="fa-solid fa-plus"></i> {{ t('addUserData') || '사용자 데이터 추가' }}
                             </el-button>
                           </div>
                         </div>
@@ -5806,7 +5806,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                           height="500"
                         >
                           <!-- 固定列：用户名 -->
-                          <el-table-column prop="userName" :label="t('userName') || '用户名'" width="180" fixed="left">
+                          <el-table-column prop="userName" :label="t('userName') || '사용자 이름'" width="180" fixed="left">
                             <template #default="scope">
                               <strong>{{ scope.row.userName }}</strong>
                             </template>
@@ -5828,7 +5828,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                           </el-table-column>
 
                           <!-- 固定列：操作 -->
-                          <el-table-column :label="t('actions') || '操作'" width="120" fixed="right" align="center">
+                          <el-table-column :label="t('actions') || '작업'" width="120" fixed="right" align="center">
                             <template #default="scope">
                               <el-button circle size="small" type="primary" @click="openAffectionDataDialog(scope.row)">
                                 <i class="fa-solid fa-pen"></i>
@@ -5849,11 +5849,11 @@ function updateElement(el, rawMarkdown, formatFn) {
               <!-- 新增/编辑用户数据对话框 (放在 tabs 外面) -->
               <el-dialog append-to-body 
                 v-model="showAffectionDataDialog" 
-                :title="isEditingAffection ? (t('editData') || '编辑羁绊数据') : (t('addData') || '新增羁绊数据')" 
+                :title="isEditingAffection ? (t('editData') || '유대 데이터 편집') : (t('addData') || '유대 데이터 추가')" 
                 width="400px"
               >
                 <el-form label-position="top">
-                  <el-form-item :label="t('userName') || '用户名'" required>
+                  <el-form-item :label="t('userName') || '사용자 이름'" required>
                     <el-input v-model="currentAffectionForm.userName" :disabled="isEditingAffection" :placeholder="t('enterExactUsername')"/>
                   </el-form-item>
                   
@@ -7827,7 +7827,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                     
                     <div class="tool-content">
                       <!-- 默认音色选择 -->
-                      <el-form-item :label="t('DefaultVoice') || '默认音色'" class="form-item-align">
+                      <el-form-item :label="t('DefaultVoice') || '기본 음색'" class="form-item-align">
                         <el-select v-model="ttsSettings.mossVoice" @change="autoSaveSettings" class="full-width-input">
                           <!-- 中文音色 -->
                           <el-option label="Junhao (zh-male)" value="Junhao"></el-option>
@@ -7856,7 +7856,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                       </el-form-item>
 
                       <!-- 语速滑动条 -->
-                      <el-form-item :label="t('TTSRate') || '语速'" class="form-item-align">
+                      <el-form-item :label="t('TTSRate') || '말 속도'" class="form-item-align">
                         <el-slider
                           v-model="ttsSettings.mossSpeed"
                           :min="0.5"
@@ -7868,14 +7868,14 @@ function updateElement(el, rawMarkdown, formatFn) {
                       </el-form-item>
 
                       <!-- 音色克隆：复用已有提示音频选择框 -->
-                      <el-form-item :label="t('promptAudio') || '参考音频 (音色克隆)'" class="form-item-align">
+                      <el-form-item :label="t('promptAudio') || '참조 오디오 (음색 복제)'" class="form-item-align">
                         <el-select
                           v-model="ttsSettings.gsvRefAudioPath"
                           @change="handleRefAudioPathChange(ttsSettings.gsvRefAudioPath,'model')"
                           class="full-width-input"
                           clearable
                         >
-                          <el-option :key="null" :value="null" :label="t('noRefAudio') || '不使用参考音频'"></el-option>
+                          <el-option :key="null" :value="null" :label="t('noRefAudio') || '참조 오디오 사용 안 함'"></el-option>
                           <el-option
                             v-for="audio in ttsSettings.gsvAudioOptions"
                             :key="audio.path"
@@ -7891,7 +7891,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                       </el-form-item>
                       
                       <el-button @click="showGsvRefAudioPathDialog = true;currentUploadType='audio'" type="primary" class="add-server-btn" style="margin-bottom: 15px;">
-                        <i class="fa-solid fa-plus"></i> {{ t('addRefAudio') || '添加参考音频' }}
+                        <i class="fa-solid fa-plus"></i> {{ t('addRefAudio') || '참조 오디오 추가' }}
                       </el-button>
 
                     </div>
@@ -12345,7 +12345,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                         <el-icon>
                           <i class="fa-solid fa-comments"></i>
                         </el-icon>
-                        {{ t('chatUIMode') || '对话界面模式' }}
+                        {{ t('chatUIMode') || '대화 인터페이스 모드' }}
                       </span>
                     </div>
                     <div class="tool-content">
@@ -12691,7 +12691,7 @@ function updateElement(el, rawMarkdown, formatFn) {
 
                 <!-- 空状态 -->
                 <div v-if="videoFiles.length === 0" class="no-files">
-                  <el-empty :description="t('noVideos') || '暂无视频'" />
+                  <el-empty :description="t('noVideos') || '동영상 없음'" />
                 </div>
               </div>
             </div>
@@ -13324,10 +13324,10 @@ function updateElement(el, rawMarkdown, formatFn) {
                             <div class="tool-header" style="display: flex; justify-content: space-between; align-items: center;">
                               <span>
                                 <el-icon><i class="fa-brands fa-slack"></i></el-icon>
-                                {{ t('slack_bot_config') || 'Slack 机器人配置' }}
+                                {{ t('slack_bot_config') || 'Slack 봇 설정' }}
                                 <el-link type="primary" :underline="false" href="https://api.slack.com/apps" target="_blank">
                                   <el-icon class="mr-1"><i class="fa-solid fa-key"></i></el-icon>
-                                  {{ t('gotoSlackBot') || '前往 Slack App 控制台' }}
+                                  {{ t('gotoSlackBot') || 'Slack App 콘솔로 이동' }}
                                 </el-link>
                               </span>
 
@@ -14815,15 +14815,15 @@ function updateElement(el, rawMarkdown, formatFn) {
                               </div>
                             </div>
                             <div class="tool-content">
-                              <el-form-item :label="t('liveFilterMode') || '监听模式'" class="form-item-align" label-position="left">
+                              <el-form-item :label="t('liveFilterMode') || '수신 모드'" class="form-item-align" label-position="left">
                                 <el-select 
                                   v-model="liveConfig.filterMode" 
                                   class="full-width-input"
                                   @change="autoSaveSettings"
                                 >
-                                  <el-option :label="t('filterModeAll') || '全部监听 (弹幕/礼物/进场/点赞)'" value="all"></el-option>
-                                  <el-option :label="t('filterModePaid') || '弹幕 + 付费 (礼物/SC/舰长)'" value="danmaku_paid"></el-option>
-                                  <el-option :label="t('filterModeOnlyDanmaku') || '仅弹幕 (含SC)'" value="danmaku_only"></el-option>
+                                  <el-option :label="t('filterModeAll') || '전체 수신 (탄막/선물/입장/좋아요)'" value="all"></el-option>
+                                  <el-option :label="t('filterModePaid') || '탄막 + 후원 (선물/SC/구독)'" value="danmaku_paid"></el-option>
+                                  <el-option :label="t('filterModeOnlyDanmaku') || '탄막만 (SC 포함)'" value="danmaku_only"></el-option>
                                 </el-select>
                               </el-form-item>  
                               <el-form-item :label="t('danmakuQueueLimit')" class="form-item-align" label-position="left">
@@ -14854,7 +14854,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                                 ></el-switch>
                               </el-form-item>  
 
-                              <el-form-item v-if="liveConfig.enableDanmakuTTS" :label="t('danmakuVoice') || 'Danmaku Voice (念弹幕音色)'" class="form-item-align" label-position="left">
+                              <el-form-item v-if="liveConfig.enableDanmakuTTS" :label="t('danmakuVoice') || 'Danmaku Voice (탄막 읽기 음색)'" class="form-item-align" label-position="left">
                                 <el-select 
                                   v-model="liveConfig.danmakuVoice" 
                                   class="full-width-input"
@@ -15457,7 +15457,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                     <h3 style="margin: 0; white-space: nowrap; flex-shrink: 0;">{{t('availableExtensions')}}</h3>
                     <el-input 
                       v-model="searchManageExtensionQuery" 
-                      :placeholder="t('search') || '搜索扩展...'" 
+                      :placeholder="t('search') || '확장 검색...'" 
                       clearable 
                       style="width: 200px;"
                     >
@@ -15507,7 +15507,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                         <el-tag type="info" size="small">v{{ extension.version }}</el-tag>   
                         <!-- 新增：可更新标签 -->                   
                         <el-tag v-if="extension.hasUpdate" type="warning" size="small" style="margin-left: 6px;">
-                          {{ t('updateAvailable') || '可更新' }}
+                          {{ t('updateAvailable') || '업데이트 가능' }}
                         </el-tag>
                       </div>
                       <p class="kb-description">{{ extension.author }}</p>
@@ -15570,7 +15570,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                       <h3 style="margin: 0; white-space: nowrap; flex-shrink: 0;">{{t('availableExtensions')}}</h3>
                       <el-input 
                         v-model="searchRemotePluginQuery" 
-                        :placeholder="t('search') || '搜索插件...'" 
+                        :placeholder="t('search') || '플러그인 검색...'" 
                         clearable 
                         style="width: 200px;"
                       >
@@ -15596,7 +15596,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                             {{ plugin.name }}
                             <!-- 新增：可更新标签 -->
                             <el-tag v-if="plugin.hasUpdate" type="warning" size="small" style="margin-left: 8px;">
-                              {{ t('updateAvailable') || '可更新' }}
+                              {{ t('updateAvailable') || '업데이트 가능' }}
                             </el-tag>
                           </h4>
                           <p class="plugin-description">{{ plugin.description }}</p>
@@ -16628,7 +16628,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                               class="status-pill-dropdown"
                             >
                               <div class="status-pill">
-                                <el-tooltip :content="t('chatUIMode') || '聊天模式'" placement="top" :show-after="500">
+                                <el-tooltip :content="t('chatUIMode') || '채팅 모드'" placement="top" :show-after="500">
                                   <span style="display: inline-flex; align-items: center; gap: 6px;">
                                     <i :class="{
                                       'fa-solid fa-bolt': systemSettings.chatMode === 'standard',
@@ -16637,9 +16637,9 @@ function updateElement(el, rawMarkdown, formatFn) {
                                     }"></i>
                                     <span class="pill-text">
                                       {{ 
-                                        systemSettings.chatMode === 'standard' ? (t('chatUIStandard') || '经典模式') : 
-                                        systemSettings.chatMode === 'entertainment' ? (t('chatUIEntertainment') || '娱乐模式') : 
-                                        (t('chatUIWork') || '办公模式') 
+                                        systemSettings.chatMode === 'standard' ? (t('chatUIStandard') || '클래식 모드') : 
+                                        systemSettings.chatMode === 'entertainment' ? (t('chatUIEntertainment') || '엔터테인먼트 모드') : 
+                                        (t('chatUIWork') || '오피스 모드') 
                                       }}
                                     </span>
                                   </span>
@@ -16650,15 +16650,15 @@ function updateElement(el, rawMarkdown, formatFn) {
                                 <el-dropdown-menu>
                                   <el-dropdown-item @click="systemSettings.chatMode = 'standard'; autoSaveSettings()">
                                     <i class="fa-solid fa-bolt" style="margin-right: 6px;"></i>
-                                    {{ t('chatUIStandard') || '经典模式' }}
+                                    {{ t('chatUIStandard') || '클래식 모드' }}
                                   </el-dropdown-item>
                                   <el-dropdown-item @click="systemSettings.chatMode = 'entertainment'; autoSaveSettings()">
                                     <i class="fa-solid fa-face-smile" style="margin-right: 6px;"></i>
-                                    {{ t('chatUIEntertainment') || '娱乐模式' }}
+                                    {{ t('chatUIEntertainment') || '엔터테인먼트 모드' }}
                                   </el-dropdown-item>
                                   <el-dropdown-item @click="systemSettings.chatMode = 'work'; autoSaveSettings()">
                                     <i class="fa-solid fa-gem" style="margin-right: 6px;"></i>
-                                    {{ t('chatUIWork') || '办公模式' }}
+                                    {{ t('chatUIWork') || '오피스 모드' }}
                                   </el-dropdown-item>
                                 </el-dropdown-menu>
                               </template>

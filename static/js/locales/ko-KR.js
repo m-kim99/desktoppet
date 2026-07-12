@@ -1,4 +1,7 @@
 window.lang_koKR = {
+        'upload': '업로드',
+        'backToDefaultView': '기본 보기로 돌아가기',
+        'refreshFailed': '새로고침 실패',
         'chat': '대화',
         'mainModel': '메인 모델',
         'tools': '도구',

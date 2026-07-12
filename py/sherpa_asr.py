@@ -29,7 +29,7 @@ def _get_recognizer(model_name: str = "sherpa-onnx-sense-voice-zh-en-ja-ko-yue")
     try:
         import sherpa_onnx
     except ImportError as e:
-        print("未安装 sherpa_onnx 库:",e)
+        print("sherpa_onnx library not installed:",e)
         return None
     
     model_dir = Path(DEFAULT_ASR_DIR) / model_name
@@ -39,11 +39,11 @@ def _get_recognizer(model_name: str = "sherpa-onnx-sense-voice-zh-en-ja-ko-yue")
     # Check the file exists; if not, return None instead of raising (to avoid crashing the main program)
     if not model_path.is_file() or not tokens_path.is_file():
         # Use logging or print here, don't raise ValueError, or server.py's lifespan will crash
-        print(f"提示: Sherpa 模型文件尚未下载，ASR 功能暂不可用。路径: {model_dir}")
+        print(f"Note: Sherpa model file not downloaded yet, ASR feature unavailable. Path: {model_dir}")
         return None
 
     device = _detect_device()
-    print(f"正在加载 Sherpa-ONNX 模型 [{model_name}] 使用设备 [{device}]...")
+    print(f"Loading Sherpa-ONNX model [{model_name}] using device [{device}]...")
 
     try:
         recognizer = sherpa_onnx.OfflineRecognizer.from_sense_voice(
@@ -58,7 +58,7 @@ def _get_recognizer(model_name: str = "sherpa-onnx-sense-voice-zh-en-ja-ko-yue")
         _last_model_name = model_name
         return _recognizer
     except Exception as e:
-        print(f"加载 Sherpa 模型时发生错误: {e}")
+        print(f"Error loading Sherpa model: {e}")
         return None
 
 # ---------- Core synchronous logic (runs in a thread pool) ----------

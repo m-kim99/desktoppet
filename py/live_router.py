@@ -123,7 +123,7 @@ async def stop_live():
 
     try:
 
-        print("开始停止直播监听...")
+        print("Stopping live-stream monitoring...")
         if yt_client is not None:
             yt_client.stop()
             yt_client = None
@@ -140,11 +140,11 @@ async def stop_live():
         # Clean up global variables
         current_loop = None
 
-        print("直播监听停止完成")
+        print("Live-stream monitoring stopped")
         return ApiResponse(success=True, message="直播监听停止成功")
 
     except Exception as e:
-        print(f"停止直播监听时出错: {e}")
+        print(f"Error stopping live-stream monitoring: {e}")
         return ApiResponse(success=False, message=f"停止失败: {str(e)}")
 
 @router.post("/reload", response_model=ApiResponse)

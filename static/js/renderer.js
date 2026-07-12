@@ -41,7 +41,7 @@ const A2UIRendererComponent = {
             >
               <el-input 
                 v-model="formData[item.props.key || ('input_'+index)]" 
-                :placeholder="item.props.placeholder || '请输入...'"
+                :placeholder="item.props.placeholder || '입력하세요...'"
                 size="large"
               >
                 <template #append v-if="item.props.action === 'search'">
@@ -60,7 +60,7 @@ const A2UIRendererComponent = {
             >
               <el-select 
                 v-model="formData[item.props.key]" 
-                :placeholder="item.props.placeholder || '请选择'" 
+                :placeholder="item.props.placeholder || '선택하세요'" 
                 style="width: 100%"
                 size="large"
               >
@@ -109,7 +109,7 @@ const A2UIRendererComponent = {
                 v-for="(listItem, lIdx) in item.props.items" 
                 :key="lIdx" 
                 class="a2ui-list-item"
-                @click="handleManualAction('点击条目', listItem.title)"
+                @click="handleManualAction('항목 클릭', listItem.title)"
               >
                 <div class="a2ui-list-title">{{ listItem.title }}</div>
                 <div class="a2ui-list-desc">{{ listItem.description }}</div>
@@ -235,8 +235,8 @@ const A2UIRendererComponent = {
             >
               <el-switch 
                 v-model="formData[item.props.key]" 
-                :active-text="item.props.activeText || '开'"
-                :inactive-text="item.props.inactiveText || '关'"
+                :active-text="item.props.activeText || '켜기'"
+                :inactive-text="item.props.inactiveText || '끄기'"
               />
             </el-form-item>
 
@@ -284,7 +284,7 @@ const A2UIRendererComponent = {
               <el-date-picker
                 v-model="formData[item.props.key]"
                 :type="item.props.subtype || 'date'" 
-                :placeholder="item.props.placeholder || '选择日期'"
+                :placeholder="item.props.placeholder || '날짜 선택'"
                 value-format="YYYY-MM-DD HH:mm:ss"
                 style="width: 100%;"
               />
@@ -300,7 +300,7 @@ const A2UIRendererComponent = {
                 v-model="formData[item.props.key]" 
                 allow-half 
                 show-text
-                :texts="['极差', '失望', '一般', '满意', '惊喜']"
+                :texts="['최악', '실망', '보통', '만족', '최고']"
               />
             </el-form-item>
 
@@ -364,7 +364,7 @@ const A2UIRendererComponent = {
               v-if="item.type === 'TTSBlock'" 
               class="a2ui-tts-block"
               @click="handleTTS(item.props.content, item.props.voice)"
-              title="点击播放语音"
+              title="클릭하여 음성 재생"
             >
               <div class="tts-icon">
                 <i class="fa-solid fa-volume-high"></i>
@@ -387,7 +387,7 @@ const A2UIRendererComponent = {
                 {{ item.props.title }}
               </div>
               <audio controls style="width: 100%; height: 40px;" :src="item.props.src">
-                您的浏览器不支持音频元素。
+                이 브라우저는 오디오 요소를 지원하지 않습니다.
               </audio>
               <div v-if="item.props.description" style="font-size: 12px; color: #909399; margin-top: 4px;">
                 {{ item.props.description }}
@@ -517,7 +517,7 @@ const A2UIRendererComponent = {
         this.$root.ClickToListen(text, voice);
       } else {
         console.warn('A2UI: 根实例上未找到 ClickToListen 方法。');
-        this.$emit('action', `TTS播放请求: ${text}`); // Fallback handling
+        this.$emit('action', `TTS 재생 요청: ${text}`); // Fallback handling
       }
     },
 
@@ -579,7 +579,7 @@ handleAction(item, extraValue) {
       let payload = item.props.label;
       
       if (item.props.action === 'search' && extraValue) {
-          payload = `搜索：${extraValue}`;
+          payload = `검색: ${extraValue}`;
       }
       else if (item.props.action === 'submit') {
         const formDataKeys = Object.keys(this.formData);
@@ -617,15 +617,15 @@ handleAction(item, extraValue) {
                 // Original code: payload = `Form submission:\n${details.join('\n')}`;
                 // Changed to: explicitly prepend the button name (item.props.label) to the message header
                 // ============================================================
-                payload = `提交操作：${item.props.label}\n表单数据：\n${details.join('\n')}`;
+                payload = `제출: ${item.props.label}\n폼 데이터:\n${details.join('\n')}`;
             } else {
                 // If the form is entirely empty, keep the button name
-                payload = `${item.props.label} (空表单提交)`;
+                payload = `${item.props.label} (빈 폼 제출)`;
             }
         }
       } 
       else if (item.props.data) {
-          payload = `选择操作：${item.props.label} (ID:${item.props.data})`;
+          payload = `선택: ${item.props.label} (ID:${item.props.data})`;
       }
       
       // Send the final payload to the parent
@@ -633,7 +633,7 @@ handleAction(item, extraValue) {
     },
 
     handleManualAction(actionName, title) {
-        this.$emit('action', `选择了：${title} - ${actionName}`);
+        this.$emit('action', `선택됨: ${title} - ${actionName}`);
     },
     relayAction(payload) {
         // Intercept the special signal: _A2UI_RESET_ALL_

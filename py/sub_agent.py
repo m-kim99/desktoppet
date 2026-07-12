@@ -71,7 +71,7 @@ class SubAgentExecutor:
                     
                     # Avoid a tight request loop when the network disconnects
                     if not assistant_response.strip():
-                        print(f"[SubAgent] 警告: 第 {iteration} 次迭代收到空回复(可能是API连接失败)，休眠3秒...")
+                        print(f"[SubAgent] Warning: # {iteration} iteration got empty reply (possibly API connection failed), sleeping 3s...")
                         await asyncio.sleep(3)
 
                     conversation_history.append({"role": "assistant", "content": assistant_response})
@@ -165,7 +165,7 @@ class SubAgentExecutor:
         target_platforms = task.platforms if task.platforms else ["chat"]
         
         # A. Always push to the web client (WebSocket)
-        print(f"[TaskExecutor] 正在广播任务完成信号到网页端: {task.title}")
+        print(f"[TaskExecutor] Broadcasting task-complete signal to web client: {task.title}")
         await ws_manager.broadcast({
             "type": "task_notification",
             "data": {
@@ -181,7 +181,7 @@ class SubAgentExecutor:
 
             handler = global_behavior_engine.handlers.get(platform)
             if not handler:
-                print(f"[TaskExecutor] 平台 {platform} 尚未注册 handler，跳过推送")
+                print(f"[TaskExecutor] platform {platform} has not registered a handler, skipping push")
                 continue
 
             trigger_obj = BehaviorTrigger(
@@ -204,13 +204,13 @@ class SubAgentExecutor:
 
             targets = global_behavior_engine.platform_targets.get(platform, [])
             if not targets:
-                print(f"[TaskExecutor] 平台 {platform} 未配置目标 ChatID，尝试使用空 ID 触发 fallback")
+                print(f"[TaskExecutor] platform {platform} has no target ChatID, trying empty ID trigger fallback")
                 asyncio.create_task(handler("", fake_behavior))
                 continue
 
             for chat_id in set(targets):
                 if chat_id:
-                    print(f"[TaskExecutor] 正在触发平台动作 -> {platform}:{chat_id}")
+                    print(f"[TaskExecutor] Triggering platform action -> {platform}:{chat_id}")
                     asyncio.create_task(handler(chat_id, fake_behavior))
 
         return {"success": True, "task_id": task_id, "result": result}
@@ -351,7 +351,7 @@ class SubAgentExecutor:
             return resp.json()["choices"][0]["message"]["content"].strip().upper().startswith("YES")
         except Exception as e:
             # Add logging; don't fail silently
-            print(f"[_check_task_completion_smart] 兜底检查请求失败: {e}")
+            print(f"[_check_task_completion_smart] fallback check request failed: {e}")
             return False
 
     async def _extract_final_result(self, task, conversation_history, http_client):
@@ -360,7 +360,7 @@ class SubAgentExecutor:
             resp = await http_client.post(self.simple_chat_endpoint, json={"messages": msgs, "model": "super-model"})
             return {"full": resp.json()["choices"][0]["message"]["content"].strip()}
         except Exception as e:
-            print(f"[_extract_final_result] 结果提取请求失败: {e}")
+            print(f"[_extract_final_result] result extraction request failed: {e}")
             return {"full": "任务执行完成，未提取到明确结果。"}
 
 async def run_subtask_in_background(task_id: str, workspace_dir: str, settings: Dict, consensus_content: Optional[str] = None):

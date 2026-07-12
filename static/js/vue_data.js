@@ -637,7 +637,7 @@ let vue_data = {
       maxConcurrency: 2,
       enabledInterruption: false,
       bufferWordList: [],
-      SampleText: 'super agent party链接一切！',
+      SampleText: 'super agent party가 모든 것을 연결합니다!',
       edgettsLanguage: 'zh-CN',
       edgettsGender: 'Female',
       edgettsVoice: 'XiaoyiNeural',
@@ -721,25 +721,25 @@ let vue_data = {
       mossSpeed: 1.0,
     },
     volcResourceOptions: [
-        { value: 'volc_tts_release', label: '旧版/标准版 (Standard)' },
+        { value: 'volc_tts_release', label: '구버전/표준 (Standard)' },
         // Doubao 1.0
-        { value: 'seed-tts-1.0', label: '豆包模型1.0 (字符版)' },
-        { value: 'volc.service_type.10029', label: '豆包1.0 (字符版-ServiceType)' },
-        { value: 'seed-tts-1.0-concurr', label: '豆包模型1.0 (并发版)' },
-        { value: 'volc.service_type.10048', label: '豆包1.0 (并发版-ServiceType)' },
+        { value: 'seed-tts-1.0', label: 'Doubao 모델 1.0 (문자 버전)' },
+        { value: 'volc.service_type.10029', label: 'Doubao 1.0 (문자 버전-ServiceType)' },
+        { value: 'seed-tts-1.0-concurr', label: 'Doubao 모델 1.0 (동시 버전)' },
+        { value: 'volc.service_type.10048', label: 'Doubao 1.0 (동시 버전-ServiceType)' },
         // Doubao 2.0
-        { value: 'seed-tts-2.0', label: '豆包模型2.0 (字符版)' },
+        { value: 'seed-tts-2.0', label: 'Doubao 모델 2.0 (문자 버전)' },
         // Voice cloning
-        { value: 'seed-icl-1.0', label: '声音复刻1.0 (字符版)' },
-        { value: 'seed-icl-1.0-concurr', label: '声音复刻1.0 (并发版)' },
-        { value: 'seed-icl-2.0', label: '声音复刻2.0 (字符版)' }
+        { value: 'seed-icl-1.0', label: '음성 복제 1.0 (문자 버전)' },
+        { value: 'seed-icl-1.0-concurr', label: '음성 복제 1.0 (동시 버전)' },
+        { value: 'seed-icl-2.0', label: '음성 복제 2.0 (문자 버전)' }
     ],
     activeTTSTab: 'default', // Controls TTS tab switching
     showAddTTSDialog: false, // Controls the add-TTS dialog's visibility
     newTTSConfig: {
       name: '',
       enabled: false,
-      SampleText: 'super agent party链接一切！',
+      SampleText: 'super agent party가 모든 것을 연결합니다!',
       engine: 'edgetts',
       edgettsLanguage: 'zh-CN',
       edgettsGender: 'Female',
@@ -1631,7 +1631,7 @@ let vue_data = {
       is_memory: false,
       memoryLimit: 10,
       userName:'user',
-      genericSystemPrompt: '{{char}}必须使用{{user}}使用的语言与之交流，例如：当{{user}}使用中文时，你也必须尽可能地使用中文！当{{user}}使用英文时，你也必须尽可能地使用英文！包括交代旁白等文字也是同理！',
+      genericSystemPrompt: '{{char}} must communicate with {{user}} in the language {{user}} uses. For example, when {{user}} uses Korean, you must use Korean as much as possible! When {{user}} uses English, you must use English! The same applies to narration and other text!',
       globalMemory: '',
     },
     textFiles: [],
@@ -1925,7 +1925,7 @@ client = OpenAI(
 response = client.chat.completions.create(
   model="super-model",
   messages=[
-      {"role": "user", "content": "什么是super agent party？"}
+      {"role": "user", "content": "super agent party가 뭐야?"}
   ]
 )
 print(response.choices[0].message.content)`,
@@ -1938,7 +1938,7 @@ async function main() {
   const completion = await client.chat.completions.create({
       model: "super-model",
       messages: [
-          { role: "user", content: "什么是super agent party？" }
+          { role: "user", content: "super agent party가 뭐야?" }
       ]
   });
   console.log(completion.choices[0].message.content);
@@ -1950,7 +1950,7 @@ main();`,
 -d '{
   "model": "super-model",
   "messages": [
-    {"role": "user", "content": "什么是super agent party？"}
+    {"role": "user", "content": "super agent party가 뭐야?"}
   ]
 }'`
     },  
@@ -2098,7 +2098,7 @@ main();`,
           "love", 
           "familiarity"
       ],
-      prompt: "请根据用户的发言态度、情感色彩以及你的角色设定，动态管理以下羁绊数值：\n1. love（好感度）：代表你对用户的喜爱与亲密度。如果用户表达善意、关心或与你互动愉快，请增加（+1至+5）；如果用户冷漠、辱骂或做出让你反感的行为，请降低（-1至-5）。该数值最大为50，最小为-50。\n2. familiarity（熟悉度）：代表你与用户的了解程度。随着交流次数的增多和彼此信息的分享，该数值应缓慢稳步上升（每次+1至+2），通常不会下降。该数值最大为100，最小为0。\n\n*特殊说明：如果你在上方没有看到“目前的属性数值”，说明这是你与该用户的首次互动。请直接根据用户当前第一句话的语气和态度，自主决定一个合理的初始值（例如 0 到 10 之间），直接输出标签即可。聊天时请尽量按照羁绊数值来变换语气、内容、风格等*"
+      prompt: "Based on the user's tone, emotional tenor, and your character setting, dynamically manage the following bond values:\n1. love (affinity): represents how much you like and feel close to the user. If the user is kind, caring, or pleasant to interact with, increase it (+1 to +5); if the user is cold, abusive, or does something you find off-putting, decrease it (-1 to -5). Max 50, min -50.\n2. familiarity: represents how well you know the user. As interactions increase and information is shared, it should rise slowly and steadily (+1 to +2 each time) and usually does not drop. Max 100, min 0.\n\n*Special note: If you do not see 'current attribute values' above, this is your first interaction with this user. Based on the tone and attitude of the user's very first sentence, decide a reasonable initial value on your own (e.g., between 0 and 10) and simply output the tags. During the chat, try to vary your tone, content, and style according to the bond values.*"
     },
     // Bond-system UI state
     activeAffectionTab: 'config', // Controls which tab is active

@@ -1,4 +1,7 @@
 window.lang_zhCN = {
+        'upload': '上传',
+        'backToDefaultView': '返回默认视图',
+        'refreshFailed': '刷新失败',
         'chat': '对话',
         'mainModel': '主模型',
         'tools': '工具',

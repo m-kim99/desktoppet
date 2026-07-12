@@ -121,7 +121,7 @@ async def get_image_media_type(image_url: str) -> str:
     return media_type
 
 async def custom_llm_tool(tool_name, query, image_url=None):
-    print(f"调用LLM工具：{tool_name}")
+    print(f"Calling LLM tool:{tool_name}")
     settings = await load_settings()
     llmTools = settings['llmTools']
     for llmTool in llmTools:

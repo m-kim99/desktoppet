@@ -700,11 +700,11 @@ async def lifespan(app: FastAPI):
     try:
         await asyncio.to_thread(sleep_guard.start)
         if sleep_guard.is_running():
-            print("🛡️ 防休眠保护已启动，系统将不会自动休眠")
+            print("🛡️ Sleep prevention started; the system will not auto-sleep")
         else:
-            print("⚠️ 防休眠启动失败，系统可能会在空闲时休眠")
+            print("⚠️ Failed to start sleep prevention; the system may sleep when idle")
     except Exception as e:
-        print(f"防休眠启动异常: {e}")
+        print(f"Sleep-prevention start error: {e}")
 
 
     from py.scheduler import AgentScheduler
@@ -863,9 +863,9 @@ async def lifespan(app: FastAPI):
 
     try:
         await asyncio.to_thread(sleep_guard.stop)
-        print("🛡️ 防休眠保护已停止，系统将恢复正常休眠策略")
+        print("🛡️ Sleep prevention stopped; normal sleep policy restored")
     except Exception as e:
-        print(f"防休眠停止异常: {e}")
+        print(f"Sleep-prevention stop error: {e}")
 
     if scheduler_task:
         scheduler_task.cancel()
@@ -2409,7 +2409,7 @@ async def tools_change_messages(request: ChatRequest, settings: dict):
                     Narrator_label = "旁白"
 
                 finalttsList = json.dumps(finalttsList, ensure_ascii=False, indent=4)
-                print("可用音色：",finalttsList)
+                print("Available voices:",finalttsList)
                 
                 newtts_messages = f"""
 Everything you generate will be converted to speech by a TTS model.
@@ -2663,7 +2663,7 @@ Clearly, for this request, sending the table directly using markdown syntax is m
                 if mem_content.strip():
                     content_append(request.messages, 'system', f"\n\n**MEMORY.md**:\n{mem_content}\n\n")
             except Exception as e:
-                print(f"读取 MEMORY.md 失败: {e}")
+                print(f"Failed to read MEMORY.md: {e}")
 
         # AGENTS.md
         try:
@@ -2671,7 +2671,7 @@ Clearly, for this request, sending the table directly using markdown syntax is m
             if agents_md:
                 content_append(request.messages, 'system', " **Important notes** (.agent/AGENTS.md):\n\n"+agents_md+"\n\n")
         except Exception as e:
-            print(f"[Agent Loader] 跳过AGENTS.md加载: {e}")
+            print(f"[Agent Loader] skipped loading AGENTS.md: {e}")
             pass
 
         # Project skills summary
@@ -2680,7 +2680,7 @@ Clearly, for this request, sending the table directly using markdown syntax is m
             if skills_message:
                 content_append(request.messages, 'system', skills_message)
         except Exception as e:
-            print(f"[Skill Loader] 扫描技能失败: {e}")
+            print(f"[Skill Loader] failed to scan skills: {e}")
 
     # Group-chat mode (semi-fixed; only changes when members change)
     cur_memory = None
@@ -2749,7 +2749,7 @@ Clearly, for this request, sending the table directly using markdown syntax is m
                 todo_message = "\n".join(todo_lines)
                 content_append(request.messages, 'system', todo_message)
         except Exception as e:
-            print(f"[Todo Loader] 跳过待办事项加载: {e}")
+            print(f"[Todo Loader] skipped loading todos: {e}")
 
     # 3. Subtask progress (cowork mode)
     if permissionMode == "cowork" and not request.is_sub_agent:
@@ -2859,7 +2859,7 @@ Clearly, for this request, sending the table directly using markdown syntax is m
                         if request.messages[-1]['role'] == 'user':
                             request.messages[-1]['content'] += f"\n\n[系统提示：用户刚刚使用'#'指令保存了以下记忆：“{mem_content_to_save}”，请简短确认你已记住。]"
                     except Exception as e:
-                        print(f"保存 MEMORY.md 失败: {e}")
+                        print(f"Failed to save MEMORY.md: {e}")
             elif user_text_trimmed.startswith('/'):
                 parts = user_text_trimmed[1:].split()
                 if parts:
@@ -2880,7 +2880,7 @@ Clearly, for this request, sending the table directly using markdown syntax is m
                                 if request.messages[-1]['role'] == 'user':
                                     request.messages[-1]['content'] += f"\n\n[系统提示：用户激活了技能“{skill_name}”，技能说明：\n{skill_content}\n请严格按技能说明处理用户请求。]"
                             except Exception as e:
-                                print(f"读取技能文档失败: {e}")
+                                print(f"failed to read skill docs: {e}")
 
     # Timestamp (changes every turn)
     if settings['tools']['time']['enabled'] and settings['tools']['time']['triggerMode'] == 'beforeThinking':
@@ -2889,7 +2889,7 @@ Clearly, for this request, sending the table directly using markdown syntax is m
         if request.messages and request.messages[-1]['role'] == 'user':
             request.messages[-1]['content'] += time_message
 
-    print(f"系统提示：{request.messages[0]['content']}")
+    print(f"System prompt:{request.messages[0]['content']}")
     return request
 
 def get_drs_stage(DRS_STAGE):
@@ -3088,7 +3088,7 @@ def sanitize_tool_calls(messages: list) -> list:
                     msgs[i]["tool_calls"] = None
                     # Also delete the orphaned tool messages found after it (they no longer have a corresponding assistant tool_calls)
                     del msgs[i+1:j]  # Delete all tool messages from i+1 to j-1
-                    print(f"[Sanitizer] 抹除 assistant 的 tool_calls 并移除相关 tool 消息，保留文本。缺失 id: {missing_ids}")
+                    print(f"[Sanitizer] Erased assistant tool_calls and removed related tool messages, kept text. Missing id: {missing_ids}")
                 else:
                     # No substantive content, so delete this assistant and its invalid tool messages
                     del msgs[i]        # Delete the assistant itself
@@ -3096,7 +3096,7 @@ def sanitize_tool_calls(messages: list) -> list:
                     # Delete the tool messages that originally followed it
                     # i now points to the original i+1 (since i was deleted), so delete from i to j-1
                     del msgs[i:j-1]    # Since i now points to the original i+1, adjust the number of tool messages to delete
-                    print(f"[Sanitizer] 删除无内容的 tool_calls assistant 及后续孤立的 tool 消息。缺失 id: {missing_ids}")
+                    print(f"[Sanitizer] Deleted empty tool_calls assistant and subsequent orphan tool messages. Missing id: {missing_ids}")
                     # Since i was deleted, don't advance the pointer; keep checking from the current position
                     continue
             else:
@@ -3120,7 +3120,7 @@ def sanitize_tool_calls(messages: list) -> list:
             if not found:
                 # Orphaned tool message; delete it
                 del msgs[i]
-                print(f"[Sanitizer] 删除孤立的 tool 消息: {msg.get('tool_call_id')}")
+                print(f"[Sanitizer] Deleted orphan tool message: {msg.get('tool_call_id')}")
                 continue
         
         i += 1
@@ -3168,7 +3168,7 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                 screen_size = v_settings.get('ScreenSize', [0, 0, 1280, 720])
                 is_grid_enabled = vision_control_enabled and v_settings.get('isEnableGrid', False)
 
-                print(f"正在执行桌面截图 (全屏: {is_full_screen}, 网格: {is_grid_enabled})...")
+                print(f"Taking desktop screenshot (fullscreen: {is_full_screen}, grid: {is_grid_enabled})...")
                 
                 # Initialize the screenshot offset
                 offset_x, offset_y = 0, 0
@@ -3197,7 +3197,7 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                 # 3. Scale to the transfer size (around 1280x720)
                 target_w, target_h = scale_to_fit(logical_width, logical_height, 1280, 720)
                 if screenshot.width > target_w or screenshot.height > target_h:
-                    print(f"检测到高分辨率屏幕，正在从 {screenshot.size} 缩放到 {(target_w, target_h)}")
+                    print(f"High-res screen detected; scaling from {screenshot.size} to {(target_w, target_h)}")
                     screenshot = await asyncio.to_thread(
                         screenshot.resize, (target_w, target_h), Image.Resampling.LANCZOS
                     )
@@ -3212,7 +3212,7 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
 
                 ui_tree_hint = ""
                 if vision_control_enabled:
-                    print("正在异步提取跨平台无障碍 UI 树并进行 0-1000 坐标对齐...")
+                    print("Asynchronously extracting cross-platform accessibility UI tree and aligning 0-1000 coordinates...")
                     # Pass in the logical viewport size (logical_width, logical_height) and the offset (offset_x, offset_y)
                     ui_tree_json = await get_desktop_ui_tree(
                         logical_width=logical_width,
@@ -3268,12 +3268,12 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                                 msg['content'] = new_content[0]['text']
                             else:
                                 msg['content'] = new_content
-                    print("已清理历史上下文中的旧截图。")
+                    print("Cleared old screenshots from history context.")
 
-                print(f"桌面截图与精简 UI 树已成功合并注入: {desktop_url}")
+                print(f"Desktop screenshot and slimmed UI tree merged and injected: {desktop_url}")
 
             except Exception as e:
-                print(f"后端桌面截图或 UI 树提取失败: {e}")
+                print(f"Backend desktop screenshot or UI-tree extraction failed: {e}")
 
         # =========================================================================
         # Phase 1: context compression (triggered only at the threshold; decides which messages to keep)
@@ -3341,7 +3341,7 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                     final_messages.append(msg)
                     pending_tool_call_ids.remove(t_id) # Matched successfully; remove it
                 else:
-                    print(f"[Sanitizer] 丢弃孤立的 tool 消息: {t_id}")
+                    print(f"[Sanitizer] Discarding orphan tool message: {t_id}")
                     continue
             
             elif role == "assistant":
@@ -3376,11 +3376,11 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                         last_msg["tool_calls"] = None
                     else:
                         setattr(last_msg, "tool_calls", None)
-                    print("[Sanitizer] 抹除末尾未闭合的 tool_calls")
+                    print("[Sanitizer] Erasing unclosed trailing tool_calls")
                     break # Done processing
                 else:
                     final_messages.pop()
-                    print("[Sanitizer] 弹出末尾无内容的孤立 tool_call 发起消息")
+                    print("[Sanitizer] Popping trailing empty orphan tool_call initiating message")
             else:
                 break
 
@@ -3456,7 +3456,7 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                     cur_memory = memory
                     break
             if cur_memory and cur_memory["providerId"]:
-                print("长期记忆启用")
+                print("Long-term memory enabled")
                 config={
                     "embedder": {
                         "provider": 'openai',
@@ -3486,7 +3486,7 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                     }
                 }
                 m0 = Memory.from_config(config)
-                print("长期记忆配置加载完成")
+                print("Long-term memory config loaded")
         open_tag = "<think>"
         close_tag = "</think>"
 
@@ -3524,7 +3524,7 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                         }
                     })
                 else:
-                    print(f"[WARNING] 跳过重复工具: {tool_name}")
+                    print(f"[WARNING] Skipping duplicate tool: {tool_name}")
 
         get_llm_tool_fuction = await get_llm_tool(settings)
         if get_llm_tool_fuction:
@@ -3676,7 +3676,7 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
         if settings["memorySettings"]["is_memory"] and settings["memorySettings"]["selectedMemory"] and settings["memorySettings"]["selectedMemory"] != "" and not request.is_sub_agent:
             # Username hint (fixed)
             if settings["memorySettings"]["userName"]:
-                print("添加用户名：\n\n" + settings["memorySettings"]["userName"] + "\n\n用户名结束\n\n")
+                print("Add username: \n\n" + settings["memorySettings"]["userName"] + "\n\nEnd username\n\n")
                 content_append(request.messages, 'system', "The default username talking with you is:\n\n" + settings["memorySettings"]["userName"] + "\n\nNote! Unless a user message states it was sent by another user, treat it as sent by the default user\n\n")
 
             # Fixed persona: character description, personality, dialogue example, custom systemPrompt, generic systemPrompt
@@ -3684,21 +3684,21 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                 if settings["memorySettings"]["userName"]:
                     cur_memory["description"] = cur_memory["description"].replace("{{user}}", settings["memorySettings"]["userName"])
                 cur_memory["description"] = cur_memory["description"].replace("{{char}}", cur_memory["name"])
-                print("添加角色设定：\n\n" + cur_memory["description"] + "\n\n角色设定结束\n\n")
+                print("Add character setting: \n\n" + cur_memory["description"] + "\n\nEnd character setting\n\n")
                 content_append(request.messages, 'system', "Character setting:\n\n" + cur_memory["description"] + "\n\nEnd of character setting\n\n")
 
             if cur_memory["personality"]:
                 if settings["memorySettings"]["userName"]:
                     cur_memory["personality"] = cur_memory["personality"].replace("{{user}}", settings["memorySettings"]["userName"])
                 cur_memory["personality"] = cur_memory["personality"].replace("{{char}}", cur_memory["name"])
-                print("添加性格设定：\n\n" + cur_memory["personality"] + "\n\n性格设定结束\n\n")
+                print("Add personality setting: \n\n" + cur_memory["personality"] + "\n\nEnd personality setting\n\n")
                 content_append(request.messages, 'system', "Personality setting:\n\n" + cur_memory["personality"] + "\n\nEnd of personality setting\n\n")
 
             if cur_memory['mesExample']:
                 if settings["memorySettings"]["userName"]:
                     cur_memory['mesExample'] = cur_memory['mesExample'].replace("{{user}}", settings["memorySettings"]["userName"])
                 cur_memory['mesExample'] = cur_memory['mesExample'].replace("{{char}}", cur_memory["name"])
-                print("添加对话示例：\n\n" + cur_memory['mesExample'] + "\n\n对话示例结束\n\n")
+                print("Add dialogue example: \n\n" + cur_memory['mesExample'] + "\n\nEnd dialogue example\n\n")
                 content_append(request.messages, 'system', "Dialogue example:\n\n" + cur_memory['mesExample'] + "\n\nEnd of dialogue example\n\n")
 
             if cur_memory["systemPrompt"]:
@@ -3735,7 +3735,7 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
             if settings["memorySettings"]["userName"]:
                 lore_content = lore_content.replace("{{user}}", settings["memorySettings"]["userName"])
             lore_content = lore_content.replace("{{char}}", cur_memory["name"])
-            print("添加世界观设定（动态，注入到用户消息）：\n\n" + lore_content + "\n\n世界观设定结束\n\n")
+            print("Add worldview setting (dynamic, injected into user message): \n\n" + lore_content + "\n\nEnd worldview setting\n\n")
             dynamic_user_context += f"\n\n[世界设定]\n{lore_content}"
 
         # Memory retrieval (dynamic, based on the current user input)
@@ -3753,7 +3753,7 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                 print("m0.search error:", e)
                 relevant_memories = ""
             if relevant_memories:
-                print("添加相关记忆（动态，注入到用户消息）：\n\n" + relevant_memories + "\n\n相关结束\n\n")
+                print("Add relevant memory (dynamic, injected into user message): \n\n" + relevant_memories + "\n\nEnd relevant\n\n")
                 dynamic_user_context += f"\n\n[相关记忆]\n{relevant_memories}"
 
         # Append the dynamic content to the end of the last user message
@@ -5042,7 +5042,7 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                             # ScreenSize format is [x, y, width, height]
                             screen_size = v_settings.get('ScreenSize',[0, 0, 1920, 1080])
                             time.sleep(0.5) # Wait a moment to ensure the screenshot tool is ready
-                            print(f"正在执行桌面截图 (全屏: {is_full_screen}, 网格: {is_grid_enabled})...")
+                            print(f"Taking desktop screenshot (fullscreen: {is_full_screen}, grid: {is_grid_enabled})...")
                             
                             # Initialize the coordinate offset
                             offset_x, offset_y = 0, 0
@@ -5101,7 +5101,7 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
 
                             ui_tree_hint = ""
                             if vision_control_enabled:
-                                print("正在异步提取跨平台无障碍 UI 树并进行 0-1000 坐标对齐...")
+                                print("Asynchronously extracting cross-platform accessibility UI tree and aligning 0-1000 coordinates...")
                                 # Pass in the logical viewport size (logical_width, logical_height) and the offset (offset_x, offset_y)
                                 ui_tree_json = await get_desktop_ui_tree(
                                     logical_width=logical_width,
@@ -5139,7 +5139,7 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                                             msg['content'] = ""
 
                         except Exception as e:
-                            print(f"后端桌面截图或获取 UI 树失败: {e}")
+                            print(f"Backend desktop screenshot or UI-tree fetch failed: {e}")
                             
                         images = await images_in_messages(request.messages, fastapi_base_url)
                         request.messages = await message_without_images(request.messages)
@@ -5463,9 +5463,9 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                         # full_content is the AI's complete reply text for the current turn
                         await extract_and_update_affection(full_content)
                     except Exception as e:
-                        print(f"解析好感度标签出错: {e}")
+                        print(f"Error parsing affinity tag: {e}")
                 if m0 and not request.is_sub_agent:
-                    print("记忆更新任务开始提交")
+                    print("Memory-update task submission started")
                     messages = f"用户说：{user_prompt}\n\n---\n\n你说：{full_content}"
                     infer = cur_memory.get('infer', False) or False
                     
@@ -5481,25 +5481,25 @@ async def generate_stream_response(client, reasoner_client, request: ChatRequest
                                 }
                                 func = partial(m0.add, user_id=memoryId, metadata=metadata, infer=infer)
                                 await loop.run_in_executor(executor, func, messages)
-                                print("记忆更新完成")
+                                print("Memory update complete")
                         
                         try:
                             loop = asyncio.get_running_loop()
                             task = asyncio.create_task(add())
                             task.add_done_callback(
-                                lambda t: print(f"任务异常: {t.exception()}") if t.exception() else None
+                                lambda t: print(f"Task exception: {t.exception()}") if t.exception() else None
                             )
                         except RuntimeError:
                             # No running event loop
                             asyncio.run(add())
                         except Exception as e:
-                            print(f"run_task 异常: {e}")
+                            print(f"run_task exception: {e}")
                             traceback.print_exc()
                     
                     import threading
                     thread = threading.Thread(target=run_task, daemon=True)
                     thread.start()
-                    print("记忆更新任务已提交到后台线程")
+                    print("Memory-update task submitted to background thread")
 
                 return
             except Exception as e:
@@ -5610,7 +5610,7 @@ async def generate_complete_response(client,reasoner_client, request: ChatReques
                     final_messages.append(msg)
                     pending_tool_call_ids.remove(t_id) # Matched successfully; remove it
                 else:
-                    print(f"[Sanitizer] 丢弃孤立的 tool 消息: {t_id}")
+                    print(f"[Sanitizer] Discarding orphan tool message: {t_id}")
                     continue
             
             elif role == "assistant":
@@ -5645,11 +5645,11 @@ async def generate_complete_response(client,reasoner_client, request: ChatReques
                         last_msg["tool_calls"] = None
                     else:
                         setattr(last_msg, "tool_calls", None)
-                    print("[Sanitizer] 抹除末尾未闭合的 tool_calls")
+                    print("[Sanitizer] Erasing unclosed trailing tool_calls")
                     break # Done processing
                 else:
                     final_messages.pop()
-                    print("[Sanitizer] 弹出末尾无内容的孤立 tool_call 发起消息")
+                    print("[Sanitizer] Popping trailing empty orphan tool_call initiating message")
             else:
                 break
 
@@ -5716,7 +5716,7 @@ async def generate_complete_response(client,reasoner_client, request: ChatReques
                 cur_memory = memory
                 break
         if cur_memory and cur_memory["providerId"]:
-            print("长期记忆启用")
+            print("Long-term memory enabled")
             config={
                 "embedder": {
                     "provider": 'openai',
@@ -5927,7 +5927,7 @@ async def generate_complete_response(client,reasoner_client, request: ChatReques
         if settings["memorySettings"]["is_memory"] and settings["memorySettings"]["selectedMemory"] and settings["memorySettings"]["selectedMemory"] != "" and not request.is_sub_agent:
             # Username hint (fixed)
             if settings["memorySettings"]["userName"]:
-                print("添加用户名：\n\n" + settings["memorySettings"]["userName"] + "\n\n用户名结束\n\n")
+                print("Add username: \n\n" + settings["memorySettings"]["userName"] + "\n\nEnd username\n\n")
                 content_append(request.messages, 'system', "The default username talking with you is:\n\n" + settings["memorySettings"]["userName"] + "\n\nNote! Unless a user message states it was sent by another user, treat it as sent by the default user\n\n")
 
             # Fixed persona: character description, personality, dialogue example, custom systemPrompt, generic systemPrompt
@@ -5935,21 +5935,21 @@ async def generate_complete_response(client,reasoner_client, request: ChatReques
                 if settings["memorySettings"]["userName"]:
                     cur_memory["description"] = cur_memory["description"].replace("{{user}}", settings["memorySettings"]["userName"])
                 cur_memory["description"] = cur_memory["description"].replace("{{char}}", cur_memory["name"])
-                print("添加角色设定：\n\n" + cur_memory["description"] + "\n\n角色设定结束\n\n")
+                print("Add character setting: \n\n" + cur_memory["description"] + "\n\nEnd character setting\n\n")
                 content_append(request.messages, 'system', "Character setting:\n\n" + cur_memory["description"] + "\n\nEnd of character setting\n\n")
 
             if cur_memory["personality"]:
                 if settings["memorySettings"]["userName"]:
                     cur_memory["personality"] = cur_memory["personality"].replace("{{user}}", settings["memorySettings"]["userName"])
                 cur_memory["personality"] = cur_memory["personality"].replace("{{char}}", cur_memory["name"])
-                print("添加性格设定：\n\n" + cur_memory["personality"] + "\n\n性格设定结束\n\n")
+                print("Add personality setting: \n\n" + cur_memory["personality"] + "\n\nEnd personality setting\n\n")
                 content_append(request.messages, 'system', "Personality setting:\n\n" + cur_memory["personality"] + "\n\nEnd of personality setting\n\n")
 
             if cur_memory['mesExample']:
                 if settings["memorySettings"]["userName"]:
                     cur_memory['mesExample'] = cur_memory['mesExample'].replace("{{user}}", settings["memorySettings"]["userName"])
                 cur_memory['mesExample'] = cur_memory['mesExample'].replace("{{char}}", cur_memory["name"])
-                print("添加对话示例：\n\n" + cur_memory['mesExample'] + "\n\n对话示例结束\n\n")
+                print("Add dialogue example: \n\n" + cur_memory['mesExample'] + "\n\nEnd dialogue example\n\n")
                 content_append(request.messages, 'system', "Dialogue example:\n\n" + cur_memory['mesExample'] + "\n\nEnd of dialogue example\n\n")
 
             if cur_memory["systemPrompt"]:
@@ -5986,7 +5986,7 @@ async def generate_complete_response(client,reasoner_client, request: ChatReques
             if settings["memorySettings"]["userName"]:
                 lore_content = lore_content.replace("{{user}}", settings["memorySettings"]["userName"])
             lore_content = lore_content.replace("{{char}}", cur_memory["name"])
-            print("添加世界观设定（动态，注入到用户消息）：\n\n" + lore_content + "\n\n世界观设定结束\n\n")
+            print("Add worldview setting (dynamic, injected into user message): \n\n" + lore_content + "\n\nEnd worldview setting\n\n")
             dynamic_user_context += f"\n\n[世界设定]\n{lore_content}"
 
         # Memory retrieval (dynamic, based on the current user input)
@@ -6004,7 +6004,7 @@ async def generate_complete_response(client,reasoner_client, request: ChatReques
                 print("m0.search error:", e)
                 relevant_memories = ""
             if relevant_memories:
-                print("添加相关记忆（动态，注入到用户消息）：\n\n" + relevant_memories + "\n\n相关结束\n\n")
+                print("Add relevant memory (dynamic, injected into user message): \n\n" + relevant_memories + "\n\nEnd relevant\n\n")
                 dynamic_user_context += f"\n\n[相关记忆]\n{relevant_memories}"
 
         # Append the dynamic content to the end of the last user message
@@ -6582,7 +6582,7 @@ async def generate_complete_response(client,reasoner_client, request: ChatReques
                 func = partial(m0.add, user_id=memoryId,metadata=metadata,infer=infer)
                 # Pass messages as a positional argument
                 await loop.run_in_executor(executor, func, messages)
-                print("知识库更新完成")
+                print("Knowledge base update complete")
 
             asyncio.create_task(add())
         return JSONResponse(content=response_dict)
@@ -7053,7 +7053,7 @@ async def chat_endpoint(request: ChatRequest, fastapi_request: Request):
         if len(parts) >= 2:
             override_memory_id = parts[1]
             request.model = parts[2] if len(parts) > 2 else 'super-model'
-            print(f"检测到动态 Memory ID: {override_memory_id}, 目标模型更新为: {request.model}")
+            print(f"Detected dynamic Memory ID: {override_memory_id}, target model updated to: {request.model}")
     
     model = request.model or 'super-model'
     enable_thinking = request.enable_thinking or False
@@ -7852,7 +7852,7 @@ async def asr_websocket_endpoint(websocket: WebSocket):
                             funasr_websocket = await websockets.connect(funasr_url)
                         except Exception as e:
                             funasr_websocket = None
-                            print(f"连接FunASR失败: {e}")
+                            print(f"Failed to connect to FunASR: {e}")
                 await websocket.send_json({
                     "type": "init_response",
                     "status": "ready"
@@ -7891,7 +7891,7 @@ async def asr_websocket_endpoint(websocket: WebSocket):
                             # 2. Start an async task to handle FunASR's responses
                             asyncio.create_task(handle_funasr_response(funasr_websocket, websocket))
                         except Exception as e:
-                            print(f"连接FunASR失败: {e}")
+                            print(f"Failed to connect to FunASR: {e}")
                             await websocket.send_json({
                                 "type": "error",
                                 "message": f"无法连接FunASR服务器: {str(e)}"
@@ -7937,7 +7937,7 @@ async def asr_websocket_endpoint(websocket: WebSocket):
                                     funasr_websocket = await websockets.connect(funasr_url)
                                 except Exception as e:
                                     funasr_websocket = None
-                                    print(f"连接FunASR失败: {e}")
+                                    print(f"Failed to connect to FunASR: {e}")
             elif msg_type == "audio_complete":
                 # Handle the complete audio data (non-streaming mode)
                 frame_id = message.get("id")
@@ -7997,7 +7997,7 @@ async def asr_websocket_endpoint(websocket: WebSocket):
                                     await funasr_websocket.send(json.dumps(end_config))
                                     print("Sent end signal")
                                 except websockets.exceptions.ConnectionClosed:
-                                    print("FunASR连接已关闭，无法发送结束信号")
+                                    print("FunASR connection closed; cannot send end signal")
                             funasr_websocket = None
 
                         elif asr_engine == "sherpa":
@@ -8572,7 +8572,7 @@ async def text_to_speech(request: Request):
         index = data.get('index', 0)
         tts_engine = tts_settings.get('engine', 'edgetts')
                 
-        print(f"TTS请求 - 引擎: {tts_engine}, 格式: {target_format}, 移动端优化: {mobile_optimized}")
+        print(f"TTSrequest - engine: {tts_engine}, format: {target_format}, mobile-optimized: {mobile_optimized}")
                 
         # ==========================================
         # 1. EdgeTTS engine
@@ -8948,7 +8948,7 @@ async def text_to_speech(request: Request):
                             yield chunk
                     except Exception as e:
                         # Note: if the stream breaks here, don't raise HTTPException anymore; just stop the stream
-                        print(f"ElevenLabs 传输中断: {str(e)}")
+                        print(f"ElevenLabs transfer interrupted: {str(e)}")
                         break
 
             # Mobile: convert to opus (must collect all chunks first)
@@ -9030,7 +9030,7 @@ async def text_to_speech(request: Request):
                 except Exception as e:
                     import traceback
                     traceback.print_exc()
-                    print(f"MOSS TTS 生成错误: {e}")
+                    print(f"MOSS TTS generation error: {e}")
                     raise HTTPException(status_code=500, detail=f"MOSS TTS 错误: {str(e)}")
 
             # Set the response header based on the return format
@@ -9203,7 +9203,7 @@ async def list_tetos_voices(request: Request):
         })
 
     except Exception as e:
-        print(f"获取 {provider} 音色列表失败: {e}")
+        print(f"Get {provider} voice-list fetch failed: {e}")
         # Catch auth failures, network errors, etc.
         return JSONResponse(status_code=500, content={
             "status": "error", 
@@ -9307,10 +9307,10 @@ async def get_system_voices():
             return processed_voices
             
         except ImportError:
-            print("错误: 未找到 pyttsx3 驱动")
+            print("Error: pyttsx3 driver not found")
             return []
         except Exception as e:
-            print(f"获取系统音色错误: {str(e)}")
+            print(f"Error getting system voices: {str(e)}")
             return []
 
     try:
@@ -9372,7 +9372,7 @@ async def process_mcp(mcp_id: str):
         if mcp_id in mcp_client_list:
             mcp_client_list[mcp_id].disabled = True
             await mcp_client_list[mcp_id].close()
-            print(f"关闭MCP服务器: {mcp_id}")
+            print(f"Closing MCP server: {mcp_id}")
 
         init_done.set()          # Wake the main coroutine
 
@@ -9411,7 +9411,7 @@ async def process_mcp(mcp_id: str):
             try:
                 tool = await mcp_client_list[mcp_id].get_openai_functions(disable_tools=[])
             except Exception as e:
-                print(f"获取工具失败: {str(e)}")
+                print(f"Failed to get tools: {str(e)}")
             finally:
                 retry += 1
                 await asyncio.sleep(0.5)
@@ -9455,7 +9455,7 @@ async def remove_mcp_server(request: Request):
                 mcp_client_list[server_name].disabled = True
                 await mcp_client_list[server_name].close()
                 del mcp_client_list[server_name]
-                print(f"关闭MCP服务器: {server_name}")
+                print(f"Closing MCP server: {server_name}")
 
             return JSONResponse({"success": True, "removed": server_name})
         else:
@@ -11043,7 +11043,7 @@ async def sync_all_bots_behavior(settings_dict: dict):
                 config_data["behaviorSettings"] = behavior_data
                 new_config = DiscordBotConfig(**config_data)
                 mgr.update_behavior_config(new_config)
-                print("WebSocket Sync: Discord 机器人行为配置已同步")
+                print("WebSocket Sync: Discord bot behavior config synced")
     except Exception as e:
         print(f"WebSocket Sync Error (Discord): {e}")
 
@@ -11057,7 +11057,7 @@ async def sync_all_bots_behavior(settings_dict: dict):
                 config_data["behaviorSettings"] = behavior_data
                 new_config = TelegramBotConfig(**config_data)
                 mgr.update_behavior_config(new_config)
-                print("WebSocket Sync: Telegram 机器人行为配置已同步")
+                print("WebSocket Sync: Telegram bot behavior config synced")
     except Exception as e:
         print(f"WebSocket Sync Error (Telegram): {e}")
 
@@ -11071,7 +11071,7 @@ async def sync_all_bots_behavior(settings_dict: dict):
                 config_data["behaviorSettings"] = behavior_data
                 new_config = SlackBotConfig(**config_data)
                 mgr.update_behavior_config(new_config)
-                print("WebSocket Sync: Slack 机器人行为配置已同步")
+                print("WebSocket Sync: Slack bot behavior config synced")
     except Exception as e:
         print(f"WebSocket Sync Error (Slack): {e}")
 
@@ -11080,10 +11080,10 @@ settings_lock = asyncio.Lock()
 async def websocket_endpoint(websocket: WebSocket):
     # 1. Establish the connection
     await ws_manager.connect(websocket)
-    print(f"[DEBUG] WebSocket连接建立成功")
+    print(f"[DEBUG] WebSocketconnection established")
     # [State marker] generate a unique ID for the current connection and initialize its state
     connection_id = str(shortuuid.ShortUUID().random(length=8))
-    print(f"[DEBUG] 连接ID: {connection_id}")
+    print(f"[DEBUG] Connection ID: {connection_id}")
     has_sent_prompt = False
     has_start_tts = False
     registered_ext_ids = set()
@@ -11232,7 +11232,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 if ext_id and tools:
                     node_ext_mcp_tools[ext_id] = tools
                     registered_ext_ids.add(ext_id)  # Record
-                    print(f"[MCP] Node扩展 {ext_id} 注册了 {len(tools)} 个工具")
+                    print(f"[MCP] Node extension {ext_id} registered {len(tools)} tools")
                     
                     # Notify all clients to update the tool list
                     await ws_manager.broadcast({
@@ -11254,7 +11254,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 if ext_id in node_ext_mcp_tools:
                     del node_ext_mcp_tools[ext_id]
                     registered_ext_ids.discard(ext_id)  # Remove the record
-                    print(f"[MCP] Node扩展 {ext_id} 已主动注销")
+                    print(f"[MCP] Node extension {ext_id} actively unregistered")
                     
                     await ws_manager.broadcast({
                         "type": "node_ext_mcp_unregistered",
@@ -11294,7 +11294,7 @@ async def websocket_endpoint(websocket: WebSocket):
         for ext_id in registered_ext_ids:
             if ext_id in node_ext_mcp_tools:
                 del node_ext_mcp_tools[ext_id]
-                print(f"[MCP] 连接断开，自动清理扩展 {ext_id}")
+                print(f"[MCP] connection dropped; auto-cleaning extension {ext_id}")
                 
                 await ws_manager.broadcast({
                     "type": "node_ext_mcp_unregistered",
@@ -12057,9 +12057,9 @@ if __name__ == "__main__":
     display_host = "127.0.0.1" if HOST == "0.0.0.0" else HOST
     
     print("\n" + "="*50)
-    print(f"🚀 后端服务已启动")
-    print(f"🔗 本地运行地址: http://{display_host}:{PORT}")
-    print(f"📖 API 文档地址: http://{display_host}:{PORT}/docs") # If it's FastAPI
+    print(f"🚀 Backend service started")
+    print(f"🔗 Local URL: http://{display_host}:{PORT}")
+    print(f"📖 API docs URL: http://{display_host}:{PORT}/docs") # If it's FastAPI
     print("="*50 + "\n")
 
     uvicorn.run(

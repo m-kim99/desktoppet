@@ -88,7 +88,7 @@ class AsyncClaudeAsOpenAI:
                     if models:
                         return ModelList(models)
             except Exception as e:
-                print(f"动态获取 Anthropic 模型列表失败 (可能代理/代理商不支持): {e}")
+                print(f"Dynamic fetch of Anthropic model list failed (possibly proxy / provider unsupported): {e}")
 
             # [Static fallback]: if the request errors or the provider's API doesn't implement /models, return common Claude models
             fallback_models =[]
