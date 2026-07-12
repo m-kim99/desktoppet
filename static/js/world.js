@@ -940,19 +940,39 @@ const sandTex = canvasTex(64, 2, 2, (ctx, s) => {
 // the classic Animal Crossing foliage read.
 // Baked top-lit gradient colors for a sphere geometry — split out so the season system can
 // recompute a lobe's palette in place (top/bottom accept hex or THREE.Color).
+// geo.userData.dapple(정점별 명암 지터)이 있으면 램프에 곱한다 — 계절이 잎색을 리베이크해도
+// 퍼프의 얼룩덜룩한 질감이 살아남는 통로.
 function gradColors(g, top, bottom) {
     const pos = g.attributes.position, r = g.parameters.radius;
+    const dap = g.userData && g.userData.dapple;
     const cT = new THREE.Color(top), cB = new THREE.Color(bottom), c = new THREE.Color();
     const cols = new Float32Array(pos.count * 3);
     for (let i = 0; i < pos.count; i++) {
         const t = THREE.MathUtils.clamp(pos.getY(i) / r * 0.5 + 0.5, 0, 1);
         c.copy(cB).lerp(cT, t);
-        cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b;
+        const d = dap ? dap[i] : 1;
+        cols[i * 3] = c.r * d; cols[i * 3 + 1] = c.g * d; cols[i * 3 + 2] = c.b * d;
     }
     return cols;
 }
+// 잎 로브: 매끈한 구 → 올록볼록 퍼프(동숲 크라운의 "브로콜리" 실루엣). 방향 기반 저주파 럼프로
+// 정점을 방사형 변위하고, 볼록한 데는 밝게/골은 어둡게(dapple) 구워서 질감이 읽히게 한다.
+// 씸(경도 0/2π 중복 정점)은 위치가 같아 변위도 같으므로 크랙 없음.
 function gradSphereGeo(r, topHex, bottomHex) {
-    const g = new THREE.SphereGeometry(r, 18, 14);
+    const g = new THREE.SphereGeometry(r, 20, 15);
+    const pos = g.attributes.position;
+    const dap = new Float32Array(pos.count);
+    const v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+        v.set(pos.getX(i), pos.getY(i), pos.getZ(i)).divideScalar(r);   // 단위 방향
+        const n = Math.sin(v.x * 5.3 + v.y * 3.9) * Math.sin(v.y * 4.5 - v.z * 6.1) * Math.sin(v.z * 5.1 + v.x * 3.3)
+                + 0.5 * Math.sin(v.x * 9.7 - v.y * 8.1) * Math.sin(v.z * 10.3 + v.y * 7.7);   // 큰 럼프 + 잔 보풀
+        const k = 1 + 0.1 * n;
+        pos.setXYZ(i, pos.getX(i) * k, pos.getY(i) * k, pos.getZ(i) * k);
+        dap[i] = 1 + 0.15 * n;
+    }
+    g.computeVertexNormals();
+    g.userData.dapple = dap;
     g.setAttribute('color', new THREE.Float32BufferAttribute(gradColors(g, topHex, bottomHex), 3));
     return g;
 }
@@ -1101,6 +1121,17 @@ function buildIslandMeshes(isl) {
             colors.push(c.r, c.g, c.b);
         }
     }
+    // 잔디 스커트(turf lip): 테두리에서 절벽 안쪽으로 말려 내려가는 한 겹. 굴곡진 잔디 끝단(y가
+    // 지형 따라 들쭉날쭉)과 고정 높이 절벽 상단(0.004) 사이에 각도에 따라 틈이 생겨 낮은 앵글에서
+    // 섬 내부가 관통돼 보이던 것을 모든 방향에서 봉인한다 — 동숲 섬의 "잔디가 절벽을 덮는 입술".
+    const skirtStart = positions.length / 3;
+    for (let j = 0; j < segs; j++) {
+        const a = (j / segs) * Math.PI * 2;
+        const x = isl.x + Math.cos(a) * isl.r * 1.004, z = isl.z + Math.sin(a) * isl.r * 1.004;
+        positions.push(x, -0.26, z);
+        uvs.push(x * 0.8, z * 0.8);
+        colors.push(0.52, 0.47, 0.4);   // 흙그늘 톤 — 지층 절벽과 이어지는 어두운 립
+    }
     for (let i = 0; i < rings; i++) {
         for (let j = 0; j < segs; j++) {
             const a = i * segs + j;
@@ -1110,13 +1141,22 @@ function buildIslandMeshes(isl) {
             indices.push(a, b, d, b, e, d);
         }
     }
+    for (let j = 0; j < segs; j++) {   // 마지막 잔디 링 → 스커트 링
+        const a = rings * segs + j;
+        const b = rings * segs + (j + 1) % segs;
+        const d = skirtStart + j;
+        const e = skirtStart + (j + 1) % segs;
+        indices.push(a, b, d, b, e, d);
+    }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geo.setIndex(indices);
     geo.computeVertexNormals();
-    const grass = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: grassTex, vertexColors: true, roughness: 1, metalness: 0 }));
+    // DoubleSide: 물이 반투명이라 수면 너머로 섬 껍데기의 뒷면이 보이는 각도가 있다 — 한 면
+    // 컬링이면 그 자리가 "뚫린 것"처럼 하늘/건너편이 비친다. 잔디·절벽 둘 다 양면으로.
+    const grass = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: grassTex, vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide }));
     grass.receiveShadow = true;
     stage.add(grass);
     seasonGrass.push(grass);   // the season system re-tints this (and snow-swaps its texture)
@@ -1131,7 +1171,7 @@ function buildIslandMeshes(isl) {
     ];
     const cliff = new THREE.Mesh(
         new THREE.LatheGeometry(pts, Math.max(48, Math.round(isl.r * 14))),
-        new THREE.MeshStandardMaterial({ map: strataTex, roughness: 1, metalness: 0, flatShading: true })
+        new THREE.MeshStandardMaterial({ map: strataTex, roughness: 1, metalness: 0, flatShading: true, side: THREE.DoubleSide })
     );
     cliff.position.set(isl.x, 0, isl.z);
     cliff.castShadow = true;         // islands shade the sea at low sun
@@ -1176,9 +1216,21 @@ let seasonTreeNo = 0;   // stable per-tree pick from the autumn palette trio
 function makeProceduralTree(p) {
     const g = new THREE.Group();
     const cherry = !!(p && p.cherry);
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.095, 0.46, 10), M(cherry ? 0x8a5a48 : 0x9a6a45, { map: woodTex }));
-    trunk.position.y = 0.23;
+    // 트렁크: 민무늬 원기둥 → 밑동 플레어 있는 Lathe + 크라운으로 뻗는 가지 스텁 둘 (동숲 문법)
+    const trunkMat = M(cherry ? 0x8a5a48 : 0x9a6a45, { map: woodTex });
+    const trunkPts = [];
+    for (let i = 0; i <= 6; i++) {
+        const t = i / 6;
+        trunkPts.push(new THREE.Vector2(0.058 + 0.052 * Math.pow(1 - t, 2.8) + 0.008 * t, t * 0.5));
+    }
+    const trunk = new THREE.Mesh(new THREE.LatheGeometry(trunkPts, 10), trunkMat);
     g.add(trunk);
+    for (const [ang, tilt] of [[0.7, 0.5], [3.6, -0.45]]) {
+        const branch = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.03, 0.24, 7), trunkMat);
+        branch.position.set(Math.cos(ang) * 0.1, 0.5, Math.sin(ang) * 0.1);
+        branch.rotation.set(Math.sin(ang) * 0.5, 0, tilt);
+        g.add(branch);
+    }
     // Fluffy crown: overlapping spheres with a baked top-lit gradient; the big (non-cherry) tree
     // gets berries. Every lobe registers with the season system — 잎 리베이크 + 겨울 눈모자 — and
     // a cherry tree carries its own falling-petal cloud (spring only), tree-local so it follows
@@ -1193,7 +1245,7 @@ function makeProceduralTree(p) {
         s.position.set(x, y, z);
         g.add(s);
         seasonLeaves.push({ geo, orig: [top, bottom], cherry, treeNo, li });
-        const cap = new THREE.Mesh(new THREE.SphereGeometry(r * 1.045, 16, 6, 0, Math.PI * 2, 0, Math.PI * 0.4), snowCapMat);
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(r * 1.13, 16, 6, 0, Math.PI * 2, 0, Math.PI * 0.4), snowCapMat);
         cap.position.set(x, y, z);
         cap.visible = false;
         g.add(cap);
@@ -3541,7 +3593,7 @@ function makePeckTree() {
         const s = new THREE.Mesh(gradSphereGeo(r, top, bottom), leafMatGrad);
         s.position.set(x, y, z);
         g.add(s);
-        const cap = new THREE.Mesh(new THREE.SphereGeometry(r * 1.045, 16, 6, 0, Math.PI * 2, 0, Math.PI * 0.4), snowCapMat);
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(r * 1.13, 16, 6, 0, Math.PI * 2, 0, Math.PI * 0.4), snowCapMat);
         cap.position.set(x, y, z);
         cap.visible = false;
         g.add(cap);
@@ -4900,10 +4952,14 @@ let oceanMesh = null;
         shader.fragmentShader = 'uniform float uWxT;\nvarying vec2 vSeaXZ;\nvarying float vSeaFade;\n' + shader.fragmentShader
             .replace('#include <normal_fragment_begin>', [
                 '#include <normal_fragment_begin>',
-                'float spkA = sin(vSeaXZ.x * 14.0 + uWxT * 1.7) * sin(vSeaXZ.y * 17.0 - uWxT * 1.3);',
-                'float spkB = sin(vSeaXZ.x * 23.0 - vSeaXZ.y * 19.0 + uWxT * 2.3);',
-                'float spkC = sin((vSeaXZ.x + vSeaXZ.y) * 31.0 + uWxT * 3.1);',
-                'normal = normalize(normal + vec3(spkA * 0.055 + spkB * 0.04, 0.0, spkB * 0.045 - spkC * 0.05) * vSeaFade);',
+                // 물비늘: 고주파(파장 ~10cm)라 격자가 아니라 입자로 읽히고, 저주파 패치 봉투가
+                // 균일 반복을 깬다. 진폭은 스페큘러가 부서질 만큼만 — 크게 주면 디퓨즈까지
+                // 체커 무늬가 배어나 근거리 수면에 초록 격자가 그려진다 (실측 스샷에서 확인).
+                'float spkA = sin(vSeaXZ.x * 33.0 + uWxT * 2.1) * sin(vSeaXZ.y * 39.0 - uWxT * 1.6);',
+                'float spkB = sin(vSeaXZ.x * 52.0 - vSeaXZ.y * 47.0 + uWxT * 2.9);',
+                'float spkC = sin((vSeaXZ.x + vSeaXZ.y) * 66.0 + uWxT * 3.7);',
+                'float spkEnv = 0.55 + 0.45 * sin(vSeaXZ.x * 2.3 + uWxT * 0.7) * sin(vSeaXZ.y * 2.9 - uWxT * 0.5);',
+                'normal = normalize(normal + vec3(spkA * 0.03 + spkB * 0.022, 0.0, spkB * 0.024 - spkC * 0.027) * (spkEnv * vSeaFade));',
             ].join('\n'));
     };
     oceanMesh = new THREE.Mesh(geo, seaMat);
