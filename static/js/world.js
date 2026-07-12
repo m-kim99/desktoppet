@@ -6251,7 +6251,11 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     pointerNdc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
     raycaster.setFromCamera(pointerNdc, camera);
     if (constelMode) { pickConstelStar(); return; }   // ⭐ 별 잇기 모드 — 탭은 전부 별 선택
-    for (const p of pets) {
+    // 🎣 입질/파이팅 중엔 어디를 클릭하든 챔질·입력 잠금이 우선
+    if (fishing && fishing.state !== 'idle' && fishingIntercept()) return;
+    // 🎣 낚싯대 든 동안 좌클릭은 펫을 통과 — 펫 실루엣과 겹치는 물을 노릴 때 클릭이 먹히던 문제
+    const fishingAim = fishing && fishing.state === 'idle' && e.button !== 2 && e.pointerType !== 'touch';
+    if (!fishingAim) for (const p of pets) {
         if (raycaster.intersectObject(p.mover, true).length) {
             if (e.button !== 2 && e.pointerType !== 'touch') return;   // 마우스는 RIGHT-click 전용 (left = camera) · 터치는 탭이 곧 상호작용
             if (p.bed && p.bed.mode === 'sit') { p.bedExit = true; return; }   // tap a sitter → gets up
@@ -6270,6 +6274,14 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     if (e.button === 2 && boatRide && !boatRide.passenger && raycaster.intersectObject(boatGroup, true).length) {
         showBoatMenu(e.clientX, e.clientY);
         return;
+    }
+    // 🎣 낚싯대 든 채 물 클릭 = 캐스팅 (해석은 tryCastAtScreen — 헤드리스 진단과 공유)
+    if (fishing && fishing.state === 'idle' && possessed === fishing.p && !airborne) {
+        const res = tryCastAtScreen();   // raycaster는 위에서 이미 세팅됨
+        if (res === 'cast') return;
+        if (res === 'far') { showToast('🎣 너무 멀어요 — 물가에 더 가까이 가서 던져요'); return; }
+        if (res === 'near') { showToast('🎣 발밑 말고 조금 앞에 던져요!'); return; }
+        // 'land' = 물이 아님 — 아래 일반 클릭 처리로 계속
     }
     // 추억의 섬 소품 (쪼아쪼아나무·소원우물·타임캡슐): 클릭/탭으로 상호작용 — 드래그는 위의
     // slop 판정에서 이미 걸러졌으니 좌클릭 탭도 카메라와 안 싸운다.
@@ -6920,6 +6932,24 @@ if (statsOn) window.__worldDev = {
     season: (id) => setManualSeason(id),
     // 펫 몸통의 화면 좌표 — 스모크의 우클릭 프로브가 격자 스캔(위치 랜덤) 대신 정확히 조준한다
     petScreenXY: () => pets.map((p) => { const a = fxPoint(p, 50, 45); return { x: Math.round(a.x), y: Math.round(a.y) }; }),
+    fishState: () => (fishing ? fishing.state : null),   // 낚시 헤드리스 검증용
+    tp: (x, z, rotY) => {   // 조종 펫 순간이동 — 헤드리스 테스트가 소품 미로를 건너뛰게
+        if (!possessed) return;
+        possessed.mover.position.set(x, world.groundHeightAt(x, z), z);
+        if (Number.isFinite(rotY)) possessed.mover.rotation.y = rotY;
+    },
+    castAt: (x, z) => {   // 좌표 직접 캐스팅 — 입질~랜딩 플로우 검증용 (클릭 해석과 분리)
+        if (fishing && fishing.state === 'idle') startCast({ x, z, water: islandOf(x, z) < 0 ? 'sea' : 'pond' });
+    },
+    aim: (sx, sy) => {   // 화면 좌표의 캐스팅 해석 결과 — 클릭 밴드 진단용
+        pointerNdc.set((sx / window.innerWidth) * 2 - 1, -(sy / window.innerHeight) * 2 + 1);
+        raycaster.setFromCamera(pointerNdc, camera);
+        if (!fishing || fishing.state !== 'idle') return 'no-rod';
+        const before = fishing.state;
+        const r = tryCastAtScreen();
+        if (r === 'cast') { cancelFishing(true); }   // 진단이 실제 캐스팅을 남기지 않게 즉시 회수
+        return r + (before !== 'idle' ? '?' : '');
+    },
 };
 ecoBtn.addEventListener('dblclick', () => {
     statsOn = !statsOn;
@@ -7178,6 +7208,8 @@ const chickBtn = dockBtn('🐤', '병아리 조종하기 — 다시 누르면 �
 chickBtn.onclick = () => possessByName('chick');
 const puppyBtn = dockBtn('🐶', '강아지 조종하기 — 다시 누르면 해제');
 puppyBtn.onclick = () => possessByName('puppy');
+const fishBtn = dockBtn('🎣', '낚싯대 들기/정리 — 물을 클릭해 캐스팅, 찌가 푹 잠기면 ⌘/Space 챔질');
+fishBtn.onclick = () => equipFishing();
 bindZoomBtn(dockBtn('＋', '확대 (키보드 + 키)'), -1);
 bindZoomBtn(dockBtn('－', '축소 (키보드 - 키)'), 1);
 document.body.appendChild(dockUI);
@@ -9004,7 +9036,10 @@ function releasePossession() {
 const ARROW_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 // 조종 액션 3종 — 키보드(Space·Ctrl/⌘·Esc)와 터치 버튼(🦘·✋·✕)이 같은 함수를 부른다.
 function doJump() {
-    if (!possessed || jumpsLeft <= 0) return;
+    if (!possessed) return;
+    if (fishing && (fishing.state === 'bite' || fishing.state === 'wait')) { fishingIntercept(); return; }   // Space도 챔질
+    if (fishing && fishing.state !== 'idle') return;   // 시전·파이팅 중 점프 잠금
+    if (jumpsLeft <= 0) return;
     const airPress = airborne;                                    // 공중 발동 = 폴짝 이펙트 대상
     const full = jumpsLeft === 2;                                 // 지상 점프를 아직 안 썼다 — 걸어서 떨어진 직후 포함
     jumpsLeft -= 1;
@@ -9035,6 +9070,7 @@ function doInteract() {
     // hand; enter/exit the car; tuck into a bed; open the coffee/food/radio panels; or cycle a
     // streetlamp — in that priority order.
     if (!possessed) return;
+    if (fishingIntercept()) return;   // 🎣 입질 챔질 / 성급 걷어들이기 / 연출 중 잠금
     if (boatRide) { exitBoat(); return; }
     if (possessed.swimming === 'sea') {
         const pos = possessed.mover.position;
@@ -9258,12 +9294,23 @@ function updatePlayer(delta) {
         if (touchMove.active) acc += 1.9 * Math.max(0, touchMove.z) - 1.4 * Math.max(0, -touchMove.z);
         let steer = (heldKeys.has('ArrowLeft') ? 1 : 0) - (heldKeys.has('ArrowRight') ? 1 : 0);
         if (touchMove.active) steer = THREE.MathUtils.clamp(steer - touchMove.x, -1, 1);
+        if (fishing && fishing.state !== 'idle' && (acc !== 0 || steer !== 0)) cancelFishing(true);   // 노 저으면 걷어들인다
         stepBoat(acc, steer, delta, p);
         const rowHint = IS_TOUCH
             ? `🚣 ${p.name === 'chick' ? '병아리' : '강아지'} 노 젓는 중${boatRide.passenger ? ' 👥' : ''} — 스틱 젓기·방향 · ✋ 내리기 · ✕ 해제`
             : `🚣 ${p.name === 'chick' ? '병아리' : '강아지'} 노 젓는 중${boatRide.passenger ? ' 👥' : ''} — ↑↓ 노 젓기·후진 · ←→ 방향 · Ctrl/⌘ 내리기(물로 퐁당) · Esc 해제`;
         if (controlHint.textContent !== rowHint) controlHint.textContent = rowHint;
         return;
+    }
+    // 🎣 낚시 입력 규칙: 대기·입질 중 이동 입력 = 조용히 걷어들이고 걷기 재개, 시전·파이팅·연출 중 = 입력 잠금
+    if (fishing && fishing.p === p && fishing.state !== 'idle') {
+        const moveInput = heldKeys.has('ArrowUp') || heldKeys.has('ArrowDown') || heldKeys.has('ArrowLeft') || heldKeys.has('ArrowRight') || touchMove.active;
+        if (fishing.state === 'wait' || fishing.state === 'bite') {
+            if (moveInput) cancelFishing(true);
+        } else {
+            p.pet.walking = false;
+            return;
+        }
     }
     let ix = 0, iz = 0;
     if (heldKeys.has('ArrowUp')) iz += 1;
@@ -9910,6 +9957,560 @@ function updateBoatHop(delta) {
         else { q.swimming = false; releaseAI(q); snapToLand(q); }   // 그 사이 하선했으면 뭍으로
     }
 }
+// ---- 🎣 낚시 (동숲식 — 어떤 물가든): 독 🎣로 낚싯대를 들고, 물을 클릭해 캐스팅, 입질 타이밍에
+// ⌘/클릭으로 챔질. 모든 동작은 이 파일의 전용 안무(아래 updateFishing) — 캔 모션 재활용 없음.
+// 어종은 절차 생성(외부 에셋 0), 도감은 localStorage 'world-fishdex'. ----
+const FISH_SPECIES = [
+    { id: 'crucian',  ko: '붕어',    water: 'pond', rarity: 1, len: [12, 24], body: 'oval',  back: 0x8fa06b, belly: 0xe2dcc0 },
+    { id: 'goldfish', ko: '금붕어',  water: 'pond', rarity: 2, len: [6, 14],  body: 'oval',  back: 0xf0863c, belly: 0xffd9a8 },
+    { id: 'koi',      ko: '잉어',    water: 'pond', rarity: 3, len: [30, 62], body: 'oval',  back: 0xe8e2d6, belly: 0xf2a48e },
+    { id: 'mackerel', ko: '고등어',  water: 'sea',  rarity: 1, len: [22, 38], body: 'sleek', back: 0x4f7fb5, belly: 0xdfe8ee },
+    { id: 'puffer',   ko: '복어',    water: 'sea',  rarity: 2, len: [14, 26], body: 'round', back: 0xc9b26a, belly: 0xf5ecd2 },
+    { id: 'ray',      ko: '가오리',  water: 'sea',  rarity: 3, len: [40, 85], body: 'flat',  back: 0x7a6f8e, belly: 0xd9d2e2 },
+    { id: 'boot',     ko: '헌 장화', water: 'any',  rarity: 0, len: [26, 26], body: 'boot',  back: 0x8a6647, belly: 0x6f5234 },
+    { id: 'bottle',   ko: '유리병',  water: 'any',  rarity: 0, len: [18, 18], body: 'bottle', back: 0xa8d8cf, belly: 0xd8f0ea },
+];
+function makeFishMesh(sp, sizeK) {
+    const g = new THREE.Group();
+    if (sp.body === 'boot') {
+        const shaft = new THREE.Mesh(bakeGrad(new RoundedBoxGeometry(0.07, 0.13, 0.09, 2, 0.02), sp.back, sp.belly), gradMat);
+        shaft.position.y = 0.05;
+        g.add(shaft);
+        const toe = new THREE.Mesh(bakeGrad(new RoundedBoxGeometry(0.07, 0.05, 0.09, 2, 0.02), sp.back, sp.belly), gradMat);
+        toe.position.set(0, 0.005, 0.07);
+        g.add(toe);
+    } else if (sp.body === 'bottle') {
+        const body = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.035, 0.04, 0.14, 10), sp.back, sp.belly), gradMatDS);
+        body.position.y = 0.07;
+        g.add(body);
+        const neck = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.016, 0.022, 0.05, 8), sp.back, sp.belly), gradMatDS);
+        neck.position.y = 0.16;
+        g.add(neck);
+        const cork = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.017, 0.017, 0.022, 8), 0xc9a06a, 0x9a7448), gradMat);
+        cork.position.y = 0.19;
+        g.add(cork);
+        const note = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.09, 6), M(0xfdf3df));   // 돌돌 말린 편지
+        note.position.y = 0.08;
+        note.rotation.z = 0.18;
+        g.add(note);
+    } else if (sp.body === 'flat') {   // 가오리 — 납작 다이아 + 꼬리
+        const disc = new THREE.Mesh(bakeGrad(new THREE.SphereGeometry(0.09, 10, 8), sp.back, sp.belly), gradMat);
+        disc.scale.set(1.5, 0.28, 1.1);
+        g.add(disc);
+        for (const s of [-1, 1]) {   // 날개 끝 살짝 들림
+            const tipW = new THREE.Mesh(bakeGrad(new THREE.ConeGeometry(0.035, 0.09, 6), sp.back, sp.belly), gradMat);
+            tipW.rotation.z = s * 1.35;
+            tipW.position.set(s * 0.15, 0.01, 0);
+            g.add(tipW);
+        }
+        const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.011, 0.16, 6), gradMat);
+        bakeGrad(tail.geometry, sp.back, sp.back);
+        tail.rotation.x = Math.PI / 2 + 0.25;
+        tail.position.set(0, 0.01, -0.15);
+        g.add(tail);
+    } else {   // oval/sleek/round — lathe 몸통 + 꼬리·등지느러미 + 눈
+        const prof = [];
+        const L = sp.body === 'sleek' ? 0.24 : sp.body === 'round' ? 0.15 : 0.19;   // 반길이
+        const W = sp.body === 'sleek' ? 0.05 : sp.body === 'round' ? 0.085 : 0.062; // 최대 반폭
+        for (let i = 0; i <= 7; i++) {
+            const t = i / 7;
+            prof.push(new THREE.Vector2(Math.max(0.001, Math.sin(t * Math.PI) ** (sp.body === 'round' ? 0.75 : 1.15) * W), (t - 0.5) * 2 * L));
+        }
+        const bodyGeo = new THREE.LatheGeometry(prof, 12);
+        bodyGeo.rotateX(Math.PI / 2);   // 머리 +z
+        const body = new THREE.Mesh(bakeGrad(bodyGeo, sp.back, sp.belly), gradMat);
+        body.scale.y = 0.82;            // 살짝 눌린 물고기 단면
+        g.add(body);
+        const tailGeo = new THREE.ConeGeometry(0.05, 0.09, 3);
+        tailGeo.rotateX(-Math.PI / 2);
+        tailGeo.scale(0.4, 1, 1);
+        const tail = new THREE.Mesh(bakeGrad(tailGeo, sp.back, sp.back), gradMat);
+        tail.position.set(0, 0, -L - 0.035);
+        g.add(tail);
+        const fin = new THREE.Mesh(bakeGrad(new THREE.ConeGeometry(0.04, 0.055, 3).scale(0.35, 1, 1), sp.back, sp.back), gradMat);
+        fin.position.set(0, W * 0.82 + 0.015, 0.02);
+        g.add(fin);
+        if (sp.body === 'round') {   // 복어 가시
+            for (let i = 0; i < 9; i++) {
+                const a = (i / 9) * Math.PI * 2;
+                const spike = new THREE.Mesh(bakeGrad(new THREE.ConeGeometry(0.012, 0.035, 5), sp.belly, sp.back), gradMat);
+                spike.position.set(Math.cos(a) * W * 0.8, Math.sin(a) * W * 0.66, -0.01);
+                spike.rotation.z = -a - Math.PI / 2;
+                g.add(spike);
+            }
+        }
+        const eyeM = M(0x2b2b33);
+        for (const s of [-1, 1]) {
+            const eye = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 6), eyeM);
+            eye.position.set(s * W * 0.62, 0.02, L * 0.62);
+            g.add(eye);
+        }
+    }
+    g.scale.setScalar(sizeK);
+    return g;
+}
+// 도감 — { speciesId: { n, max } }
+function fishdexRecord(sp, len) {
+    let dex = {};
+    try { dex = JSON.parse(localStorage.getItem('world-fishdex') || '{}'); } catch (e) {}
+    const first = !dex[sp.id];
+    const rec = dex[sp.id] || { n: 0, max: 0 };
+    rec.n += 1;
+    rec.max = Math.max(rec.max, len);
+    dex[sp.id] = rec;
+    try { localStorage.setItem('world-fishdex', JSON.stringify(dex)); } catch (e) {}
+    return first;
+}
+function fishFanfare() {   // 잡았다! 차임 — 5도 상승 두 음
+    if (audioCtx.state !== 'running') return;
+    for (const [f, t0] of [[660, 0], [990, 0.11]]) {
+        const o = audioCtx.createOscillator();
+        o.type = 'sine';
+        o.frequency.value = f;
+        const gn = audioCtx.createGain();
+        gn.gain.setValueAtTime(0.0001, audioCtx.currentTime + t0);
+        gn.gain.exponentialRampToValueAtTime(0.12, audioCtx.currentTime + t0 + 0.02);
+        gn.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + t0 + 0.22);
+        o.connect(gn);
+        gn.connect(sfxMaster);
+        o.start(audioCtx.currentTime + t0);
+        o.stop(audioCtx.currentTime + t0 + 0.25);
+    }
+}
+let fishing = null;   // { p, state, t, ...장비 refs } — 상태: idle→cast→wait→bite→hook→reel→land / miss
+const _fishPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);   // 캐스팅 수면 교차용
+const _fishHit = new THREE.Vector3();
+function mkFishingGear() {
+    const rod = new THREE.Group();
+    const butt = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.013, 0.2, 7), M(0x8a6647, { map: woodTex }));
+    butt.position.y = 0.1;
+    rod.add(butt);
+    const tipPivot = new THREE.Group();   // 릴링 때 여기만 굽힌다
+    tipPivot.position.y = 0.2;
+    const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.01, 0.22, 6), M(0xb08a60, { map: woodTex }));
+    tip.position.y = 0.11;
+    tipPivot.add(tip);
+    rod.add(tipPivot);
+    const reel = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.016, 10).rotateZ(Math.PI / 2), M(0xe8c46f));
+    reel.position.set(0.02, 0.07, 0);
+    rod.add(reel);
+    scene.add(rod);
+    const lineGeo = new THREE.BufferGeometry();
+    lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(8 * 3), 3));
+    const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0xf5f2e8, transparent: true, opacity: 0.85 }));
+    line.frustumCulled = false;
+    scene.add(line);
+    const bobber = new THREE.Group();
+    const bTop = new THREE.Mesh(new THREE.SphereGeometry(0.028, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), M(0xf05a5a));
+    const bBot = new THREE.Mesh(new THREE.SphereGeometry(0.028, 10, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), M(0xfdf7e8));
+    bobber.add(bTop, bBot);
+    scene.add(bobber);
+    const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.09, 14).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x1d3048, transparent: true, opacity: 0.34, depthWrite: false }));
+    shadow.scale.x = 1.7;
+    scene.add(shadow);
+    return { rod, tipPivot, line, lineGeo, bobber, shadow };
+}
+function equipFishing() {
+    if (!pets.length) return;
+    if (!possessed) possessPet(pets[0]);   // 조종 중이 아니면 병아리부터 잡고 낚싯대를 쥔다
+    if (!possessed) return;
+    if (fishing) { unequipFishing(); return; }   // 토글
+    fishing = { p: possessed, state: 'equip', t: 0, ...mkFishingGear(), boredT: 0, sitT: 0, alert: 0, droop: 0 };
+    fishing.bobber.visible = false;
+    fishing.line.visible = false;
+    fishing.shadow.visible = false;
+    const spr = glowSprite(0xfff1cf, 0.16, 0.9);   // 장비 반짝
+    spr.position.copy(fishing.p.mover.position).y += fishing.p.height * 0.6;
+    scene.add(spr);
+    hugBurst.push({ spr, vx: 0, vy: 0.3, vz: 0, t: 0.4 });
+    showToast('🎣 낚싯대를 들었어요 — 물을 클릭해 캐스팅! (다시 🎣 = 정리)');
+}
+function unequipFishing() {
+    if (!fishing) return;
+    for (const k of ['rod', 'line', 'bobber', 'shadow']) scene.remove(fishing[k]);
+    if (fishing.fishMesh) scene.remove(fishing.fishMesh);
+    fishing = null;   // 팔다리는 엔티티가 매 프레임 원위치 — 복원 코드 불필요 (앉기와 동일 원리)
+}
+function cancelFishing(quiet) {
+    if (!fishing) return;
+    fishing.bobber.visible = false;
+    fishing.line.visible = false;
+    fishing.shadow.visible = false;
+    if (fishing.fishMesh) { scene.remove(fishing.fishMesh); fishing.fishMesh = null; }
+    fishing.state = 'idle';
+    fishing.t = 0;
+    if (!quiet) playBuffer(swishBuf, { vol: 0.2, rate: 1.6, filterFreq: 1400 });
+}
+// 캐스팅 시작 — target { x, z, water:'sea'|'pond' }
+function startCast(target) {
+    const f = fishing;
+    f.state = 'cast';
+    f.t = 0;
+    f.target = target;
+    f.boredT = 0; f.sitT = 0; f.dip = 0; f.droop = 0;
+    f.shown = false; f.bobberFlying = false;
+    f.shadow.visible = false;
+    f.p.mover.rotation.y = Math.atan2(target.x - f.p.mover.position.x, target.z - f.p.mover.position.z);
+    f.nibblesLeft = 1 + Math.floor(Math.random() * 3);
+    f.nextEventT = 1.6 + Math.random() * 2.6;   // 그림자 등장까지
+    f.shadowPhase = 'approach';
+    // 어종 미리 결정 (물별 풀 + 희귀도 가중 + 꽝 10%)
+    const roll = Math.random();
+    if (roll < 0.1) {
+        f.species = FISH_SPECIES.find((s) => s.id === (Math.random() < 0.5 ? 'boot' : 'bottle'));
+    } else {
+        const pool = FISH_SPECIES.filter((s) => s.water === target.water);
+        const w = pool.map((s) => (s.rarity === 1 ? 0.6 : s.rarity === 2 ? 0.3 : 0.1));
+        let r2 = Math.random() * w.reduce((a, b) => a + b, 0);
+        f.species = pool[0];
+        for (let i = 0; i < pool.length; i++) { r2 -= w[i]; if (r2 <= 0) { f.species = pool[i]; break; } }
+    }
+    f.len = Math.round(f.species.len[0] + Math.random() * (f.species.len[1] - f.species.len[0]));
+    f.big = f.len >= f.species.len[0] + (f.species.len[1] - f.species.len[0]) * 0.85 && f.species.rarity > 0;
+    playBuffer(swishBuf, { vol: 0.4, rate: 1.25, filterFreq: 1600 });
+}
+function waterYFor(f) {
+    return f.target.water === 'pond' ? POND_WATER_Y : waveYAt(f.target.x, f.target.z);
+}
+// 현재 raycaster 방향으로 캐스팅 시도 — 'cast'|'far'|'near'|'land' (pointerup과 진단 훅이 공유).
+// 1차: 수면 평면과의 정밀 교차. 2차(게임식 관용 조준): 낮은 카메라에선 교차점이 "섬 안"이거나
+// 순식간에 6m 밖으로 튀어 유효 밴드가 없다(실측) — 클릭 '방향'만 취해 펫 앞 2.2m 물에 던진다.
+function tryCastAtScreen() {
+    const mp = possessed.mover.position;
+    const waterAt = (x, z) => {
+        if (Math.hypot(x - pondPropRef.x, z - pondPropRef.z) < 0.55) return 'pond';
+        if (islandOf(x, z) < 0 && Math.hypot(x, z) < 22) return 'sea';
+        return null;
+    };
+    _fishPlane.constant = -POND_WATER_Y;
+    let water = null;
+    let pt = raycaster.ray.intersectPlane(_fishPlane, _fishHit);
+    if (pt && Math.hypot(pt.x - pondPropRef.x, pt.z - pondPropRef.z) < 0.55) water = 'pond';
+    else {
+        _fishPlane.constant = -(OCEAN_LEVEL + tideOffset());
+        pt = raycaster.ray.intersectPlane(_fishPlane, _fishHit);
+        if (pt && islandOf(pt.x, pt.z) < 0 && Math.hypot(pt.x, pt.z) < 22) water = 'sea';
+    }
+    if (water) {
+        const d = Math.hypot(pt.x - mp.x, pt.z - mp.z);
+        if (d >= 0.45 && d <= 6.0) { startCast({ x: pt.x, z: pt.z, water }); return 'cast'; }
+        if (d < 0.45) return 'near';
+    }
+    // 관용 조준: 클릭 방향(수평)으로 2.2m — 물가에서 물 쪽을 찍으면 각도와 무관하게 던져진다
+    const dx = raycaster.ray.direction.x, dz = raycaster.ray.direction.z;
+    const dl = Math.hypot(dx, dz);
+    if (dl > 1e-4) {
+        for (const reach of [2.2, 1.4, 3.2]) {
+            const cx = mp.x + (dx / dl) * reach, cz = mp.z + (dz / dl) * reach;
+            const w2 = waterAt(cx, cz);
+            if (w2) { startCast({ x: cx, z: cz, water: w2 }); return 'cast'; }
+        }
+    }
+    return water ? 'far' : 'land';
+}
+// ⌘/클릭 = 챔질 시도 (doInteract·pointerup에서 호출) — true를 돌려주면 입력을 삼킨다
+function fishingIntercept() {
+    if (!fishing) return false;
+    const st = fishing.state;
+    if (st === 'bite') {   // 성공! → 훅셋
+        fishing.state = 'hook';
+        fishing.t = 0;
+        playSplashSound(fishing.target.x, fishing.target.z);
+        return true;
+    }
+    if (st === 'wait') {   // 성급한 챔질 — 빈 찌만 걷힌다
+        cancelFishing(false);
+        showToast('🎣 앗, 아직인데! — 찌가 푹 잠길 때 챔질이에요');
+        return true;
+    }
+    return st !== 'idle';   // 시전·파이팅·연출 중엔 다른 상호작용 잠금
+}
+function updateFishing(delta) {
+    const f = fishing;
+    if (!f) return;
+    const p = f.p;
+    if (p !== possessed) { unequipFishing(); return; }   // 조종이 풀리면 낚시도 정리
+    f.t += delta;
+    const m = p.mover;
+    const fwdX = Math.sin(m.rotation.y), fwdZ = Math.cos(m.rotation.y);
+    const rgtX = Math.cos(m.rotation.y), rgtZ = -Math.sin(m.rotation.y);
+    const wrap = p.pet.wrap;
+    // ---- 낚싯대 기본 부착점: 몸 오른쪽, 상태별 각도는 아래에서 ----
+    const gripY = m.position.y + p.height * 0.34;
+    let rodPitch = 0.6;    // 앞으로 기운 정도 (0 = 수직)
+    let rodYaw = m.rotation.y;
+    let rodSide = 0.3;     // 몸 중심에서 오른쪽으로
+    let rodFwd = 0.3;      // 앞으로
+    let tipBend = 0;
+    let leanX = 0;         // 몸 기울기 (+ 앞으로)
+    let twistY = 0;        // 몸 비틀기
+    let hopY = 0;
+    // ---- 상태기계 + 전용 안무 ----
+    if (f.state === 'equip') {
+        const k = Math.min(1, f.t / 0.5);
+        rodPitch = 0.6 + Math.sin(k * Math.PI) * 0.5;
+        rodYaw += Math.sin(k * Math.PI * 2) * 2.2 * (1 - k);   // 빙글 돌려 잡기
+        if (k >= 1) { f.state = 'idle'; f.t = 0; }
+    } else if (f.state === 'idle') {
+        // 걷는 중엔 어깨에 걸치고, 서 있으면 앞으로 든다
+        rodPitch = p.pet.walking ? -0.5 : 0.55;
+        rodSide = p.pet.walking ? 0.16 : 0.28;
+    } else if (f.state === 'cast') {
+        // ② 캐스팅 3박자: 백스윙(0~0.35) → 스윙(0.35~0.53) → 팔로스루(0.53~1.05)
+        if (f.t < 0.35) {
+            const k = f.t / 0.35;
+            const e = k * k;
+            twistY = -0.45 * e;
+            rodPitch = 0.55 - 1.5 * e;   // 어깨 뒤로 넘어감
+            leanX = -0.1 * e;
+        } else if (f.t < 0.53) {
+            const k = (f.t - 0.35) / 0.18;
+            twistY = -0.45 + 0.75 * k;   // 앞으로 홱 (+0.3 오버슈트)
+            rodPitch = -0.95 + 1.9 * k;
+            leanX = -0.1 + 0.3 * k;
+        } else {
+            const k = Math.min(1, (f.t - 0.53) / 0.52);
+            const wob = Math.exp(-k * 4) * Math.sin(k * 14);   // 감쇠 진동 팔로스루
+            twistY = 0.3 * (1 - k) + wob * 0.06;
+            rodPitch = 0.95 - 0.35 * k + wob * 0.08;
+            leanX = 0.2 * (1 - k) + wob * 0.04;
+            if (!f.bobberFlying && f.t >= 0.53) {   // 스윙 정점에서 찌 발사
+                f.bobberFlying = true;
+                f.bobber.visible = true;
+                f.line.visible = true;
+                f.castFrom = { x: m.position.x + fwdX * 0.4, y: gripY + 0.35, z: m.position.z + fwdZ * 0.4 };
+            }
+            if (f.bobberFlying) {
+                const fk = Math.min(1, (f.t - 0.53) / 0.42);
+                const wy = waterYFor(f);
+                f.bobber.position.set(
+                    THREE.MathUtils.lerp(f.castFrom.x, f.target.x, fk),
+                    THREE.MathUtils.lerp(f.castFrom.y, wy, fk) + Math.sin(fk * Math.PI) * 0.55,
+                    THREE.MathUtils.lerp(f.castFrom.z, f.target.z, fk));
+                if (fk >= 1 && f.state === 'cast' && f.t >= 1.05) {
+                    f.state = 'wait';
+                    f.t = 0;
+                    f.bobberFlying = false;
+                    spawnSplash(f.target.x, wy + 0.03, f.target.z);
+                    playBuffer(splashBuf, { vol: 0.25 * attAtPoint(f.target.x, f.target.z), rate: 1.5, filterFreq: 1200 });
+                }
+            }
+        }
+    } else if (f.state === 'wait') {
+        // ③ 대기: 웅크려 찌 응시 + 지루함 배리에이션 + 20초 넘으면 앉기
+        const wy = waterYFor(f);
+        f.boredT += delta;
+        leanX = 0.12;
+        rodPitch = 0.75;
+        if (f.boredT > 20) f.sitT = Math.min(1, f.sitT + delta * 2);   // 스르륵 앉는다
+        if (f.sitT > 0) {
+            for (const ft of p.pet.feet) ft.rotation.x = (ft.userData._restRotX || 0) - 1.35 * f.sitT;
+            m.position.y = playerSupportY(p, m.position.x, m.position.z).y - 0.06 * f.sitT;
+            leanX = 0.12 - 0.1 * f.sitT;
+        }
+        // 지루함: 갸웃(6s 주기) · 하품(12s 주기, 부리)
+        const bored = f.boredT > 6 ? Math.sin(f.boredT * 0.5) * 0.06 : 0;
+        wrap.rotation.z += bored;
+        if (p.pet.beak && f.boredT % 12 > 10.6) p.pet.beak.rotation.x = (p.pet.beak.userData._restRotX || 0) + 0.3;
+        // 찌: 파도 위 (니블 딥은 아래 이벤트가)
+        f.bobber.position.set(f.target.x, wy + (f.dip || 0), f.target.z);
+        if (f.dip) f.dip = Math.min(0, f.dip + delta * 0.25);
+        // 그림자 이벤트 진행
+        f.nextEventT -= delta;
+        if (f.shadowPhase === 'approach' && f.nextEventT <= 0) {
+            f.shadow.visible = true;
+            const a = Math.random() * Math.PI * 2;
+            f.shadow.position.set(f.target.x + Math.cos(a) * 1.1, wy - 0.03, f.target.z + Math.sin(a) * 1.1);
+            f.shadowPhase = 'dart';
+            f.nextEventT = 0.5 + Math.random() * 0.7;
+        } else if (f.shadowPhase === 'dart' && f.nextEventT <= 0) {
+            // 다트-멈칫 접근: 찌까지 절반씩 다가온다
+            const dx = f.target.x - f.shadow.position.x, dz = f.target.z - f.shadow.position.z;
+            const d = Math.hypot(dx, dz);
+            if (d < 0.16) {
+                if (f.nibblesLeft > 0) {   // ④ 니블
+                    f.nibblesLeft -= 1;
+                    f.dip = -0.035;
+                    f.alert = 1;
+                    playBuffer(swishBuf, { vol: 0.16, rate: 2.3, filterFreq: 2000 });
+                    f.nextEventT = 0.7 + Math.random() * 1.1;
+                } else {   // 진짜 바이트!
+                    f.state = 'bite';
+                    f.t = 0;
+                    f.dip = -0.1;
+                    f.alert = 1;
+                    spawnSplash(f.target.x, wy + 0.02, f.target.z);
+                    playBuffer(splashBuf, { vol: 0.5 * attAtPoint(f.target.x, f.target.z), rate: 1.1, filterFreq: 1400 });
+                }
+            } else {
+                f.shadow.position.x += dx / d * Math.min(d * 0.55, 0.35);
+                f.shadow.position.z += dz / d * Math.min(d * 0.55, 0.35);
+                f.nextEventT = 0.4 + Math.random() * 0.8;
+            }
+        }
+        f.shadow.rotation.y = Math.atan2(f.target.x - f.shadow.position.x, f.target.z - f.shadow.position.z);
+        if (f.alert > 0) {   // 니블 알럿 — 몸이 확 숙고 눈 커짐
+            leanX += 0.14 * f.alert;
+            for (const ey of p.pet.eyes) ey.scale.y = (ey.userData._restScaleY || 1) * (1 + 0.18 * f.alert);
+            f.alert = Math.max(0, f.alert - delta * 2.2);
+        }
+    } else if (f.state === 'bite') {
+        // ⑤ 챔질 윈도우 0.65초 — 놓치면 miss
+        const wy = waterYFor(f);
+        f.bobber.position.set(f.target.x, wy - 0.09 + Math.sin(f.t * 30) * 0.012, f.target.z);
+        leanX = 0.22;
+        for (const ey of p.pet.eyes) ey.scale.y = (ey.userData._restScaleY || 1) * 1.22;
+        if (f.t > 0.65) {
+            f.state = 'miss';
+            f.t = 0;
+            f.shadow.visible = false;
+        }
+    } else if (f.state === 'hook') {
+        // ⑤ 훅셋 저크 0.15초 — 몸 홱 젖힘 + 스쿼시
+        const k = Math.min(1, f.t / 0.15);
+        leanX = 0.22 - 0.55 * k;
+        rodPitch = 0.75 - 1.1 * k;
+        wrap.scale.y = 1 - 0.14 * Math.sin(k * Math.PI);
+        wrap.scale.x = 1 + 0.1 * Math.sin(k * Math.PI);
+        if (k >= 1) {
+            wrap.scale.set(1, 1, 1);
+            f.state = 'reel';
+            f.t = 0;
+            f.reelDur = 0.9 + f.species.rarity * 0.55 + (f.big ? 0.5 : 0);
+            f.dragDone = false;
+        }
+    } else if (f.state === 'reel') {
+        // ⑥ 릴링 버둥: 뒤로 기대 + 좌우 흔들림 + (희귀) 끌려갔다 버티기
+        const k = Math.min(1, f.t / f.reelDur);
+        const fight = Math.sin(f.t * 7.5) * (1 - k * 0.55);
+        leanX = -0.3 - 0.08 * Math.sin(f.t * 3);
+        twistY = fight * 0.22;
+        rodPitch = -0.15 + Math.abs(fight) * 0.18;
+        tipBend = 0.7 + Math.abs(fight) * 0.4;   // 낚싯대 끝이 물 쪽으로 휜다
+        const wy = waterYFor(f);
+        f.bobber.position.set(
+            f.target.x + Math.sin(f.t * 7.5) * 0.12,
+            wy - 0.06,
+            f.target.z + Math.cos(f.t * 6.1) * 0.12);
+        if (Math.random() < delta * 3) spawnSplash(f.bobber.position.x, wy + 0.02, f.bobber.position.z);
+        if ((f.species.rarity >= 3 || f.big) && !f.dragDone && k > 0.45) {   // 월척 — 한 번 끌려간다
+            f.dragDone = true;
+            m.position.x += fwdX * 0.1;
+            m.position.z += fwdZ * 0.1;
+            playBuffer(swishBuf, { vol: 0.35, rate: 0.8, filterFreq: 900 });
+        }
+        if (boatRide && boatRide.driver === p) boatGroup.rotation.z += fight * 0.02;   // 배가 같이 출렁
+        if (k >= 1) {
+            f.state = 'land';
+            f.t = 0;
+            f.shadow.visible = false;
+            f.fishMesh = makeFishMesh(f.species, 0.55 + (f.len / f.species.len[1]) * 0.65);
+            scene.add(f.fishMesh);
+            spawnSplash(f.target.x, wy + 0.04, f.target.z);
+            playSplashSound(f.target.x, f.target.z);
+        }
+    } else if (f.state === 'land') {
+        // ⑦ 랜딩(0~0.5: 물고기 호) + 자랑(0.5~1.9: 한손 번쩍 / 월척은 만세+폴짝)
+        const wy = waterYFor(f);
+        if (f.t < 0.5) {
+            const k = f.t / 0.5;
+            const e = k * k * (3 - 2 * k);
+            f.fishMesh.position.set(
+                THREE.MathUtils.lerp(f.target.x, m.position.x + rgtX * 0.1, e),
+                THREE.MathUtils.lerp(wy, m.position.y + p.height * 1.15, e) + Math.sin(k * Math.PI) * 0.5,
+                THREE.MathUtils.lerp(f.target.z, m.position.z + rgtZ * 0.1, e));
+            f.fishMesh.rotation.y += delta * 9;
+            f.bobber.visible = false;
+            f.line.visible = false;
+        } else {
+            if (!f.shown) {   // 자랑 시작 프레임: 도감·토스트·차임·반짝 링
+                f.shown = true;
+                const first = f.species.rarity > 0 && fishdexRecord(f.species, f.len);
+                const label = f.species.rarity === 0 ? `😅 ${f.species.ko}...가 낚였다` : `🐟 ${f.species.ko}를 낚았다! (${f.len}cm)${f.big ? ' — 월척!!' : ''}${first ? ' · 처음 잡았다!' : ''}`;
+                showToast(label);
+                logWorldEvent(`${petKo(p)}가 낚시로 ${f.species.ko}${f.species.rarity === 0 ? '를 건져 올렸다' : `를 낚았다 (${f.len}cm)`}`);
+                if (f.species.rarity > 0) {
+                    fishFanfare();
+                    maybeProactive(null, `주인이 방금 낚시로 ${f.species.ko}(${f.len}cm)를 낚았다!${f.big ? ' 월척이다!' : ''}`);
+                    for (let i = 0; i < 8; i++) {   // 반짝 링
+                        const a = (i / 8) * Math.PI * 2;
+                        const spr = glowSprite(0xfff1cf, 0.08, 0.9);
+                        spr.position.set(m.position.x + Math.cos(a) * 0.22, m.position.y + p.height * 0.9, m.position.z + Math.sin(a) * 0.22);
+                        scene.add(spr);
+                        hugBurst.push({ spr, vx: Math.cos(a) * 0.4, vy: 0.25, vz: Math.sin(a) * 0.4, t: 0.45 });
+                    }
+                    const friend = pets.find((q) => q !== p);
+                    if (friend && !friend.bed && !friend.dip && friend.ai.state !== 'held') friend.pet.action = { id: 'happy', t: 0 };
+                } else {
+                    playBuffer(swishBuf, { vol: 0.3, rate: 0.7, filterFreq: 800 });
+                }
+            }
+            const k = (f.t - 0.5) / 1.4;
+            if (f.species.rarity === 0) {   // 꽝 — 들고 갸웃하다 축 처짐
+                f.fishMesh.position.set(m.position.x + fwdX * 0.22, m.position.y + p.height * (0.7 - 0.25 * Math.min(1, k * 1.6)), m.position.z + fwdZ * 0.22);
+                wrap.rotation.z += Math.sin(Math.min(1, k * 2) * Math.PI) * 0.14;   // 갸웃
+                f.droop = Math.min(1, Math.max(0, k * 2 - 0.7));
+                leanX = 0.1 * f.droop;
+            } else if (f.big) {   // 월척 — 양손 만세 + 폴짝×2
+                hopY = Math.abs(Math.sin(Math.min(1, k) * Math.PI * 2)) * 0.09;
+                f.fishMesh.position.set(m.position.x, m.position.y + hopY + p.height * 1.35, m.position.z);
+                leanX = -0.18;
+            } else {   // 한손 번쩍
+                f.fishMesh.position.set(m.position.x + rgtX * 0.14, m.position.y + p.height * 1.18, m.position.z + rgtZ * 0.14);
+                leanX = -0.12;
+                rodSide = 0.1;
+                rodPitch = 1.2;   // 낚싯대는 옆구리에
+            }
+            f.fishMesh.rotation.y += delta * 1.5;
+            if (f.t > 1.9) {
+                scene.remove(f.fishMesh);
+                f.fishMesh = null;
+                f.shown = false;
+                cancelFishing(true);
+            }
+        }
+    } else if (f.state === 'miss') {
+        // ⑧ 놓침 — 앞으로 휘청 + 처짐
+        const k = Math.min(1, f.t / 0.9);
+        leanX = k < 0.25 ? 0.4 * (k / 0.25) : 0.4 * (1 - (k - 0.25) / 0.75) + 0.08;
+        f.droop = Math.min(1, k * 1.4);
+        f.bobber.visible = false;
+        f.line.visible = false;
+        if (k >= 1) { f.droop = 0; cancelFishing(true); showToast('🎣 놓쳤다…! 다시 던져봐요'); }
+    }
+    // ---- 공통 적용: 몸(wrap) + 날개/귀 + 낚싯대 + 낚싯줄 ----
+    wrap.rotation.x += leanX;
+    wrap.rotation.y += twistY;
+    if (hopY) m.position.y += hopY;
+    if (f.droop > 0) {   // 처짐: 날개·귀가 축
+        for (const wg of p.pet.wings) wg.rotation.z = (wg.userData._restRotZ || 0) * (1 - f.droop * 0.5);
+        for (const er of p.pet.ears) er.rotation.x = (er.userData._restRotX || 0) + 0.4 * f.droop;
+    } else if (f.state !== 'idle' && f.state !== 'equip') {
+        for (const wg of p.pet.wings) wg.rotation.z = (wg.userData._restRotZ || 0) * 0.35;   // 그립 — 날개 몸에 붙임
+    }
+    const grip = {
+        x: m.position.x + fwdX * rodFwd + rgtX * rodSide,
+        y: gripY,
+        z: m.position.z + fwdZ * rodFwd + rgtZ * rodSide,
+    };
+    f.rod.position.set(grip.x, grip.y, grip.z);
+    f.rod.rotation.set(rodPitch, rodYaw, 0, 'YXZ');
+    f.tipPivot.rotation.x = tipBend;
+    // 낚싯줄: 대 끝 → (처짐) → 찌, 8점 커브
+    if (f.line.visible) {
+        const tipW = new THREE.Vector3(0, 0.42, 0);
+        f.tipPivot.localToWorld(tipW.set(0, 0.22, 0));
+        const arr = f.lineGeo.attributes.position.array;
+        for (let i = 0; i < 8; i++) {
+            const t = i / 7;
+            const sag = Math.sin(t * Math.PI) * (f.state === 'reel' ? 0.02 : 0.14);
+            arr[i * 3] = THREE.MathUtils.lerp(tipW.x, f.bobber.position.x, t);
+            arr[i * 3 + 1] = THREE.MathUtils.lerp(tipW.y, f.bobber.position.y, t) - sag;
+            arr[i * 3 + 2] = THREE.MathUtils.lerp(tipW.z, f.bobber.position.z, t);
+        }
+        f.lineGeo.attributes.position.needsUpdate = true;
+    }
+}
 function updateHandHold(delta) {
     if (!handHold) return;
     const leader = possessed;
@@ -10332,6 +10933,7 @@ function animate() {
     updateAutoDrive(delta);
     updateBoatIdle();                        // 정박 보트의 파도 위 살랑임 (항해 중엔 stepBoat 담당)
     updateBoatHop(delta);                    // 절친 승선 아크 — 물가에서 뱃머리로 폴짝
+    updateFishing(delta);                    // 🎣 낚시 안무 — 엔티티 업데이트 뒤라 포즈 덮어쓰기 가능
     updateHeartFx(delta);
     updateFestiveFx(delta);
     updateAutoSleep();
