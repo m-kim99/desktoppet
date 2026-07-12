@@ -8401,7 +8401,8 @@ let possessed = null;
 const heldKeys = new Set();
 let jumpVy = 0;
 let airborne = false;
-let airJumpUsed = false;   // 더블점프 — 공중에서 1회, 착지하면 리셋
+let jumpsLeft = 2;   // 점프 소지 수 — 착지마다 2로 리셋. 점프로 떠나면 1 남고, 걸어서/뛰어내려서
+                     // 떠나면 2 그대로라 높은 데서 내려올 때도 "점프+더블"이 온전히 된다 (시중 문법).
 let running = false;    // Shift toggles 걷기 ↔ 달리기 (2×)
 
 const selectRing = new THREE.Mesh(
@@ -8522,7 +8523,7 @@ function releasePossession() {
     if (!possessed) return;
     const p = possessed;
     possessed = null;
-    airborne = false; jumpVy = 0; airJumpUsed = false;
+    airborne = false; jumpVy = 0; jumpsLeft = 2;
     seaHop = null;
     if (carDrive) exitCar();
     releaseHandHold();
@@ -8540,19 +8541,16 @@ function releasePossession() {
 const ARROW_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 // 조종 액션 3종 — 키보드(Space·Ctrl/⌘·Esc)와 터치 버튼(🦘·✋·✕)이 같은 함수를 부른다.
 function doJump() {
-    if (!possessed) return;
-    if (!airborne) {
-        airborne = true;
-        airJumpUsed = false;
-        jumpVy = possessed.swimming ? 1.7 : 3.0;                  // splash-hop in water · 뭍 점프 2.5→3.0 (~0.64m — 테이블·차 지붕·우물이 닿는다)
-        return;
-    }
-    if (airJumpUsed) return;
-    // 더블점프 (시중 게임 문법): 공중에서 한 번 더 — 살짝 약한 추진, 발밑에 공기 폴짝 이펙트.
-    // 정점에서 쓰면 합산 ~1.15m — 부스 지붕·우편함까지 닿는 사다리 한 칸이 된다.
-    airJumpUsed = true;
-    jumpVy = 2.7;
-    const p = possessed;
+    if (!possessed || jumpsLeft <= 0) return;
+    const airPress = airborne;                                    // 공중 발동 = 폴짝 이펙트 대상
+    const full = jumpsLeft === 2;                                 // 지상 점프를 아직 안 썼다 — 걸어서 떨어진 직후 포함
+    jumpsLeft -= 1;
+    airborne = true;
+    // 첫 점프(지상 또는 낙하 중 첫 발동)는 풀파워 3.0(~0.64m), 두 번째는 2.7 — 정점에서 이으면
+    // 합산 ~1.15m로 부스 지붕·우편함이 사다리 한 칸이 된다. 물에서는 첨벙 홉 1.7.
+    jumpVy = full ? (possessed.swimming ? 1.7 : 3.0) : 2.7;
+    if (!airPress) return;
+    const p = possessed;                                          // 공기 폴짝 이펙트 — 발밑 글로우 링
     for (let i = 0; i < 6; i++) {
         const a = (i / 6) * Math.PI * 2;
         const spr = glowSprite(0xffffff, 0.09 + Math.random() * 0.05, 0.8);
@@ -8765,7 +8763,7 @@ function updatePlayer(delta) {
         p.mover.position.z = THREE.MathUtils.lerp(seaHop.fz, seaHop.tz, e);
         p.mover.position.y = THREE.MathUtils.lerp(seaHop.fy, seaHop.ty, e) + Math.sin(k * Math.PI) * 0.55;
         p.pet.walking = false;
-        if (k >= 1) { seaHop = null; p.swimming = false; p.mover.rotation.x = 0; airborne = false; jumpVy = 0; airJumpUsed = false; }
+        if (k >= 1) { seaHop = null; p.swimming = false; p.mover.rotation.x = 0; airborne = false; jumpVy = 0; jumpsLeft = 2; }
         return;
     }
     if (carDrive) {
@@ -8837,7 +8835,7 @@ function updatePlayer(delta) {
         p.mover.position.y += jumpVy * delta;
         if (p.mover.position.y <= sup.y && jumpVy < 0) {
             p.mover.position.y = sup.y;
-            airborne = false; jumpVy = 0; airJumpUsed = false;
+            airborne = false; jumpVy = 0; jumpsLeft = 2;
             if (sup.medium !== 'land') {
                 spawnSplash(p.mover.position.x, sup.y + p.height * 0.42, p.mover.position.z);
             } else {
