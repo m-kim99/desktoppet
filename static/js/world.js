@@ -80,7 +80,9 @@ const skyTex = new THREE.CanvasTexture(skyCv);
 {
     const sky = new THREE.Mesh(
         new THREE.SphereGeometry(42, 32, 24),
-        new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false })
+        // toneMapped:false — ACES가 하늘까지 탈색·회색화하던 것을 차단(게임 스카이박스 표준).
+        // 팔레트 hex가 그대로 화면에 나오므로 SKY_* 색이 곧 최종 색이다.
+        new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false, toneMapped: false })
     );
     scene.add(sky);
 }
@@ -88,12 +90,12 @@ const skyTex = new THREE.CanvasTexture(skyCv);
 // ignore fog so they glow through the haze. Stars sit on the upper dome, opacity driven at night.
 const sunMesh = new THREE.Mesh(
     new THREE.SphereGeometry(0.95, 20, 16),
-    new THREE.MeshBasicMaterial({ color: 0xffd75e, fog: false })
+    new THREE.MeshBasicMaterial({ color: 0xffd75e, fog: false, toneMapped: false })   // 하늘과 같은 이유 — 쨍한 노랑 유지
 );
 scene.add(sunMesh);
 const moonMesh = new THREE.Mesh(
     new THREE.SphereGeometry(0.75, 20, 16),
-    new THREE.MeshBasicMaterial({ color: 0xf2eede, fog: false })
+    new THREE.MeshBasicMaterial({ color: 0xf2eede, fog: false, toneMapped: false })
 );
 scene.add(moonMesh);
 let starMat = null, starPts = null;
@@ -305,8 +307,11 @@ scene.add(sunLight);
 // the shadow light (sun by day, moon by night) and dresses clouds/stars/fog for the hour.
 // Preview any time of day with world.html?hour=21.5 in a browser.
 const HOUR_OVERRIDE = parseFloat(new URLSearchParams(window.location.search).get('hour'));
-const SKY_STOPS = [0, 0.45, 0.8, 1];
-const SKY_DAY   = ['#4f9fe0', '#a5d5f5', '#e4f4ff', '#ffeef2'].map((c) => new THREE.Color(c));
+// 스카이돔 UV에서 수평선은 v=0.5 (0=천정, 1=바닥 극점) — 카메라가 실제로 보는 하늘 띠는
+// 0.28~0.52뿐이다. 예전 스탑 [0, .45, .8, 1]은 쨍한 파랑을 천정(화면 밖)에 두고 보이는 띠엔
+// 제일 연한 두 색만 걸어서 "낮인데 흐린 단색" 하늘의 주범이었다. 램프 전체를 보이는 띠에 건다.
+const SKY_STOPS = [0, 0.3, 0.44, 0.52];
+const SKY_DAY   = ['#2f9de8', '#5fbcee', '#a9e2f0', '#e9f6ec'].map((c) => new THREE.Color(c));   // 동숲풍: 아주르→아쿠아→민트 수평선
 const SKY_NIGHT = ['#0a1430', '#13214a', '#1c2e5c', '#2c3c6a'].map((c) => new THREE.Color(c));
 const SKY_DUSK  = ['#33518f', '#6f68b0', '#ee9a6e', '#ffc98a'].map((c) => new THREE.Color(c));
 
@@ -427,6 +432,7 @@ function updateDayNight(force = false) {
         if (wxF > 0) _skyStop.lerp(_gloomStop.copy(SKY_GLOOM[i]).multiplyScalar((0.3 + 0.7 * dayF) * (1 - 0.55 * stormF)), wxF * 0.8);
         grad.addColorStop(SKY_STOPS[i], `#${_skyStop.getHexString()}`);
     }
+    grad.addColorStop(1, `#${_skyStop.getHexString()}`);   // 수평선(0.52) 아래 반구는 수평선 색 고정 — 바다 너머가 새하얘지지 않게
     skyCtx.fillStyle = grad;
     skyCtx.fillRect(0, 0, 1, 256);
     skyTex.needsUpdate = true;
