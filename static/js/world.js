@@ -2924,6 +2924,81 @@ function updateLibrary(delta) {
     });
 }
 
+// ---- 🏰 모래놀이: sandspot-0에 앉으면 손에 삽이 들려 모래를 파고(스윙 + 모래 폴폴 + dig 모션),
+// sandspot-1에 앉으면 성 곁에서 토닥토닥 만진다(손끝 모래 반짝 + happy). 도서관 책과 같은
+// 문법 — 자리 점유를 보고 소품이 나타나 펫을 따라다닌다. ----
+let sandShovel = null;
+function mkShovel() {
+    const g = new THREE.Group();
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.13, 6), M(0xb08a60, { map: woodTex }));
+    handle.position.y = 0.065;
+    g.add(handle);
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.05, 6).rotateZ(Math.PI / 2), M(0xb08a60, { map: woodTex }));
+    grip.position.y = 0.13;
+    g.add(grip);
+    const scoop = new THREE.Mesh(new RoundedBoxGeometry(0.055, 0.016, 0.07, 2, 0.007), M(0xf05a5a));   // 코랄 장난감 삽날
+    scoop.position.set(0, -0.005, 0.012);
+    scoop.rotation.x = 0.35;
+    g.add(scoop);
+    g.visible = false;
+    scene.add(g);
+    return g;
+}
+function updateSandPlay(delta) {
+    const s0 = BEDS.find((b) => b.id === 'sandspot-0');
+    if (!s0) return;
+    if (!sandShovel) sandShovel = mkShovel();
+    const p0 = s0.occupant;
+    if (p0 && p0.bedPhase === 'lying') {
+        sandShovel.visible = true;
+        const fx = Math.sin(s0.lie.rotY), fz = Math.cos(s0.lie.rotY);
+        const rx = Math.cos(s0.lie.rotY), rz = -Math.sin(s0.lie.rotY);
+        const dig = Math.sin(wxTime.value * 3.4);   // 파기 스윙 박자
+        sandShovel.position.set(
+            s0.lie.x + fx * 0.17 + rx * 0.09,
+            s0.lie.y - 0.06 + Math.max(0, dig) * 0.05,
+            s0.lie.z + fz * 0.17 + rz * 0.09);
+        sandShovel.rotation.y = s0.lie.rotY;
+        sandShovel.rotation.x = 0.45 + dig * 0.5;
+        if (Math.random() < delta / 2.2) {   // 퍼낸 모래가 폴폴
+            for (let i = 0; i < 2; i++) {
+                const spr = glowSprite(0xd9c49a, 0.05 + Math.random() * 0.04, 0.8);
+                spr.position.set(sandShovel.position.x + (Math.random() - 0.5) * 0.06, s0.lie.y - 0.08, sandShovel.position.z + (Math.random() - 0.5) * 0.06);
+                scene.add(spr);
+                hugBurst.push({ spr, vx: fx * 0.25 + (Math.random() - 0.5) * 0.2, vy: 0.35, vz: fz * 0.25 + (Math.random() - 0.5) * 0.2, t: 0.4 });
+            }
+        }
+        if (!p0.pet.action && Math.random() < delta / 5) p0.pet.action = { id: 'dig', t: 0 };
+        if (p0._sandUntil && Date.now() > p0._sandUntil) { p0._sandUntil = 0; p0.bedExit = true; }
+    } else if (sandShovel) {
+        sandShovel.visible = false;
+    }
+    const s1 = BEDS.find((b) => b.id === 'sandspot-1');
+    const p1 = s1 && s1.occupant;
+    if (p1 && p1.bedPhase === 'lying') {
+        if (Math.random() < delta / 2.8) {   // 성벽 토닥토닥 — 손끝에서 모래 반짝
+            const fx = Math.sin(s1.lie.rotY), fz = Math.cos(s1.lie.rotY);
+            const spr = glowSprite(0xe8d8b0, 0.05, 0.75);
+            spr.position.set(s1.lie.x + fx * 0.2, s1.lie.y - 0.05, s1.lie.z + fz * 0.2);
+            scene.add(spr);
+            hugBurst.push({ spr, vx: (Math.random() - 0.5) * 0.2, vy: 0.25, vz: (Math.random() - 0.5) * 0.2, t: 0.35 });
+        }
+        if (!p1.pet.action && Math.random() < delta / 6) p1.pet.action = { id: 'happy', t: 0 };
+        if (p1._sandUntil && Date.now() > p1._sandUntil) { p1._sandUntil = 0; p1.bedExit = true; }
+    }
+}
+// 클릭 = 대리주문(심즈式): 한가한 펫을 골라 모래성으로 보낸다 — 이미 한 마리가 놀고 있으면
+// 남은 자리(만지기)로 다른 친구가 간다. 조종 중엔 ⌘(일반 침대 문법)로 직접 앉는다.
+function petSandPlay(player) {
+    const free = BEDS.find((b) => b.id.startsWith('sandspot') && !b.occupant);
+    const p = player || pets.find((q) => q !== possessed && !q.pet.sleeping && !q.bed && !q.dip
+        && (q.ai.state === 'idle' || q.ai.state === 'walk'));
+    if (!free || !p || p.bed) { if (!player) showToast('🏰 지금은 모래놀이 자리가 없어요'); return; }
+    p._sandUntil = player ? 0 : Date.now() + 90000 + Math.random() * 90000;   // 자율 모래놀이만 타이머로 일어난다
+    logWorldEvent(`${petKo(p)}가 모래성 곁에 앉아 모래놀이를 시작했다 🏖️`);
+    mountBed(p, free);
+}
+
 // ---- 분수 (④): 자체 원형 돌 둘레 + 물그릇을 갖춘 독립 분수 — 물방울이 끊임없이 솟아 떨어지고,
 // 가까이 가면 잔잔한 물소리가 난다 (파일 없는 노이즈 루프, 카메라 거리 감쇠).
 // 물방울은 강수(precipPoints)와 같은 원칙의 GPU Points 하나: 프레임마다 스프라이트를 만들고
@@ -4110,6 +4185,7 @@ const PROP_CLICKS = {
     gym: () => petStretch(),
     library: () => petRead(),
     flowerbasket: () => onBasketClick(),
+    sandcastle: () => petSandPlay(),
 };
 // 호버 프롬프트: 클릭형은 "· 클릭", 몸이 필요한 것은 ⌘ 안내, 나머지는 이름표만.
 const HOVER_PROMPTS = {
@@ -4140,7 +4216,7 @@ const HOVER_PROMPTS = {
     fountain: () => '⛲ 분수',
     flowerbasket: () => (flowerMode ? '🌸 꽃심기 모드 켜짐 — 다시 클릭하면 꺼요' : `🌸 꽃심기 바구니 — 클릭해서 심기 모드 (${flowersData.length}/100)`),
     boat: () => '🚣 노 젓는 보트 — 조종 중 ⌘로 타기 (절친 동승 가능)',
-    sandcastle: () => '🏰 모래성',
+    sandcastle: () => '🏰 모래성 — 클릭하면 펫이 모래놀이 · 조종 중 ⌘ = 직접 앉기',
     palm: () => '🌴 야자수',
 };
 const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, piano: 1.05, photoboard: 1.55, mailbox: 0.75, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, sandcastle: 0.65, palm: 1.2 };
@@ -4566,6 +4642,26 @@ for (const p of PROPS) {
         });
         const shelfW = lw(0, -0.15);
         PROPS.push({ type: 'furniture', x: shelfW.x, z: shelfW.z, rotY: 0, r: 0.55 });
+    }
+}
+
+// 🏰 모래성 extras: 성 곁에 sit-스팟 두 자리 — 0번은 삽 들고 모래놀이(파기), 1번은 옆에 앉아
+// 모래성 만지기. 일반 침대 문법(mountBed/bedExit)을 그대로 타서 접근·앉기·하차가 공짜다.
+{
+    const sandPr = PROPS.find((q) => q.type === 'sandcastle');
+    if (sandPr) {
+        const cy = Math.cos(sandPr.rotY || 0), sy = Math.sin(sandPr.rotY || 0);
+        const sw = (lx, lz) => ({ x: sandPr.x + lx * cy + lz * sy, z: sandPr.z - lx * sy + lz * cy });
+        [[0.66, 0.42], [-0.6, 0.5]].forEach(([lx, lz], i) => {
+            const w = sw(lx, lz);
+            const ap = sw(lx * 1.7, lz * 1.7);
+            const faceCastle = Math.atan2(sandPr.x - w.x, sandPr.z - w.z);   // 성을 바라보고 앉는다
+            BEDS.push({
+                id: `sandspot-${i}`, mode: 'sit', occupant: null, sway: 0,
+                lie: { x: w.x, z: w.z, y: terrainHeight(w.x, w.z) + 0.16, rotY: faceCastle, tilt: -0.35 },
+                approach: { x: ap.x, z: ap.z },
+            });
+        });
     }
 }
 
@@ -9656,21 +9752,20 @@ function stepBoat(acc, steer, delta, driver) {
         boatRide.lastPh = ph;
         playBuffer(swishBuf, { vol: 0.4 * attAtPoint(BOAT.x, BOAT.z), rate: 0.75 + Math.random() * 0.2, filterFreq: 900 });
     }
-    const rX = Math.cos(BOAT.heading), rZ = -Math.sin(BOAT.heading);
-    const seatPet = (q, fwd) => {
+    const seatPet = (q, fwd, facing) => {
         q.mover.position.set(
             BOAT.x + Math.sin(BOAT.heading) * fwd,
             by + 0.14,
             BOAT.z + Math.cos(BOAT.heading) * fwd
         );
-        q.mover.rotation.y = BOAT.heading;
+        q.mover.rotation.y = facing;
         q.mover.rotation.x = 0;
         q.mover.rotation.z = 0;
         q.pet.walking = false;
         q.swimming = false;
     };
-    seatPet(driver, -0.08);
-    if (boatRide.passenger) seatPet(boatRide.passenger, 0.36);
+    seatPet(driver, -0.08, BOAT.heading);
+    if (boatRide.passenger) seatPet(boatRide.passenger, 0.36, BOAT.heading + Math.PI);   // 뱃머리 절친은 노잡이와 마주 본다
 }
 // 정박 중 보트: 파도 위에서 살랑살랑 (항해 중엔 stepBoat가 놓는다)
 function updateBoatIdle() {
@@ -9741,7 +9836,7 @@ function updateBoatHop(delta) {
         THREE.MathUtils.lerp(boatHop.fx, tx, e),
         THREE.MathUtils.lerp(boatHop.fy, ty, e) + Math.sin(k * Math.PI) * 0.55,
         THREE.MathUtils.lerp(boatHop.fz, tz, e));
-    q.mover.rotation.y = BOAT.heading;
+    q.mover.rotation.y = BOAT.heading + Math.PI;   // 착지하자마자 노잡이와 마주 본다
     q.pet.walking = false;
     if (k >= 1) {
         boatHop = null;
@@ -10156,6 +10251,7 @@ function animate() {
     updateHoverPrompt(delta);
     updatePianoKeys(delta);
     updateLibrary(delta);
+    updateSandPlay(delta);                   // 모래성 곁 삽질·토닥임 (자리 점유 기반)
     updateFountain(delta);
     updateFireflies(delta);
     if (Date.now() > mailPollAt) { mailPollAt = Date.now() + 20000; updateMailFlag(); }
