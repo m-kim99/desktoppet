@@ -28,19 +28,28 @@ const savedLayout = await (async () => {
 })();
 // 이동 가능한 타입 (연못=지형 함몰이라 고정, furniture=집 내부 파생이라 집을 따라감)
 const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'piano', 'photoboard', 'mailbox', 'gym', 'library', 'flowerbasket']);
+// 섬 정의 지문 — 섬을 옮기거나 크기를 바꾸면 값이 달라진다(재발 방지: 저장 배치의 "섬 이사" 자동 감지).
+const ISLAND_SIG = ISLANDS.map((i) => `${i.x},${i.z},${i.r}`).join('|');
 {
     const counts = {};
+    // 저장본 지문이 현재와 다르면 위성섬이 이사/확장된 것 — 그 섬 프롭의 옛 저장 좌표는 버리고 base로.
+    const islandsChanged = savedLayout._sig !== undefined && savedLayout._sig !== ISLAND_SIG;
     for (const p of PROPS) {
         p.layoutId = `${p.type}-${counts[p.type] = (counts[p.type] || 0) + 1}`;
         p.def = { x: p.x, z: p.z, rotY: p.rotY || 0 };            // "전부 원위치"용 원본 좌표
-        const o = MOVABLE_TYPES.has(p.type) ? savedLayout[p.layoutId] : null;
-        // 배치 리뉴얼 마이그레이션: 섬들이 이동/확장돼 옛 저장 좌표가 물 위에 고립됐으면
-        // 그 저장값은 버리고 새 기본 위치로 — islandOf(r−0.3 마진)·다리 위만 유효한 뭍으로 본다.
+        let o = MOVABLE_TYPES.has(p.type) ? savedLayout[p.layoutId] : null;
+        // ① 섬이 바뀌었고 이 프롭의 홈 섬(base 기준)이 위성섬(≥1)이면 옛 저장값 폐기 → base 정위치로 스냅
+        //    (섬이 통째로 이사가면 옛 절대좌표는 무의미 — world-layout.js에서 함께 옮긴 base가 정답)
+        if (o && islandsChanged && islandOf(p.def.x, p.def.z) >= 1) { o = null; delete savedLayout[p.layoutId]; }
+        // ② 옛 저장 좌표가 물 위에 고립됐으면 버리고 새 기본 위치로 — islandOf(r−0.3 마진)·다리 위만 유효한 뭍.
         if (o && Number.isFinite(o.x) && Number.isFinite(o.z) && (islandOf(o.x, o.z) >= 0 || onBridge(o.x, o.z))) {
             p.x = o.x; p.z = o.z;
             if (Number.isFinite(o.rotY)) p.rotY = o.rotY;
         }
     }
+    // 지문이 없거나(첫 로드) 달라졌으면 새 지문으로 1회 재저장 → 다음 섬 이동을 감지할 기준점 확보.
+    // (setTimeout: 지금은 saveLayout이 참조하는 let/CAR/BOAT가 아직 TDZ라 모듈 로드 후로 미룬다)
+    if (savedLayout._sig !== ISLAND_SIG) setTimeout(saveLayout, 1500);
     const h = PROPS.find((p) => p.type === 'house');
     if (h) { HOUSE.x = h.x; HOUSE.z = h.z; HOUSE.rotY = h.rotY; } // houseWorld/houseBlocked의 앵커 동기화
     // 지형 평탄화 패드가 주인 프롭을 따라간다 (다음 로드부터 새 위치가 평평해짐)
@@ -7450,6 +7459,7 @@ function saveLayout() {
             rotY: +(((q.type === 'car' ? CAR.heading : q.type === 'boat' ? BOAT.heading : q.rotY) || 0)).toFixed(3),
         };
     }
+    out._sig = ISLAND_SIG;   // 현재 섬 지문 동봉 — 다음 로드가 "그 사이 섬이 바뀌었나"를 판정하는 기준점
     try { localStorage.setItem('world-layout', JSON.stringify(out)); } catch (err) {}
     fetch('/api/world_layout', {
         method: 'POST',
