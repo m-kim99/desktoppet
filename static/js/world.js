@@ -5913,6 +5913,13 @@ function updateWander(p, delta) {
                 startDip(p);
                 return;
             }
+            // …or carry the rod to the shore and fish a couple of rounds alone (daytime, cooldown).
+            if (!isSleepTime(currentHour()) && !aiFishing && !(fishing && fishing.p === p)
+                && Date.now() > (p.nextFishAt || 0) && Math.random() < 0.09) {
+                p.nextFishAt = Date.now() + 300000 + Math.random() * 300000;
+                startAiFishing(p);
+                return;
+            }
             // …or amble over to a free swing / seesaw and hop on (daytime, on its own cooldown).
             if (!isSleepTime(currentHour()) && Date.now() > (p.nextSwingAt || 0) && Math.random() < 0.14) {
                 const seat = SWINGS.find((b) => !b.occupant) || SEESAWS.find((b) => !b.occupant);
@@ -6735,6 +6742,8 @@ function petStatusLine(p) {
     else if (p.swimming) parts.push(p.swimming === 'pond' ? '연못에서 수영 중' : '바다에서 수영 중');
     else if (p.dip) parts.push('물놀이 하러 가는 중');
     else if (p.eatSpot) parts.push('밥그릇에서 밥 먹는 중');
+    if (fishing && fishing.p === p) parts.push('낚싯대 들고 낚시하는 중');
+    else if (aiFishing && aiFishing.p === p) parts.push('물가에 앉아 혼자 낚시하는 중');
     if (p.pet.sleeping) parts.push('잠자는 중');
     if (p === possessed) parts.push('주인이 직접 조종하는 중');
     if (handHold && (handHold.partner === p || possessed === p)) parts.push('둘이 손잡고 있음');
@@ -6933,13 +6942,22 @@ if (statsOn) window.__worldDev = {
     // 펫 몸통의 화면 좌표 — 스모크의 우클릭 프로브가 격자 스캔(위치 랜덤) 대신 정확히 조준한다
     petScreenXY: () => pets.map((p) => { const a = fxPoint(p, 50, 45); return { x: Math.round(a.x), y: Math.round(a.y) }; }),
     fishState: () => (fishing ? fishing.state : null),   // 낚시 헤드리스 검증용
+    aiFishState: () => (aiFishing ? aiFishing.state : null),   // 절친 자율 낚시 검증용
+    aiFishDebug: () => (aiFishing ? { st: aiFishing.state, ai: aiFishing.p.ai.state, began: !!aiFishing.began, arr: aiFishing.p.ai.onArrive === aiFishing.ownArrive, x: +aiFishing.p.mover.position.x.toFixed(2), z: +aiFishing.p.mover.position.z.toFixed(2), tgt: aiFishing.p.ai.target, wp: aiFishing.p.ai.waypoints ? aiFishing.p.ai.waypoints.length : 0, stall: +(aiFishing.p.ai.stall || 0).toFixed(1) } : null),
+    startAiFish: () => {   // 한가한 펫 골라 자율 낚시 발동 — 'ok' | 'busy'(전원 딴짓) | 'fail'
+        const q = pets.find((p) => p !== possessed && !p.bed && !p.dip && !p.pet.sleeping);
+        if (!q) return 'busy';
+        startAiFishing(q);
+        return aiFishing ? 'ok' : 'fail';
+    },
+    fishdexOpen: () => { toggleFishdex(); return dexUI.panel.style.display; },
     tp: (x, z, rotY) => {   // 조종 펫 순간이동 — 헤드리스 테스트가 소품 미로를 건너뛰게
         if (!possessed) return;
         possessed.mover.position.set(x, world.groundHeightAt(x, z), z);
         if (Number.isFinite(rotY)) possessed.mover.rotation.y = rotY;
     },
     castAt: (x, z) => {   // 좌표 직접 캐스팅 — 입질~랜딩 플로우 검증용 (클릭 해석과 분리)
-        if (fishing && fishing.state === 'idle') startCast({ x, z, water: islandOf(x, z) < 0 ? 'sea' : 'pond' });
+        if (fishing && fishing.state === 'idle') startCast(fishing, { x, z, water: islandOf(x, z) < 0 ? 'sea' : 'pond' });
     },
     aim: (sx, sy) => {   // 화면 좌표의 캐스팅 해석 결과 — 클릭 밴드 진단용
         pointerNdc.set((sx / window.innerWidth) * 2 - 1, -(sy / window.innerHeight) * 2 + 1);
@@ -7210,6 +7228,8 @@ const puppyBtn = dockBtn('🐶', '강아지 조종하기 — 다시 누르면 �
 puppyBtn.onclick = () => possessByName('puppy');
 const fishBtn = dockBtn('🎣', '낚싯대 들기/정리 — 물을 클릭해 캐스팅, 찌가 푹 잠기면 ⌘/Space 챔질');
 fishBtn.onclick = () => equipFishing();
+const dexBtn = dockBtn('🐟', '물고기 도감 — 잡은 어종 컬렉션');
+dexBtn.onclick = () => toggleFishdex();
 bindZoomBtn(dockBtn('＋', '확대 (키보드 + 키)'), -1);
 bindZoomBtn(dockBtn('－', '축소 (키보드 - 키)'), 1);
 document.body.appendChild(dockUI);
@@ -9960,16 +9980,34 @@ function updateBoatHop(delta) {
 // ---- 🎣 낚시 (동숲식 — 어떤 물가든): 독 🎣로 낚싯대를 들고, 물을 클릭해 캐스팅, 입질 타이밍에
 // ⌘/클릭으로 챔질. 모든 동작은 이 파일의 전용 안무(아래 updateFishing) — 캔 모션 재활용 없음.
 // 어종은 절차 생성(외부 에셋 0), 도감은 localStorage 'world-fishdex'. ----
+// when: { night, rain, season } — 조건 어종은 그 조건에서만 풀에 들어온다 (동숲 문법). hint = 도감 힌트.
 const FISH_SPECIES = [
     { id: 'crucian',  ko: '붕어',    water: 'pond', rarity: 1, len: [12, 24], body: 'oval',  back: 0x8fa06b, belly: 0xe2dcc0 },
     { id: 'goldfish', ko: '금붕어',  water: 'pond', rarity: 2, len: [6, 14],  body: 'oval',  back: 0xf0863c, belly: 0xffd9a8 },
     { id: 'koi',      ko: '잉어',    water: 'pond', rarity: 3, len: [30, 62], body: 'oval',  back: 0xe8e2d6, belly: 0xf2a48e },
+    { id: 'frog',     ko: '개구리',  water: 'pond', rarity: 1, len: [7, 12],  body: 'frog',  back: 0x6fae4e, belly: 0xd8ecb0, when: { rain: true },  hint: '비 오는 연못' },
+    { id: 'catfish',  ko: '메기',    water: 'pond', rarity: 2, len: [35, 70], body: 'sleek', back: 0x5a5f52, belly: 0xc9c2a8, whiskers: true, when: { night: true }, hint: '밤의 연못' },
+    { id: 'smelt',    ko: '빙어',    water: 'pond', rarity: 2, len: [8, 14],  body: 'sleek', back: 0xaFC4d8, belly: 0xf0f6fa, when: { season: 'winter' }, hint: '겨울 연못' },
     { id: 'mackerel', ko: '고등어',  water: 'sea',  rarity: 1, len: [22, 38], body: 'sleek', back: 0x4f7fb5, belly: 0xdfe8ee },
     { id: 'puffer',   ko: '복어',    water: 'sea',  rarity: 2, len: [14, 26], body: 'round', back: 0xc9b26a, belly: 0xf5ecd2 },
     { id: 'ray',      ko: '가오리',  water: 'sea',  rarity: 3, len: [40, 85], body: 'flat',  back: 0x7a6f8e, belly: 0xd9d2e2 },
+    { id: 'salmon',   ko: '연어',    water: 'sea',  rarity: 2, len: [45, 80], body: 'sleek', back: 0xd88a7a, belly: 0xf5d8c8, when: { rain: true },  hint: '비 오는 바다' },
+    { id: 'angler',   ko: '아귀',    water: 'sea',  rarity: 3, len: [30, 55], body: 'round', lure: true, back: 0x4a4258, belly: 0x9a8fa8, when: { night: true }, hint: '깊은 밤바다' },
     { id: 'boot',     ko: '헌 장화', water: 'any',  rarity: 0, len: [26, 26], body: 'boot',  back: 0x8a6647, belly: 0x6f5234 },
     { id: 'bottle',   ko: '유리병',  water: 'any',  rarity: 0, len: [18, 18], body: 'bottle', back: 0xa8d8cf, belly: 0xd8f0ea },
 ];
+// 지금 이 물에서 낚일 수 있는 풀 — 밤(19~06시)·비(wxF)·계절 조건을 실제 월드 상태로 판정
+function fishConditionActive(sp) {
+    if (!sp.when) return true;
+    const h = currentHour();
+    if (sp.when.night && !(h >= 19 || h < 6)) return false;
+    if (sp.when.rain && wxF < 0.3) return false;
+    if (sp.when.season && season !== sp.when.season) return false;
+    return true;
+}
+function speciesPool(water) {
+    return FISH_SPECIES.filter((s) => s.water === water && s.rarity > 0 && fishConditionActive(s));
+}
 function makeFishMesh(sp, sizeK) {
     const g = new THREE.Group();
     if (sp.body === 'boot') {
@@ -10008,6 +10046,22 @@ function makeFishMesh(sp, sizeK) {
         tail.rotation.x = Math.PI / 2 + 0.25;
         tail.position.set(0, 0.01, -0.15);
         g.add(tail);
+    } else if (sp.body === 'frog') {   // 개구리 — 둥근 몸 + 눈두덩 + 뒷다리 스텁
+        const body = new THREE.Mesh(bakeGrad(new THREE.SphereGeometry(0.07, 12, 9), sp.back, sp.belly), gradMat);
+        body.scale.set(1.1, 0.8, 1.2);
+        g.add(body);
+        for (const s of [-1, 1]) {
+            const eyeBump = new THREE.Mesh(bakeGrad(new THREE.SphereGeometry(0.024, 8, 6), sp.back, sp.back), gradMat);
+            eyeBump.position.set(s * 0.035, 0.055, 0.05);
+            g.add(eyeBump);
+            const eye = new THREE.Mesh(new THREE.SphereGeometry(0.011, 8, 6), M(0x2b2b33));
+            eye.position.set(s * 0.035, 0.065, 0.062);
+            g.add(eye);
+            const leg = new THREE.Mesh(bakeGrad(new THREE.SphereGeometry(0.03, 8, 6), sp.back, sp.belly), gradMat);
+            leg.scale.set(0.8, 0.5, 1.4);
+            leg.position.set(s * 0.07, -0.03, -0.05);
+            g.add(leg);
+        }
     } else {   // oval/sleek/round — lathe 몸통 + 꼬리·등지느러미 + 눈
         const prof = [];
         const L = sp.body === 'sleek' ? 0.24 : sp.body === 'round' ? 0.15 : 0.19;   // 반길이
@@ -10030,13 +10084,31 @@ function makeFishMesh(sp, sizeK) {
         const fin = new THREE.Mesh(bakeGrad(new THREE.ConeGeometry(0.04, 0.055, 3).scale(0.35, 1, 1), sp.back, sp.back), gradMat);
         fin.position.set(0, W * 0.82 + 0.015, 0.02);
         g.add(fin);
-        if (sp.body === 'round') {   // 복어 가시
+        if (sp.body === 'round' && !sp.lure) {   // 복어 가시
             for (let i = 0; i < 9; i++) {
                 const a = (i / 9) * Math.PI * 2;
                 const spike = new THREE.Mesh(bakeGrad(new THREE.ConeGeometry(0.012, 0.035, 5), sp.belly, sp.back), gradMat);
                 spike.position.set(Math.cos(a) * W * 0.8, Math.sin(a) * W * 0.66, -0.01);
                 spike.rotation.z = -a - Math.PI / 2;
                 g.add(spike);
+            }
+        }
+        if (sp.lure) {   // 아귀 초롱 — 밤바다 어종답게 은은히 빛난다 (lampGlobeMat: 밤에 발광)
+            const stalk = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.006, 0.008, 0.09, 6), sp.back, sp.back), gradMat);
+            stalk.position.set(0, W * 0.9 + 0.03, L * 0.5);
+            stalk.rotation.x = 0.55;
+            g.add(stalk);
+            const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 6), lampGlobeMat);
+            bulb.position.set(0, W * 0.9 + 0.068, L * 0.5 + 0.045);
+            g.add(bulb);
+        }
+        if (sp.whiskers) {   // 메기 수염 두 쌍
+            for (const [sx, ang] of [[-1, 0.5], [1, -0.5], [-1, 1.1], [1, -1.1]]) {
+                const wk = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.003, 0.005, 0.09, 5), sp.belly, sp.belly), gradMat);
+                wk.position.set(sx * W * 0.5, -0.005, L * 0.85);
+                wk.rotation.z = ang;
+                wk.rotation.x = 0.9;
+                g.add(wk);
             }
         }
         const eyeM = M(0x2b2b33);
@@ -10077,6 +10149,83 @@ function fishFanfare() {   // 잡았다! 차임 — 5도 상승 두 음
         o.stop(audioCtx.currentTime + t0 + 0.25);
     }
 }
+// ---- 🐟 물고기 도감 패널: 실물 스냅샷 아이콘(첫 열람 때 1회 오프스크린 렌더 → dataURL 캐시
+// 후 컨텍스트 즉시 폐기 — 발열 0). 못 잡은 종은 실루엣+???+힌트, 잡은 종은 이름·★·조과. ----
+const dexUI = memorialPanel('🐟 물고기 도감');
+let _dexIcons = null;
+function fishdexIcons() {
+    if (_dexIcons) return _dexIcons;
+    _dexIcons = {};
+    const rd = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    rd.setSize(96, 96);
+    rd.setPixelRatio(1);
+    const sc = new THREE.Scene();
+    const cam = new THREE.PerspectiveCamera(28, 1, 0.01, 10);
+    cam.position.set(0.5, 0.32, 0.72);
+    cam.lookAt(0, 0, 0);
+    sc.add(new THREE.AmbientLight(0xffffff, 1.25));
+    const sun = new THREE.DirectionalLight(0xfff2dd, 2.0);
+    sun.position.set(1, 2, 1.5);
+    sc.add(sun);
+    const holder = new THREE.Group();
+    sc.add(holder);
+    for (const sp of FISH_SPECIES) {
+        const mesh = makeFishMesh(sp, (sp.len[0] + sp.len[1]) / 2);
+        holder.add(mesh);
+        const box = new THREE.Box3().setFromObject(holder);   // holder는 이 시점 스케일 1·원점
+        const c = box.getCenter(new THREE.Vector3());
+        const k = 0.34 / (box.getSize(new THREE.Vector3()).length() || 1);
+        holder.scale.setScalar(k);
+        holder.position.set(-c.x * k, -c.y * k, -c.z * k);
+        rd.render(sc, cam);
+        _dexIcons[sp.id] = rd.domElement.toDataURL('image/png');
+        holder.remove(mesh);
+        holder.scale.setScalar(1);
+        holder.position.set(0, 0, 0);
+    }
+    rd.dispose();
+    rd.forceContextLoss();
+    return _dexIcons;
+}
+function renderFishdex() {
+    const icons = fishdexIcons();
+    let dex = {};
+    try { dex = JSON.parse(localStorage.getItem('world-fishdex') || '{}'); } catch (e) {}
+    dexUI.body.innerHTML = '';
+    const real = FISH_SPECIES.filter((s) => s.rarity > 0);
+    const got = real.filter((s) => dex[s.id]).length;
+    const prog = document.createElement('div');
+    prog.style.cssText = 'font-size:12px; font-weight:700; opacity:0.82;';
+    prog.textContent = `잡은 어종 ${got} / ${real.length}${got >= real.length ? ' — 도감 완성! 🎉' : ''}`;
+    dexUI.body.appendChild(prog);
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid; grid-template-columns:repeat(3, 1fr); gap:7px;';
+    for (const sp of FISH_SPECIES) {
+        const rec = dex[sp.id];
+        const cell = document.createElement('div');
+        cell.style.cssText = 'background:rgba(120,90,50,0.09); border-radius:10px; padding:6px 4px 7px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:2px;';
+        const img = document.createElement('img');
+        img.src = icons[sp.id];
+        img.style.cssText = `width:54px; height:54px;${rec ? '' : ' filter:brightness(0) opacity(0.5);'}`;
+        cell.appendChild(img);
+        const nm = document.createElement('div');
+        nm.style.cssText = 'font-size:11.5px; font-weight:700;';
+        nm.textContent = rec ? sp.ko : '???';
+        cell.appendChild(nm);
+        const sub = document.createElement('div');
+        sub.style.cssText = 'font-size:9.5px; opacity:0.72; line-height:1.3; min-height:25px;';
+        if (rec) sub.innerHTML = `${sp.rarity ? '★'.repeat(sp.rarity) : '잡동사니'}<br>${rec.n}마리 · 최대 ${rec.max}cm`;
+        else sub.textContent = `힌트: ${sp.hint || (sp.water === 'pond' ? '연못' : sp.water === 'sea' ? '바다' : '아무 물가')}`;
+        cell.appendChild(sub);
+        grid.appendChild(cell);
+    }
+    dexUI.body.appendChild(grid);
+}
+function toggleFishdex() {
+    if (dexUI.panel.style.display === 'flex') { dexUI.panel.style.display = 'none'; return; }
+    renderFishdex();
+    dexUI.panel.style.display = 'flex';
+}
 let fishing = null;   // { p, state, t, ...장비 refs } — 상태: idle→cast→wait→bite→hook→reel→land / miss
 const _fishPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);   // 캐스팅 수면 교차용
 const _fishHit = new THREE.Vector3();
@@ -10115,7 +10264,7 @@ function equipFishing() {
     if (!possessed) possessPet(pets[0]);   // 조종 중이 아니면 병아리부터 잡고 낚싯대를 쥔다
     if (!possessed) return;
     if (fishing) { unequipFishing(); return; }   // 토글
-    fishing = { p: possessed, state: 'equip', t: 0, ...mkFishingGear(), boredT: 0, sitT: 0, alert: 0, droop: 0 };
+    fishing = { p: possessed, state: 'equip', t: 0, ...getFishingGear('player'), boredT: 0, sitT: 0, alert: 0, droop: 0 };
     fishing.bobber.visible = false;
     fishing.line.visible = false;
     fishing.shadow.visible = false;
@@ -10127,23 +10276,107 @@ function equipFishing() {
 }
 function unequipFishing() {
     if (!fishing) return;
-    for (const k of ['rod', 'line', 'bobber', 'shadow']) scene.remove(fishing[k]);
+    hideGear(fishing);   // 리그는 캐시 — 씬에서 빼지 않고 숨긴다 (재장비 시 재생성 없음)
     if (fishing.fishMesh) scene.remove(fishing.fishMesh);
     fishing = null;   // 팔다리는 엔티티가 매 프레임 원위치 — 복원 코드 불필요 (앉기와 동일 원리)
 }
-function cancelFishing(quiet) {
-    if (!fishing) return;
-    fishing.bobber.visible = false;
-    fishing.line.visible = false;
-    fishing.shadow.visible = false;
-    if (fishing.fishMesh) { scene.remove(fishing.fishMesh); fishing.fishMesh = null; }
-    fishing.state = 'idle';
-    fishing.t = 0;
+function resetFishingInstance(f, quiet) {
+    f.bobber.visible = false;
+    f.line.visible = false;
+    f.shadow.visible = false;
+    if (f.fishMesh) { scene.remove(f.fishMesh); f.fishMesh = null; }
+    f.state = 'idle';
+    f.t = 0;
     if (!quiet) playBuffer(swishBuf, { vol: 0.2, rate: 1.6, filterFreq: 1400 });
 }
-// 캐스팅 시작 — target { x, z, water:'sea'|'pond' }
-function startCast(target) {
-    const f = fishing;
+function cancelFishing(quiet) { if (fishing) resetFishingInstance(fishing, quiet); }
+// ---- 절친 자율 낚시: 한가한 낮에 혼자 물가로 걸어가 앉아 두세 판 낚시하고 온다.
+// 같은 상태기계·안무를 그대로 타되(isAI) 입력 대신 반사신경 랜덤 + 85% 챔질 성공. ----
+let aiFishing = null;
+const _fishGear = {};   // 'player' | 'ai' — 리그는 한 번 만들어 보였다 숨겼다 (반복 토글 GC 없음)
+function getFishingGear(kind) {
+    if (!_fishGear[kind]) _fishGear[kind] = mkFishingGear();
+    const g = _fishGear[kind];
+    g.rod.visible = true;
+    return g;
+}
+function hideGear(f) {
+    f.rod.visible = false;
+    f.line.visible = false;
+    f.bobber.visible = false;
+    f.shadow.visible = false;
+}
+function aiCastNow(f) {
+    // 바라보는 방향부터 전방위 스캔(16각 × 2거리) — 도착이 어중간해도(막힘-도착) 근처 물을 찾아낸다
+    const m = f.p.mover;
+    for (let i = 0; i < 16; i++) {
+        const ang = m.rotation.y + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * (Math.PI / 8);
+        for (const reach of [1.7, 2.4]) {
+            const cx = m.position.x + Math.sin(ang) * reach, cz = m.position.z + Math.cos(ang) * reach;
+            const water = Math.hypot(cx - pondPropRef.x, cz - pondPropRef.z) < 0.55 ? 'pond'
+                : (islandOf(cx, cz) < 0 && Math.hypot(cx, cz) < 22 ? 'sea' : null);
+            if (water) {
+                m.rotation.y = ang;
+                f.aiActed = false;
+                f.aiHookAt = 0.15 + Math.random() * 0.4;
+                startCast(f, { x: cx, z: cz, water });
+                return;
+            }
+        }
+    }
+    endAiFishing();   // 정말 내륙에 갇혔을 때만
+}
+function aiAfterRound(f) {
+    f.castsLeft -= 1;
+    if (f.castsLeft <= 0) endAiFishing();   // 남았으면 idle에서 1.2초 숨 고르고 다시 던진다
+}
+function startAiFishing(p) {
+    if (aiFishing || (fishing && fishing.p === p)) return;
+    if (p === possessed || p.bed || p.dip || p.pet.sleeping) return;   // 자거나 놀이 중이면 다음 기회에
+    const idx = islandOf(p.mover.position.x, p.mover.position.z);
+    const isl = idx >= 0 ? ISLANDS[idx] : ISLANDS[0];
+    // 물가 지점: 펫에서 가장 가까운 림 각도부터 좌우로 훑어 통행 가능한 첫 자리 (짧은 산책 + 막힘 최소)
+    const a0 = Math.atan2(p.mover.position.z - isl.z, p.mover.position.x - isl.x);
+    let sx = null, sz = null;
+    for (let i = 0; i < 24; i++) {
+        const a = a0 + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * (Math.PI / 12);
+        const x = isl.x + Math.cos(a) * (isl.r - 0.55), z = isl.z + Math.sin(a) * (isl.r - 0.55);
+        if (!world.isBlocked(x, z)) { sx = x; sz = z; break; }
+    }
+    if (sx === null) return;
+    releaseAI(p);
+    p.ai.state = 'goto';
+    p.ai.target = { x: sx, z: sz };
+    p.ai.waypoints = buildRoute(p.mover.position, { x: sx, z: sz });
+    p.ai.stall = 0;
+    // 인스턴스는 출발부터 — 걷는 동안 idle 안무가 낚싯대를 어깨에 메 준다 (도착 전 캐스팅은 onArrive 게이트)
+    aiFishing = { p, isAI: true, state: 'idle', t: 0, ...getFishingGear('ai'), boredT: 0, sitT: 0, alert: 0, droop: 0, castsLeft: 2 + Math.floor(Math.random() * 2) };
+    aiFishing.bobber.visible = false;
+    aiFishing.line.visible = false;
+    aiFishing.shadow.visible = false;
+    aiFishing.ownArrive = () => {   // 클로저 정체성 = 소유권 표식 — 다른 디렉터가 goto를 덮어쓰면 식별된다
+        if (!aiFishing || aiFishing.p !== p) return;
+        p.mover.rotation.y = Math.atan2(p.mover.position.x - isl.x, p.mover.position.z - isl.z);   // 물(바깥)을 본다
+        aiFishing.began = true;
+        aiFishing.t = 0;
+        aiCastNow(aiFishing);
+    };
+    p.ai.onArrive = aiFishing.ownArrive;
+    logWorldEvent(`${petKo(p)}가 낚싯대를 챙겨 물가로 나섰다 🎣`);
+}
+function endAiFishing() {
+    if (!aiFishing) return;
+    const f = aiFishing, p = f.p;
+    if (f.fishMesh) { scene.remove(f.fishMesh); f.fishMesh = null; }
+    hideGear(f);
+    aiFishing = null;
+    // 아직 우리가 소유 중일 때만 놓아준다 — 다른 디렉터가 데려갔으면 그쪽 연출을 건드리지 않는다
+    const ours = (p.ai.state === 'goto' && p.ai.onArrive === f.ownArrive) || (p.ai.state === 'busy' && f.began);
+    if (ours) releaseAI(p, 2);
+    if (f.began) logWorldEvent(`${petKo(p)}가 낚시를 마치고 일어났다`);
+}
+// 캐스팅 시작 — target { x, z, water:'sea'|'pond' } (f = 플레이어 fishing 또는 aiFishing 인스턴스)
+function startCast(f, target) {
     f.state = 'cast';
     f.t = 0;
     f.target = target;
@@ -10154,13 +10387,14 @@ function startCast(target) {
     f.nibblesLeft = 1 + Math.floor(Math.random() * 3);
     f.nextEventT = 1.6 + Math.random() * 2.6;   // 그림자 등장까지
     f.shadowPhase = 'approach';
-    // 어종 미리 결정 (물별 풀 + 희귀도 가중 + 꽝 10%)
+    // 어종 미리 결정 (물별 풀 + 밤/비/계절 조건 + 희귀도 가중 + 꽝 10%). 조건 어종은 자기 조건이
+    // 켜져 있을 때 가중 1.6배 — "밤에 낚시하러 나온 보람"이 확률로 느껴지게.
     const roll = Math.random();
     if (roll < 0.1) {
         f.species = FISH_SPECIES.find((s) => s.id === (Math.random() < 0.5 ? 'boot' : 'bottle'));
     } else {
-        const pool = FISH_SPECIES.filter((s) => s.water === target.water);
-        const w = pool.map((s) => (s.rarity === 1 ? 0.6 : s.rarity === 2 ? 0.3 : 0.1));
+        const pool = speciesPool(target.water);
+        const w = pool.map((s) => (s.rarity === 1 ? 0.6 : s.rarity === 2 ? 0.3 : 0.1) * (s.when ? 1.6 : 1));
         let r2 = Math.random() * w.reduce((a, b) => a + b, 0);
         f.species = pool[0];
         for (let i = 0; i < pool.length; i++) { r2 -= w[i]; if (r2 <= 0) { f.species = pool[i]; break; } }
@@ -10193,7 +10427,7 @@ function tryCastAtScreen() {
     }
     if (water) {
         const d = Math.hypot(pt.x - mp.x, pt.z - mp.z);
-        if (d >= 0.45 && d <= 6.0) { startCast({ x: pt.x, z: pt.z, water }); return 'cast'; }
+        if (d >= 0.45 && d <= 6.0) { startCast(fishing, { x: pt.x, z: pt.z, water }); return 'cast'; }
         if (d < 0.45) return 'near';
     }
     // 관용 조준: 클릭 방향(수평)으로 2.2m — 물가에서 물 쪽을 찍으면 각도와 무관하게 던져진다
@@ -10203,7 +10437,7 @@ function tryCastAtScreen() {
         for (const reach of [2.2, 1.4, 3.2]) {
             const cx = mp.x + (dx / dl) * reach, cz = mp.z + (dz / dl) * reach;
             const w2 = waterAt(cx, cz);
-            if (w2) { startCast({ x: cx, z: cz, water: w2 }); return 'cast'; }
+            if (w2) { startCast(fishing, { x: cx, z: cz, water: w2 }); return 'cast'; }
         }
     }
     return water ? 'far' : 'land';
@@ -10226,10 +10460,17 @@ function fishingIntercept() {
     return st !== 'idle';   // 시전·파이팅·연출 중엔 다른 상호작용 잠금
 }
 function updateFishing(delta) {
-    const f = fishing;
-    if (!f) return;
+    if (fishing) updateFishingInstance(fishing, delta);
+    if (aiFishing) updateFishingInstance(aiFishing, delta);
+}
+function updateFishingInstance(f, delta) {
     const p = f.p;
-    if (p !== possessed) { unequipFishing(); return; }   // 조종이 풀리면 낚시도 정리
+    if (!f.isAI && p !== possessed) { unequipFishing(); return; }   // 조종이 풀리면 낚시도 정리
+    if (f.isAI) {   // 소유권 확인: 물가로 걷는 중(우리 onArrive) 또는 자리 잡음(began) — 아니면 뺏긴 것
+        const walking = p.ai.state === 'goto' && p.ai.onArrive === f.ownArrive;
+        const parked = p.ai.state === 'busy' && f.began;
+        if (p === possessed || (!walking && !parked) || isSleepTime(currentHour())) { endAiFishing(); return; }
+    }
     f.t += delta;
     const m = p.mover;
     const fwdX = Math.sin(m.rotation.y), fwdZ = Math.cos(m.rotation.y);
@@ -10250,8 +10491,13 @@ function updateFishing(delta) {
         const k = Math.min(1, f.t / 0.5);
         rodPitch = 0.6 + Math.sin(k * Math.PI) * 0.5;
         rodYaw += Math.sin(k * Math.PI * 2) * 2.2 * (1 - k);   // 빙글 돌려 잡기
-        if (k >= 1) { f.state = 'idle'; f.t = 0; }
+        if (k >= 1) {
+            f.state = 'idle';
+            f.t = 0;
+            if (f.isAI) aiCastNow(f);   // 절친은 장비 빙글 끝나자마자 스스로 던진다
+        }
     } else if (f.state === 'idle') {
+        if (f.isAI && !p.ai.onArrive && f.t > 1.2) aiCastNow(f);   // 걷는 중(onArrive 대기)엔 메고만 간다 — 재캐스팅 숨 고르기
         // 걷는 중엔 어깨에 걸치고, 서 있으면 앞으로 든다
         rodPitch = p.pet.walking ? -0.5 : 0.55;
         rodSide = p.pet.walking ? 0.16 : 0.28;
@@ -10355,12 +10601,20 @@ function updateFishing(delta) {
             f.alert = Math.max(0, f.alert - delta * 2.2);
         }
     } else if (f.state === 'bite') {
-        // ⑤ 챔질 윈도우 0.65초 — 놓치면 miss
+        // ⑤ 챔질 윈도우 0.65초 — 놓치면 miss. 절친(AI)은 반사신경 랜덤 + 85% 성공(가끔 놓쳐야 귀엽다)
         const wy = waterYFor(f);
         f.bobber.position.set(f.target.x, wy - 0.09 + Math.sin(f.t * 30) * 0.012, f.target.z);
         leanX = 0.22;
         for (const ey of p.pet.eyes) ey.scale.y = (ey.userData._restScaleY || 1) * 1.22;
-        if (f.t > 0.65) {
+        if (f.isAI && !f.aiActed && f.t >= (f.aiHookAt || 0.25)) {
+            f.aiActed = true;
+            if (Math.random() < 0.85) {
+                f.state = 'hook';
+                f.t = 0;
+                playSplashSound(f.target.x, f.target.z);
+            }
+        }
+        if (f.state === 'bite' && f.t > 0.65) {
             f.state = 'miss';
             f.t = 0;
             f.shadow.visible = false;
@@ -10423,15 +10677,17 @@ function updateFishing(delta) {
             f.bobber.visible = false;
             f.line.visible = false;
         } else {
-            if (!f.shown) {   // 자랑 시작 프레임: 도감·토스트·차임·반짝 링
+            if (!f.shown) {   // 자랑 시작 프레임: 도감·토스트·차임·반짝 링 (도감은 주인 조과만)
                 f.shown = true;
-                const first = f.species.rarity > 0 && fishdexRecord(f.species, f.len);
-                const label = f.species.rarity === 0 ? `😅 ${f.species.ko}...가 낚였다` : `🐟 ${f.species.ko}를 낚았다! (${f.len}cm)${f.big ? ' — 월척!!' : ''}${first ? ' · 처음 잡았다!' : ''}`;
+                const first = !f.isAI && f.species.rarity > 0 && fishdexRecord(f.species, f.len);
+                const label = f.isAI
+                    ? (f.species.rarity === 0 ? `😅 절친이 ${f.species.ko}...를 건져 올렸다` : `🐟 절친이 ${f.species.ko}를 낚았다! (${f.len}cm)`)
+                    : (f.species.rarity === 0 ? `😅 ${f.species.ko}...가 낚였다` : `🐟 ${f.species.ko}를 낚았다! (${f.len}cm)${f.big ? ' — 월척!!' : ''}${first ? ' · 처음 잡았다!' : ''}`);
                 showToast(label);
                 logWorldEvent(`${petKo(p)}가 낚시로 ${f.species.ko}${f.species.rarity === 0 ? '를 건져 올렸다' : `를 낚았다 (${f.len}cm)`}`);
                 if (f.species.rarity > 0) {
                     fishFanfare();
-                    maybeProactive(null, `주인이 방금 낚시로 ${f.species.ko}(${f.len}cm)를 낚았다!${f.big ? ' 월척이다!' : ''}`);
+                    if (!f.isAI) maybeProactive(null, `주인이 방금 낚시로 ${f.species.ko}(${f.len}cm)를 낚았다!${f.big ? ' 월척이다!' : ''}`);
                     for (let i = 0; i < 8; i++) {   // 반짝 링
                         const a = (i / 8) * Math.PI * 2;
                         const spr = glowSprite(0xfff1cf, 0.08, 0.9);
@@ -10466,7 +10722,8 @@ function updateFishing(delta) {
                 scene.remove(f.fishMesh);
                 f.fishMesh = null;
                 f.shown = false;
-                cancelFishing(true);
+                resetFishingInstance(f, true);
+                if (f.isAI) aiAfterRound(f);
             }
         }
     } else if (f.state === 'miss') {
@@ -10476,7 +10733,12 @@ function updateFishing(delta) {
         f.droop = Math.min(1, k * 1.4);
         f.bobber.visible = false;
         f.line.visible = false;
-        if (k >= 1) { f.droop = 0; cancelFishing(true); showToast('🎣 놓쳤다…! 다시 던져봐요'); }
+        if (k >= 1) {
+            f.droop = 0;
+            resetFishingInstance(f, true);
+            if (f.isAI) aiAfterRound(f);
+            else showToast('🎣 놓쳤다…! 다시 던져봐요');
+        }
     }
     // ---- 공통 적용: 몸(wrap) + 날개/귀 + 낚싯대 + 낚싯줄 ----
     wrap.rotation.x += leanX;
