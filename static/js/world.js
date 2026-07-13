@@ -34,7 +34,9 @@ const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'la
         p.layoutId = `${p.type}-${counts[p.type] = (counts[p.type] || 0) + 1}`;
         p.def = { x: p.x, z: p.z, rotY: p.rotY || 0 };            // "전부 원위치"용 원본 좌표
         const o = MOVABLE_TYPES.has(p.type) ? savedLayout[p.layoutId] : null;
-        if (o && Number.isFinite(o.x) && Number.isFinite(o.z)) {
+        // 배치 리뉴얼 마이그레이션: 섬들이 이동/확장돼 옛 저장 좌표가 물 위에 고립됐으면
+        // 그 저장값은 버리고 새 기본 위치로 — islandOf(r−0.3 마진)·다리 위만 유효한 뭍으로 본다.
+        if (o && Number.isFinite(o.x) && Number.isFinite(o.z) && (islandOf(o.x, o.z) >= 0 || onBridge(o.x, o.z))) {
             p.x = o.x; p.z = o.z;
             if (Number.isFinite(o.rotY)) p.rotY = o.rotY;
         }
@@ -4793,17 +4795,18 @@ function carBlocked(nx, nz) {
 
 // ---- 🚣 노 젓는 보트 상태 + 모델: 본섬 북쪽 물가에 정박 — 휴양지 모래섬으로 가는 발.
 // 기본 정박 (1.1, 6.0): 기슭 걷기 한계(r-0.35)에서 승선 반경 1.25 안 — 뭍에서 바로 탄다 (검산). ----
-const BOAT = { x: 1.1, z: 6.0, heading: -0.4, vel: 0 };
+const BOAT = { x: 1.2, z: 6.8, heading: -0.4, vel: 0 };   // 본섬 6.2 확장에 맞춰 북쪽 물가로 (구 1.1,6.0은 이제 뭍)
 {   // 🔨 저장된 정박 위치 — 차와 같은 방식. 키를 boat-2로 세대교체: 초기 배포 때 모래섬 곁에
     // 저장된 boat-1 정박들을 리셋해 "초기 위치 = 메인 땅 물가"로 되돌린다 (사용자 요청).
-    // 이후 정박은 boat-2로 정상 저장·복원된다. 육지에 찍힌 저장값(비정상)은 무시.
+    // 이후 정박은 boat-2로 정상 저장·복원된다. 육지에 찍힌/섬 확장으로 뭍이 된 저장값은 무시.
     const o = savedLayout['boat-2'];
-    if (o && Number.isFinite(o.x) && Number.isFinite(o.z) && islandOf(o.x, o.z) < 0) {
+    if (o && Number.isFinite(o.x) && Number.isFinite(o.z)
+        && ISLANDS.every((il) => Math.hypot(o.x - il.x, o.z - il.z) > il.r + 0.2)) {
         BOAT.x = o.x; BOAT.z = o.z;
         if (Number.isFinite(o.rotY)) BOAT.heading = o.rotY;
     }
 }
-const boatCollider = { type: 'boat', layoutId: 'boat-2', x: BOAT.x, z: BOAT.z, rotY: 0, r: 0.5, def: { x: 1.1, z: 6.0, rotY: -0.4 } };
+const boatCollider = { type: 'boat', layoutId: 'boat-2', x: BOAT.x, z: BOAT.z, rotY: 0, r: 0.5, def: { x: 1.2, z: 6.8, rotY: -0.4 } };
 PROPS.push(boatCollider);
 let boatRide = null;    // { driver, passenger, row, lastPh } while someone is rowing
 function makeBoat() {
@@ -5051,7 +5054,7 @@ for (let i = 1; i < ISLANDS.length; i++) ROAD_NODES.push({ x: ISLANDS[i].x, z: I
         const len = Math.hypot(dx, dz);
         const heading = Math.atan2(dx, dz);
         const px = -dz / len, pz = dx / len;
-        const N = 10;
+        const N = Math.max(10, Math.round(len / 0.22));   // 섬 간격이 벌어져 다리가 길어짐 — 플랭크 밀도 유지
         for (let i = 0; i <= N; i++) {
             const t = i / N;
             const plank = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.045, (len / N) * 0.82), bridgeWood);
