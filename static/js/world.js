@@ -6943,6 +6943,14 @@ if (statsOn) window.__worldDev = {
     petScreenXY: () => pets.map((p) => { const a = fxPoint(p, 50, 45); return { x: Math.round(a.x), y: Math.round(a.y) }; }),
     fishState: () => (fishing ? fishing.state : null),   // 낚시 헤드리스 검증용
     aiFishState: () => (aiFishing ? aiFishing.state : null),   // 절친 자율 낚시 검증용
+    wrapDrift: () => (possessed ? +(possessed.pet.wrap.rotation.y - Math.PI).toFixed(4) : null),   // 몸 비틀림 누적 감시 (기준 π)
+    aiFishSnap: () => {   // 자율 낚시 도보 생략 — E2E가 먼 섬 출발(1~2분 도보)에 좌우되지 않게
+        if (!aiFishing || !aiFishing.p.ai.target) return false;
+        aiFishing.p.mover.position.x = aiFishing.p.ai.target.x;
+        aiFishing.p.mover.position.z = aiFishing.p.ai.target.z;
+        aiFishing.p.ai.waypoints = [aiFishing.p.ai.target];
+        return true;
+    },
     aiFishDebug: () => (aiFishing ? { st: aiFishing.state, ai: aiFishing.p.ai.state, began: !!aiFishing.began, arr: aiFishing.p.ai.onArrive === aiFishing.ownArrive, x: +aiFishing.p.mover.position.x.toFixed(2), z: +aiFishing.p.mover.position.z.toFixed(2), tgt: aiFishing.p.ai.target, wp: aiFishing.p.ai.waypoints ? aiFishing.p.ai.waypoints.length : 0, stall: +(aiFishing.p.ai.stall || 0).toFixed(1) } : null),
     startAiFish: () => {   // 한가한 펫 골라 자율 낚시 발동 — 'ok' | 'busy'(전원 딴짓) | 'fail'
         const q = pets.find((p) => p !== possessed && !p.bed && !p.dip && !p.pet.sleeping);
@@ -10741,8 +10749,10 @@ function updateFishingInstance(f, delta) {
         }
     }
     // ---- 공통 적용: 몸(wrap) + 날개/귀 + 낚싯대 + 낚싯줄 ----
+    // x/z는 엔티티가 매 프레임 다시 쓰므로 +=가 "이번 프레임 값 위에 얹기"지만, y는 모션 종료
+    // 때만 π로 리셋된다 — +=면 비틀기가 적분 누적돼 캐스팅마다 몸이 한쪽으로 감긴다. 절대값으로.
     wrap.rotation.x += leanX;
-    wrap.rotation.y += twistY;
+    wrap.rotation.y = Math.PI + twistY;
     if (hopY) m.position.y += hopY;
     if (f.droop > 0) {   // 처짐: 날개·귀가 축
         for (const wg of p.pet.wings) wg.rotation.z = (wg.userData._restRotZ || 0) * (1 - f.droop * 0.5);
@@ -10750,10 +10760,11 @@ function updateFishingInstance(f, delta) {
     } else if (f.state !== 'idle' && f.state !== 'equip') {
         for (const wg of p.pet.wings) wg.rotation.z = (wg.userData._restRotZ || 0) * 0.35;   // 그립 — 날개 몸에 붙임
     }
+    const rk = p.height / 0.85;   // 상태별 오프셋 상수는 키 0.85 기준 미터 — 펫 키에 비례 축소해 몸에 붙인다
     const grip = {
-        x: m.position.x + fwdX * rodFwd + rgtX * rodSide,
+        x: m.position.x + (fwdX * rodFwd + rgtX * rodSide) * rk,
         y: gripY,
-        z: m.position.z + fwdZ * rodFwd + rgtZ * rodSide,
+        z: m.position.z + (fwdZ * rodFwd + rgtZ * rodSide) * rk,
     };
     f.rod.position.set(grip.x, grip.y, grip.z);
     f.rod.rotation.set(rodPitch, rodYaw, 0, 'YXZ');
