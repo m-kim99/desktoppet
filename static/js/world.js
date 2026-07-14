@@ -10088,7 +10088,7 @@ function makePlane() {
     }
     // 오픈 콕핏 2자리: 링 테두리 (앞=조종석, 뒤=절친석) + 미니 윈드실드
     const glassGeos = [];
-    for (const cz of [0.28, -0.36]) {   // 앞뒤 좌석 간격 0.64 — 탠덤 여유
+    for (const cz of [0.28, -0.04]) {   // 앞뒤 좌석 간격 0.32 — 아늑한 탠덤 (사용자 튜닝)
         const rimGeo = new THREE.TorusGeometry(0.085, 0.016, 8, 16).rotateX(Math.PI / 2);
         rimGeo.translate(0, 0.435, cz);
         rims.push(rimGeo);
@@ -10408,7 +10408,7 @@ function stepPlane(delta, driver) {
         q.swimming = false;
     };
     seatPet(driver, 0.28);
-    if (r.passenger) seatPet(r.passenger, -0.36);
+    if (r.passenger) seatPet(r.passenger, -0.04);
 }
 // 주차 중: 물 위면 파도 위 살랑, 뭍이면 정지 — 프로펠러도 멈춤 (프레임 비용 0에 수렴)
 function updatePlaneIdle() {
@@ -10473,7 +10473,7 @@ function updatePlaneHop(delta) {
     const e = k * k * (3 - 2 * k);
     const q = planeHop.q;
     const ty = planeSupportY(PLANE.x, PLANE.z) + 0.4 - q.height * 0.32;
-    const tx = PLANE.x - Math.sin(PLANE.heading) * 0.36, tz = PLANE.z - Math.cos(PLANE.heading) * 0.36;
+    const tx = PLANE.x - Math.sin(PLANE.heading) * 0.04, tz = PLANE.z - Math.cos(PLANE.heading) * 0.04;
     q.mover.position.set(
         THREE.MathUtils.lerp(planeHop.fx, tx, e),
         THREE.MathUtils.lerp(planeHop.fy, ty, e) + Math.sin(k * Math.PI) * 0.5,
