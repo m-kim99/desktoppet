@@ -4236,10 +4236,11 @@ const HOVER_PROMPTS = {
     fountain: () => '⛲ 분수',
     flowerbasket: () => (flowerMode ? '🌸 꽃심기 모드 켜짐 — 다시 클릭하면 꺼요' : `🌸 꽃심기 바구니 — 클릭해서 심기 모드 (${flowersData.length}/100)`),
     boat: () => '🚣 노 젓는 보트 — 조종 중 ⌘로 타기 (절친 동승 가능)',
+    plane: () => '🛩️ 경비행기 — 조종 중 ⌘로 탑승! 전속력 활주 = 이륙, W/S로 고도 (절친 동승 가능)',
     sandcastle: () => '🏰 모래성 — 클릭하면 펫이 모래놀이 · 조종 중 ⌘ = 직접 앉기',
     palm: () => '🌴 야자수',
 };
-const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, piano: 1.05, photoboard: 1.55, mailbox: 0.75, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, sandcastle: 0.65, palm: 1.2 };
+const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, piano: 1.05, photoboard: 1.55, mailbox: 0.75, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, sandcastle: 0.65, palm: 1.2 };
 const hoverEl = document.createElement('div');
 hoverEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); z-index:88; pointer-events:none; background:rgba(30,32,40,0.88); color:#fff; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
 document.body.appendChild(hoverEl);
@@ -6294,6 +6295,11 @@ renderer.domElement.addEventListener('pointerup', (e) => {
         showBoatMenu(e.clientX, e.clientY);
         return;
     }
+    // 🛩️ 활주/탑승 중 비행기를 우클릭 = 친구 태우기 (공중 제외)
+    if (e.button === 2 && planeRide && !planeRide.passenger && PLANE.mode !== 'fly' && raycaster.intersectObject(planeGroup, true).length) {
+        showPlaneMenu(e.clientX, e.clientY);
+        return;
+    }
     // 🎣 낚싯대 든 채 물 클릭 = 캐스팅 (해석은 tryCastAtScreen — 헤드리스 진단과 공유)
     if (fishing && fishing.state === 'idle' && possessed === fishing.p && !airborne) {
         const res = tryCastAtScreen();   // raycaster는 위에서 이미 세팅됨
@@ -6717,7 +6723,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트' };
+const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -6746,6 +6752,8 @@ function petStatusLine(p) {
     else if (carDrive && carDrive.passenger === p) parts.push('스포츠카 조수석에 타는 중');
     if (boatRide && boatRide.driver === p) parts.push('보트에서 노 젓는 중');
     else if (boatRide && boatRide.passenger === p) parts.push('보트 뱃머리에 타는 중');
+    else if (planeRide && planeRide.driver === p) parts.push(PLANE.mode === 'fly' ? '경비행기 몰고 하늘을 나는 중!' : '경비행기 활주 중');
+    else if (planeRide && planeRide.passenger === p) parts.push(PLANE.mode === 'fly' ? '경비행기 뒷좌석에서 하늘 구경 중!' : '경비행기 뒷좌석에 타는 중');
     else if (p.bed && p.bedPhase === 'lying') {
         const ko = BED_KO[p.bed.id] || p.bed.id;
         parts.push(p.bed.mode === 'swing' || p.bed.mode === 'seesaw' ? `${ko} 타는 중`
@@ -6956,6 +6964,10 @@ if (statsOn) window.__worldDev = {
     fishState: () => (fishing ? fishing.state : null),   // 낚시 헤드리스 검증용
     aiFishState: () => (aiFishing ? aiFishing.state : null),   // 절친 자율 낚시 검증용
     wrapDrift: () => (possessed ? +(possessed.pet.wrap.rotation.y - Math.PI).toFixed(4) : null),   // 몸 비틀림 누적 감시 (기준 π)
+    planeState: () => ({ mode: PLANE.mode, x: +PLANE.x.toFixed(2), z: +PLANE.z.toFixed(2), y: +PLANE.y.toFixed(2), vel: +PLANE.vel.toFixed(2), riding: !!planeRide, passenger: !!(planeRide && planeRide.passenger) }),
+    groundAt: (x, z) => +world.groundHeightAt(x, z).toFixed(3),    // 지형 프로브 (배치·활주로 검증용)
+    interact: () => doInteract(),                                  // 헤드리스 ⌘ 대행
+    devKey: (k, on) => { if (on) heldKeys.add(k); else heldKeys.delete(k); return [...heldKeys]; },   // 조종 키 주입
     aiFishSnap: () => {   // 자율 낚시 도보 생략 — E2E가 먼 섬 출발(1~2분 도보)에 좌우되지 않게
         if (!aiFishing || !aiFishing.p.ai.target) return false;
         aiFishing.p.mover.position.x = aiFishing.p.ai.target.x;
@@ -7453,10 +7465,10 @@ function saveLayoutSoon() { buildDirty = true; clearTimeout(saveLayoutTimer); sa
 function saveLayout() {
     const out = {};
     for (const q of PROPS) {
-        if (!q.layoutId || !(MOVABLE_TYPES.has(q.type) || q.type === 'car' || q.type === 'boat')) continue;
+        if (!q.layoutId || !(MOVABLE_TYPES.has(q.type) || q.type === 'car' || q.type === 'boat' || q.type === 'plane')) continue;
         out[q.layoutId] = {
             x: +q.x.toFixed(3), z: +q.z.toFixed(3),
-            rotY: +(((q.type === 'car' ? CAR.heading : q.type === 'boat' ? BOAT.heading : q.rotY) || 0)).toFixed(3),
+            rotY: +(((q.type === 'car' ? CAR.heading : q.type === 'boat' ? BOAT.heading : q.type === 'plane' ? PLANE.heading : q.rotY) || 0)).toFixed(3),
         };
     }
     out._sig = ISLAND_SIG;   // 현재 섬 지문 동봉 — 다음 로드가 "그 사이 섬이 바뀌었나"를 판정하는 기준점
@@ -9062,6 +9074,7 @@ function releasePossession() {
     seaHop = null;
     if (carDrive) exitCar();
     if (boatRide) exitBoat(true);   // 강제 하선 — 거절 없이 (절친은 기슭 or 물에)
+    if (planeRide) exitPlane(true); // 강제 하기 — 공중이면 비상 착륙 후 내려준다
     releaseHandHold();
     running = false;
     snapToLand(p);
@@ -9078,6 +9091,7 @@ const ARROW_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 // 조종 액션 3종 — 키보드(Space·Ctrl/⌘·Esc)와 터치 버튼(🦘·✋·✕)이 같은 함수를 부른다.
 function doJump() {
     if (!possessed) return;
+    if (planeRide) return;   // 🛩️ 탑승 중 Space 무시 — 고도는 W/S
     if (fishing && (fishing.state === 'bite' || fishing.state === 'wait')) { fishingIntercept(); return; }   // Space도 챔질
     if (fishing && fishing.state !== 'idle') return;   // 시전·파이팅 중 점프 잠금
     if (jumpsLeft <= 0) return;
@@ -9112,10 +9126,16 @@ function doInteract() {
     // streetlamp — in that priority order.
     if (!possessed) return;
     if (fishingIntercept()) return;   // 🎣 입질 챔질 / 성급 걷어들이기 / 연출 중 잠금
+    if (planeRide) {
+        if (PLANE.mode === 'fly') { showToast('🛩️ 공중이에요 — S로 내려가 지면·수면에 닿으면 착륙!'); return; }
+        exitPlane();
+        return;
+    }
     if (boatRide) { exitBoat(); return; }
     if (possessed.swimming === 'sea') {
         const pos = possessed.mover.position;
         if (Math.hypot(pos.x - BOAT.x, pos.z - BOAT.z) < 1.15) { enterBoat(); return; }   // 헤엄쳐 와서 승선
+        if (Math.hypot(pos.x - PLANE.x, pos.z - PLANE.z) < 1.35 && PLANE.mode === 'parked') { enterPlane(); return; }   // 물에 뜬 비행기도 승선
         const spot = nearestClimbSpot(pos);
         if (spot && !seaHop) {
             seaHop = { fx: pos.x, fy: pos.y, fz: pos.z, tx: spot.tx, tz: spot.tz, ty: spot.ty, t: 0 };
@@ -9131,6 +9151,10 @@ function doInteract() {
     }
     if (Math.hypot(possessed.mover.position.x - BOAT.x, possessed.mover.position.z - BOAT.z) < 1.25) {
         enterBoat();   // 물가에 정박한 보트 — 뭍에서 폴짝 올라탄다
+        return;
+    }
+    if (PLANE.mode === 'parked' && Math.hypot(possessed.mover.position.x - PLANE.x, possessed.mover.position.z - PLANE.z) < 1.4) {
+        enterPlane();   // 🛩️ 주차된 경비행기 — 조종석으로
         return;
     }
     if (handHold) { releaseHandHold(); return; }
@@ -9186,6 +9210,7 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { if (constelMode) { endConstellationMode(); return; } if (buildMode) { setBuildMode(false); return; } escapeAction(); return; }   // 🔨 공사 중 Esc = 공사 종료(저장)
     if (!possessed) return;
     if (ARROW_KEYS.includes(e.key)) { heldKeys.add(e.key); e.preventDefault(); }
+    else if (e.code === 'KeyW' || e.code === 'KeyS') { heldKeys.add(e.code); e.preventDefault(); }   // 🛩️ 비행 고도 (W=상승 S=하강, 한/영 무관 e.code)
     else if (e.code === 'Space') { e.preventDefault(); doJump(); }
     else if (e.key === 'Shift') {
         e.preventDefault();
@@ -9193,7 +9218,7 @@ window.addEventListener('keydown', (e) => {
     }
     else if (e.key === 'Control' || e.key === 'Meta') { e.preventDefault(); doInteract(); }
 });
-window.addEventListener('keyup', (e) => { heldKeys.delete(e.key); });
+window.addEventListener('keyup', (e) => { heldKeys.delete(e.key); heldKeys.delete(e.code); });
 window.addEventListener('blur', () => { heldKeys.clear(); resetTouchStick(); });   // 앱 전환 시 스틱도 초기화
 
 // Swimming (조종 전용): the player pet may wade into the pond or dive off the rim into the sea —
@@ -9325,6 +9350,16 @@ function updatePlayer(delta) {
             ? `🚗 ${p.name === 'chick' ? '병아리' : '강아지'} 운전 중${carDrive.passenger ? ' 👥' : ''} — 스틱 가속·핸들 · ✋ 내리기 · ✕ 해제`
             : `🚗 ${p.name === 'chick' ? '병아리' : '강아지'} 운전 중${carDrive.passenger ? ' 👥' : ''} — ↑↓ 가속·후진 · ←→ 핸들 · Ctrl/⌘ 내리기 · Esc 해제`;
         if (controlHint.textContent !== driveHint) controlHint.textContent = driveHint;
+        return;
+    }
+    if (planeRide) {
+        stepPlane(delta, p);
+        const flyHint = PLANE.mode === 'fly'
+            ? (IS_TOUCH ? `🛩️ ${petKo(p)} 비행 중${planeRide && planeRide.passenger ? ' 👥' : ''} — 스틱 상하 고도·좌우 방향 · ✕ 해제`
+                : `🛩️ ${petKo(p)} 비행 중${planeRide && planeRide.passenger ? ' 👥' : ''} — W/S 고도 · ←→ 방향 · ↑↓ 속도 (내려앉으면 착륙)`)
+            : (IS_TOUCH ? `🛩️ ${petKo(p)} 활주 중 — 스틱 가속·방향 (전속력=이륙!) · ✋ 내리기 · ✕ 해제`
+                : `🛩️ ${petKo(p)} 활주 중 — ↑ 가속 (전속력=이륙!) · ←→ 방향 · Ctrl/⌘ 내리기 · Esc 해제`);
+        if (controlHint.textContent !== flyHint) controlHint.textContent = flyHint;
         return;
     }
     if (boatRide) {
@@ -9998,6 +10033,433 @@ function updateBoatHop(delta) {
         else { q.swimming = false; releaseAI(q); snapToLand(q); }   // 그 사이 하선했으면 뭍으로
     }
 }
+
+// ---- 🛩️ 경비행기 (수륙양용 복엽기): 휴양지 모래섬 해변에 주차. 차·보트와 같은 탑승 문법 —
+// ⌘ 근접 탑승, 우클릭 "친구 태우기"(뒷좌석 탠덤). 활주(뭍·물 모두, 물에선 물살 스프레이) →
+// 전속력에서 자동 이륙 → 비행 중 W/S = 고도, ←→ = 방향, ↑↓ = 속도. 하강해 지면/수면에 닿으면
+// 착륙. 상태는 PLANE.mode: parked → taxi ⇄ fly. 정박 저장 plane-1 (차 car-1·보트 boat-2 문법). ----
+function makePlane() {
+    const g = new THREE.Group();
+    // 정적 파츠는 재질 버킷별로 지오메트리 병합 → 6드로우 (가동부: 프로펠러·디스크·바퀴만 분리)
+    const grad = [], red = [], wood = [], metal = [], rims = [];
+    // 동체: 통짜 Lathe 프로파일 (꼬리→기수) — 위 크림/아래 탠 그라디언트
+    const pts = [
+        new THREE.Vector2(0.015, 0), new THREE.Vector2(0.05, 0.14), new THREE.Vector2(0.095, 0.42),
+        new THREE.Vector2(0.13, 0.72), new THREE.Vector2(0.148, 0.98), new THREE.Vector2(0.15, 1.12),
+        new THREE.Vector2(0.125, 1.24), new THREE.Vector2(0.08, 1.3),
+    ];
+    const fusGeo = new THREE.LatheGeometry(pts, 16);
+    fusGeo.rotateX(Math.PI / 2);          // +y 프로파일 → +z (기수가 +Z)
+    fusGeo.translate(0, 0.3, -0.62);      // 바퀴 위 동체 축 높이 0.3, 앞뒤 중심 정렬
+    grad.push(bakeGrad(fusGeo, 0xf4e6c8, 0xcfa87a, { curve: 1.2 }));
+    const bandGeo = new THREE.TorusGeometry(0.151, 0.012, 8, 20);
+    bandGeo.translate(0, 0.3, 0.34);
+    red.push(bandGeo);                     // 동체 레드 밴드
+    const cowlGeo = new THREE.TorusGeometry(0.115, 0.038, 10, 20);
+    cowlGeo.translate(0, 0.3, 0.66);
+    red.push(cowlGeo);                     // 엔진 카울
+    // 복엽 날개 (위·아래) + 빨간 윙팁 + 스트럿 4
+    for (const [wy, wz, span] of [[0.58, 0.14, 1.52], [0.16, 0.18, 1.3]]) {
+        const wingGeo = new THREE.BoxGeometry(span, 0.034, 0.34);
+        wingGeo.translate(0, wy, wz);
+        grad.push(bakeGrad(wingGeo, 0xf4e6c8, 0xd8bd92, { curve: 1 }));
+        for (const sx of [-1, 1]) {
+            const tipGeo = new THREE.BoxGeometry(0.09, 0.036, 0.34);
+            tipGeo.translate(sx * (span / 2 - 0.045), wy, wz);
+            red.push(tipGeo);
+        }
+    }
+    for (const [sx, sz] of [[-0.52, 0.06], [-0.52, 0.26], [0.52, 0.06], [0.52, 0.26]]) {
+        const strutGeo = new THREE.CylinderGeometry(0.013, 0.013, 0.42, 6);
+        strutGeo.translate(sx, 0.37, sz);
+        wood.push(strutGeo);
+    }
+    // 오픈 콕핏 2자리: 링 테두리 (앞=조종석, 뒤=절친석) + 미니 윈드실드
+    const glassGeos = [];
+    for (const cz of [0.18, -0.2]) {
+        const rimGeo = new THREE.TorusGeometry(0.085, 0.016, 8, 16).rotateX(Math.PI / 2);
+        rimGeo.translate(0, 0.435, cz);
+        rims.push(rimGeo);
+        const shieldGeo = new THREE.PlaneGeometry(0.16, 0.085).rotateX(-0.35);
+        shieldGeo.translate(0, 0.5, cz + 0.11);
+        glassGeos.push(shieldGeo);
+    }
+    // 꼬리: 수평 안정판 + 빨간 수직 핀·러더
+    const hstabGeo = new THREE.BoxGeometry(0.56, 0.024, 0.2);
+    hstabGeo.translate(0, 0.35, -0.53);
+    grad.push(bakeGrad(hstabGeo, 0xf4e6c8, 0xd8bd92, { curve: 1 }));
+    const finGeo = new THREE.BoxGeometry(0.024, 0.24, 0.18);
+    finGeo.translate(0, 0.46, -0.55);
+    grad.push(bakeGrad(finGeo, 0xe06a58, 0xb04a3c, { curve: 1 }));
+    const rudderGeo = new THREE.BoxGeometry(0.02, 0.17, 0.09);
+    rudderGeo.translate(0, 0.47, -0.66);
+    red.push(rudderGeo);
+    // 랜딩 기어 다리 2 + 꼬리 스키드 (동체 꼬리에 붙여서)
+    for (const sx of [-1, 1]) {
+        const legGeo = new THREE.CylinderGeometry(0.016, 0.016, 0.22, 6);
+        legGeo.rotateZ(sx * 0.35);
+        legGeo.translate(sx * 0.26, 0.16, 0.2);
+        metal.push(legGeo);
+    }
+    const skidGeo = new THREE.CylinderGeometry(0.013, 0.013, 0.13, 6);
+    skidGeo.rotateX(0.42);
+    skidGeo.translate(0, 0.22, -0.53);   // 동체 꼬리 밑면에 밀착
+    metal.push(skidGeo);
+    // 버킷 → 병합 메시 6개
+    g.add(new THREE.Mesh(mergeGeometries(grad, false), gradMat));
+    g.add(new THREE.Mesh(mergeGeometries(red, false), M(0xd05a4a)));
+    g.add(new THREE.Mesh(mergeGeometries(wood, false), M(0x8a6647, { map: woodTex })));
+    g.add(new THREE.Mesh(mergeGeometries(metal, false), M(0x5a5f66)));
+    g.add(new THREE.Mesh(mergeGeometries(rims, false), M(0x6f5238)));
+    g.add(new THREE.Mesh(mergeGeometries(glassGeos, false),
+        new THREE.MeshStandardMaterial({ color: 0xbfe0ea, transparent: true, opacity: 0.45, roughness: 0.2, metalness: 0.1, side: THREE.DoubleSide })));
+    // 가동부: 프로펠러(스피너+블레이드 한 메시+디스크), 바퀴 2 (타이어+허브 병합)
+    const propGrp = new THREE.Group();
+    propGrp.position.set(0, 0.3, 0.73);
+    const spinner = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.11, 10).rotateX(Math.PI / 2), M(0x8a6647));
+    propGrp.add(spinner);
+    const bladeGeos = [];
+    for (const a of [0, Math.PI / 2]) {
+        const bl = new THREE.BoxGeometry(0.035, 0.5, 0.014);
+        bl.rotateZ(a);
+        bladeGeos.push(bl);
+    }
+    const blades = new THREE.Mesh(mergeGeometries(bladeGeos, false), M(0x5a4634, { map: woodTex }));
+    propGrp.add(blades);
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.27, 20),
+        new THREE.MeshBasicMaterial({ color: 0xcfc4ae, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false }));
+    disc.visible = false;
+    propGrp.add(disc);
+    g.add(propGrp);
+    const wheels = [];
+    for (const sx of [-1, 1]) {
+        const tire = new THREE.CylinderGeometry(0.085, 0.085, 0.05, 14).rotateZ(Math.PI / 2);
+        const wheel = new THREE.Mesh(tire, M(0x3a3a40));
+        const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.054, 10).rotateZ(Math.PI / 2), M(0xd05a4a));
+        wheel.add(hub);
+        wheel.position.set(sx * 0.3, 0.085, 0.2);
+        g.add(wheel);
+        wheels.push(wheel);
+    }
+    g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    g.userData = { prop: propGrp, blades, disc, wheels };
+    return g;
+}
+const PLANE = { x: -3.2, z: 10.05, y: 0, heading: 3.14, vel: 0, mode: 'parked' };   // 모래섬 남쪽 마른 모래 경사(해수면 -0.45 실측 기준 건조), 기수는 열린 바다
+{   // 🔨 저장된 주차 위치 (plane-1) — 수륙양용이라 뭍·물 어디든 유효, 월드 경계 밖만 무시
+    const o = savedLayout['plane-1'];
+    if (o && Number.isFinite(o.x) && Number.isFinite(o.z) && Math.hypot(o.x, o.z) <= 20.5) {
+        PLANE.x = o.x; PLANE.z = o.z;
+        if (Number.isFinite(o.rotY)) PLANE.heading = o.rotY;
+    }
+}
+const planeCollider = { type: 'plane', layoutId: 'plane-1', x: PLANE.x, z: PLANE.z, rotY: 0, r: 0.55, def: { x: -3.2, z: 10.05, rotY: 3.14 } };
+PROPS.push(planeCollider);
+const planeGroup = makePlane();
+planeCollider.obj = planeGroup;   // 호버 라벨 + propTopAt(날개 위 서기)용
+stage.add(planeGroup);
+let planeRide = null;    // { driver, passenger, liftT, sprayT, lastY } while someone is at the stick
+let planeHop = null;     // 절친 뒷좌석 승선 아크
+let planeEngine = null;  // { src, gain } 엔진 사운드 루프
+function planeSupportY(x, z) {
+    // 뭍/다리 = 지면(물밑으로 꺼진 해변 띠는 수면이 받친다), 그 밖 = 수면.
+    // ⚠️ terrainHeight는 섬 밖에서 0을 반환(유령 선반 — 해수면 -0.45보다 높다!) — 섬 밖 지형 조회 금지.
+    if (onBridge(x, z)) return world.groundHeightAt(x, z);
+    if (islandOf(x, z) >= 0) return Math.max(world.groundHeightAt(x, z), waveYAt(x, z) + 0.03);
+    return waveYAt(x, z) + 0.03;
+}
+PLANE.y = planeSupportY(PLANE.x, PLANE.z);
+function planeBlocked(nx, nz) {
+    // 보행 규칙(림 가드·물가 금지)은 수륙양용에 해당 없음 — 소품 원 + 집 벽 + 경계만 본다
+    if (Math.hypot(nx, nz) > 20.5) return true;                    // 수평선 전 경계 (보트와 동일 사상)
+    if (Math.hypot(nx - BOAT.x, nz - BOAT.z) < 1.1) return true;   // 정박 보트와 충돌
+    if (houseBlocked(nx, nz)) return true;                         // 집 벽 관통 방지
+    for (const q of PROPS) {
+        if (q === planeCollider || !(q.r > 0)) continue;
+        if (Math.hypot(nx - q.x, nz - q.z) < q.r + 0.35) return true;   // 날개폭 여유
+    }
+    return false;
+}
+let _engineBuf = null;
+function startPlaneEngine() {
+    if (audioCtx.state !== 'running' || planeEngine) return;
+    if (!_engineBuf) {   // 푸드덕 푸드덕 — 초당 26방 펄스 노이즈 (프로펠러 단발기)
+        const sr = audioCtx.sampleRate, n = Math.floor(sr * 0.46);
+        _engineBuf = audioCtx.createBuffer(1, n, sr);
+        const d = _engineBuf.getChannelData(0);
+        for (let i = 0; i < n; i++) {
+            const t = i / sr;
+            const putt = Math.pow(Math.max(0, Math.sin(t * Math.PI * 2 * 26)), 6);
+            d[i] = (Math.random() * 2 - 1) * putt * 0.8;
+        }
+    }
+    const src = audioCtx.createBufferSource();
+    src.buffer = _engineBuf;
+    src.loop = true;
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 750;
+    const gain = audioCtx.createGain();
+    gain.gain.value = 0.0001;
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(sfxMaster);
+    src.start();
+    planeEngine = { src, gain };
+}
+function stopPlaneEngine() {
+    if (!planeEngine) return;
+    const e = planeEngine;
+    planeEngine = null;
+    try {
+        e.gain.gain.setTargetAtTime(0.0001, audioCtx.currentTime, 0.12);
+        setTimeout(() => { try { e.src.stop(); } catch (err) {} }, 400);
+    } catch (err) {}
+}
+function enterPlane() {
+    const driver = possessed;
+    if (!driver || planeRide) return;
+    let passenger = null;
+    const friend = pets.find((q) => q !== driver);
+    const friendClose = friend && Math.hypot(friend.mover.position.x - PLANE.x, friend.mover.position.z - PLANE.z) < 1.8;
+    if (friend && !friend.bed && !friend.dip && !friend.pet.sleeping
+        && ((handHold && handHold.partner === friend) || (friendClose && (friend.ai.state === 'idle' || friend.ai.state === 'walk')))) {
+        if (handHold) handHold = null;
+        releaseAI(friend);
+        friend.ai.state = 'held';
+        passenger = friend;
+    }
+    if (aiFishing && aiFishing.p === passenger) endAiFishing();
+    planeRide = { driver, passenger, liftT: 0, sprayT: 0, armed: true };   // armed = 이륙 무장 (착지 후 감속해야 재무장)
+    running = false;
+    driver.swimming = false;
+    PLANE.mode = 'taxi';
+    startPlaneEngine();
+    logWorldEvent(`${petKo(driver)}가 경비행기 조종석에 올라 시동을 걸었다 🛩️${passenger ? ' (절친도 뒷좌석에!)' : ''}`);
+}
+function exitPlane(force = false) {
+    if (!planeRide) return;
+    if (PLANE.mode === 'fly' && !force) return;   // 공중 하차 금지 — doInteract가 토스트 안내
+    if (PLANE.mode === 'fly') { PLANE.y = planeSupportY(PLANE.x, PLANE.z); PLANE.mode = 'taxi'; }   // 강제 해제(Esc) = 비상 착륙
+    const { driver, passenger } = planeRide;
+    const onLand = islandOf(PLANE.x, PLANE.z) >= 0;
+    const rX = Math.cos(PLANE.heading), rZ = -Math.sin(PLANE.heading);
+    const drop = (q, side) => {
+        const dx = PLANE.x + rX * side, dz = PLANE.z + rZ * side;
+        if (onLand) {
+            q.mover.position.set(dx, world.groundHeightAt(dx, dz), dz);
+            q.swimming = false;
+        } else {
+            const spot = nearestClimbSpot({ x: PLANE.x, z: PLANE.z });
+            if (spot && q !== driver) {   // 절친은 가까운 뭍이 있으면 뭍으로
+                q.mover.position.set(spot.tx, spot.ty, spot.tz);
+                q.swimming = false;
+            } else {
+                q.mover.position.set(dx, waveYAt(dx, dz) + 0.02 - q.height * 0.45, dz);
+                q.swimming = 'sea';
+                spawnSplash(dx, waveYAt(dx, dz) + q.height * 0.42, dz);
+            }
+        }
+        q.mover.rotation.x = 0;
+        q.mover.rotation.z = 0;
+    };
+    if (passenger) {
+        drop(passenger, 0.85);
+        if (passenger.ai.state === 'held') releaseAI(passenger);
+    }
+    planeRide = null;
+    PLANE.vel = 0;
+    PLANE.mode = 'parked';
+    stopPlaneEngine();
+    drop(driver, -0.85);
+    if (driver.swimming) playSplashSound(driver.mover.position.x, driver.mover.position.z);
+    logWorldEvent(`${petKo(driver)}가 경비행기에서 내렸다${onLand ? '' : ' — 물에 퐁당'}`);
+    saveLayout();   // 주차 위치 저장 — 뭍이든 물이든 그 자리에
+}
+// 비행기 한 스텝: 활주(taxi)는 차 문법 + 물이면 물살, 비행(fly)은 W/S 고도·↑↓ 속도·←→ 선회(뱅킹).
+function stepPlane(delta, driver) {
+    const r = planeRide;
+    const onWater = islandOf(PLANE.x, PLANE.z) < 0 && !onBridge(PLANE.x, PLANE.z);
+    let thr = 0;
+    if (heldKeys.has('ArrowUp')) thr += 1;
+    if (heldKeys.has('ArrowDown')) thr -= 1;
+    let steer = (heldKeys.has('ArrowLeft') ? 1 : 0) - (heldKeys.has('ArrowRight') ? 1 : 0);
+    if (touchMove.active) steer = THREE.MathUtils.clamp(steer - touchMove.x, -1, 1);
+    const maxTaxi = 2.9, maxFly = 3.7;
+    let pitch = 0, bank = 0;
+    if (PLANE.mode === 'taxi') {
+        if (touchMove.active) thr = THREE.MathUtils.clamp(thr + touchMove.z, -1, 1);
+        PLANE.vel += thr * (thr > 0 ? 2.7 : 1.9) * delta;
+        PLANE.vel *= Math.pow(onWater ? 0.45 : 0.3, delta);   // 물은 활공, 뭍은 구름 저항
+        PLANE.vel = THREE.MathUtils.clamp(PLANE.vel, -1.0, maxTaxi);
+        PLANE.heading += steer * delta * 1.6 * THREE.MathUtils.clamp(PLANE.vel / maxTaxi, -1, 1);
+        const nx = PLANE.x + Math.sin(PLANE.heading) * PLANE.vel * delta;
+        const nz = PLANE.z + Math.cos(PLANE.heading) * PLANE.vel * delta;
+        // 절벽 턱(섬 림 수직벽)은 활주로 못 오른다 — 완만한 해변 경사만 통과 (이착륙은 비행으로)
+        const ledge = Math.abs(planeSupportY(nx, nz) - planeSupportY(PLANE.x, PLANE.z)) > 0.35;
+        if (!ledge && !planeBlocked(nx, nz)) { PLANE.x = nx; PLANE.z = nz; }
+        else PLANE.vel = 0;
+        PLANE.y = planeSupportY(PLANE.x, PLANE.z);
+        for (const w of planeGroup.userData.wheels) w.rotation.x += PLANE.vel * delta * 11;   // 바퀴 구름
+        if (onWater) {
+            bank = Math.sin(wxTime.value * 1.2) * 0.02;   // 물 위 살랑임
+            r.sprayT += Math.abs(PLANE.vel) * delta;
+            if (Math.abs(PLANE.vel) > 0.9 && r.sprayT > 0.34) {   // 물살 가르기 — 기수 양옆 스프레이
+                r.sprayT = 0;
+                const sX = Math.cos(PLANE.heading), sZ = -Math.sin(PLANE.heading);
+                const side = Math.random() < 0.5 ? 0.3 : -0.3;
+                spawnSplash(PLANE.x + Math.sin(PLANE.heading) * 0.5 + sX * side, waveYAt(PLANE.x, PLANE.z) + 0.05, PLANE.z + Math.cos(PLANE.heading) * 0.5 + sZ * side);
+            }
+        }
+        if (PLANE.vel < 2.0) r.armed = true;   // 감속하면 재이륙 무장 (터치다운 직후 튕겨 오르기 방지)
+        if (r.armed && PLANE.vel > 2.55) {   // 전속력 → 자동 로테이트 (이륙!)
+            PLANE.mode = 'fly';
+            r.armed = false;
+            r.liftT = 0;
+            playBuffer(swishBuf, { vol: 0.5, rate: 0.6, filterFreq: 900 });
+            logWorldEvent(`${petKo(driver)}의 경비행기가 ${onWater ? '물살을 가르며' : '초원을 달려'} 두둥실 떠올랐다! 🛫`);
+        }
+    } else if (PLANE.mode === 'fly') {
+        r.liftT += delta;
+        PLANE.vel += thr * 1.5 * delta;
+        PLANE.vel = THREE.MathUtils.clamp(PLANE.vel, 2.0, maxFly);   // 실속 없음 — 최저 순항속도 보장
+        PLANE.heading += steer * delta * 1.3;
+        let climb = 0;
+        if (heldKeys.has('KeyW')) climb += 1;   // W = 상승, S = 하강 (요청 매핑)
+        if (heldKeys.has('KeyS')) climb -= 1;
+        if (touchMove.active) climb = THREE.MathUtils.clamp(climb + touchMove.z, -1, 1);   // 📱 스틱 상하 = 고도
+        if (r.liftT < 0.7) climb = Math.max(climb, 0.75);   // 이륙 직후 자동 상승 (로테이트)
+        PLANE.y = Math.min(PLANE.y + climb * 2.1 * delta, 7.5);   // 천장 — 구름 밑
+        const nx = PLANE.x + Math.sin(PLANE.heading) * PLANE.vel * delta;
+        const nz = PLANE.z + Math.cos(PLANE.heading) * PLANE.vel * delta;
+        const rr = Math.hypot(nx, nz);
+        if (rr > 20.5) { PLANE.x = nx * (20.5 / rr); PLANE.z = nz * (20.5 / rr); }   // 경계 — 미끄러지듯 선회 유도
+        else { PLANE.x = nx; PLANE.z = nz; }
+        const sup = planeSupportY(PLANE.x, PLANE.z);
+        if (PLANE.y <= sup + 0.1 && climb <= 0) {   // 터치다운
+            PLANE.y = sup;
+            PLANE.mode = 'taxi';
+            PLANE.vel = Math.min(PLANE.vel, maxTaxi);
+            const water = islandOf(PLANE.x, PLANE.z) < 0;
+            if (water) {
+                spawnSplash(PLANE.x, waveYAt(PLANE.x, PLANE.z) + 0.06, PLANE.z);
+                playSplashSound(PLANE.x, PLANE.z);
+            } else playStep('road', 1.2);
+            logWorldEvent(`${petKo(driver)}의 경비행기가 ${water ? '수면에 사뿐히 착수했다' : '초원에 사뿐히 내려앉았다'} 🛬`);
+        } else {
+            PLANE.y = Math.max(PLANE.y, sup + 0.02);
+            pitch = -climb * 0.24 - (r.liftT < 0.7 ? 0.1 : 0) + Math.sin(wxTime.value * 1.6) * 0.015;   // 기수 & 미세 부양
+            bank = steer * 0.42;   // 선회 뱅킹
+        }
+    }
+    planeCollider.x = PLANE.x;
+    planeCollider.z = PLANE.z;
+    planeGroup.position.set(PLANE.x, PLANE.y + (onWater && PLANE.mode === 'taxi' ? Math.sin(wxTime.value * 1.3) * 0.015 : 0), PLANE.z);
+    planeGroup.rotation.set(pitch, PLANE.heading, bank);
+    // 프로펠러: 회전 + 고rpm에선 모션블러 디스크
+    const rpm = PLANE.mode === 'fly' ? 38 : 7 + Math.abs(PLANE.vel) * 9;
+    planeGroup.userData.prop.rotation.z += rpm * delta;
+    const fast = rpm > 26;
+    planeGroup.userData.disc.visible = fast;
+    planeGroup.userData.blades.visible = !fast;
+    if (planeEngine) {   // 엔진음 — rpm 피치·속도 볼륨
+        planeEngine.src.playbackRate.value = 0.72 + (rpm / 38) * 0.7;
+        planeEngine.gain.gain.value = (0.045 + Math.min(0.1, Math.abs(PLANE.vel) * 0.028) + (PLANE.mode === 'fly' ? 0.03 : 0)) * attAtPoint(PLANE.x, PLANE.z);
+    }
+    // 좌석: 앞=조종사, 뒤=절친 (둘 다 전방 주시, 기체 피치 따라 몸도 기운다)
+    const seatPet = (q, fwd) => {
+        q.mover.position.set(
+            PLANE.x + Math.sin(PLANE.heading) * fwd,
+            planeGroup.position.y + 0.33 - q.height * 0.18,
+            PLANE.z + Math.cos(PLANE.heading) * fwd
+        );
+        q.mover.rotation.y = PLANE.heading;
+        q.mover.rotation.x = pitch * 0.8;
+        q.mover.rotation.z = bank * 0.5;
+        q.pet.walking = false;
+        q.swimming = false;
+    };
+    seatPet(driver, 0.18);
+    if (r.passenger) seatPet(r.passenger, -0.2);
+}
+// 주차 중: 물 위면 파도 위 살랑, 뭍이면 정지 — 프로펠러도 멈춤 (프레임 비용 0에 수렴)
+function updatePlaneIdle() {
+    if (planeRide) return;
+    const onWater = islandOf(PLANE.x, PLANE.z) < 0 && !onBridge(PLANE.x, PLANE.z);
+    const y = planeSupportY(PLANE.x, PLANE.z);
+    planeGroup.position.set(PLANE.x, y + (onWater ? Math.sin(wxTime.value * 0.7) * 0.015 : 0), PLANE.z);
+    planeGroup.rotation.set(0, PLANE.heading, onWater ? Math.sin(wxTime.value * 0.6 + 0.8) * 0.02 : 0);
+}
+// 비행 중 맞바람: 탑승 펫 귀·날개가 뒤로 눕는다 — 엔티티 업데이트 뒤에 덮어쓰기 (자동 복원)
+function updatePlanePose() {
+    if (!planeRide || PLANE.mode !== 'fly') return;
+    const k = Math.min(1, PLANE.vel / 3.2);
+    for (const q of [planeRide.driver, planeRide.passenger]) {
+        if (!q) continue;
+        for (const er of q.pet.ears) er.rotation.x = (er.userData._restRotX || 0) + 0.55 * k;
+        for (const wg of q.pet.wings) wg.rotation.z = (wg.userData._restRotZ || 0) * (1 - 0.5 * k);
+    }
+}
+// 🛩️ 우클릭 메뉴 — 활주/주차 탑승 중 "친구 태우기": 절친이 포르르 나타나 뒷좌석으로 폴짝
+const planeMenu = document.createElement('div');
+planeMenu.style.cssText = 'position:fixed; display:none; z-index:130; background:rgba(30,32,40,0.94); border-radius:10px; padding:6px; box-shadow:0 6px 18px rgba(0,0,0,0.35);';
+const planeMenuBtn = document.createElement('button');
+planeMenuBtn.textContent = '👥 친구 태우기';
+planeMenuBtn.style.cssText = 'display:block; background:none; border:none; color:#fff; font-size:13px; padding:7px 12px; border-radius:7px; cursor:pointer; font-family:sans-serif;';
+planeMenuBtn.onmouseenter = () => { planeMenuBtn.style.background = 'rgba(255,255,255,0.14)'; };
+planeMenuBtn.onmouseleave = () => { planeMenuBtn.style.background = 'none'; };
+planeMenuBtn.onclick = () => { planeMenu.style.display = 'none'; summonPlanePassenger(); };
+planeMenu.appendChild(planeMenuBtn);
+document.body.appendChild(planeMenu);
+function showPlaneMenu(x, y) {
+    planeMenu.style.left = `${Math.min(x, window.innerWidth - 150)}px`;
+    planeMenu.style.top = `${Math.min(y, window.innerHeight - 60)}px`;
+    planeMenu.style.display = 'block';
+}
+function summonPlanePassenger() {
+    if (!planeRide || planeRide.passenger || planeHop || PLANE.mode === 'fly') return;
+    const friend = pets.find((q) => q !== planeRide.driver);
+    if (!friend) { showToast('👥 부를 친구가 없어요'); return; }
+    friend.pet.sleeping = false;
+    friend.pet.autoSleeping = false;
+    if (friend.bed) forceEndBed(friend);
+    if (friend.dip) endDip(friend);
+    if (aiFishing && aiFishing.p === friend) endAiFishing();
+    releaseAI(friend);
+    friend.ai.state = 'held';
+    friend.swimming = false;
+    // 비행기 곁으로 순간이동 후 뒷좌석으로 폴짝 (보트 문법)
+    const sx = PLANE.x - Math.sin(PLANE.heading) * 1.0, sz = PLANE.z - Math.cos(PLANE.heading) * 1.0;
+    const fy = planeSupportY(sx, sz);
+    friend.mover.position.set(sx, fy, sz);
+    friend.mover.rotation.x = 0;
+    friend.mover.rotation.z = 0;
+    planeHop = { q: friend, fx: sx, fy, fz: sz, t: 0 };
+    showToast('👥 절친이 포르르 나타나 뒷좌석으로 폴짝!');
+    logWorldEvent(`${petKo(friend)}가 경비행기 뒷좌석에 폴짝 올라탔다`);
+}
+function updatePlaneHop(delta) {
+    if (!planeHop) return;
+    planeHop.t += delta;
+    const k = Math.min(1, planeHop.t / 0.6);
+    const e = k * k * (3 - 2 * k);
+    const q = planeHop.q;
+    const ty = planeSupportY(PLANE.x, PLANE.z) + 0.33 - q.height * 0.18;
+    const tx = PLANE.x - Math.sin(PLANE.heading) * 0.2, tz = PLANE.z - Math.cos(PLANE.heading) * 0.2;
+    q.mover.position.set(
+        THREE.MathUtils.lerp(planeHop.fx, tx, e),
+        THREE.MathUtils.lerp(planeHop.fy, ty, e) + Math.sin(k * Math.PI) * 0.5,
+        THREE.MathUtils.lerp(planeHop.fz, tz, e)
+    );
+    q.mover.rotation.y = PLANE.heading;
+    q.pet.walking = false;
+    if (k >= 1) {
+        planeHop = null;
+        if (planeRide && !planeRide.passenger) planeRide.passenger = q;
+        else { q.swimming = false; releaseAI(q); snapToLand(q); }
+    }
+}
+
 // ---- 🎣 낚시 (동숲식 — 어떤 물가든): 독 🎣로 낚싯대를 들고, 물을 클릭해 캐스팅, 입질 타이밍에
 // ⌘/클릭으로 챔질. 모든 동작은 이 파일의 전용 안무(아래 updateFishing) — 캔 모션 재활용 없음.
 // 어종은 절차 생성(외부 에셋 0), 도감은 localStorage 'world-fishdex'. ----
@@ -11219,6 +11681,9 @@ function animate() {
     updateAutoDrive(delta);
     updateBoatIdle();                        // 정박 보트의 파도 위 살랑임 (항해 중엔 stepBoat 담당)
     updateBoatHop(delta);                    // 절친 승선 아크 — 물가에서 뱃머리로 폴짝
+    updatePlaneIdle();                       // 🛩️ 주차 비행기 (물 위면 살랑임, 프로펠러 정지)
+    updatePlaneHop(delta);                   // 절친 뒷좌석 승선 아크
+    updatePlanePose();                       // 비행 맞바람 — 귀·날개 눕기 (엔티티 뒤 덮어쓰기)
     updateFishing(delta);                    // 🎣 낚시 안무 — 엔티티 업데이트 뒤라 포즈 덮어쓰기 가능
     updateHeartFx(delta);
     updateFestiveFx(delta);

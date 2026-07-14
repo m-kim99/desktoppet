@@ -6,14 +6,15 @@ const warn = (s) => { console.log('  ✗ ' + s); bad++; };
 const CLEAR = 0.5;    // 두 소품 사이 펫이 지나갈 최소 여유
 const LAMP_CLEAR = 0.3;   // 가로등 기둥은 얇음
 // 시각 풋프린트(콜라이더보다 큰 타입 보정)
-const VIS = { garden: 1.0, coffee: 0.62, food: 0.62, library: 0.8, piano: 0.5, fountain: 0.72, photoboard: 0.45, fence: 0.72, hammock: 0.8, swing: 0.62, seesaw: 0.7, gym: 1.05, pecktree: 0.6, well: 0.62, capsule: 0.4, monument: 0.5, cave: 1.0, lookout: 1.0, sunbed: 0.55, palm: 0.5, sandcastle: 0.45, tree: 0.5, boulder: 0.55, house: 2.0, pond: 0.95, mailbox: 0.22, radio: 0.3, bowl: 0.3, lamp: 0.2, flowerbasket: 0.25, hugspot: 0.3, digsite: 0.7, portal: 0.45, car: 0.72, boat: 0.6 };
+const VIS = { garden: 1.0, coffee: 0.62, food: 0.62, library: 0.8, piano: 0.5, fountain: 0.72, photoboard: 0.45, fence: 0.72, hammock: 0.8, swing: 0.62, seesaw: 0.7, gym: 1.05, pecktree: 0.6, well: 0.62, capsule: 0.4, monument: 0.5, cave: 1.0, lookout: 1.0, sunbed: 0.55, palm: 0.5, sandcastle: 0.45, tree: 0.5, boulder: 0.55, house: 2.0, pond: 0.95, mailbox: 0.22, radio: 0.3, bowl: 0.3, lamp: 0.2, flowerbasket: 0.25, hugspot: 0.3, digsite: 0.7, portal: 0.45, car: 0.72, boat: 0.6, plane: 0.75 };
 const vOf = (p) => Math.max(p.r || 0.2, VIS[p.type] ?? 0.4);
-const ALL = [...PROPS, { type: 'car', x: 2.5, z: -1.35, r: 0.5 }, { type: 'boat', x: 1.2, z: 6.8, r: 0.5, water: true }];
+const ALL = [...PROPS, { type: 'car', x: 2.5, z: -1.35, r: 0.5 }, { type: 'boat', x: 1.2, z: 6.8, r: 0.5, water: true }, { type: 'plane', x: -3.2, z: 10.05, r: 0.55 }];
 const hillSet = new Set(['boulder', 'lookout', 'cave', 'digsite']);
 const exempt = (a, b) => {
     if (a.type === 'hugspot' || b.type === 'hugspot') return true;
     if (hillSet.has(a.type) && hillSet.has(b.type)) return true;              // 언덕 드레싱 세트
     if ((a.type === 'portal' && b.type === 'cave') || (a.type === 'cave' && b.type === 'portal')) return true;
+    if ((a.type === 'plane' && b.type === 'sandcastle') || (a.type === 'sandcastle' && b.type === 'plane')) return true;   // 해변 이웃 세트 (꼬리-성 실간격 0.4 확인)
     const yard = new Set(['bowl', 'radio', 'lamp']);
     if ((a.type === 'house' && yard.has(b.type)) || (b.type === 'house' && yard.has(a.type))) return true;   // 마당 세트 + 마당길 가로등
     return false;
@@ -38,6 +39,7 @@ const islandFor = (x, z) => {
 for (const p of ALL) {
     if (p.water) continue;
     const { i, d } = islandFor(p.x, p.z);
+    if (p.type === 'plane') { if (d > ISLANDS[i].r - 0.5) warn(`plane 섬 이탈 d ${d.toFixed(2)}`); continue; }   // 해변 경사 주차 허용
     if (d + vOf(p) * 0.5 > ISLANDS[i].r - 0.3) warn(`${p.type}(${p.x},${p.z}) 섬${i} 림 초과: d ${d.toFixed(2)} + vis/2 ${(vOf(p) * 0.5).toFixed(2)} > ${(ISLANDS[i].r - 0.3).toFixed(2)}`);
 }
 for (const s of FLAT_SPOTS) {
