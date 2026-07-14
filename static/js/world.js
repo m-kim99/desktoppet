@@ -10056,19 +10056,19 @@ function makePlane() {
     const grad = [], red = [], wood = [], metal = [], rims = [];
     // 동체: 통짜 Lathe 프로파일 (꼬리→기수) — 위 크림/아래 탠 그라디언트
     const pts = [
-        new THREE.Vector2(0.015, 0), new THREE.Vector2(0.05, 0.14), new THREE.Vector2(0.095, 0.42),
-        new THREE.Vector2(0.13, 0.72), new THREE.Vector2(0.148, 0.98), new THREE.Vector2(0.15, 1.12),
-        new THREE.Vector2(0.125, 1.24), new THREE.Vector2(0.08, 1.3),
-    ];
+        new THREE.Vector2(0.015, 0), new THREE.Vector2(0.05, 0.17), new THREE.Vector2(0.095, 0.52),
+        new THREE.Vector2(0.13, 0.9), new THREE.Vector2(0.148, 1.22), new THREE.Vector2(0.15, 1.4),
+        new THREE.Vector2(0.125, 1.54), new THREE.Vector2(0.08, 1.62),
+    ];   // 2인승 여유 동체 (1.3→1.62 연장)
     const fusGeo = new THREE.LatheGeometry(pts, 16);
     fusGeo.rotateX(Math.PI / 2);          // +y 프로파일 → +z (기수가 +Z)
-    fusGeo.translate(0, 0.3, -0.62);      // 바퀴 위 동체 축 높이 0.3, 앞뒤 중심 정렬
+    fusGeo.translate(0, 0.3, -0.79);      // 바퀴 위 동체 축 높이 0.3, 앞뒤 중심 정렬
     grad.push(bakeGrad(fusGeo, 0xf4e6c8, 0xcfa87a, { curve: 1.2 }));
     const bandGeo = new THREE.TorusGeometry(0.151, 0.012, 8, 20);
-    bandGeo.translate(0, 0.3, 0.34);
+    bandGeo.translate(0, 0.3, 0.44);
     red.push(bandGeo);                     // 동체 레드 밴드
     const cowlGeo = new THREE.TorusGeometry(0.115, 0.038, 10, 20);
-    cowlGeo.translate(0, 0.3, 0.66);
+    cowlGeo.translate(0, 0.3, 0.83);
     red.push(cowlGeo);                     // 엔진 카울
     // 복엽 날개 (위·아래) + 빨간 윙팁 + 스트럿 4
     for (const [wy, wz, span] of [[0.78, 0.14, 1.52], [0.16, 0.18, 1.3]]) {   // 윗날개는 파라솔 높이 — 탑승 펫 머리가 림~날개 창에 들어온다
@@ -10088,7 +10088,7 @@ function makePlane() {
     }
     // 오픈 콕핏 2자리: 링 테두리 (앞=조종석, 뒤=절친석) + 미니 윈드실드
     const glassGeos = [];
-    for (const cz of [0.18, -0.2]) {
+    for (const cz of [0.28, -0.36]) {   // 앞뒤 좌석 간격 0.64 — 탠덤 여유
         const rimGeo = new THREE.TorusGeometry(0.085, 0.016, 8, 16).rotateX(Math.PI / 2);
         rimGeo.translate(0, 0.435, cz);
         rims.push(rimGeo);
@@ -10098,24 +10098,24 @@ function makePlane() {
     }
     // 꼬리: 수평 안정판 + 빨간 수직 핀·러더
     const hstabGeo = new THREE.BoxGeometry(0.56, 0.024, 0.2);
-    hstabGeo.translate(0, 0.35, -0.53);
+    hstabGeo.translate(0, 0.35, -0.7);
     grad.push(bakeGrad(hstabGeo, 0xf4e6c8, 0xd8bd92, { curve: 1 }));
     const finGeo = new THREE.BoxGeometry(0.024, 0.24, 0.18);
-    finGeo.translate(0, 0.46, -0.55);
+    finGeo.translate(0, 0.46, -0.72);
     grad.push(bakeGrad(finGeo, 0xe06a58, 0xb04a3c, { curve: 1 }));
     const rudderGeo = new THREE.BoxGeometry(0.02, 0.17, 0.09);
-    rudderGeo.translate(0, 0.47, -0.66);
+    rudderGeo.translate(0, 0.47, -0.84);
     red.push(rudderGeo);
     // 랜딩 기어 다리 2 + 꼬리 스키드 (동체 꼬리에 붙여서)
     for (const sx of [-1, 1]) {
         const legGeo = new THREE.CylinderGeometry(0.016, 0.016, 0.22, 6);
         legGeo.rotateZ(sx * 0.35);
-        legGeo.translate(sx * 0.26, 0.16, 0.2);
+        legGeo.translate(sx * 0.26, 0.16, 0.26);
         metal.push(legGeo);
     }
     const skidGeo = new THREE.CylinderGeometry(0.013, 0.013, 0.13, 6);
     skidGeo.rotateX(0.42);
-    skidGeo.translate(0, 0.22, -0.53);   // 동체 꼬리 밑면에 밀착
+    skidGeo.translate(0, 0.22, -0.7);   // 동체 꼬리 밑면에 밀착
     metal.push(skidGeo);
     // 버킷 → 병합 메시 6개
     g.add(new THREE.Mesh(mergeGeometries(grad, false), gradMat));
@@ -10127,7 +10127,7 @@ function makePlane() {
         new THREE.MeshStandardMaterial({ color: 0xbfe0ea, transparent: true, opacity: 0.45, roughness: 0.2, metalness: 0.1, side: THREE.DoubleSide })));
     // 가동부: 프로펠러(스피너+블레이드 한 메시+디스크), 바퀴 2 (타이어+허브 병합)
     const propGrp = new THREE.Group();
-    propGrp.position.set(0, 0.3, 0.73);
+    propGrp.position.set(0, 0.3, 0.9);
     const spinner = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.11, 10).rotateX(Math.PI / 2), M(0x8a6647));
     propGrp.add(spinner);
     const bladeGeos = [];
@@ -10149,7 +10149,7 @@ function makePlane() {
         const wheel = new THREE.Mesh(tire, M(0x3a3a40));
         const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.054, 10).rotateZ(Math.PI / 2), M(0xd05a4a));
         wheel.add(hub);
-        wheel.position.set(sx * 0.3, 0.085, 0.2);
+        wheel.position.set(sx * 0.3, 0.085, 0.26);
         g.add(wheel);
         wheels.push(wheel);
     }
@@ -10398,7 +10398,7 @@ function stepPlane(delta, driver) {
     const seatPet = (q, fwd) => {
         q.mover.position.set(
             PLANE.x + Math.sin(PLANE.heading) * fwd,
-            planeGroup.position.y + 0.34 - q.height * 0.32,   // 몸은 콕핏 속, 머리만 림 위 (키 비례 — 병아리/강아지 둘 다)
+            planeGroup.position.y + 0.4 - q.height * 0.32,   // 몸은 콕핏 속, 부리·주둥이까지 림 위 (키 비례)
             PLANE.z + Math.cos(PLANE.heading) * fwd
         );
         q.mover.rotation.y = PLANE.heading;
@@ -10407,8 +10407,8 @@ function stepPlane(delta, driver) {
         q.pet.walking = false;
         q.swimming = false;
     };
-    seatPet(driver, 0.18);
-    if (r.passenger) seatPet(r.passenger, -0.2);
+    seatPet(driver, 0.28);
+    if (r.passenger) seatPet(r.passenger, -0.36);
 }
 // 주차 중: 물 위면 파도 위 살랑, 뭍이면 정지 — 프로펠러도 멈춤 (프레임 비용 0에 수렴)
 function updatePlaneIdle() {
@@ -10472,8 +10472,8 @@ function updatePlaneHop(delta) {
     const k = Math.min(1, planeHop.t / 0.6);
     const e = k * k * (3 - 2 * k);
     const q = planeHop.q;
-    const ty = planeSupportY(PLANE.x, PLANE.z) + 0.34 - q.height * 0.32;
-    const tx = PLANE.x - Math.sin(PLANE.heading) * 0.2, tz = PLANE.z - Math.cos(PLANE.heading) * 0.2;
+    const ty = planeSupportY(PLANE.x, PLANE.z) + 0.4 - q.height * 0.32;
+    const tx = PLANE.x - Math.sin(PLANE.heading) * 0.36, tz = PLANE.z - Math.cos(PLANE.heading) * 0.36;
     q.mover.position.set(
         THREE.MathUtils.lerp(planeHop.fx, tx, e),
         THREE.MathUtils.lerp(planeHop.fy, ty, e) + Math.sin(k * Math.PI) * 0.5,
