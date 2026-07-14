@@ -6970,6 +6970,14 @@ if (statsOn) window.__worldDev = {
     planeState: () => ({ mode: PLANE.mode, x: +PLANE.x.toFixed(2), z: +PLANE.z.toFixed(2), y: +PLANE.y.toFixed(2), vel: +PLANE.vel.toFixed(2), riding: !!planeRide, passenger: !!(planeRide && planeRide.passenger) }),
     groundAt: (x, z) => +world.groundHeightAt(x, z).toFixed(3),    // 지형 프로브 (배치·활주로 검증용)
     planeSummon: () => { summonPlanePassenger(); return !!planeHop; },   // 절친 뒷좌석 소환 (E2E)
+    planeTp: (x, z, h) => {   // 비행기 순간이동 (E2E — 절벽 활주 등 시나리오 배치용)
+        PLANE.x = x; PLANE.z = z;
+        if (Number.isFinite(h)) PLANE.heading = h;
+        PLANE.y = planeSupportY(x, z);
+        PLANE.vel = 0;
+        planeCollider.x = x; planeCollider.z = z;
+        return window.__worldDev.planeState();
+    },
     interact: () => doInteract(),                                  // 헤드리스 ⌘ 대행
     devKey: (k, on) => { if (on) heldKeys.add(k); else heldKeys.delete(k); return [...heldKeys]; },   // 조종 키 주입
     aiFishSnap: () => {   // 자율 낚시 도보 생략 — E2E가 먼 섬 출발(1~2분 도보)에 좌우되지 않게
@@ -10299,11 +10307,27 @@ function stepPlane(delta, driver) {
         PLANE.heading += steer * delta * 1.6 * THREE.MathUtils.clamp(PLANE.vel / maxTaxi, -1, 1);
         const nx = PLANE.x + Math.sin(PLANE.heading) * PLANE.vel * delta;
         const nz = PLANE.z + Math.cos(PLANE.heading) * PLANE.vel * delta;
-        // 절벽 턱(섬 림 수직벽)은 활주로 못 오른다 — 완만한 해변 경사만 통과 (이착륙은 비행으로)
-        const ledge = Math.abs(planeSupportY(nx, nz) - planeSupportY(PLANE.x, PLANE.z)) > 0.35;
-        if (!ledge && !planeBlocked(nx, nz)) { PLANE.x = nx; PLANE.z = nz; }
+        // 절벽 턱은 "오르기"만 금지 — 내려가기(섬 림→바다)는 허용: 좁은 섬에선 바다로 활주해
+        // 이륙해야 하므로, 가장자리를 넘으면 낙하해서 수면 활주로 이어진다 (아래 중력 낙하)
+        const stepUp = planeSupportY(nx, nz) - planeSupportY(PLANE.x, PLANE.z) > 0.35;
+        if (!stepUp && !planeBlocked(nx, nz)) { PLANE.x = nx; PLANE.z = nz; }
         else PLANE.vel = 0;
-        PLANE.y = planeSupportY(PLANE.x, PLANE.z);
+        const sup = planeSupportY(PLANE.x, PLANE.z);
+        if (PLANE.y > sup + 0.05) {   // 턱을 넘었다 — 전진 관성 그대로 짧은 낙하 (동숲식 절벽 폴짝)
+            r.fallVy = (r.fallVy || 0) - 7.0 * delta;
+            PLANE.y = Math.max(sup, PLANE.y + r.fallVy * delta);
+            pitch = THREE.MathUtils.clamp(r.fallVy * 0.12, -0.22, 0);
+            if (PLANE.y === sup) {
+                r.fallVy = 0;
+                if (islandOf(PLANE.x, PLANE.z) < 0) {   // 물에 착수 — 첨벙
+                    spawnSplash(PLANE.x, waveYAt(PLANE.x, PLANE.z) + 0.06, PLANE.z);
+                    playSplashSound(PLANE.x, PLANE.z);
+                } else playStep('road', 1.0);
+            }
+        } else {
+            PLANE.y = sup;
+            r.fallVy = 0;
+        }
         for (const w of planeGroup.userData.wheels) w.rotation.x += PLANE.vel * delta * 11;   // 바퀴 구름
         if (onWater) {
             bank = Math.sin(wxTime.value * 1.2) * 0.02;   // 물 위 살랑임
@@ -10316,7 +10340,7 @@ function stepPlane(delta, driver) {
             }
         }
         if (PLANE.vel < 2.0) r.armed = true;   // 감속하면 재이륙 무장 (터치다운 직후 튕겨 오르기 방지)
-        if (r.armed && PLANE.vel > 2.55) {   // 전속력 → 자동 로테이트 (이륙!)
+        if (r.armed && PLANE.vel > 2.55 && !(r.fallVy < 0)) {   // 전속력 → 자동 로테이트 (이륙!) — 낙하 중엔 착수 먼저
             PLANE.mode = 'fly';
             r.armed = false;
             r.liftT = 0;
