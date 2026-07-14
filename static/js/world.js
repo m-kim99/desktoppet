@@ -10091,7 +10091,7 @@ function makePlane() {
     const glassGeos = [];
     const dark = [];
     const pads = [];   // RoundedBox 파츠 (Torus와 속성 불일치 — 별도 병합)
-    for (const cz of [0.28, -0.04]) {   // 앞뒤 좌석 간격 0.32 — 아늑한 탠덤 (사용자 튜닝)
+    for (const cz of [0.28, -0.18]) {   // 앞뒤 좌석 간격 0.46 — 두 머리(반지름 합 ~0.36)가 안 겹치는 최소 + 아늑함
         const rimGeo = new THREE.TorusGeometry(0.085, 0.03, 10, 18).rotateX(Math.PI / 2);   // ③ 도톰한 가죽 패딩 림
         rimGeo.translate(0, 0.44, cz);
         rims.push(rimGeo);
@@ -10433,7 +10433,7 @@ function stepPlane(delta, driver) {
         q.swimming = false;
     };
     seatPet(driver, 0.28);
-    if (r.passenger) seatPet(r.passenger, -0.04);
+    if (r.passenger) seatPet(r.passenger, -0.18);
 }
 // 주차 중: 물 위면 파도 위 살랑, 뭍이면 정지 — 프로펠러도 멈춤 (프레임 비용 0에 수렴)
 function updatePlaneIdle() {
@@ -10501,7 +10501,7 @@ function updatePlaneHop(delta) {
     const e = k * k * (3 - 2 * k);
     const q = planeHop.q;
     const ty = planeSupportY(PLANE.x, PLANE.z) + 0.4 - q.height * 0.32;
-    const tx = PLANE.x - Math.sin(PLANE.heading) * 0.04, tz = PLANE.z - Math.cos(PLANE.heading) * 0.04;
+    const tx = PLANE.x - Math.sin(PLANE.heading) * 0.18, tz = PLANE.z - Math.cos(PLANE.heading) * 0.18;
     q.mover.position.set(
         THREE.MathUtils.lerp(planeHop.fx, tx, e),
         THREE.MathUtils.lerp(planeHop.fy, ty, e) + Math.sin(k * Math.PI) * 0.5,
