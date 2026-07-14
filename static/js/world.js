@@ -10086,16 +10086,39 @@ function makePlane() {
         strutGeo.translate(sx, 0.47, sz);
         wood.push(strutGeo);
     }
-    // 오픈 콕핏 2자리: 링 테두리 (앞=조종석, 뒤=절친석) + 미니 윈드실드
+    // 오픈 콕핏 2자리 "시트 유닛" (앞=조종석, 뒤=절친석): ①어두운 내부(구멍 착시) +
+    // ②가죽 시트백·헤드레스트 + ③패딩 림 + 미니 윈드실드 — 펫이 동체가 아니라 의자에 앉아 보이게
     const glassGeos = [];
+    const dark = [];
+    const pads = [];   // RoundedBox 파츠 (Torus와 속성 불일치 — 별도 병합)
     for (const cz of [0.28, -0.04]) {   // 앞뒤 좌석 간격 0.32 — 아늑한 탠덤 (사용자 튜닝)
-        const rimGeo = new THREE.TorusGeometry(0.085, 0.016, 8, 16).rotateX(Math.PI / 2);
-        rimGeo.translate(0, 0.435, cz);
+        const rimGeo = new THREE.TorusGeometry(0.085, 0.03, 10, 18).rotateX(Math.PI / 2);   // ③ 도톰한 가죽 패딩 림
+        rimGeo.translate(0, 0.44, cz);
         rims.push(rimGeo);
+        const holeGeo = new THREE.CircleGeometry(0.08, 14).rotateX(-Math.PI / 2);   // ① 콕핏 내부 — 어두운 구멍
+        holeGeo.scale(1, 1, 1.15);
+        holeGeo.translate(0, 0.428, cz);
+        dark.push(holeGeo);
+        const backGeo = new RoundedBoxGeometry(0.15, 0.15, 0.034, 2, 0.015);   // ② 시트백 (뒤로 살짝 기움)
+        backGeo.rotateX(-0.16);
+        backGeo.translate(0, 0.47, cz - 0.125);
+        pads.push(backGeo);
+        const headGeo = new RoundedBoxGeometry(0.075, 0.05, 0.03, 2, 0.012);   // ② 헤드레스트
+        headGeo.rotateX(-0.16);
+        headGeo.translate(0, 0.575, cz - 0.14);
+        pads.push(headGeo);
         const shieldGeo = new THREE.PlaneGeometry(0.16, 0.085).rotateX(-0.35);
         shieldGeo.translate(0, 0.5, cz + 0.11);
         glassGeos.push(shieldGeo);
     }
+    // ④ 조종간 (앞좌석): 앞으로 기운 스틱 + 빨간 노브 — 조종사 날개가 이걸 향해 모인다 (updatePlanePose)
+    const stickGeo = new THREE.CylinderGeometry(0.009, 0.009, 0.12, 6);
+    stickGeo.rotateX(0.3);
+    stickGeo.translate(0, 0.485, 0.345);
+    wood.push(stickGeo);
+    const knobGeo = new THREE.SphereGeometry(0.016, 8, 6);
+    knobGeo.translate(0, 0.548, 0.364);
+    red.push(knobGeo);
     // 꼬리: 수평 안정판 + 빨간 수직 핀·러더
     const hstabGeo = new THREE.BoxGeometry(0.56, 0.024, 0.2);
     hstabGeo.translate(0, 0.35, -0.7);
@@ -10122,7 +10145,9 @@ function makePlane() {
     g.add(new THREE.Mesh(mergeGeometries(red, false), M(0xd05a4a)));
     g.add(new THREE.Mesh(mergeGeometries(wood, false), M(0x8a6647, { map: woodTex })));
     g.add(new THREE.Mesh(mergeGeometries(metal, false), M(0x5a5f66)));
-    g.add(new THREE.Mesh(mergeGeometries(rims, false), M(0x6f5238)));
+    g.add(new THREE.Mesh(mergeGeometries(rims, false), M(0x7d4a2e)));   // 가죽 패딩 림 (새들 브라운)
+    g.add(new THREE.Mesh(mergeGeometries(pads, false), M(0x7d4a2e)));   // 가죽 시트백·헤드레스트 (같은 재질 공유)
+    g.add(new THREE.Mesh(mergeGeometries(dark, false), M(0x2c241d)));   // 콕핏 내부 어둠
     g.add(new THREE.Mesh(mergeGeometries(glassGeos, false),
         new THREE.MeshStandardMaterial({ color: 0xbfe0ea, transparent: true, opacity: 0.45, roughness: 0.2, metalness: 0.1, side: THREE.DoubleSide })));
     // 가동부: 프로펠러(스피너+블레이드 한 메시+디스크), 바퀴 2 (타이어+허브 병합)
@@ -10418,15 +10443,18 @@ function updatePlaneIdle() {
     planeGroup.position.set(PLANE.x, y + (onWater ? Math.sin(wxTime.value * 0.7) * 0.015 : 0), PLANE.z);
     planeGroup.rotation.set(0, PLANE.heading, onWater ? Math.sin(wxTime.value * 0.6 + 0.8) * 0.02 : 0);
 }
-// 비행 중 맞바람: 탑승 펫 귀·날개가 뒤로 눕는다 — 엔티티 업데이트 뒤에 덮어쓰기 (자동 복원)
+// 탑승 포즈: 조종사는 날개를 조종간 쪽으로 모으고(그립), 승객은 편안히 — 비행 중엔 맞바람에
+// 귀가 뒤로 눕는다. 엔티티 업데이트 뒤 덮어쓰기 (자동 복원)
 function updatePlanePose() {
-    if (!planeRide || PLANE.mode !== 'fly') return;
-    const k = Math.min(1, PLANE.vel / 3.2);
-    for (const q of [planeRide.driver, planeRide.passenger]) {
-        if (!q) continue;
-        for (const er of q.pet.ears) er.rotation.x = (er.userData._restRotX || 0) + 0.55 * k;
-        for (const wg of q.pet.wings) wg.rotation.z = (wg.userData._restRotZ || 0) * (1 - 0.5 * k);
-    }
+    if (!planeRide) return;
+    const wind = PLANE.mode === 'fly' ? Math.min(1, PLANE.vel / 3.2) : 0;
+    const pose = (q, tuck) => {
+        if (!q) return;
+        for (const er of q.pet.ears) er.rotation.x = (er.userData._restRotX || 0) + 0.55 * wind;
+        for (const wg of q.pet.wings) wg.rotation.z = (wg.userData._restRotZ || 0) * tuck;
+    };
+    pose(planeRide.driver, 0.28);      // 조종간 그립 — 날개 앞으로 모음
+    pose(planeRide.passenger, 0.6);
 }
 // 🛩️ 우클릭 메뉴 — 활주/주차 탑승 중 "친구 태우기": 절친이 포르르 나타나 뒷좌석으로 폴짝
 const planeMenu = document.createElement('div');
