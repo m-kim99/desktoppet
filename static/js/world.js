@@ -4237,10 +4237,11 @@ const HOVER_PROMPTS = {
     flowerbasket: () => (flowerMode ? '🌸 꽃심기 모드 켜짐 — 다시 클릭하면 꺼요' : `🌸 꽃심기 바구니 — 클릭해서 심기 모드 (${flowersData.length}/100)`),
     boat: () => '🚣 노 젓는 보트 — 조종 중 ⌘로 타기 (절친 동승 가능)',
     plane: () => '🛩️ 경비행기 — 조종 중 ⌘로 탑승! 전속력 활주 = 이륙, W/S로 고도 (절친 동승 가능)',
+    balloon: () => '🎈 열기구 — 조종 중 ⌘로 탑승! 혼자 두둥실 하늘 산책 (매번 다른 경로, 절친이 곁에 있으면 함께)',
     sandcastle: () => '🏰 모래성 — 클릭하면 펫이 모래놀이 · 조종 중 ⌘ = 직접 앉기',
     palm: () => '🌴 야자수',
 };
-const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, piano: 1.05, photoboard: 1.55, mailbox: 0.75, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, sandcastle: 0.65, palm: 1.2 };
+const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, piano: 1.05, photoboard: 1.55, mailbox: 0.75, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, balloon: 2.1, sandcastle: 0.65, palm: 1.2 };
 const hoverEl = document.createElement('div');
 hoverEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); z-index:88; pointer-events:none; background:rgba(30,32,40,0.88); color:#fff; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
 document.body.appendChild(hoverEl);
@@ -5933,6 +5934,15 @@ function updateWander(p, delta) {
                 startAiFishing(p);
                 return;
             }
+            // …또는 열기구를 타러 계류장으로 — 혼자 하늘 한 바퀴 (낮, 쿨다운, 열기구가 집에 있을 때).
+            // 첫 쿨다운은 시드만 — 앱 켜자마자 열기구가 떠나버리면 주인이 탈 틈이 없다 (E2E에서 실측).
+            if (!p.nextBalloonAt) p.nextBalloonAt = Date.now() + 240000 + Math.random() * 480000;
+            else if (!isSleepTime(currentHour()) && !balloonRide && !aiBalloonWalk && BALLOON.mode === 'docked'
+                && Date.now() > p.nextBalloonAt && Math.random() < 0.05) {
+                p.nextBalloonAt = Date.now() + 420000 + Math.random() * 420000;
+                startAiBalloon(p);
+                return;
+            }
             // …or amble over to a free swing / seesaw and hop on (daytime, on its own cooldown).
             if (!isSleepTime(currentHour()) && Date.now() > (p.nextSwingAt || 0) && Math.random() < 0.14) {
                 const seat = SWINGS.find((b) => !b.occupant) || SEESAWS.find((b) => !b.occupant);
@@ -6726,7 +6736,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기' };
+const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -6755,6 +6765,8 @@ function petStatusLine(p) {
     else if (carDrive && carDrive.passenger === p) parts.push('스포츠카 조수석에 타는 중');
     if (boatRide && boatRide.driver === p) parts.push('보트에서 노 젓는 중');
     else if (boatRide && boatRide.passenger === p) parts.push('보트 뱃머리에 타는 중');
+    else if (balloonRide && balloonRide.p === p) parts.push('열기구 타고 하늘 산책 중 🎈');
+    else if (balloonRide && balloonRide.friend === p) parts.push('열기구에 절친과 동승 중 🎈');
     else if (planeRide && planeRide.driver === p) parts.push(PLANE.mode === 'fly' ? '경비행기 몰고 하늘을 나는 중!' : '경비행기 활주 중');
     else if (planeRide && planeRide.passenger === p) parts.push(PLANE.mode === 'fly' ? '경비행기 뒷좌석에서 하늘 구경 중!' : '경비행기 뒷좌석에 타는 중');
     else if (p.bed && p.bedPhase === 'lying') {
@@ -6970,6 +6982,13 @@ if (statsOn) window.__worldDev = {
     planeState: () => ({ mode: PLANE.mode, x: +PLANE.x.toFixed(2), z: +PLANE.z.toFixed(2), y: +PLANE.y.toFixed(2), vel: +PLANE.vel.toFixed(2), riding: !!planeRide, passenger: !!(planeRide && planeRide.passenger) }),
     groundAt: (x, z) => +world.groundHeightAt(x, z).toFixed(3),    // 지형 프로브 (배치·활주로 검증용)
     planeSummon: () => { summonPlanePassenger(); return !!planeHop; },   // 절친 뒷좌석 소환 (E2E)
+    balloonState: () => ({ mode: BALLOON.mode, x: +BALLOON.x.toFixed(2), y: +BALLOON.y.toFixed(2), z: +BALLOON.z.toFixed(2), riding: !!balloonRide, rider: balloonRide && balloonRide.p ? balloonRide.p.name : null, lap: balloonRide ? balloonRide.lap : 0, pois: balloonRide && balloonRide.route ? balloonRide.route.names.length : 0 }),
+    balloonAiStart: () => {   // 'ok' | 'busy' | fail(원인)
+        const q = pets.find((o) => o !== possessed && !o.bed && !o.dip && !o.pet.sleeping);
+        if (!q) return 'busy';
+        startAiBalloon(q);
+        return aiBalloonWalk ? 'ok' : `fail(mode=${BALLOON.mode},ride=${!!balloonRide},walk=${!!aiBalloonWalk},st=${q.ai.state})`;
+    },
     planeTp: (x, z, h) => {   // 비행기 순간이동 (E2E — 절벽 활주 등 시나리오 배치용)
         PLANE.x = x; PLANE.z = z;
         if (Number.isFinite(h)) PLANE.heading = h;
@@ -6979,6 +6998,7 @@ if (statsOn) window.__worldDev = {
         return window.__worldDev.planeState();
     },
     interact: () => doInteract(),                                  // 헤드리스 ⌘ 대행
+    who: () => (possessed ? possessed.name : null),                // 빙의 대상 (E2E 진단)
     devKey: (k, on) => { if (on) heldKeys.add(k); else heldKeys.delete(k); return [...heldKeys]; },   // 조종 키 주입
     aiFishSnap: () => {   // 자율 낚시 도보 생략 — E2E가 먼 섬 출발(1~2분 도보)에 좌우되지 않게
         if (!aiFishing || !aiFishing.p.ai.target) return false;
@@ -9087,6 +9107,7 @@ function releasePossession() {
     if (carDrive) exitCar();
     if (boatRide) exitBoat(true);   // 강제 하선 — 거절 없이 (절친은 기슭 or 물에)
     if (planeRide) exitPlane(true); // 강제 하기 — 공중이면 비상 착륙 후 내려준다
+    if (balloonRide && !balloonRide.isAI) exitBalloonForce(); // 라이더는 계류장으로, 빈 열기구는 자율 귀환
     releaseHandHold();
     running = false;
     snapToLand(p);
@@ -9104,6 +9125,7 @@ const ARROW_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 function doJump() {
     if (!possessed) return;
     if (planeRide) return;   // 🛩️ 탑승 중 Space 무시 — 고도는 W/S
+    if (balloonRide && (balloonRide.p === possessed || balloonRide.friend === possessed)) return;   // 🎈 바구니에서 점프 금지
     if (fishing && (fishing.state === 'bite' || fishing.state === 'wait')) { fishingIntercept(); return; }   // Space도 챔질
     if (fishing && fishing.state !== 'idle') return;   // 시전·파이팅 중 점프 잠금
     if (jumpsLeft <= 0) return;
@@ -9138,6 +9160,7 @@ function doInteract() {
     // streetlamp — in that priority order.
     if (!possessed) return;
     if (fishingIntercept()) return;   // 🎣 입질 챔질 / 성급 걷어들이기 / 연출 중 잠금
+    if (balloonRide && (balloonRide.p === possessed || balloonRide.friend === possessed)) { requestBalloonExit(); return; }
     if (planeRide) {
         if (PLANE.mode === 'fly') { showToast('🛩️ 공중이에요 — S로 내려가 지면·수면에 닿으면 착륙!'); return; }
         exitPlane();
@@ -9167,6 +9190,11 @@ function doInteract() {
     }
     if (PLANE.mode === 'parked' && Math.hypot(possessed.mover.position.x - PLANE.x, possessed.mover.position.z - PLANE.z) < 1.4) {
         enterPlane();   // 🛩️ 주차된 경비행기 — 조종석으로
+        return;
+    }
+    if (BALLOON.mode === 'docked' && !balloonRide
+        && Math.hypot(possessed.mover.position.x - BALLOON.x, possessed.mover.position.z - BALLOON.z) < 1.35) {
+        enterBalloon(possessed);   // 🎈 계류장 열기구 — 바구니로 (절친이 곁에 있으면 함께)
         return;
     }
     if (handHold) { releaseHandHold(); return; }
@@ -9362,6 +9390,13 @@ function updatePlayer(delta) {
             ? `🚗 ${p.name === 'chick' ? '병아리' : '강아지'} 운전 중${carDrive.passenger ? ' 👥' : ''} — 스틱 가속·핸들 · ✋ 내리기 · ✕ 해제`
             : `🚗 ${p.name === 'chick' ? '병아리' : '강아지'} 운전 중${carDrive.passenger ? ' 👥' : ''} — ↑↓ 가속·후진 · ←→ 핸들 · Ctrl/⌘ 내리기 · Esc 해제`;
         if (controlHint.textContent !== driveHint) controlHint.textContent = driveHint;
+        return;
+    }
+    if (balloonRide && (balloonRide.p === possessed || balloonRide.friend === possessed)) {
+        const bHint = BALLOON.mode === 'land'
+            ? '🎈 정거장으로 귀환 중 — 도착하면 내려요'
+            : `🎈 ${petKo(p)} 하늘 산책 중${balloonRide.friend ? ' 👥' : ''} — 자동 운행 · Ctrl/⌘ 하차(저공 물 위 = 퐁당) · Esc 해제`;
+        if (controlHint.textContent !== bHint) controlHint.textContent = bHint;
         return;
     }
     if (planeRide) {
@@ -10514,6 +10549,391 @@ function updatePlaneHop(delta) {
         if (planeRide && !planeRide.passenger) planeRide.passenger = q;
         else { q.swimming = false; releaseAI(q); snapToLand(q); }
     }
+}
+
+// ---- 🎈 열기구 (자동 관광 라이드): NE 놀이터섬 동쪽 계류장. 타면 혼자 두둥실 떠올라 하늘
+// 산책 — 실무 문법: 폐곡선 Catmull-Rom 스플라인, 위치=곡선(u)·방향=접선(u), 물리 0.
+// 경유지 셔플(3~5곳) + 방향 코인플립 + 지터 = 매 바퀴 다른 경로 (순항 밴드 위라 전부 안전).
+// 한 바퀴 ≈ 2분 15초, 안 내리면 무한 루프(바퀴마다 새 경로). ⌘ = 저공 물스침에선 바로 퐁당,
+// 아니면 정거장 귀환 요청. 한가한 펫은 가끔 혼자 타러 간다 (자율 낚시 문법). ----
+const BALLOON_HOME = { x: 13.05, z: 6.75 };
+const BALLOON_CRUISE = [4.6, 6.0];   // 순항 고도 밴드 — 전망대 언덕(1.1+데크)·집 지붕 위
+const BALLOON_POIS = [
+    { x: 0, z: 0, ko: '광장 분수' },
+    { x: 2.7, z: 2.05, ko: '우리 집' },
+    { x: -2.6, z: -2.9, ko: '연못' },
+    { x: -3.2, z: 11.8, ko: '휴양지 모래섬' },
+    { x: 10.12, z: -7.17, ko: '모험의 섬' },
+    { x: -10.72, z: -4.69, ko: '추억의 섬' },
+    { x: 1.2, z: 7.4, ko: '북쪽 물가' },
+    { x: -13.5, z: 2.5, ko: '서쪽 먼바다', low: true },   // 저공 물스침 구간 후보
+    { x: 14.5, z: -1.5, ko: '동쪽 먼바다', low: true },
+];
+function makeBalloonRoute() {
+    const pool = [...BALLOON_POIS];
+    for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+    const picks = pool.slice(0, 3 + Math.floor(Math.random() * 3));
+    if (!picks.some((q) => q.low)) picks.push(BALLOON_POIS[7 + Math.floor(Math.random() * 2)]);   // 저공 구간 1곳 보장
+    const order = [];   // 최근접 이웃 정렬 — 널뛰기 없는 한붓 루프
+    let cur = BALLOON_HOME;
+    const rest = [...picks];
+    while (rest.length) {
+        let bi = 0, bd = Infinity;
+        rest.forEach((q, i) => { const d = Math.hypot(q.x - cur.x, q.z - cur.z); if (d < bd) { bd = d; bi = i; } });
+        cur = rest.splice(bi, 1)[0];
+        order.push(cur);
+    }
+    if (Math.random() < 0.5) order.reverse();   // 방향 코인플립
+    const pts = [new THREE.Vector3(BALLOON_HOME.x, BALLOON_CRUISE[0], BALLOON_HOME.z)];
+    const names = [];
+    for (const q of order) {
+        const a = Math.random() * Math.PI * 2, rr = Math.random() * 1.2;   // 제어점 지터
+        const alt = q.low ? 1.7 : BALLOON_CRUISE[0] + Math.random() * (BALLOON_CRUISE[1] - BALLOON_CRUISE[0]);
+        pts.push(new THREE.Vector3(q.x + Math.cos(a) * rr, alt, q.z + Math.sin(a) * rr));
+        names.push({ ko: q.ko, low: !!q.low, idx: pts.length - 1 });
+    }
+    const curve = new THREE.CatmullRomCurve3(pts, true, 'centripetal');
+    const len = curve.getLength();
+    return { curve, len, speed: len / 135, names, visited: new Set() };   // 한 바퀴 ≈ 2분 15초
+}
+function makeBalloon() {
+    const g = new THREE.Group();
+    // 봉투: 세로 8고어 스트라이프 (정점색) — 버너 펄스 때 은은히 밝아지는 유니크 재질
+    const envPts = [
+        new THREE.Vector2(0.2, 0), new THREE.Vector2(0.5, 0.22), new THREE.Vector2(0.71, 0.5),
+        new THREE.Vector2(0.76, 0.85), new THREE.Vector2(0.7, 1.15), new THREE.Vector2(0.52, 1.38),
+        new THREE.Vector2(0.24, 1.52), new THREE.Vector2(0.02, 1.58),
+    ];
+    const envGeo = new THREE.LatheGeometry(envPts, 24);
+    const pos = envGeo.attributes.position;
+    const cols = new Float32Array(pos.count * 3);
+    const cCream = new THREE.Color(0xf4e6c8), cRed = new THREE.Color(0xd05a4a);
+    for (let i = 0; i < pos.count; i++) {
+        const a = Math.atan2(pos.getX(i), pos.getZ(i));
+        const gore = Math.floor(((a / (Math.PI * 2)) + 0.5) * 8 + 0.01);
+        const c = (gore % 2 === 0) ? cCream : cRed;
+        const shade = 0.85 + 0.15 * Math.min(1, pos.getY(i) / 1.3);
+        cols[i * 3] = c.r * shade; cols[i * 3 + 1] = c.g * shade; cols[i * 3 + 2] = c.b * shade;
+    }
+    envGeo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+    envGeo.translate(0, 1.12, 0);
+    const envMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, emissive: new THREE.Color(0xff9a3c), emissiveIntensity: 0 });
+    const envelope = new THREE.Mesh(envGeo, envMat);
+    g.add(envelope);
+    // 바구니(등나무) + 바닥 + 림 + 로프 4 + 버너 프레임 — 나무 버킷 병합
+    const wood = [];
+    const basketGeo = new THREE.CylinderGeometry(0.33, 0.28, 0.42, 10, 1, true);
+    basketGeo.translate(0, 0.21, 0);
+    wood.push(basketGeo);
+    const floorGeo = new THREE.CircleGeometry(0.29, 10).rotateX(-Math.PI / 2);
+    floorGeo.translate(0, 0.03, 0);
+    wood.push(floorGeo);
+    const rimGeo = new THREE.TorusGeometry(0.33, 0.03, 8, 14).rotateX(Math.PI / 2);
+    rimGeo.translate(0, 0.43, 0);
+    wood.push(rimGeo);
+    for (const a of [0.4, 1.97, 3.54, 5.11]) {
+        const ropeGeo = new THREE.CylinderGeometry(0.011, 0.011, 0.78, 5);
+        ropeGeo.translate(0, 0.39, 0);
+        ropeGeo.rotateZ(0.32);
+        ropeGeo.rotateY(a);
+        ropeGeo.translate(0, 0.42, 0);
+        wood.push(ropeGeo);
+    }
+    for (const sx of [-1, 1]) {   // 버너 프레임 기둥 2
+        const poleGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.42, 5);
+        poleGeo.translate(sx * 0.16, 0.62, 0);
+        wood.push(poleGeo);
+    }
+    g.add(new THREE.Mesh(mergeGeometries(wood, false), M(0x9a7048, { map: woodTex })));
+    // 모래주머니 3 (캔버스 탠)
+    const bags = [];
+    for (const a of [0.7, 2.8, 4.9]) {
+        const bagGeo = new THREE.SphereGeometry(0.062, 8, 7);
+        bagGeo.scale(1, 1.35, 1);
+        bagGeo.translate(Math.sin(a) * 0.36, 0.3, Math.cos(a) * 0.36);
+        bags.push(bagGeo);
+    }
+    g.add(new THREE.Mesh(mergeGeometries(bags, false), M(0xd8c39a)));
+    // 버너 (다크 메탈)
+    const burner = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.065, 0.09, 8), M(0x5a5f66));
+    burner.position.set(0, 0.86, 0);
+    g.add(burner);
+    // 계류 밧줄 — 정박 중에만 보임 (포스트 쪽으로 늘어짐)
+    const moorGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.8, 5);
+    moorGeo.rotateZ(1.05);
+    moorGeo.translate(0.62, 0.28, 0);
+    const moor = new THREE.Mesh(moorGeo, M(0xc9b18a));
+    g.add(moor);
+    g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    g.userData = { envMat, moor, burnerY: 0.9 };
+    return g;
+}
+const balloonDockY = terrainHeight(BALLOON_HOME.x, BALLOON_HOME.z) + 0.06;
+const BALLOON = { x: BALLOON_HOME.x, y: balloonDockY, z: BALLOON_HOME.z, heading: -2.1, mode: 'docked' };
+const balloonCollider = { type: 'balloon', layoutId: 'balloon-1', x: BALLOON_HOME.x, z: BALLOON_HOME.z, rotY: 0, r: 0.5, def: { x: BALLOON_HOME.x, z: BALLOON_HOME.z, rotY: 0 } };
+PROPS.push(balloonCollider);
+const balloonGroup = makeBalloon();
+balloonCollider.obj = balloonGroup;
+balloonGroup.position.set(BALLOON.x, BALLOON.y, BALLOON.z);
+balloonGroup.rotation.y = BALLOON.heading;
+stage.add(balloonGroup);
+{   // 계류장: 나무 데크 + 포스트 + 팻말 — 정적이라 월드 베이크에 편입
+    const st = new THREE.Group();
+    const deck = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.78, 0.06, 14), M(0xb08a60, { map: plankTex }));
+    deck.position.set(BALLOON_HOME.x, balloonDockY - 0.05, BALLOON_HOME.z);
+    st.add(deck);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.52, 8), M(0x8a6647, { map: woodTex }));
+    post.position.set(BALLOON_HOME.x + 0.62, balloonDockY + 0.2, BALLOON_HOME.z);
+    st.add(post);
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.03), M(0xf4e6c8));
+    sign.position.set(BALLOON_HOME.x + 0.62, balloonDockY + 0.52, BALLOON_HOME.z);
+    sign.rotation.y = -2.1;
+    st.add(sign);
+    st.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    stage.add(st);
+    WORLD_STATIC_ROOTS.push(st);
+}
+let balloonRide = null;   // { p, friend, isAI, t, u, lap, route, burnerAt, burnerT, empty }
+let aiBalloonWalk = null; // AI가 계류장으로 걸어가는 중 { p, ownArrive }
+function enterBalloon(rider, isAI = false) {
+    if (balloonRide || BALLOON.mode !== 'docked' || !rider) return;
+    let friend = null;
+    if (!isAI) {
+        const q = pets.find((o) => o !== rider);
+        if (q && !q.bed && !q.dip && !q.pet.sleeping
+            && Math.hypot(q.mover.position.x - BALLOON.x, q.mover.position.z - BALLOON.z) < 1.9
+            && (q.ai.state === 'idle' || q.ai.state === 'walk' || (handHold && handHold.partner === q))) {
+            if (handHold) handHold = null;
+            if (aiFishing && aiFishing.p === q) endAiFishing();
+            releaseAI(q);
+            q.ai.state = 'held';
+            friend = q;
+        }
+    }
+    balloonRide = { p: rider, friend, isAI, t: 0, u: 0, lap: 0, route: null, burnerAt: 0.8, burnerT: 0 };
+    rider.swimming = false;
+    if (!isAI) running = false;
+    BALLOON.mode = 'launch';
+    balloonCollider.r = 0;
+    balloonGroup.userData.moor.visible = false;
+    playBuffer(swishBuf, { vol: 0.4, rate: 0.5, filterFreq: 700 });
+    logWorldEvent(`${petKo(rider)}가 열기구 바구니에 올랐다 — 두둥실 하늘 산책${friend ? ' (절친도 함께!)' : ''} 🎈`);
+    if (!isAI) showToast('🎈 두둥실… 경치를 즐겨요! (Ctrl/⌘ = 하차 · 저공 물 위에선 바로 퐁당)');
+}
+function balloonDismount() {
+    const r = balloonRide;
+    const out = (q, side) => {
+        if (!q) return;
+        const dx = BALLOON_HOME.x + side * 0.75, dz = BALLOON_HOME.z + side * 0.25;
+        q.mover.position.set(dx, world.groundHeightAt(dx, dz), dz);
+        q.mover.rotation.x = 0;
+        q.mover.rotation.z = 0;
+        q.swimming = false;
+        if (q.ai.state === 'held') releaseAI(q);
+    };
+    out(r.p, -1);
+    out(r.friend, 1);
+    if (r.isAI && r.p) releaseAI(r.p, 2);
+    balloonRide = null;
+    BALLOON.mode = 'docked';
+    BALLOON.x = BALLOON_HOME.x; BALLOON.z = BALLOON_HOME.z; BALLOON.y = balloonDockY;
+    balloonCollider.x = BALLOON_HOME.x; balloonCollider.z = BALLOON_HOME.z;
+    balloonCollider.r = 0.5;
+    balloonGroup.userData.moor.visible = true;
+    balloonGroup.userData.envMat.emissiveIntensity = 0;
+}
+function requestBalloonExit() {
+    const r = balloonRide;
+    if (!r || BALLOON.mode === 'docked') return;
+    const overWater = islandOf(BALLOON.x, BALLOON.z) < 0 && !onBridge(BALLOON.x, BALLOON.z);
+    if (overWater && BALLOON.y - waveYAt(BALLOON.x, BALLOON.z) < 2.4) {
+        for (const [q, side] of [[r.p, -1], [r.friend, 1]]) {
+            if (!q) continue;
+            const dx = BALLOON.x + side * 0.5, dz = BALLOON.z;
+            q.mover.position.set(dx, waveYAt(dx, dz) + 0.02 - q.height * 0.45, dz);
+            q.swimming = 'sea';
+            q.mover.rotation.x = 0;
+            q.mover.rotation.z = 0;
+            if (q.ai.state === 'held') releaseAI(q);
+            spawnSplash(dx, waveYAt(dx, dz) + q.height * 0.42, dz);
+        }
+        playSplashSound(BALLOON.x, BALLOON.z);
+        r.p = null; r.friend = null; r.empty = true;
+        BALLOON.mode = 'land';
+        showToast('🎈 첨벙! 빈 열기구는 혼자 정거장으로 돌아가요');
+        logWorldEvent('열기구에서 바다로 풍덩 뛰어내렸다 — 빈 열기구는 집으로');
+    } else if (BALLOON.mode !== 'land') {
+        BALLOON.mode = 'land';
+        showToast('🎈 정거장으로 돌아갑니다 — 도착하면 내려요');
+    }
+}
+function exitBalloonForce() {   // Esc/빙의 해제 — 라이더는 계류장 데크로, 빈 열기구는 자율 귀환
+    const r = balloonRide;
+    if (!r) return;
+    for (const [q, side] of [[r.p, -1], [r.friend, 1]]) {
+        if (!q) continue;
+        const dx = BALLOON_HOME.x + side * 0.75, dz = BALLOON_HOME.z + side * 0.25;
+        q.mover.position.set(dx, world.groundHeightAt(dx, dz), dz);
+        q.mover.rotation.x = 0;
+        q.mover.rotation.z = 0;
+        q.swimming = false;
+        if (q.ai.state === 'held') releaseAI(q);
+    }
+    r.p = null; r.friend = null; r.empty = true;
+    if (BALLOON.mode === 'launch' || BALLOON.y < balloonDockY + 0.5) balloonDismount();
+    else BALLOON.mode = 'land';
+}
+function startAiBalloon(p) {
+    if (balloonRide || aiBalloonWalk || BALLOON.mode !== 'docked') return;
+    if (p === possessed || p.bed || p.dip || p.pet.sleeping) return;
+    releaseAI(p);
+    p.ai.state = 'goto';
+    const tx = BALLOON_HOME.x - 0.9, tz = BALLOON_HOME.z - 0.35;
+    p.ai.target = { x: tx, z: tz };
+    p.ai.waypoints = buildRoute(p.mover.position, { x: tx, z: tz });
+    p.ai.stall = 0;
+    const walk = { p };
+    walk.ownArrive = () => {
+        if (aiBalloonWalk !== walk) return;
+        aiBalloonWalk = null;
+        if (balloonRide || BALLOON.mode !== 'docked' || p === possessed || p.bed || p.dip) { releaseAI(p); return; }
+        enterBalloon(p, true);   // ai.state 'busy' 유지 — 소유권 표식
+    };
+    p.ai.onArrive = walk.ownArrive;
+    aiBalloonWalk = walk;
+    logWorldEvent(`${petKo(p)}가 열기구를 타러 계류장으로 나섰다 🎈`);
+}
+function updateBalloon(delta) {
+    const g = balloonGroup;
+    const ud = g.userData;
+    // AI 도보 소유권: 다른 디렉터가 goto를 덮어쓰면 접는다
+    if (aiBalloonWalk && (aiBalloonWalk.p.ai.onArrive !== aiBalloonWalk.ownArrive || aiBalloonWalk.p.ai.state !== 'goto')) aiBalloonWalk = null;
+    if (BALLOON.mode === 'docked') {
+        g.position.set(BALLOON.x, BALLOON.y + Math.sin(wxTime.value * 0.6) * 0.012, BALLOON.z);
+        g.rotation.set(0, BALLOON.heading, Math.sin(wxTime.value * 0.5 + 1) * 0.012);
+        return;
+    }
+    const r = balloonRide;
+    if (!r) { BALLOON.mode = 'docked'; return; }
+    // AI 라이더: 주인이 빙의하면 수동 라이드로 전환(하이재킹 = 기능), 디렉터가 뺏으면 빈 귀환
+    if (r.isAI && r.p) {
+        if (r.p === possessed) r.isAI = false;
+        else if (r.p.ai.state !== 'busy') { r.p = null; r.empty = true; BALLOON.mode = 'land'; }
+        else if (isSleepTime(currentHour()) && BALLOON.mode === 'tour') BALLOON.mode = 'land';
+    }
+    r.t += delta;
+    // ---- 버너: 6~11초 간격 "푸쉬—" (사운드 + 글로우 + 봉투 은은한 발광 — 밤엔 더 밝게) ----
+    r.burnerAt -= delta;
+    if (r.burnerAt <= 0) {
+        r.burnerAt = 6 + Math.random() * 5;
+        r.burnerT = 0.8;
+        playBuffer(swishBuf, { vol: 0.35 * attAtPoint(BALLOON.x, BALLOON.z), rate: 0.42, filterFreq: 500 });
+        const spr = glowSprite(0xffb35c, 0.14, 0.95);
+        spr.position.set(BALLOON.x, BALLOON.y + ud.burnerY, BALLOON.z);
+        scene.add(spr);
+        hugBurst.push({ spr, vx: 0, vy: 0.55, vz: 0, t: 0.45 });
+    }
+    if (r.burnerT > 0) {
+        r.burnerT -= delta;
+        const k = Math.sin(Math.PI * Math.max(0, 1 - r.burnerT / 0.8));
+        const h = currentHour();
+        ud.envMat.emissiveIntensity = k * ((h >= 19 || h < 6) ? 0.42 : 0.15);
+    } else ud.envMat.emissiveIntensity = 0;
+    let tilt = 0;
+    if (BALLOON.mode === 'launch') {
+        const k = Math.min(1, r.t / 3.5);
+        const e = k * k * (3 - 2 * k);
+        BALLOON.y = THREE.MathUtils.lerp(balloonDockY, BALLOON_CRUISE[0], e);
+        if (k >= 1) {
+            BALLOON.mode = 'tour';
+            r.route = makeBalloonRoute();
+            r.u = 0;
+            if (!r.isAI) maybeProactive(null, '주인과 열기구를 타고 두둥실 떠올랐다! 하늘 산책 시작!');
+        }
+    } else if (BALLOON.mode === 'tour') {
+        if (!r.route) r.route = makeBalloonRoute();
+        r.u += (r.route.speed * delta) / r.route.len;
+        if (r.u >= 1) {   // 한 바퀴 — AI는 귀환, 주인은 새 경로로 무한 루프
+            r.u = 0;
+            r.lap += 1;
+            if (r.isAI) BALLOON.mode = 'land';
+            else {
+                r.route = makeBalloonRoute();
+                showToast(`🎈 ${r.lap}바퀴째 — 새 경로로 계속 두둥실 (Ctrl/⌘ = 하차)`);
+            }
+        }
+        const pt = r.route.curve.getPointAt(r.u);
+        const tan = r.route.curve.getTangentAt(r.u);
+        BALLOON.x = pt.x; BALLOON.y = pt.y; BALLOON.z = pt.z;
+        const targetH = Math.atan2(tan.x, tan.z);
+        let diff = targetH - BALLOON.heading;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        const turn = THREE.MathUtils.clamp(diff, -delta * 0.9, delta * 0.9);
+        BALLOON.heading += turn;
+        tilt = THREE.MathUtils.clamp(turn * 6, -0.05, 0.05);
+        // 경유지 통과 — 선제대화(주인 라이드) + 빼꼼 happy
+        for (const nm of r.route.names) {
+            if (r.route.visited.has(nm.idx)) continue;
+            const cp = r.route.curve.points[nm.idx];
+            if (Math.hypot(BALLOON.x - cp.x, BALLOON.z - cp.z) < 2.4) {
+                r.route.visited.add(nm.idx);
+                if (!r.isAI) {
+                    if (Math.random() < 0.45) maybeProactive(null, `열기구를 타고 ${nm.ko} 상공을 지나는 중이다!`);
+                    const peek = r.friend || r.p;
+                    if (peek && Math.random() < 0.4 && !peek.pet.action) peek.pet.action = { id: 'happy', t: 0 };
+                }
+            }
+        }
+    } else if (BALLOON.mode === 'land') {
+        // 귀환: 수평으로 계류장까지 → 하강 → 폭신 착지
+        const dx = BALLOON_HOME.x - BALLOON.x, dz = BALLOON_HOME.z - BALLOON.z;
+        const d = Math.hypot(dx, dz);
+        if (d > 0.15) {
+            const step = Math.min(d, 2.3 * delta);
+            BALLOON.x += (dx / d) * step;
+            BALLOON.z += (dz / d) * step;
+            BALLOON.y = Math.max(BALLOON.y - 0.25 * delta, BALLOON_CRUISE[0] * Math.min(1, d / 6) + 0.9);
+            const targetH = Math.atan2(dx, dz);
+            let diff = targetH - BALLOON.heading;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            BALLOON.heading += THREE.MathUtils.clamp(diff, -delta, delta);
+        } else {
+            BALLOON.y -= delta * (0.55 + (BALLOON.y - balloonDockY) * 0.35);
+            if (BALLOON.y <= balloonDockY) {
+                BALLOON.y = balloonDockY;
+                playStep('wood', 1.1);
+                if (r.p || r.friend) logWorldEvent('열기구가 계류장에 사뿐히 내려앉았다 🎈');
+                balloonDismount();
+                return;
+            }
+        }
+    }
+    balloonCollider.x = BALLOON.x;
+    balloonCollider.z = BALLOON.z;
+    g.position.set(BALLOON.x, BALLOON.y, BALLOON.z);
+    g.rotation.set(
+        Math.sin(wxTime.value * 0.7) * 0.015 + tilt,
+        BALLOON.heading,
+        Math.sin(wxTime.value * 0.55 + 0.8) * 0.018 - tilt * 0.6
+    );
+    // ---- 탑승석: 라이더는 진행 방향 + 두리번, 절친은 마주보기 — 바구니 안에서 림 위로 빼꼼 ----
+    const seat = (q, fwd, face) => {
+        q.mover.position.set(
+            BALLOON.x + Math.sin(BALLOON.heading) * fwd,
+            BALLOON.y + 0.06,
+            BALLOON.z + Math.cos(BALLOON.heading) * fwd
+        );
+        q.mover.rotation.y = face;
+        q.mover.rotation.x = 0;
+        q.mover.rotation.z = tilt * 0.5;
+        q.pet.walking = false;
+        q.swimming = false;
+    };
+    const lookAround = Math.sin(r.t * 0.55) * 0.55;   // 두리번
+    if (r.p) seat(r.p, 0.13, BALLOON.heading + lookAround);
+    if (r.friend) seat(r.friend, -0.13, BALLOON.heading + Math.PI - lookAround * 0.5);
 }
 
 // ---- 🎣 낚시 (동숲식 — 어떤 물가든): 독 🎣로 낚싯대를 들고, 물을 클릭해 캐스팅, 입질 타이밍에
@@ -11737,6 +12157,7 @@ function animate() {
     updateAutoDrive(delta);
     updateBoatIdle();                        // 정박 보트의 파도 위 살랑임 (항해 중엔 stepBoat 담당)
     updateBoatHop(delta);                    // 절친 승선 아크 — 물가에서 뱃머리로 폴짝
+    updateBalloon(delta);                    // 🎈 열기구 — 계류 살랑임/스플라인 투어/귀환
     updatePlaneIdle();                       // 🛩️ 주차 비행기 (물 위면 살랑임, 프로펠러 정지)
     updatePlaneHop(delta);                   // 절친 뒷좌석 승선 아크
     updatePlanePose();                       // 비행 맞바람 — 귀·날개 눕기 (엔티티 뒤 덮어쓰기)
