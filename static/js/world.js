@@ -6272,6 +6272,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     hideSipMenu();
     hideBoatMenu();
     planeMenu.style.display = 'none';
+    balloonMenu.style.display = 'none';
     if (!pressAt) return;
     const moved = Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y);
     const held = performance.now() - pressAt.t;
@@ -6289,6 +6290,12 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     if (e.button === 2 && planeRide && !planeRide.passenger && PLANE.mode !== 'fly'
         && raycaster.ray.distanceToPoint(planeGroup.position) < 1.5) {
         showPlaneMenu(e.clientX, e.clientY);
+        return;
+    }
+    // 🎈 이륙 직후(15초 내) 열기구 근처 우클릭 = 친구 태우기 — 데크에서 큰 아크로 승선
+    if (e.button === 2 && balloonRide && !balloonRide.friend && !balloonRide.isAI && balloonRide.t < 15
+        && BALLOON.mode !== 'land' && raycaster.ray.distanceToPoint(balloonGroup.position) < 2.2) {
+        showBalloonMenu(e.clientX, e.clientY);
         return;
     }
     // 🎣 낚싯대 든 동안 좌클릭은 펫을 통과 — 펫 실루엣과 겹치는 물을 노릴 때 클릭이 먹히던 문제
@@ -6982,7 +6989,8 @@ if (statsOn) window.__worldDev = {
     planeState: () => ({ mode: PLANE.mode, x: +PLANE.x.toFixed(2), z: +PLANE.z.toFixed(2), y: +PLANE.y.toFixed(2), vel: +PLANE.vel.toFixed(2), riding: !!planeRide, passenger: !!(planeRide && planeRide.passenger) }),
     groundAt: (x, z) => +world.groundHeightAt(x, z).toFixed(3),    // 지형 프로브 (배치·활주로 검증용)
     planeSummon: () => { summonPlanePassenger(); return !!planeHop; },   // 절친 뒷좌석 소환 (E2E)
-    balloonState: () => ({ mode: BALLOON.mode, x: +BALLOON.x.toFixed(2), y: +BALLOON.y.toFixed(2), z: +BALLOON.z.toFixed(2), riding: !!balloonRide, rider: balloonRide && balloonRide.p ? balloonRide.p.name : null, lap: balloonRide ? balloonRide.lap : 0, pois: balloonRide && balloonRide.route ? balloonRide.route.names.length : 0 }),
+    balloonState: () => ({ mode: BALLOON.mode, x: +BALLOON.x.toFixed(2), y: +BALLOON.y.toFixed(2), z: +BALLOON.z.toFixed(2), riding: !!balloonRide, rider: balloonRide && balloonRide.p ? balloonRide.p.name : null, friend: balloonRide && balloonRide.friend ? balloonRide.friend.name : null, lap: balloonRide ? balloonRide.lap : 0, pois: balloonRide && balloonRide.route ? balloonRide.route.names.length : 0 }),
+    balloonSummon: () => { summonBalloonFriend(); return !!balloonHop; },   // 이륙 직후 절친 소환 (E2E)
     balloonAiStart: () => {   // 'ok' | 'busy' | fail(원인)
         const q = pets.find((o) => o !== possessed && !o.bed && !o.dip && !o.pet.sleeping);
         if (!q) return 'busy';
@@ -10622,19 +10630,19 @@ function makeBalloon() {
     g.add(envelope);
     // 바구니(등나무) + 바닥 + 림 + 로프 4 + 버너 프레임 — 나무 버킷 병합
     const wood = [];
-    const basketGeo = new THREE.CylinderGeometry(0.33, 0.28, 0.42, 10, 1, true);
+    const basketGeo = new THREE.CylinderGeometry(0.42, 0.35, 0.42, 10, 1, true);   // 2인승 곤돌라 폭
     basketGeo.translate(0, 0.21, 0);
     wood.push(basketGeo);
-    const floorGeo = new THREE.CircleGeometry(0.29, 10).rotateX(-Math.PI / 2);
+    const floorGeo = new THREE.CircleGeometry(0.36, 10).rotateX(-Math.PI / 2);
     floorGeo.translate(0, 0.03, 0);
     wood.push(floorGeo);
-    const rimGeo = new THREE.TorusGeometry(0.33, 0.03, 8, 14).rotateX(Math.PI / 2);
+    const rimGeo = new THREE.TorusGeometry(0.42, 0.032, 8, 16).rotateX(Math.PI / 2);
     rimGeo.translate(0, 0.43, 0);
     wood.push(rimGeo);
     for (const a of [0.4, 1.97, 3.54, 5.11]) {
         const ropeGeo = new THREE.CylinderGeometry(0.011, 0.011, 0.78, 5);
         ropeGeo.translate(0, 0.39, 0);
-        ropeGeo.rotateZ(0.32);
+        ropeGeo.rotateZ(0.38);
         ropeGeo.rotateY(a);
         ropeGeo.translate(0, 0.42, 0);
         wood.push(ropeGeo);
@@ -10650,7 +10658,7 @@ function makeBalloon() {
     for (const a of [0.7, 2.8, 4.9]) {
         const bagGeo = new THREE.SphereGeometry(0.062, 8, 7);
         bagGeo.scale(1, 1.35, 1);
-        bagGeo.translate(Math.sin(a) * 0.36, 0.3, Math.cos(a) * 0.36);
+        bagGeo.translate(Math.sin(a) * 0.46, 0.3, Math.cos(a) * 0.46);
         bags.push(bagGeo);
     }
     g.add(new THREE.Mesh(mergeGeometries(bags, false), M(0xd8c39a)));
@@ -10695,6 +10703,65 @@ stage.add(balloonGroup);
 }
 let balloonRide = null;   // { p, friend, isAI, t, u, lap, route, burnerAt, burnerT, empty }
 let aiBalloonWalk = null; // AI가 계류장으로 걸어가는 중 { p, ownArrive }
+let balloonHop = null;    // 절친이 데크에서 바구니로 그리는 큰 승선 아크 { q, fx, fy, fz, t }
+const balloonMenu = document.createElement('div');
+balloonMenu.style.cssText = 'position:fixed; display:none; z-index:130; background:rgba(30,32,40,0.94); border-radius:10px; padding:6px; box-shadow:0 6px 18px rgba(0,0,0,0.35);';
+const balloonMenuBtn = document.createElement('button');
+balloonMenuBtn.textContent = '👥 친구 태우기';
+balloonMenuBtn.style.cssText = 'display:block; background:none; border:none; color:#fff; font-size:13px; padding:7px 12px; border-radius:7px; cursor:pointer; font-family:sans-serif;';
+balloonMenuBtn.onmouseenter = () => { balloonMenuBtn.style.background = 'rgba(255,255,255,0.14)'; };
+balloonMenuBtn.onmouseleave = () => { balloonMenuBtn.style.background = 'none'; };
+balloonMenuBtn.onclick = () => { balloonMenu.style.display = 'none'; summonBalloonFriend(); };
+balloonMenu.appendChild(balloonMenuBtn);
+document.body.appendChild(balloonMenu);
+function showBalloonMenu(x, y) {
+    balloonMenu.style.left = `${Math.min(x, window.innerWidth - 150)}px`;
+    balloonMenu.style.top = `${Math.min(y, window.innerHeight - 60)}px`;
+    balloonMenu.style.display = 'block';
+}
+function summonBalloonFriend() {
+    const r = balloonRide;
+    if (!r || r.friend || r.isAI || balloonHop || BALLOON.mode === 'land') return;
+    if (r.t > 15) { showToast('🎈 너무 멀리 떠났어요 — 다음 탑승 때 함께 타요'); return; }
+    const friend = pets.find((q) => q !== r.p);
+    if (!friend) { showToast('👥 부를 친구가 없어요'); return; }
+    friend.pet.sleeping = false;
+    friend.pet.autoSleeping = false;
+    if (friend.bed) forceEndBed(friend);
+    if (friend.dip) endDip(friend);
+    if (aiFishing && aiFishing.p === friend) endAiFishing();
+    releaseAI(friend);
+    friend.ai.state = 'held';
+    friend.swimming = false;
+    // 계류장 데크에 포르르 등장 → 바구니까지 큰 점프 아크 (움직이는 바구니를 따라잡는다)
+    friend.mover.position.set(BALLOON_HOME.x - 0.6, balloonDockY, BALLOON_HOME.z - 0.3);
+    friend.mover.rotation.x = 0;
+    friend.mover.rotation.z = 0;
+    balloonHop = { q: friend, fx: friend.mover.position.x, fy: balloonDockY, fz: friend.mover.position.z, t: 0 };
+    showToast('👥 절친이 포르르 나타나 바구니로 크게 폴짝!');
+    logWorldEvent(`${petKo(friend)}가 열기구 바구니로 폴짝 올라탔다`);
+}
+function updateBalloonHop(delta) {
+    if (!balloonHop) return;
+    balloonHop.t += delta;
+    const k = Math.min(1, balloonHop.t / 0.9);
+    const e = k * k * (3 - 2 * k);
+    const q = balloonHop.q;
+    const rgX = Math.cos(BALLOON.heading), rgZ = -Math.sin(BALLOON.heading);
+    const tx = BALLOON.x - rgX * 0.19, ty = BALLOON.y + 0.24, tz = BALLOON.z - rgZ * 0.19;
+    q.mover.position.set(
+        THREE.MathUtils.lerp(balloonHop.fx, tx, e),
+        THREE.MathUtils.lerp(balloonHop.fy, ty, e) + Math.sin(k * Math.PI) * (1.0 + (ty - balloonHop.fy) * 0.25),
+        THREE.MathUtils.lerp(balloonHop.fz, tz, e)
+    );
+    q.mover.rotation.y = BALLOON.heading;
+    q.pet.walking = false;
+    if (k >= 1) {
+        balloonHop = null;
+        if (balloonRide && !balloonRide.friend && BALLOON.mode !== 'docked') balloonRide.friend = q;
+        else { q.swimming = false; releaseAI(q); snapToLand(q); }
+    }
+}
 function enterBalloon(rider, isAI = false) {
     if (balloonRide || BALLOON.mode !== 'docked' || !rider) return;
     let friend = null;
@@ -10918,12 +10985,13 @@ function updateBalloon(delta) {
         BALLOON.heading,
         Math.sin(wxTime.value * 0.55 + 0.8) * 0.018 - tilt * 0.6
     );
-    // ---- 탑승석: 라이더는 진행 방향 + 두리번, 절친은 마주보기 — 바구니 안에서 림 위로 빼꼼 ----
-    const seat = (q, fwd, face) => {
+    // ---- 탑승석: 둘이 나란히 서서 앞을 보며 각자 두리번 — 얼굴이 림 위로 빼꼼 (난간 관광객) ----
+    const rgX = Math.cos(BALLOON.heading), rgZ = -Math.sin(BALLOON.heading);
+    const seat = (q, side, face) => {
         q.mover.position.set(
-            BALLOON.x + Math.sin(BALLOON.heading) * fwd,
-            BALLOON.y + 0.06,
-            BALLOON.z + Math.cos(BALLOON.heading) * fwd
+            BALLOON.x + rgX * side,
+            BALLOON.y + 0.24,
+            BALLOON.z + rgZ * side,
         );
         q.mover.rotation.y = face;
         q.mover.rotation.x = 0;
@@ -10931,9 +10999,8 @@ function updateBalloon(delta) {
         q.pet.walking = false;
         q.swimming = false;
     };
-    const lookAround = Math.sin(r.t * 0.55) * 0.55;   // 두리번
-    if (r.p) seat(r.p, 0.13, BALLOON.heading + lookAround);
-    if (r.friend) seat(r.friend, -0.13, BALLOON.heading + Math.PI - lookAround * 0.5);
+    if (r.p) seat(r.p, r.friend ? 0.19 : 0, BALLOON.heading + Math.sin(r.t * 0.55) * 0.55);
+    if (r.friend) seat(r.friend, -0.19, BALLOON.heading + Math.sin(r.t * 0.47 + 1.7) * 0.5);
 }
 
 // ---- 🎣 낚시 (동숲식 — 어떤 물가든): 독 🎣로 낚싯대를 들고, 물을 클릭해 캐스팅, 입질 타이밍에
@@ -12158,6 +12225,7 @@ function animate() {
     updateBoatIdle();                        // 정박 보트의 파도 위 살랑임 (항해 중엔 stepBoat 담당)
     updateBoatHop(delta);                    // 절친 승선 아크 — 물가에서 뱃머리로 폴짝
     updateBalloon(delta);                    // 🎈 열기구 — 계류 살랑임/스플라인 투어/귀환
+    updateBalloonHop(delta);                 // 절친 승선 큰 아크 — 데크에서 바구니로
     updatePlaneIdle();                       // 🛩️ 주차 비행기 (물 위면 살랑임, 프로펠러 정지)
     updatePlaneHop(delta);                   // 절친 뒷좌석 승선 아크
     updatePlanePose();                       // 비행 맞바람 — 귀·날개 눕기 (엔티티 뒤 덮어쓰기)
