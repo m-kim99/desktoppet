@@ -6261,6 +6261,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     hideMenu();
     hideSipMenu();
     hideBoatMenu();
+    planeMenu.style.display = 'none';
     if (!pressAt) return;
     const moved = Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y);
     const held = performance.now() - pressAt.t;
@@ -6273,6 +6274,13 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     if (constelMode) { pickConstelStar(); return; }   // ⭐ 별 잇기 모드 — 탭은 전부 별 선택
     // 🎣 입질/파이팅 중엔 어디를 클릭하든 챔질·입력 잠금이 우선
     if (fishing && fishing.state !== 'idle' && fishingIntercept()) return;
+    // 🛩️ 탑승 중엔 비행기 메뉴가 펫 메뉴보다 우선 — 조종사 머리가 가장 큰 클릭 타깃이라
+    // 펫 루프가 먼저면 "친구 태우기"를 열기 어렵다 (기체 주변 1.5m 반경 판정, 공중 제외)
+    if (e.button === 2 && planeRide && !planeRide.passenger && PLANE.mode !== 'fly'
+        && raycaster.ray.distanceToPoint(planeGroup.position) < 1.5) {
+        showPlaneMenu(e.clientX, e.clientY);
+        return;
+    }
     // 🎣 낚싯대 든 동안 좌클릭은 펫을 통과 — 펫 실루엣과 겹치는 물을 노릴 때 클릭이 먹히던 문제
     const fishingAim = fishing && fishing.state === 'idle' && e.button !== 2 && e.pointerType !== 'touch';
     if (!fishingAim) for (const p of pets) {
@@ -6293,11 +6301,6 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     // 🚣 노 젓는 중 배를 우클릭 = 친구 태우기 메뉴 (소품 클릭 처리보다 먼저)
     if (e.button === 2 && boatRide && !boatRide.passenger && raycaster.intersectObject(boatGroup, true).length) {
         showBoatMenu(e.clientX, e.clientY);
-        return;
-    }
-    // 🛩️ 활주/탑승 중 비행기를 우클릭 = 친구 태우기 (공중 제외)
-    if (e.button === 2 && planeRide && !planeRide.passenger && PLANE.mode !== 'fly' && raycaster.intersectObject(planeGroup, true).length) {
-        showPlaneMenu(e.clientX, e.clientY);
         return;
     }
     // 🎣 낚싯대 든 채 물 클릭 = 캐스팅 (해석은 tryCastAtScreen — 헤드리스 진단과 공유)
@@ -6966,6 +6969,7 @@ if (statsOn) window.__worldDev = {
     wrapDrift: () => (possessed ? +(possessed.pet.wrap.rotation.y - Math.PI).toFixed(4) : null),   // 몸 비틀림 누적 감시 (기준 π)
     planeState: () => ({ mode: PLANE.mode, x: +PLANE.x.toFixed(2), z: +PLANE.z.toFixed(2), y: +PLANE.y.toFixed(2), vel: +PLANE.vel.toFixed(2), riding: !!planeRide, passenger: !!(planeRide && planeRide.passenger) }),
     groundAt: (x, z) => +world.groundHeightAt(x, z).toFixed(3),    // 지형 프로브 (배치·활주로 검증용)
+    planeSummon: () => { summonPlanePassenger(); return !!planeHop; },   // 절친 뒷좌석 소환 (E2E)
     interact: () => doInteract(),                                  // 헤드리스 ⌘ 대행
     devKey: (k, on) => { if (on) heldKeys.add(k); else heldKeys.delete(k); return [...heldKeys]; },   // 조종 키 주입
     aiFishSnap: () => {   // 자율 낚시 도보 생략 — E2E가 먼 섬 출발(1~2분 도보)에 좌우되지 않게
@@ -10059,7 +10063,7 @@ function makePlane() {
     cowlGeo.translate(0, 0.3, 0.66);
     red.push(cowlGeo);                     // 엔진 카울
     // 복엽 날개 (위·아래) + 빨간 윙팁 + 스트럿 4
-    for (const [wy, wz, span] of [[0.58, 0.14, 1.52], [0.16, 0.18, 1.3]]) {
+    for (const [wy, wz, span] of [[0.78, 0.14, 1.52], [0.16, 0.18, 1.3]]) {   // 윗날개는 파라솔 높이 — 탑승 펫 머리가 림~날개 창에 들어온다
         const wingGeo = new THREE.BoxGeometry(span, 0.034, 0.34);
         wingGeo.translate(0, wy, wz);
         grad.push(bakeGrad(wingGeo, 0xf4e6c8, 0xd8bd92, { curve: 1 }));
@@ -10070,8 +10074,8 @@ function makePlane() {
         }
     }
     for (const [sx, sz] of [[-0.52, 0.06], [-0.52, 0.26], [0.52, 0.06], [0.52, 0.26]]) {
-        const strutGeo = new THREE.CylinderGeometry(0.013, 0.013, 0.42, 6);
-        strutGeo.translate(sx, 0.37, sz);
+        const strutGeo = new THREE.CylinderGeometry(0.013, 0.013, 0.62, 6);
+        strutGeo.translate(sx, 0.47, sz);
         wood.push(strutGeo);
     }
     // 오픈 콕핏 2자리: 링 테두리 (앞=조종석, 뒤=절친석) + 미니 윈드실드
@@ -10370,7 +10374,7 @@ function stepPlane(delta, driver) {
     const seatPet = (q, fwd) => {
         q.mover.position.set(
             PLANE.x + Math.sin(PLANE.heading) * fwd,
-            planeGroup.position.y + 0.33 - q.height * 0.18,
+            planeGroup.position.y + 0.34 - q.height * 0.32,   // 몸은 콕핏 속, 머리만 림 위 (키 비례 — 병아리/강아지 둘 다)
             PLANE.z + Math.cos(PLANE.heading) * fwd
         );
         q.mover.rotation.y = PLANE.heading;
@@ -10444,7 +10448,7 @@ function updatePlaneHop(delta) {
     const k = Math.min(1, planeHop.t / 0.6);
     const e = k * k * (3 - 2 * k);
     const q = planeHop.q;
-    const ty = planeSupportY(PLANE.x, PLANE.z) + 0.33 - q.height * 0.18;
+    const ty = planeSupportY(PLANE.x, PLANE.z) + 0.34 - q.height * 0.32;
     const tx = PLANE.x - Math.sin(PLANE.heading) * 0.2, tz = PLANE.z - Math.cos(PLANE.heading) * 0.2;
     q.mover.position.set(
         THREE.MathUtils.lerp(planeHop.fx, tx, e),
