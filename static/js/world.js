@@ -8,7 +8,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory } from './glb-pet-entity.js';
-import { ISLAND_R, ISLANDS, BRIDGES, HILLS, HOUSE, FLAT_SPOTS, PROPS } from './world-layout.js';
+import { ISLAND_R, ISLANDS, BRIDGES, HILLS, HOUSE, FLAT_SPOTS, PROPS, FERRY_PIERS, FERRY_SEA_POINTS } from './world-layout.js';
 import { kitProp } from './world-kit.js';
 
 // ---- 🔨 공사모드 저장 레이아웃: 씬을 짓기 "전에" PROPS/HOUSE/FLAT_SPOTS에 덮어쓴다. 지형 패드·
@@ -1105,9 +1105,17 @@ function onBridge(x, z) {
         if (t < 0 || t > 1) continue;
         if (Math.hypot(br.A.x + dx * t - x, br.A.z + dz * t - z) < 0.34) return { br, t };
     }
+    for (const br of FERRY_PIERS) {   // ⛴️ 잔교 데크 — 다리 문법 재사용 (평평, BRIDGES 인덱스 매핑과 분리)
+        const dx = br.B.x - br.A.x, dz = br.B.z - br.A.z;
+        const len2 = dx * dx + dz * dz;
+        const t = ((x - br.A.x) * dx + (z - br.A.z) * dz) / len2;
+        if (t < 0 || t > 1) continue;
+        if (Math.hypot(br.A.x + dx * t - x, br.A.z + dz * t - z) < 0.4) return { br, t, pier: true };
+    }
     return null;
 }
 function bridgeDeckY(hit) {
+    if (hit.pier) return 0.12;                        // 잔교는 평평한 데크 (파도·조수 위)
     return 0.05 + Math.sin(hit.t * Math.PI) * 0.22;   // gentle arch over the water
 }
 
@@ -4238,10 +4246,11 @@ const HOVER_PROMPTS = {
     boat: () => '🚣 노 젓는 보트 — 조종 중 ⌘로 타기 (절친 동승 가능)',
     plane: () => '🛩️ 경비행기 — 조종 중 ⌘로 탑승! 전속력 활주 = 이륙, W/S로 고도 (절친 동승 가능)',
     balloon: () => '🎈 열기구 — 조종 중 ⌘로 탑승! 혼자 두둥실 하늘 산책 (매번 다른 경로, 절친이 곁에 있으면 함께)',
+    ferry: () => '⛴️ 통통호 — 조종 중 ⌘로 승선! 모래섬 잔교에 정차하는 자동 항로 (절친 동승 가능)',
     sandcastle: () => '🏰 모래성 — 클릭하면 펫이 모래놀이 · 조종 중 ⌘ = 직접 앉기',
     palm: () => '🌴 야자수',
 };
-const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, piano: 1.05, photoboard: 1.55, mailbox: 0.75, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, balloon: 2.1, sandcastle: 0.65, palm: 1.2 };
+const HOVER_H = { pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, piano: 1.05, photoboard: 1.55, mailbox: 0.75, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, balloon: 2.1, ferry: 1.3, sandcastle: 0.65, palm: 1.2 };
 const hoverEl = document.createElement('div');
 hoverEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); z-index:88; pointer-events:none; background:rgba(30,32,40,0.88); color:#fff; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
 document.body.appendChild(hoverEl);
@@ -4806,7 +4815,7 @@ function carBlocked(nx, nz) {
 
 // ---- 🚣 노 젓는 보트 상태 + 모델: 본섬 북쪽 물가에 정박 — 휴양지 모래섬으로 가는 발.
 // 기본 정박 (1.1, 6.0): 기슭 걷기 한계(r-0.35)에서 승선 반경 1.25 안 — 뭍에서 바로 탄다 (검산). ----
-const BOAT = { x: 1.2, z: 6.8, heading: -0.4, vel: 0 };   // 본섬 6.2 확장에 맞춰 북쪽 물가로 (구 1.1,6.0은 이제 뭍)
+const BOAT = { x: 2.4, z: 6.95, heading: -0.4, vel: 0 };   // 북쪽 물가 동편 — 서편은 페리 잔교/선석 (구 1.2,6.8)
 {   // 🔨 저장된 정박 위치 — 차와 같은 방식. 키를 boat-2로 세대교체: 초기 배포 때 모래섬 곁에
     // 저장된 boat-1 정박들을 리셋해 "초기 위치 = 메인 땅 물가"로 되돌린다 (사용자 요청).
     // 이후 정박은 boat-2로 정상 저장·복원된다. 육지에 찍힌/섬 확장으로 뭍이 된 저장값은 무시.
@@ -4817,7 +4826,7 @@ const BOAT = { x: 1.2, z: 6.8, heading: -0.4, vel: 0 };   // 본섬 6.2 확장�
         if (Number.isFinite(o.rotY)) BOAT.heading = o.rotY;
     }
 }
-const boatCollider = { type: 'boat', layoutId: 'boat-2', x: BOAT.x, z: BOAT.z, rotY: 0, r: 0.5, def: { x: 1.2, z: 6.8, rotY: -0.4 } };
+const boatCollider = { type: 'boat', layoutId: 'boat-2', x: BOAT.x, z: BOAT.z, rotY: 0, r: 0.5, def: { x: 2.4, z: 6.95, rotY: -0.4 } };
 PROPS.push(boatCollider);
 let boatRide = null;    // { driver, passenger, row, lastPh } while someone is rowing
 function makeBoat() {
@@ -5943,6 +5952,14 @@ function updateWander(p, delta) {
                 startAiBalloon(p);
                 return;
             }
+            // …또는 통통호를 타러 잔교로 — 모래섬 찍고 오는 뱃놀이 (낮, 쿨다운 시드)
+            if (!p.nextFerryAt) p.nextFerryAt = Date.now() + 300000 + Math.random() * 480000;
+            else if (!isSleepTime(currentHour()) && !ferryRide && !aiFerryWalk && FERRY.mode === 'docked'
+                && Date.now() > p.nextFerryAt && Math.random() < 0.04) {
+                p.nextFerryAt = Date.now() + 480000 + Math.random() * 480000;
+                startAiFerry(p);
+                return;
+            }
             // …or amble over to a free swing / seesaw and hop on (daytime, on its own cooldown).
             if (!isSleepTime(currentHour()) && Date.now() > (p.nextSwingAt || 0) && Math.random() < 0.14) {
                 const seat = SWINGS.find((b) => !b.occupant) || SEESAWS.find((b) => !b.occupant);
@@ -6273,6 +6290,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     hideBoatMenu();
     planeMenu.style.display = 'none';
     balloonMenu.style.display = 'none';
+    ferryMenu.style.display = 'none';
     if (!pressAt) return;
     const moved = Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y);
     const held = performance.now() - pressAt.t;
@@ -6290,6 +6308,13 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     if (e.button === 2 && planeRide && !planeRide.passenger && PLANE.mode !== 'fly'
         && raycaster.ray.distanceToPoint(planeGroup.position) < 1.5) {
         showPlaneMenu(e.clientX, e.clientY);
+        return;
+    }
+    // ⛴️ 정박/출항 초반 통통호 우클릭 = 친구 태우기 — 잔교에서 갑판으로 폴짝
+    if (e.button === 2 && ferryRide && !ferryRide.friend && !ferryRide.isAI
+        && (FERRY.mode !== 'sail' || ferryRide.t < 15)
+        && raycaster.ray.distanceToPoint(ferryGroup.position) < 2.4) {
+        showFerryMenu(e.clientX, e.clientY);
         return;
     }
     // 🎈 이륙 직후(15초 내) 열기구 근처 우클릭 = 친구 태우기 — 데크에서 큰 아크로 승선
@@ -6743,7 +6768,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구' };
+const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -6772,6 +6797,7 @@ function petStatusLine(p) {
     else if (carDrive && carDrive.passenger === p) parts.push('스포츠카 조수석에 타는 중');
     if (boatRide && boatRide.driver === p) parts.push('보트에서 노 젓는 중');
     else if (boatRide && boatRide.passenger === p) parts.push('보트 뱃머리에 타는 중');
+    else if (ferryRide && (ferryRide.p === p || ferryRide.friend === p)) parts.push(FERRY.mode === 'dwell' ? '통통호 타고 모래섬 잔교에 정박 중 ⛴️' : '통통호 타고 바다 항해 중 ⛴️');
     else if (balloonRide && balloonRide.p === p) parts.push('열기구 타고 하늘 산책 중 🎈');
     else if (balloonRide && balloonRide.friend === p) parts.push('열기구에 절친과 동승 중 🎈');
     else if (planeRide && planeRide.driver === p) parts.push(PLANE.mode === 'fly' ? '경비행기 몰고 하늘을 나는 중!' : '경비행기 활주 중');
@@ -6991,6 +7017,14 @@ if (statsOn) window.__worldDev = {
     planeSummon: () => { summonPlanePassenger(); return !!planeHop; },   // 절친 뒷좌석 소환 (E2E)
     balloonState: () => ({ mode: BALLOON.mode, x: +BALLOON.x.toFixed(2), y: +BALLOON.y.toFixed(2), z: +BALLOON.z.toFixed(2), riding: !!balloonRide, rider: balloonRide && balloonRide.p ? balloonRide.p.name : null, friend: balloonRide && balloonRide.friend ? balloonRide.friend.name : null, lap: balloonRide ? balloonRide.lap : 0, pois: balloonRide && balloonRide.route ? balloonRide.route.names.length : 0 }),
     balloonSummon: () => { summonBalloonFriend(); return !!balloonHop; },   // 이륙 직후 절친 소환 (E2E)
+    ferryState: () => ({ mode: FERRY.mode, x: +FERRY.x.toFixed(2), z: +FERRY.z.toFixed(2), u: +FERRY.u.toFixed(3), riding: !!ferryRide, rider: ferryRide && ferryRide.p ? ferryRide.p.name : null, friend: ferryRide && ferryRide.friend ? ferryRide.friend.name : null, dwellT: +FERRY.dwellT.toFixed(1) }),
+    ferrySummon: () => { summonFerryFriend(); return !!ferryHop; },
+    ferryAiStart: () => {
+        const q = pets.find((o) => o !== possessed && !o.bed && !o.dip && !o.pet.sleeping && !o.swimming);
+        if (!q) return 'busy';
+        startAiFerry(q);
+        return aiFerryWalk ? 'ok' : `fail(mode=${FERRY.mode},ride=${!!ferryRide})`;
+    },
     balloonAiStart: () => {   // 'ok' | 'busy' | fail(원인)
         const q = pets.find((o) => o !== possessed && !o.bed && !o.dip && !o.pet.sleeping);
         if (!q) return 'busy';
@@ -9116,6 +9150,7 @@ function releasePossession() {
     if (boatRide) exitBoat(true);   // 강제 하선 — 거절 없이 (절친은 기슭 or 물에)
     if (planeRide) exitPlane(true); // 강제 하기 — 공중이면 비상 착륙 후 내려준다
     if (balloonRide && !balloonRide.isAI) exitBalloonForce(); // 라이더는 계류장으로, 빈 열기구는 자율 귀환
+    if (ferryRide && !ferryRide.isAI && (ferryRide.p === p || ferryRide.friend === p)) exitFerryForce(); // 본섬 잔교로
     releaseHandHold();
     running = false;
     snapToLand(p);
@@ -9134,6 +9169,7 @@ function doJump() {
     if (!possessed) return;
     if (planeRide) return;   // 🛩️ 탑승 중 Space 무시 — 고도는 W/S
     if (balloonRide && (balloonRide.p === possessed || balloonRide.friend === possessed)) return;   // 🎈 바구니에서 점프 금지
+    if (ferryRide && (ferryRide.p === possessed || ferryRide.friend === possessed)) return;   // ⛴️ 갑판에서 점프 금지
     if (fishing && (fishing.state === 'bite' || fishing.state === 'wait')) { fishingIntercept(); return; }   // Space도 챔질
     if (fishing && fishing.state !== 'idle') return;   // 시전·파이팅 중 점프 잠금
     if (jumpsLeft <= 0) return;
@@ -9168,6 +9204,7 @@ function doInteract() {
     // streetlamp — in that priority order.
     if (!possessed) return;
     if (fishingIntercept()) return;   // 🎣 입질 챔질 / 성급 걷어들이기 / 연출 중 잠금
+    if (ferryRide && (ferryRide.p === possessed || ferryRide.friend === possessed)) { requestFerryExit(); return; }
     if (balloonRide && (balloonRide.p === possessed || balloonRide.friend === possessed)) { requestBalloonExit(); return; }
     if (planeRide) {
         if (PLANE.mode === 'fly') { showToast('🛩️ 공중이에요 — S로 내려가 지면·수면에 닿으면 착륙!'); return; }
@@ -9203,6 +9240,11 @@ function doInteract() {
     if (BALLOON.mode === 'docked' && !balloonRide
         && Math.hypot(possessed.mover.position.x - BALLOON.x, possessed.mover.position.z - BALLOON.z) < 1.35) {
         enterBalloon(possessed);   // 🎈 계류장 열기구 — 바구니로 (절친이 곁에 있으면 함께)
+        return;
+    }
+    if ((FERRY.mode === 'docked' || FERRY.mode === 'dwell') && !(ferryRide && ferryRide.p && ferryRide.friend)
+        && Math.hypot(possessed.mover.position.x - FERRY.x, possessed.mover.position.z - FERRY.z) < 1.7) {
+        enterFerry(possessed);   // ⛴️ 정박 중 통통호 — 갑판으로 (본섬 출항 / 모래섬 합류)
         return;
     }
     if (handHold) { releaseHandHold(); return; }
@@ -9398,6 +9440,14 @@ function updatePlayer(delta) {
             ? `🚗 ${p.name === 'chick' ? '병아리' : '강아지'} 운전 중${carDrive.passenger ? ' 👥' : ''} — 스틱 가속·핸들 · ✋ 내리기 · ✕ 해제`
             : `🚗 ${p.name === 'chick' ? '병아리' : '강아지'} 운전 중${carDrive.passenger ? ' 👥' : ''} — ↑↓ 가속·후진 · ←→ 핸들 · Ctrl/⌘ 내리기 · Esc 해제`;
         if (controlHint.textContent !== driveHint) controlHint.textContent = driveHint;
+        return;
+    }
+    if (ferryRide && (ferryRide.p === possessed || ferryRide.friend === possessed)) {
+        const fHint = FERRY.mode === 'dwell'
+            ? '⛴️ 모래섬 정박 중 — ⌘ 하차 · 잠시 후 출항'
+            : FERRY.mode === 'docked' ? '⛴️ 본섬 잔교 — ⌘ 하차'
+            : `⛴️ ${petKo(p)} 통통호 항해 중${ferryRide.friend ? ' 👥' : ''} — 자동 운항 · ⌘ 퐁당 하차 · Esc 해제`;
+        if (controlHint.textContent !== fHint) controlHint.textContent = fHint;
         return;
     }
     if (balloonRide && (balloonRide.p === possessed || balloonRide.friend === possessed)) {
@@ -9916,6 +9966,7 @@ function waveYAt(x, z) {
     return OCEAN_LEVEL + tideOffset() + 0.045 * Math.sin(a1) + 0.038 * Math.sin(a2) + 0.028 * Math.sin(a3) + 0.012 * Math.sin(a4);
 }
 function boatBlocked(nx, nz) {
+    if (Math.hypot(nx - FERRY.x, nz - FERRY.z) < 1.4) return true;   // ⛴️ 통통호 선체
     if (islandOf(nx, nz) >= 0) return true;               // 섬에 얹히지 않는다 (기슭까지는 접근)
     if (Math.hypot(nx, nz) > 18) return true;             // 수평선 평탄 구간 전까지 (SWIM_LEASH와 동일)
     return false;
@@ -10253,6 +10304,7 @@ function planeBlocked(nx, nz) {
     // 보행 규칙(림 가드·물가 금지)은 수륙양용에 해당 없음 — 소품 원 + 집 벽 + 경계만 본다
     if (Math.hypot(nx, nz) > 20.5) return true;                    // 수평선 전 경계 (보트와 동일 사상)
     if (Math.hypot(nx - BOAT.x, nz - BOAT.z) < 1.1) return true;   // 정박 보트와 충돌
+    if (Math.hypot(nx - FERRY.x, nz - FERRY.z) < 1.5) return true;  // 통통호 선체
     if (houseBlocked(nx, nz)) return true;                         // 집 벽 관통 방지
     for (const q of PROPS) {
         if (q === planeCollider || !(q.r > 0)) continue;
@@ -11001,6 +11053,478 @@ function updateBalloon(delta) {
     };
     if (r.p) seat(r.p, r.friend ? 0.19 : 0, BALLOON.heading + Math.sin(r.t * 0.55) * 0.55);
     if (r.friend) seat(r.friend, -0.19, BALLOON.heading + Math.sin(r.t * 0.47 + 1.7) * 0.5);
+}
+
+// ---- ⛴️ 페리 "통통호" (자동 운항 대중교통): 본섬 북 잔교 ⇄ 휴양지 모래섬 동 잔교 + 외해 경치
+// 링. 열기구의 스플라인 문법 + "바다의 3가지 차이": ① 항로는 생성 직후 샘플링 검증(섬·다리·
+// 정박 보트/비행기 회피, 실패 시 리롤→폴백 링) ② 다리 밑 통과 불가라 외곽 링만 ③ 잔교는
+// 다리 문법(onBridge) 재사용으로 펫이 걸어 나간다. 정차: 모래섬에서 ~20초 닻 내림(승하차),
+// 본섬 복귀 시 전원 하선. 새 섬 추가 시 ISLANDS를 읽는 검증이 자동 회피 — 데이터 주도. ----
+function ferryBerth(i) {   // 잔교 곁 선석: B 끝 오른쪽 0.6 옆, 잔교와 나란한 헤딩
+    const pr = FERRY_PIERS[i];
+    const dx = pr.B.x - pr.A.x, dz = pr.B.z - pr.A.z;
+    const L = Math.hypot(dx, dz);
+    const ux = dx / L, uz = dz / L;
+    return { x: pr.B.x + uz * 0.6, z: pr.B.z - ux * 0.6, heading: Math.atan2(ux, uz) };
+}
+const FERRY_BERTHS = [ferryBerth(0), ferryBerth(1)];
+const FERRY = {
+    x: FERRY_BERTHS[0].x, z: FERRY_BERTHS[0].z, y: 0, heading: FERRY_BERTHS[0].heading,
+    mode: 'docked',   // docked(본섬 대기) | sail | dwell(모래섬 정박) — 서비스 상태는 배에, 승객은 ferryRide에
+    u: 0, route: null, dwellT: 0, easeT: 0, smokeAt: 0, wakeAt: 0,
+};
+function makeFerryRoute() {
+    // 링 셔플: 0~3개 스킵 + 지터 ±1.1 + 방향 코인플립 → 샘플링 검증 (실패 시 리롤, 25회 후 폴백)
+    for (let attempt = 0; attempt < 25; attempt++) {
+        const ring = FERRY_SEA_POINTS.map((q) => ({ ...q }));
+        const skips = attempt < 20 ? Math.floor(Math.random() * 4) : 0;   // 다양성은 스킵+지터로 (방향 플립은 정박을 루트 끝으로 밀어 제거)
+        for (let k = 0; k < skips; k++) ring.splice(Math.floor(Math.random() * ring.length), 1);
+        const jit = attempt < 20 ? 1.1 : 0;   // 마지막 5회는 무지터·무스킵 = 스윕이 보장한 원본 링 (사실상 항상 성공)
+        const pts = [
+            new THREE.Vector3(FERRY_BERTHS[0].x, 0, FERRY_BERTHS[0].z),
+            new THREE.Vector3(FERRY_BERTHS[1].x, 0, FERRY_BERTHS[1].z),
+            ...ring.map((q) => new THREE.Vector3(q.x + (Math.random() - 0.5) * 2 * jit, 0, q.z + (Math.random() - 0.5) * 2 * jit)),
+        ];
+        const curve = new THREE.CatmullRomCurve3(pts, true, 'centripetal');
+        let ok = true;
+        for (let i = 0; i < 160 && ok; i++) {
+            const pt = curve.getPointAt(i / 160);
+            if (Math.hypot(pt.x, pt.z) > 19.6) ok = false;
+            for (const isl of ISLANDS) if (Math.hypot(pt.x - isl.x, pt.z - isl.z) < isl.r + 0.6) ok = false;
+            for (const br of BRIDGES) {   // 다리 밑 통과 불가 — 차선 1.25 회피
+                const bdx = br.B.x - br.A.x, bdz = br.B.z - br.A.z;
+                const len2 = bdx * bdx + bdz * bdz;
+                const tt = Math.max(0, Math.min(1, ((pt.x - br.A.x) * bdx + (pt.z - br.A.z) * bdz) / len2));
+                if (Math.hypot(br.A.x + bdx * tt - pt.x, br.A.z + bdz * tt - pt.z) < 1.25) ok = false;
+            }
+            if (Math.hypot(pt.x - BOAT.x, pt.z - BOAT.z) < 1.4) ok = false;          // 정박 보트
+            if (PLANE.mode === 'parked' && Math.hypot(pt.x - PLANE.x, pt.z - PLANE.z) < 1.7) ok = false;   // 주차 비행기
+        }
+        if (!ok) continue;
+        // 모래섬 선석의 u (정차 지점) — 한 번만 샘플로 근사
+        let stopU = 0.35, bd = Infinity;
+        for (let i = 0; i < 400; i++) {
+            const pt = curve.getPointAt(i / 400);
+            const d = Math.hypot(pt.x - FERRY_BERTHS[1].x, pt.z - FERRY_BERTHS[1].z);
+            if (d < bd) { bd = d; stopU = i / 400; }
+        }
+        const len = curve.getLength();
+        return { curve, len, speed: THREE.MathUtils.clamp(len / 135, 0.8, 2.0), stopU, stopped: false };
+    }
+    return null;   // 이론상 폴백(무지터 링)이 20~24회에서 통과 — null이면 호출측이 운항 보류
+}
+function makeFerry() {
+    const g = new THREE.Group();
+    // 선체: 눌러 늘인 반구 셸 (보트 문법, 2배급) — 크림 상부/틸 흘수선
+    const hullGeo = new THREE.SphereGeometry(0.5, 18, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
+    hullGeo.scale(0.86, 0.72, 1.9);
+    hullGeo.translate(0, 0.34, 0);
+    const hull = new THREE.Mesh(bakeGrad(hullGeo, 0xf4e6c8, 0x4f8f8a, { curve: 1.3 }), gradMatDS);
+    g.add(hull);
+    const wood = [];
+    const deckGeo = new THREE.CircleGeometry(0.46, 16).rotateX(-Math.PI / 2);
+    deckGeo.scale(0.86, 1, 1.82);
+    deckGeo.translate(0, 0.345, 0);
+    wood.push(deckGeo);
+    const rimGeo = new THREE.TorusGeometry(0.475, 0.028, 8, 20).rotateX(Math.PI / 2);
+    rimGeo.scale(0.86, 1, 1.82);
+    rimGeo.translate(0, 0.36, 0);
+    wood.push(rimGeo);
+    for (const [px, pz] of [[-0.3, 0.62], [0.3, 0.62], [-0.3, -0.62], [0.3, -0.62]]) {
+        const postGeo = new THREE.CylinderGeometry(0.02, 0.022, 0.62, 6);
+        postGeo.translate(px, 0.66, pz);
+        wood.push(postGeo);
+    }
+    for (const bx of [-0.21, 0.21]) {   // 벤치 2 (세로)
+        const benchGeo = new THREE.BoxGeometry(0.15, 0.05, 0.85);
+        benchGeo.translate(bx, 0.45, 0.02);
+        wood.push(benchGeo);
+    }
+    g.add(new THREE.Mesh(mergeGeometries(wood, false), M(0xb08a60, { map: plankTex })));
+    // 차양 지붕: 낮은 반원 아치 쉘 (배 길이 방향) + 굴뚝
+    const roofGeo = new THREE.CylinderGeometry(0.48, 0.48, 1.2, 14, 1, true, 0, Math.PI);
+    roofGeo.rotateZ(Math.PI / 2);     // 반원이 위를 덮는 아치로
+    roofGeo.rotateY(Math.PI / 2);     // 축을 배 길이(Z)로
+    roofGeo.scale(1, 0.38, 1);
+    roofGeo.translate(0, 0.9, 0);
+    const roof = new THREE.Mesh(bakeGrad(roofGeo, 0xe06a58, 0xb04a3c, { curve: 1 }), gradMatDS);
+    g.add(roof);
+    const chimney = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 0.3, 10), M(0x5a5f66));
+    chimney.position.set(0, 1.06, -0.42);
+    g.add(chimney);
+    const chimBand = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.07, 10), M(0xd05a4a));
+    chimBand.position.set(0, 1.13, -0.42);
+    g.add(chimBand);
+    // 구명튜브 비네트 (좌현) + 선미 깃발
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.026, 8, 14), M(0xf4e6c8));
+    ring.position.set(-0.42, 0.42, 0.25);
+    ring.rotation.y = Math.PI / 2;
+    g.add(ring);
+    const flagPole = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.22, 5), M(0x8a6647, { map: woodTex }));
+    flagPole.position.set(0, 0.5, -0.92);
+    g.add(flagPole);
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 0.09), M(0xd05a4a));
+    flag.position.set(0.07, 0.56, -0.92);
+    g.add(flag);
+    g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    return g;
+}
+const ferryGroup = makeFerry();
+stage.add(ferryGroup);
+const ferryCollider = { type: 'ferry', layoutId: 'ferry-1', x: FERRY.x, z: FERRY.z, rotY: 0, r: 0.9, def: { x: FERRY.x, z: FERRY.z, rotY: 0 } };
+PROPS.push(ferryCollider);
+ferryCollider.obj = ferryGroup;
+{   // 잔교 2곳: 플랭크 데크 + 말뚝 + 계류 기둥 + 종 — 정적이라 월드 베이크 편입
+    for (const pr of FERRY_PIERS) {
+        const st = new THREE.Group();
+        const dx = pr.B.x - pr.A.x, dz = pr.B.z - pr.A.z;
+        const L = Math.hypot(dx, dz);
+        const ux = dx / L, uz = dz / L;
+        const heading = Math.atan2(dx, dz);
+        const N = Math.max(6, Math.round(L / 0.22));
+        for (let i = 0; i <= N; i++) {
+            const t = i / N;
+            const plk = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.04, (L / N) * 0.85), M(0xb08a60, { map: plankTex }));
+            plk.position.set(pr.A.x + dx * t, 0.12, pr.A.z + dz * t);
+            plk.rotation.y = heading;
+            st.add(plk);
+        }
+        for (const t of [0.15, 0.5, 0.9]) {
+            for (const side of [-1, 1]) {
+                const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.036, 0.62, 7), M(0x8a6647, { map: woodTex }));
+                post.position.set(pr.A.x + dx * t + uz * side * 0.27, -0.12, pr.A.z + dz * t - ux * side * 0.27);
+                st.add(post);
+            }
+        }
+        const bollard = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.3, 8), M(0x6f5238));
+        bollard.position.set(pr.B.x + uz * 0.24, 0.26, pr.B.z - ux * 0.24);
+        st.add(bollard);
+        const bellPost = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 0.5, 6), M(0x8a6647, { map: woodTex }));
+        bellPost.position.set(pr.B.x - uz * 0.24, 0.36, pr.B.z + ux * 0.24);
+        st.add(bellPost);
+        const bell = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.07, 10), M(0xe8b04b));
+        bell.position.set(pr.B.x - uz * 0.24, 0.63, pr.B.z + ux * 0.24);
+        st.add(bell);
+        st.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+        stage.add(st);
+        WORLD_STATIC_ROOTS.push(st);
+    }
+}
+let ferryRide = null;    // { p, friend, isAI, t } — 승객 (서비스 상태는 FERRY에)
+let aiFerryWalk = null;  // AI가 잔교로 걸어가는 중 { p, ownArrive }
+let ferryHop = null;     // 절친 승선 아크
+function ferryHorn() {   // 붕— (저음 2화음)
+    if (audioCtx.state !== 'running') return;
+    for (const [f, t0] of [[164, 0], [123, 0.05]]) {
+        const o = audioCtx.createOscillator();
+        o.type = 'square';
+        o.frequency.value = f;
+        const gn = audioCtx.createGain();
+        const at = audioCtx.currentTime + t0;
+        gn.gain.setValueAtTime(0.0001, at);
+        gn.gain.exponentialRampToValueAtTime(0.055 * attAtPoint(FERRY.x, FERRY.z), at + 0.08);
+        gn.gain.exponentialRampToValueAtTime(0.0001, at + 0.85);
+        const fl = audioCtx.createBiquadFilter();
+        fl.type = 'lowpass';
+        fl.frequency.value = 500;
+        o.connect(fl); fl.connect(gn); gn.connect(sfxMaster);
+        o.start(at); o.stop(at + 0.9);
+    }
+}
+function ferryBell() {   // 딸랑딸랑 (정박)
+    if (audioCtx.state !== 'running') return;
+    for (const t0 of [0, 0.28]) {
+        const o = audioCtx.createOscillator();
+        o.type = 'sine';
+        o.frequency.value = 1240;
+        const gn = audioCtx.createGain();
+        const at = audioCtx.currentTime + t0;
+        gn.gain.setValueAtTime(0.0001, at);
+        gn.gain.exponentialRampToValueAtTime(0.09 * attAtPoint(FERRY.x, FERRY.z), at + 0.015);
+        gn.gain.exponentialRampToValueAtTime(0.0001, at + 0.5);
+        o.connect(gn); gn.connect(sfxMaster);
+        o.start(at); o.stop(at + 0.55);
+    }
+}
+function ferryDeckY() { return FERRY.y + 0.36; }
+function enterFerry(rider, isAI = false) {
+    if (!rider) return;
+    if (FERRY.mode !== 'docked' && FERRY.mode !== 'dwell') return;
+    if (ferryRide && (ferryRide.p === rider || ferryRide.friend === rider)) return;
+    if (!ferryRide) {
+        let friend = null;
+        if (!isAI) {
+            const q = pets.find((o) => o !== rider);
+            if (q && !q.bed && !q.dip && !q.pet.sleeping
+                && Math.hypot(q.mover.position.x - FERRY.x, q.mover.position.z - FERRY.z) < 2.1
+                && (q.ai.state === 'idle' || q.ai.state === 'walk' || (handHold && handHold.partner === q))) {
+                if (handHold) handHold = null;
+                if (aiFishing && aiFishing.p === q) endAiFishing();
+                releaseAI(q);
+                q.ai.state = 'held';
+                friend = q;
+            }
+        }
+        ferryRide = { p: rider, friend, isAI, t: 0 };
+    } else if (!ferryRide.friend && ferryRide.p !== rider) {
+        ferryRide.friend = rider;   // 정박 중 합류 (모래섬에서 태우기)
+    }
+    rider.swimming = false;
+    if (!isAI) running = false;
+    if (FERRY.mode === 'docked') {   // 본섬 출항
+        const route = makeFerryRoute();
+        if (!route) { showToast('⛴️ 물길이 막혀 있어요 — 잠시 후 다시'); ferryRide = null; return; }
+        FERRY.route = route;
+        FERRY.u = 0;
+        FERRY.mode = 'sail';
+        FERRY.easeT = 0;
+        ferryHorn();
+        logWorldEvent(`${petKo(rider)}가 통통호에 올랐다 — 붕— 출항!${ferryRide.friend ? ' (절친도 함께)' : ''} ⛴️`);
+        if (!isAI) showToast('⛴️ 붕— 출항! 모래섬 잔교에 정박해요 (정박 중 ⌘ = 하차 · 항해 중 ⌘ = 퐁당)');
+    } else logWorldEvent(`${petKo(rider)}가 모래섬 잔교에서 통통호에 올라탔다 ⛴️`);
+}
+function ferryDisembarkAt(pierIdx) {   // 잔교 데크로 하차
+    const r = ferryRide;
+    if (!r) return;
+    const pr = FERRY_PIERS[pierIdx];
+    const dx = pr.B.x - pr.A.x, dz = pr.B.z - pr.A.z;
+    const L = Math.hypot(dx, dz);
+    const out = (q, back) => {
+        if (!q) return;
+        const t = 1 - (0.35 + back * 0.28) / L;
+        q.mover.position.set(pr.A.x + dx * t, 0.12, pr.A.z + dz * t);
+        q.mover.rotation.x = 0;
+        q.mover.rotation.z = 0;
+        q.swimming = false;
+        if (q.ai.state === 'held') releaseAI(q);
+    };
+    out(r.p, 0);
+    out(r.friend, 1);
+    if (r.isAI && r.p) releaseAI(r.p, 2);
+    ferryRide = null;
+}
+function requestFerryExit() {
+    const r = ferryRide;
+    if (!r) return;
+    if (FERRY.mode === 'docked') { ferryDisembarkAt(0); return; }
+    if (FERRY.mode === 'dwell') { ferryDisembarkAt(1); showToast('⛴️ 모래섬 도착 — 즐거운 휴양!'); return; }
+    // 항해 중 — 바다로 퐁당 (배는 노선을 계속 돈다)
+    for (const [q, side] of [[r.p, -1], [r.friend, 1]]) {
+        if (!q) continue;
+        const dx = FERRY.x + Math.cos(FERRY.heading) * side * 0.8, dz = FERRY.z - Math.sin(FERRY.heading) * side * 0.8;
+        q.mover.position.set(dx, waveYAt(dx, dz) + 0.02 - q.height * 0.45, dz);
+        q.swimming = 'sea';
+        q.mover.rotation.x = 0;
+        q.mover.rotation.z = 0;
+        if (q.ai.state === 'held') releaseAI(q);
+        spawnSplash(dx, waveYAt(dx, dz) + q.height * 0.42, dz);
+    }
+    playSplashSound(FERRY.x, FERRY.z);
+    ferryRide = null;
+    showToast('⛴️ 첨벙! 통통호는 노선을 마저 돌아요');
+    logWorldEvent('통통호에서 바다로 풍덩 — 배는 무심히 항해를 계속한다');
+}
+function exitFerryForce() {   // Esc — 본섬 잔교 데크로, 배는 빈 채로 노선 완주
+    const r = ferryRide;
+    if (!r) return;
+    ferryDisembarkAt(0);
+}
+function startAiFerry(p) {
+    if (ferryRide || aiFerryWalk || FERRY.mode !== 'docked') return;
+    if (p === possessed || p.bed || p.dip || p.pet.sleeping) return;
+    releaseAI(p);
+    p.ai.state = 'goto';
+    const pr = FERRY_PIERS[0];
+    const tx = pr.A.x - 0.4, tz = pr.A.z - 0.5;
+    p.ai.target = { x: tx, z: tz };
+    p.ai.waypoints = buildRoute(p.mover.position, { x: tx, z: tz });
+    p.ai.stall = 0;
+    const walk = { p };
+    walk.ownArrive = () => {
+        if (aiFerryWalk !== walk) return;
+        aiFerryWalk = null;
+        if (ferryRide || FERRY.mode !== 'docked' || p === possessed || p.bed || p.dip) { releaseAI(p); return; }
+        enterFerry(p, true);   // ai.state 'busy' 유지
+    };
+    p.ai.onArrive = walk.ownArrive;
+    aiFerryWalk = walk;
+    logWorldEvent(`${petKo(p)}가 통통호를 타러 잔교로 나섰다 ⛴️`);
+}
+const ferryMenu = document.createElement('div');
+ferryMenu.style.cssText = 'position:fixed; display:none; z-index:130; background:rgba(30,32,40,0.94); border-radius:10px; padding:6px; box-shadow:0 6px 18px rgba(0,0,0,0.35);';
+const ferryMenuBtn = document.createElement('button');
+ferryMenuBtn.textContent = '👥 친구 태우기';
+ferryMenuBtn.style.cssText = 'display:block; background:none; border:none; color:#fff; font-size:13px; padding:7px 12px; border-radius:7px; cursor:pointer; font-family:sans-serif;';
+ferryMenuBtn.onmouseenter = () => { ferryMenuBtn.style.background = 'rgba(255,255,255,0.14)'; };
+ferryMenuBtn.onmouseleave = () => { ferryMenuBtn.style.background = 'none'; };
+ferryMenuBtn.onclick = () => { ferryMenu.style.display = 'none'; summonFerryFriend(); };
+ferryMenu.appendChild(ferryMenuBtn);
+document.body.appendChild(ferryMenu);
+function showFerryMenu(x, y) {
+    ferryMenu.style.left = `${Math.min(x, window.innerWidth - 150)}px`;
+    ferryMenu.style.top = `${Math.min(y, window.innerHeight - 60)}px`;
+    ferryMenu.style.display = 'block';
+}
+function summonFerryFriend() {
+    const r = ferryRide;
+    if (!r || r.friend || r.isAI || ferryHop) return;
+    if (FERRY.mode === 'sail' && r.t > 15) { showToast('⛴️ 이미 먼바다예요 — 정박 중에 태워요'); return; }
+    const friend = pets.find((q) => q !== r.p);
+    if (!friend) { showToast('👥 부를 친구가 없어요'); return; }
+    friend.pet.sleeping = false;
+    friend.pet.autoSleeping = false;
+    if (friend.bed) forceEndBed(friend);
+    if (friend.dip) endDip(friend);
+    if (aiFishing && aiFishing.p === friend) endAiFishing();
+    releaseAI(friend);
+    friend.ai.state = 'held';
+    friend.swimming = false;
+    const pr = FERRY_PIERS[FERRY.mode === 'dwell' ? 1 : 0];
+    friend.mover.position.set(pr.B.x, 0.12, pr.B.z);
+    friend.mover.rotation.x = 0;
+    friend.mover.rotation.z = 0;
+    ferryHop = { q: friend, fx: pr.B.x, fy: 0.12, fz: pr.B.z, t: 0 };
+    showToast('👥 절친이 포르르 나타나 갑판으로 폴짝!');
+    logWorldEvent(`${petKo(friend)}가 통통호 갑판에 폴짝 올라탔다`);
+}
+function updateFerryHop(delta) {
+    if (!ferryHop) return;
+    ferryHop.t += delta;
+    const k = Math.min(1, ferryHop.t / 0.7);
+    const e = k * k * (3 - 2 * k);
+    const q = ferryHop.q;
+    const rgX = Math.cos(FERRY.heading), rgZ = -Math.sin(FERRY.heading);
+    const tx = FERRY.x - rgX * 0.21, ty = ferryDeckY() + 0.04, tz = FERRY.z + rgZ * 0.21;
+    q.mover.position.set(
+        THREE.MathUtils.lerp(ferryHop.fx, tx, e),
+        THREE.MathUtils.lerp(ferryHop.fy, ty, e) + Math.sin(k * Math.PI) * 0.55,
+        THREE.MathUtils.lerp(ferryHop.fz, tz, e)
+    );
+    q.mover.rotation.y = FERRY.heading;
+    q.pet.walking = false;
+    if (k >= 1) {
+        ferryHop = null;
+        if (ferryRide && !ferryRide.friend) ferryRide.friend = q;
+        else { q.swimming = false; releaseAI(q); snapToLand(q); }
+    }
+}
+function updateFerry(delta) {
+    const g = ferryGroup;
+    // AI 도보 소유권
+    if (aiFerryWalk && (aiFerryWalk.p.ai.onArrive !== aiFerryWalk.ownArrive || aiFerryWalk.p.ai.state !== 'goto')) aiFerryWalk = null;
+    const r = ferryRide;
+    if (r) {
+        r.t += delta;
+        if (r.isAI && r.p) {
+            if (r.p === possessed) r.isAI = false;   // 하이재킹 = 동승 전환
+            else if (r.p.ai.state !== 'busy') { r.p = r.friend; r.friend = null; if (!r.p) ferryRide = null; }
+        }
+    }
+    if (FERRY.mode === 'docked' || FERRY.mode === 'dwell') {
+        const b = FERRY_BERTHS[FERRY.mode === 'docked' ? 0 : 1];
+        FERRY.easeT = Math.min(1, FERRY.easeT + delta / 1.2);
+        const e = FERRY.easeT * FERRY.easeT * (3 - 2 * FERRY.easeT);
+        FERRY.x = THREE.MathUtils.lerp(FERRY.x, b.x, e);
+        FERRY.z = THREE.MathUtils.lerp(FERRY.z, b.z, e);
+        let dh = b.heading - FERRY.heading;
+        while (dh > Math.PI) dh -= Math.PI * 2;
+        while (dh < -Math.PI) dh += Math.PI * 2;
+        FERRY.heading += dh * Math.min(1, delta * 3);
+        if (FERRY.mode === 'dwell') {
+            FERRY.dwellT -= delta;
+            if (FERRY.dwellT <= 0) {   // 출항 재개
+                FERRY.mode = 'sail';
+                FERRY.easeT = 0;
+                ferryHorn();
+                if (r && !r.isAI) showToast('⛴️ 붕— 본섬으로 돌아갑니다');
+            }
+        }
+    } else if (FERRY.mode === 'sail') {
+        const rt = FERRY.route;
+        FERRY.u += (rt.speed * delta) / rt.len;
+        if (!rt.stopped && FERRY.u >= rt.stopU) {   // 모래섬 정박
+            rt.stopped = true;
+            FERRY.mode = 'dwell';
+            FERRY.dwellT = 20;
+            FERRY.easeT = 0;
+            ferryBell();
+            spawnSplash(FERRY.x + Math.sin(FERRY.heading) * 0.8, waveYAt(FERRY.x, FERRY.z) + 0.05, FERRY.z + Math.cos(FERRY.heading) * 0.8);
+            if (r && !r.isAI) showToast('⛴️ 딸랑딸랑 — 모래섬 잔교 정박 (20초, ⌘ = 하차)');
+            logWorldEvent('통통호가 모래섬 잔교에 닻을 내렸다 ⚓');
+        } else if (FERRY.u >= 1) {   // 본섬 복귀 — 종점, 전원 하선
+            FERRY.u = 0;
+            FERRY.mode = 'docked';
+            FERRY.easeT = 0;
+            FERRY.route = null;
+            ferryBell();
+            if (r) {
+                if (!r.isAI) showToast('⛴️ 본섬 잔교 도착 — 수고하셨습니다!');
+                logWorldEvent('통통호가 본섬 잔교로 돌아왔다 — 전원 하선 ⛴️');
+                ferryDisembarkAt(0);
+            }
+        } else {
+            const pt = rt.curve.getPointAt(FERRY.u);
+            const tan = rt.curve.getTangentAt(FERRY.u);
+            FERRY.x = pt.x;
+            FERRY.z = pt.z;
+            const targetH = Math.atan2(tan.x, tan.z);
+            let dh = targetH - FERRY.heading;
+            while (dh > Math.PI) dh -= Math.PI * 2;
+            while (dh < -Math.PI) dh += Math.PI * 2;
+            FERRY.heading += THREE.MathUtils.clamp(dh, -delta * 1.1, delta * 1.1);
+            // 항적 + 굴뚝 연기 (스로틀)
+            FERRY.wakeAt -= delta;
+            if (FERRY.wakeAt <= 0) {
+                FERRY.wakeAt = 0.38;
+                const sx = FERRY.x - Math.sin(FERRY.heading) * 0.95, sz = FERRY.z - Math.cos(FERRY.heading) * 0.95;
+                spawnSplash(sx, waveYAt(sx, sz) + 0.03, sz);
+            }
+        }
+    }
+    FERRY.smokeAt -= delta;
+    if (FERRY.mode === 'sail' && FERRY.smokeAt <= 0) {
+        FERRY.smokeAt = 1.15;
+        const spr = glowSprite(0xcfd3d8, 0.11, 0.7);
+        spr.position.set(FERRY.x - Math.sin(FERRY.heading) * 0.42, FERRY.y + 1.25, FERRY.z - Math.cos(FERRY.heading) * 0.42);
+        scene.add(spr);
+        hugBurst.push({ spr, vx: -Math.sin(FERRY.heading) * 0.2, vy: 0.5, vz: -Math.cos(FERRY.heading) * 0.2, t: 0.6 });
+    }
+    // 파도 타기: 선수/선미/좌우 4점 샘플 → 피치·롤
+    const fwdX = Math.sin(FERRY.heading), fwdZ = Math.cos(FERRY.heading);
+    const rgX = Math.cos(FERRY.heading), rgZ = -Math.sin(FERRY.heading);
+    const bowY = waveYAt(FERRY.x + fwdX * 0.8, FERRY.z + fwdZ * 0.8);
+    const sternY = waveYAt(FERRY.x - fwdX * 0.8, FERRY.z - fwdZ * 0.8);
+    const portY = waveYAt(FERRY.x - rgX * 0.4, FERRY.z - rgZ * 0.4);
+    const starY = waveYAt(FERRY.x + rgX * 0.4, FERRY.z + rgZ * 0.4);
+    FERRY.y = (bowY + sternY) / 2 + 0.03;
+    g.position.set(FERRY.x, FERRY.y, FERRY.z);
+    g.rotation.set((sternY - bowY) * 0.5, FERRY.heading, (portY - starY) * 0.55);
+    ferryCollider.x = FERRY.x;
+    ferryCollider.z = FERRY.z;
+    // 승객: 벤치에 앉아 두리번 (다리 접기는 updateFerryPose — 엔티티 뒤)
+    if (r) {
+        const seat = (q, side, phase) => {
+            q.mover.position.set(
+                FERRY.x + rgX * side + fwdX * 0.02,
+                ferryDeckY() + 0.1 - 0.06,
+                FERRY.z + rgZ * side + fwdZ * 0.02
+            );
+            q.mover.rotation.y = FERRY.heading + Math.sin((r.t + phase) * 0.5) * 0.5;
+            q.mover.rotation.x = 0;
+            q.mover.rotation.z = 0;
+            q.pet.walking = false;
+            q.swimming = false;
+        };
+        if (r.p) seat(r.p, 0.21, 0);
+        if (r.friend) seat(r.friend, -0.21, 1.9);
+    }
+}
+function updateFerryPose() {   // 벤치 앉기 — 다리 앞접기 (엔티티 리셋 뒤 덮어쓰기, 앉기 문법)
+    if (!ferryRide) return;
+    for (const q of [ferryRide.p, ferryRide.friend]) {
+        if (!q) continue;
+        for (const f of q.pet.feet) f.rotation.x = -1.35;
+    }
 }
 
 // ---- 🎣 낚시 (동숲식 — 어떤 물가든): 독 🎣로 낚싯대를 들고, 물을 클릭해 캐스팅, 입질 타이밍에
@@ -12224,11 +12748,14 @@ function animate() {
     updateAutoDrive(delta);
     updateBoatIdle();                        // 정박 보트의 파도 위 살랑임 (항해 중엔 stepBoat 담당)
     updateBoatHop(delta);                    // 절친 승선 아크 — 물가에서 뱃머리로 폴짝
+    updateFerry(delta);                      // ⛴️ 통통호 — 정박/항해/정차 서비스
+    updateFerryHop(delta);                   // 절친 갑판 승선 아크
     updateBalloon(delta);                    // 🎈 열기구 — 계류 살랑임/스플라인 투어/귀환
     updateBalloonHop(delta);                 // 절친 승선 큰 아크 — 데크에서 바구니로
     updatePlaneIdle();                       // 🛩️ 주차 비행기 (물 위면 살랑임, 프로펠러 정지)
     updatePlaneHop(delta);                   // 절친 뒷좌석 승선 아크
     updatePlanePose();                       // 비행 맞바람 — 귀·날개 눕기 (엔티티 뒤 덮어쓰기)
+    updateFerryPose();                       // 페리 벤치 앉기 — 다리 접기 (엔티티 뒤 덮어쓰기)
     updateFishing(delta);                    // 🎣 낚시 안무 — 엔티티 업데이트 뒤라 포즈 덮어쓰기 가능
     updateHeartFx(delta);
     updateFestiveFx(delta);
