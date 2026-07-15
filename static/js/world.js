@@ -6204,6 +6204,21 @@ hideSeekItem.onmouseenter = () => { hideSeekItem.style.background = 'rgba(255,25
 hideSeekItem.onmouseleave = () => { hideSeekItem.style.background = 'transparent'; };
 hideSeekItem.onclick = () => { const p = menuPet; hideMenu(); if (p) worldHideSeek(p); };
 motionMenu.appendChild(hideSeekItem);
+// 📞/📍 소셜 항목 — 조종 중인 펫 메뉴에서만 (showMenu가 표시 토글)
+const callItem = document.createElement('div');
+callItem.textContent = '📞 친구 부르기';
+callItem.style.cssText = `padding:${menuPad}; font-size:${menuFont}px; color:#9be7ff; border-radius:7px; cursor:pointer; white-space:nowrap;`;
+callItem.onmouseenter = () => { callItem.style.background = 'rgba(255,255,255,0.14)'; };
+callItem.onmouseleave = () => { callItem.style.background = 'transparent'; };
+callItem.onclick = () => { hideMenu(); startPhoneCall(); };
+motionMenu.appendChild(callItem);
+const gotoFriendItem = document.createElement('div');
+gotoFriendItem.textContent = '📍 친구한테 가기';
+gotoFriendItem.style.cssText = `padding:${menuPad}; font-size:${menuFont}px; color:#9be7ff; border-radius:7px; cursor:pointer; white-space:nowrap;`;
+gotoFriendItem.onmouseenter = () => { gotoFriendItem.style.background = 'rgba(255,255,255,0.14)'; };
+gotoFriendItem.onmouseleave = () => { gotoFriendItem.style.background = 'transparent'; };
+gotoFriendItem.onclick = () => { hideMenu(); teleportToFriend(); };
+motionMenu.appendChild(gotoFriendItem);
 // 코디 items below the motions (divider above the first); labels refresh per open in showMenu.
 const accessoryItems = [];
 for (let i = 0; i < GLB_ACCESSORIES.length; i++) {
@@ -6225,6 +6240,9 @@ for (let i = 0; i < GLB_ACCESSORIES.length; i++) {
 function showMenu(x, y, p) {
     menuPet = p;
     controlItem.textContent = (p === possessed) ? '🎮 조종 해제 (Esc)' : '🎮 조종하기';
+    const social = (p === possessed && pets.length >= 2) ? 'block' : 'none';   // 📞/📍는 조종 중 메뉴 전용
+    callItem.style.display = social;
+    gotoFriendItem.style.display = social;
     for (const { el, acc } of accessoryItems) {
         el.textContent = !accUnlocked.has(acc.id) ? '🔒 ???'
             : (p.pet.accessory && p.pet.accessory.id === acc.id) ? `${acc.label} 벗기` : acc.label;
@@ -7026,6 +7044,13 @@ if (statsOn) window.__worldDev = {
     balloonSummon: () => { summonBalloonFriend(); return !!balloonHop; },   // 이륙 직후 절친 소환 (E2E)
     ferryState: () => ({ mode: FERRY.mode, x: +FERRY.x.toFixed(2), z: +FERRY.z.toFixed(2), u: +FERRY.u.toFixed(3), riding: !!ferryRide, rider: ferryRide && ferryRide.p ? ferryRide.p.name : null, friend: ferryRide && ferryRide.friend ? ferryRide.friend.name : null, dwellT: +FERRY.dwellT.toFixed(1) }),
     ferrySummon: () => { summonFerryFriend(); return !!ferryHop; },
+    callFriend: () => { startPhoneCall(); return !!phoneCall; },
+    gotoFriend: () => { teleportToFriend(); return true; },
+    social: () => ({
+        calling: !!phoneCall,
+        hand: !!handHold,
+        gap: pets.length >= 2 ? +Math.hypot(pets[0].mover.position.x - pets[1].mover.position.x, pets[0].mover.position.z - pets[1].mover.position.z).toFixed(2) : null,
+    }),
     buildMove: (id, x, z, rotY) => {   // 🔨 공사 이동 대행 (E2E) — canPlace 검사 포함
         const q = PROPS.find((o) => o.layoutId === id);
         if (!q) return 'none';
@@ -9210,6 +9235,7 @@ function releasePossession() {
     if (planeRide) exitPlane(true); // 강제 하기 — 공중이면 비상 착륙 후 내려준다
     if (balloonRide && !balloonRide.isAI) exitBalloonForce(); // 라이더는 계류장으로, 빈 열기구는 자율 귀환
     if (ferryRide && !ferryRide.isAI && (ferryRide.p === p || ferryRide.friend === p)) exitFerryForce(); // 본섬 잔교로
+    cancelPhoneCall();   // 통화 중이었으면 끊는다
     releaseHandHold();
     running = false;
     snapToLand(p);
@@ -9905,6 +9931,143 @@ function tryGrabHand() {
     handHold = { partner: q, side, heartT: 0.6 };
     logWorldEvent(`주인이 조종하는 ${petKo(possessed)}가 ${petKo(q)}의 손을 잡았다`);
     return true;
+}
+// ---- 📞 친구 부르기: 조종 펫이 스마트폰을 꺼내 귀에 대고 통화(인사 목소리 + 부리 옹알이·
+// 고개 기울임) → 통화가 끝나면 절친이 뭘 하고 있었든(잠·해먹·물놀이·낚시·탈것) 포르르
+// 달려와 손을 잡고 옆에 서 있다. 📍 친구한테 가기: 반대로 내가 절친 곁으로 텔레포트(손은
+// 안 잡음 — 친구 하던 일 방해 금지). 전용 안무 — 캔 모션 재활용 없음. ----
+let phoneCall = null;   // { p, friend, t, mesh }
+function makePhone() {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.09, 0.011), M(0x2a2d33));
+    g.add(body);
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.04, 0.078),
+        new THREE.MeshBasicMaterial({ color: 0xcfe8ff }));
+    screen.position.z = 0.0062;
+    g.add(screen);
+    return g;
+}
+function startPhoneCall() {
+    const p = possessed;
+    if (!p || phoneCall) return;
+    if (carDrive || boatRide || planeRide || balloonRide || ferryRide) { showToast('📞 탈것에서 내린 뒤에 걸어요'); return; }
+    const friend = pets.find((q) => q !== p);
+    if (!friend) { showToast('👥 부를 친구가 없어요'); return; }
+    if (fishing && fishing.state !== 'idle') cancelFishing(true);
+    petVoice(p);   // 인사 모션의 그 목소리
+    phoneCall = { p, friend, t: 0, mesh: makePhone() };
+    scene.add(phoneCall.mesh);
+    logWorldEvent(`${petKo(p)}가 스마트폰을 꺼내 ${petKo(friend)}에게 전화를 걸었다 📞`);
+}
+function cancelPhoneCall() {
+    if (!phoneCall) return;
+    scene.remove(phoneCall.mesh);
+    phoneCall = null;
+}
+function yankFriendFree(friend) {   // 뭘 하든 데려온다 — 잠·침대·물놀이·자율 낚시/도보·탈것 좌석 전부 해제
+    friend.pet.sleeping = false;
+    friend.pet.autoSleeping = false;
+    if (friend.bed) forceEndBed(friend);
+    if (friend.dip) endDip(friend);
+    if (aiFishing && aiFishing.p === friend) endAiFishing();
+    if (aiBalloonWalk && aiBalloonWalk.p === friend) aiBalloonWalk = null;
+    if (aiFerryWalk && aiFerryWalk.p === friend) aiFerryWalk = null;
+    if (carDrive && carDrive.passenger === friend) carDrive.passenger = null;
+    if (boatRide && boatRide.passenger === friend) boatRide.passenger = null;
+    if (planeRide && planeRide.passenger === friend) planeRide.passenger = null;
+    if (balloonRide) {
+        if (balloonRide.friend === friend) balloonRide.friend = null;
+        if (balloonRide.p === friend) {
+            balloonRide.p = null;
+            if (BALLOON.mode === 'docked') { balloonRide = null; balloonCollider.r = 0.5; balloonGroup.userData.moor.visible = true; }
+            else { balloonRide.empty = true; BALLOON.mode = 'land'; }
+        }
+    }
+    if (ferryRide) {
+        if (ferryRide.friend === friend) ferryRide.friend = null;
+        if (ferryRide.p === friend) { ferryRide.p = ferryRide.friend; ferryRide.friend = null; if (!ferryRide.p) ferryRide = null; }
+    }
+    friend.swimming = false;
+    friend.mover.rotation.x = 0;
+    friend.mover.rotation.z = 0;
+    releaseAI(friend);
+}
+function updatePhoneCall(delta) {
+    if (!phoneCall) return;
+    const c = phoneCall;
+    const p = c.p;
+    if (p !== possessed) { cancelPhoneCall(); return; }   // 조종이 풀리면 끊는다
+    c.t += delta;
+    const m = p.mover;
+    const fwdX = Math.sin(m.rotation.y), fwdZ = Math.cos(m.rotation.y);
+    const rgX = Math.cos(m.rotation.y), rgZ = -Math.sin(m.rotation.y);
+    // 3박자: 꺼내기(0~0.5) → 통화(0.5~2.8) → 내리기(2.8~3.3)
+    const raise = c.t < 0.5 ? c.t / 0.5 : c.t < 2.8 ? 1 : Math.max(0, 1 - (c.t - 2.8) / 0.5);
+    const e = raise * raise * (3 - 2 * raise);
+    const earY = m.position.y + p.height * (0.42 + 0.36 * e);
+    c.mesh.position.set(
+        m.position.x + rgX * (0.1 + 0.06 * e) + fwdX * 0.09,
+        earY,
+        m.position.z + rgZ * (0.1 + 0.06 * e) + fwdZ * 0.09
+    );
+    c.mesh.rotation.set(0, m.rotation.y, -0.28 * e);   // 귀에 기대는 각도
+    // 몸 연기: 폰 쪽으로 고개 기울임 + 날개 모음 + 통화 중 부리 옹알이 (엔티티 뒤 덮어쓰기)
+    p.pet.wrap.rotation.z += -0.14 * e;
+    for (const wg of p.pet.wings) wg.rotation.z = (wg.userData._restRotZ || 0) * (1 - 0.7 * e);
+    if (c.t > 0.5 && c.t < 2.8) {
+        if (p.pet.beak) p.pet.beak.rotation.x = (p.pet.beak.userData._restRotX || 0) + Math.max(0, Math.sin(c.t * 11)) * 0.16;
+        if (p.pet.tail) p.pet.tail.rotation.y = Math.sin(c.t * 5) * 0.18;   // 강아지는 꼬리 살랑
+    }
+    if (c.t >= 3.3) {   // 통화 끝 — 절친 소환 + 손잡기
+        const friend = c.friend;
+        cancelPhoneCall();
+        yankFriendFree(friend);
+        const h = m.rotation.y;
+        const sx = m.position.x + Math.cos(h) * 0.42, sz = m.position.z - Math.sin(h) * 0.42;
+        const sup = playerSupportY(friend, sx, sz);
+        friend.mover.position.set(sx, sup.y, sz);
+        friend.mover.rotation.set(0, h, 0);
+        friend.swimming = sup.medium === 'land' ? false : sup.medium;
+        friend.ai.state = 'held';
+        handHold = { partner: friend, side: 1, heartT: 0.6 };
+        const spr = glowSprite(0xfff1cf, 0.16, 0.9);
+        spr.position.set(sx, sup.y + friend.height * 0.6, sz);
+        scene.add(spr);
+        hugBurst.push({ spr, vx: 0, vy: 0.35, vz: 0, t: 0.4 });
+        petVoice(friend);   // 달려온 절친의 대답
+        showToast('📞 통화 끝 — 절친이 포르르 달려와 손을 잡았어요!');
+        logWorldEvent(`${petKo(friend)}가 전화를 받자마자 포르르 달려와 ${petKo(p)}의 손을 잡았다`);
+    }
+}
+function teleportToFriend() {
+    const p = possessed;
+    if (!p) return;
+    if (carDrive || boatRide || planeRide || balloonRide || ferryRide) { showToast('📍 탈것에서 내린 뒤에 가요'); return; }
+    const friend = pets.find((q) => q !== p);
+    if (!friend) { showToast('👥 갈 친구가 없어요'); return; }
+    if (fishing && fishing.state !== 'idle') cancelFishing(true);
+    cancelPhoneCall();
+    if (handHold) releaseHandHold();
+    const fx = friend.mover.position.x, fz = friend.mover.position.z;
+    let spot = null;
+    for (let i = 0; i < 8; i++) {   // 친구 곁 0.7m — 막힌 방향이면 8방위 탐색
+        const a = (i / 8) * Math.PI * 2;
+        const nx = fx + Math.sin(a) * 0.7, nz = fz + Math.cos(a) * 0.7;
+        const sup = playerSupportY(p, nx, nz);
+        if (sup.medium === 'land' && world.isBlocked(nx, nz)) continue;
+        spot = { nx, nz, sup };
+        break;
+    }
+    if (!spot) { const sup = playerSupportY(p, fx + 0.7, fz); spot = { nx: fx + 0.7, nz: fz, sup }; }
+    p.mover.position.set(spot.nx, spot.sup.y, spot.nz);
+    p.swimming = spot.sup.medium === 'land' ? false : spot.sup.medium;
+    p.mover.rotation.set(0, Math.atan2(fx - spot.nx, fz - spot.nz), 0);   // 친구를 바라본다 (손은 안 잡음)
+    airborne = false; jumpVy = 0; jumpsLeft = 2;
+    const spr = glowSprite(0x9be7ff, 0.16, 0.9);
+    spr.position.set(spot.nx, spot.sup.y + p.height * 0.6, spot.nz);
+    scene.add(spr);
+    hugBurst.push({ spr, vx: 0, vy: 0.35, vz: 0, t: 0.4 });
+    logWorldEvent(`${petKo(p)}가 ${petKo(friend)} 곁으로 포르르 순간이동했다 📍`);
 }
 function releaseHandHold() {
     if (!handHold) return;
@@ -12864,6 +13027,7 @@ function animate() {
     updatePlaneHop(delta);                   // 절친 뒷좌석 승선 아크
     updatePlanePose();                       // 비행 맞바람 — 귀·날개 눕기 (엔티티 뒤 덮어쓰기)
     updateFerryPose();                       // 페리 벤치 앉기 — 다리 접기 (엔티티 뒤 덮어쓰기)
+    updatePhoneCall(delta);                  // 📞 전화 안무 — 폰 위치·고개 기울임·옹알이 (엔티티 뒤)
     updateFishing(delta);                    // 🎣 낚시 안무 — 엔티티 업데이트 뒤라 포즈 덮어쓰기 가능
     updateHeartFx(delta);
     updateFestiveFx(delta);
