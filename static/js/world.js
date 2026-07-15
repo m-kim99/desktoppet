@@ -11238,10 +11238,10 @@ function makeFerry() {
         white.push(legGeo);
     }
     const archGeo = new THREE.BoxGeometry(0.56, 0.05, 0.09);
-    archGeo.translate(0, 0.79, -0.78);
+    archGeo.translate(0, 0.8, -0.66);    // 기운 다리(rotX 0.3) 꼭대기 = (y0.77, z-0.66) — 그 위에 정확히 얹는다
     white.push(archGeo);
     const antGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.16, 5);
-    antGeo.translate(0, 0.89, -0.78);
+    antGeo.translate(0, 0.9, -0.66);
     white.push(antGeo);
     // 선수 레일 (짧은 포스트 4 + 상단 레일 아치)
     for (const [px, pz] of [[-0.18, 0.98], [0.18, 0.98], [-0.3, 0.7], [0.3, 0.7]]) {
