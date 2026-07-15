@@ -7039,6 +7039,7 @@ if (statsOn) window.__worldDev = {
     wrapDrift: () => (possessed ? +(possessed.pet.wrap.rotation.y - Math.PI).toFixed(4) : null),   // 몸 비틀림 누적 감시 (기준 π)
     planeState: () => ({ mode: PLANE.mode, x: +PLANE.x.toFixed(2), z: +PLANE.z.toFixed(2), y: +PLANE.y.toFixed(2), vel: +PLANE.vel.toFixed(2), riding: !!planeRide, passenger: !!(planeRide && planeRide.passenger) }),
     groundAt: (x, z) => +world.groundHeightAt(x, z).toFixed(3),    // 지형 프로브 (배치·활주로 검증용)
+    petPos: (name) => { const q = pets.find((o) => o.name === name); return q ? { x: +q.mover.position.x.toFixed(2), y: +q.mover.position.y.toFixed(2), z: +q.mover.position.z.toFixed(2) } : null; },
     planeSummon: () => { summonPlanePassenger(); return !!planeHop; },   // 절친 뒷좌석 소환 (E2E)
     balloonState: () => ({ mode: BALLOON.mode, x: +BALLOON.x.toFixed(2), y: +BALLOON.y.toFixed(2), z: +BALLOON.z.toFixed(2), riding: !!balloonRide, rider: balloonRide && balloonRide.p ? balloonRide.p.name : null, friend: balloonRide && balloonRide.friend ? balloonRide.friend.name : null, lap: balloonRide ? balloonRide.lap : 0, pois: balloonRide && balloonRide.route ? balloonRide.route.names.length : 0 }),
     balloonSummon: () => { summonBalloonFriend(); return !!balloonHop; },   // 이륙 직후 절친 소환 (E2E)
@@ -12190,6 +12191,7 @@ function endAiFishing() {
     const f = aiFishing, p = f.p;
     if (f.fishMesh) { scene.remove(f.fishMesh); f.fishMesh = null; }
     hideGear(f);
+    p.mover.position.y = world.groundHeightAt(p.mover.position.x, p.mover.position.z);   // 잔여 부양 정리 (endDip 문법)
     aiFishing = null;
     // 아직 우리가 소유 중일 때만 놓아준다 — 다른 디렉터가 데려갔으면 그쪽 연출을 건드리지 않는다
     const ours = (p.ai.state === 'goto' && p.ai.onArrive === f.ownArrive) || (p.ai.state === 'busy' && f.began);
@@ -12566,7 +12568,12 @@ function updateFishingInstance(f, delta) {
     // 때만 π로 리셋된다 — +=면 비틀기가 적분 누적돼 캐스팅마다 몸이 한쪽으로 감긴다. 절대값으로.
     wrap.rotation.x += leanX;
     wrap.rotation.y = Math.PI + twistY;
-    if (hopY) m.position.y += hopY;
+    if (f.isAI) {
+        // AI 펫은 서포트 클램프가 없다 — 폴짝을 +=하면 잡을 때마다 하늘로 적분 누적되고,
+        // 떠오른 뒤엔 steerToward 턱 규칙(0.26)에 막혀 걷지도 못한다 (사용자 버그 리포트).
+        // 절대값: 지면 + 이번 프레임 폴짝. (조종 펫은 updatePossessed가 매 프레임 기준선 복원)
+        m.position.y = playerSupportY(p, m.position.x, m.position.z).y + hopY;
+    } else if (hopY) m.position.y += hopY;
     if (f.droop > 0) {   // 처짐: 날개·귀가 축
         for (const wg of p.pet.wings) wg.rotation.z = (wg.userData._restRotZ || 0) * (1 - f.droop * 0.5);
         for (const er of p.pet.ears) er.rotation.x = (er.userData._restRotX || 0) + 0.4 * f.droop;
