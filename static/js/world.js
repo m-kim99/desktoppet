@@ -4820,11 +4820,18 @@ const BOAT = { x: 2.4, z: 6.95, heading: -0.4, vel: 0 };   // 북쪽 물가 동�
     // 저장된 boat-1 정박들을 리셋해 "초기 위치 = 메인 땅 물가"로 되돌린다 (사용자 요청).
     // 이후 정박은 boat-2로 정상 저장·복원된다. 육지에 찍힌/섬 확장으로 뭍이 된 저장값은 무시.
     const o = savedLayout['boat-2'];
+    const nearPier = (x, z, buf) => FERRY_PIERS.some((pr) => {
+        const dx = pr.B.x - pr.A.x, dz = pr.B.z - pr.A.z, l2 = dx * dx + dz * dz;
+        const t = Math.max(0, Math.min(1, ((x - pr.A.x) * dx + (z - pr.A.z) * dz) / l2));
+        return Math.hypot(pr.A.x + dx * t - x, pr.A.z + dz * t - z) < buf;
+    }) || Math.hypot(x - 0.94, z - 7.77) < 1.7;   // 본섬 선석 (페리 정위치)
     if (o && Number.isFinite(o.x) && Number.isFinite(o.z)
-        && ISLANDS.every((il) => Math.hypot(o.x - il.x, o.z - il.z) > il.r + 0.2)) {
+        && ISLANDS.every((il) => Math.hypot(o.x - il.x, o.z - il.z) > il.r + 0.2)
+        && !nearPier(o.x, o.z, 1.2)) {   // 잔교·선석 신설 자리에 낀 옛 정박은 기본 위치로
         BOAT.x = o.x; BOAT.z = o.z;
         if (Number.isFinite(o.rotY)) BOAT.heading = o.rotY;
     }
+    window.__nearFerryPier = nearPier;   // plane-1 마이그레이션에서 재사용
 }
 const boatCollider = { type: 'boat', layoutId: 'boat-2', x: BOAT.x, z: BOAT.z, rotY: 0, r: 0.5, def: { x: 2.4, z: 6.95, rotY: -0.4 } };
 PROPS.push(boatCollider);
@@ -7019,6 +7026,21 @@ if (statsOn) window.__worldDev = {
     balloonSummon: () => { summonBalloonFriend(); return !!balloonHop; },   // 이륙 직후 절친 소환 (E2E)
     ferryState: () => ({ mode: FERRY.mode, x: +FERRY.x.toFixed(2), z: +FERRY.z.toFixed(2), u: +FERRY.u.toFixed(3), riding: !!ferryRide, rider: ferryRide && ferryRide.p ? ferryRide.p.name : null, friend: ferryRide && ferryRide.friend ? ferryRide.friend.name : null, dwellT: +FERRY.dwellT.toFixed(1) }),
     ferrySummon: () => { summonFerryFriend(); return !!ferryHop; },
+    buildMove: (id, x, z, rotY) => {   // 🔨 공사 이동 대행 (E2E) — canPlace 검사 포함
+        const q = PROPS.find((o) => o.layoutId === id);
+        if (!q) return 'none';
+        if (!canPlace(q, x, z)) return 'blocked';
+        applyPropMove(q, x, z, Number.isFinite(rotY) ? rotY : (q.rotY || 0));
+        saveLayout();
+        return 'ok';
+    },
+    vehicles: () => ({
+        car: { x: +CAR.x.toFixed(2), z: +CAR.z.toFixed(2) },
+        boat: { x: +BOAT.x.toFixed(2), z: +BOAT.z.toFixed(2) },
+        plane: { x: +PLANE.x.toFixed(2), z: +PLANE.z.toFixed(2) },
+        balloon: { x: +BALLOON_HOME.x.toFixed(2), z: +BALLOON_HOME.z.toFixed(2) },
+        ferry: { x: +FERRY.x.toFixed(2), z: +FERRY.z.toFixed(2) },
+    }),
     ferryAiStart: () => {
         const q = pets.find((o) => o !== possessed && !o.bed && !o.dip && !o.pet.sleeping && !o.swimming);
         if (!q) return 'busy';
@@ -7361,8 +7383,21 @@ function positionBuildRing(p) {
 }
 function canPlace(p, x, z) {
     const pr = effR(p);
+    if (p.type === 'boat') {   // 🚣 보트: 열린 물 (선석·잔교·통통호·비행기와 간섭 금지)
+        if (islandOf(x, z) >= 0 || onBridge(x, z) || Math.hypot(x, z) > 18) return false;
+        if (Math.hypot(x - FERRY.x, z - FERRY.z) < 1.6 || window.__nearFerryPier(x, z, 1.1)) return false;
+        if (Math.hypot(x - PLANE.x, z - PLANE.z) < 1.6) return false;
+        return true;
+    }
+    if (p.type === 'plane') {   // 🛩️ 비행기: 뭍이든 물이든 (수륙양용)
+        if (Math.hypot(x, z) > 19.5) return false;
+        if (Math.hypot(x - FERRY.x, z - FERRY.z) < 1.8 || window.__nearFerryPier(x, z, 1.3)) return false;
+        if (Math.hypot(x - BOAT.x, z - BOAT.z) < 1.5) return false;
+        if (islandOf(x, z) < 0 && !onBridge(x, z)) return true;   // 물 위는 자유
+        // 뭍이면 아래 공용 소품 간섭 검사로 합류
+    }
     // 섬 안(가장자리 여유 포함)이어야 하고 — 다리 위·바다는 불가
-    if (!ISLANDS.some((isl) => Math.hypot(x - isl.x, z - isl.z) < isl.r - Math.min(pr * 0.6, 0.5) - 0.12)) return false;
+    if (p.type !== 'plane' && !ISLANDS.some((isl) => Math.hypot(x - isl.x, z - isl.z) < isl.r - Math.min(pr * 0.6, 0.5) - 0.12)) return false;
     for (const q of PROPS) {
         if (q === p) continue;
         if (p.type === 'house' && q.type === 'furniture') continue;   // 집 안 가구는 집과 한 몸
@@ -7377,6 +7412,9 @@ function movePropVisual(p, x, z) {
     p.x = x; p.z = z;
     const gy = terrainHeight(x, z);
     if (p.type === 'car') { CAR.x = x; CAR.z = z; carGroup.position.set(x, gy + 0.14, z); }
+    else if (p.type === 'boat') { BOAT.x = x; BOAT.z = z; boatGroup.position.set(x, waveYAt(x, z) + 0.1, z); }
+    else if (p.type === 'plane') { PLANE.x = x; PLANE.z = z; planeCollider.x = x; planeCollider.z = z; planeGroup.position.set(x, planeSupportY(x, z) + 0.1, z); }
+    else if (p.type === 'balloon') { moveBalloonHome(x, z); balloonGroup.position.set(x, balloonDockY + 0.1, z); }
     else p.obj.position.set(x, gy + 0.14, z);
     if (p.blob) p.blob.position.set(x, gy + 0.012, z);
     if (p.lampLight) { p.lampLight.position.set(x, gy + 0.95, z); p.lampHalo.position.copy(p.lampLight.position); }
@@ -7389,6 +7427,20 @@ function applyPropMove(p, x, z, rotY) {
         CAR.x = x; CAR.z = z; CAR.heading = rotY;
         carGroup.position.set(x, world.groundHeightAt(x, z), z);
         carGroup.rotation.y = rotY;
+    } else if (p.type === 'boat') {
+        BOAT.x = x; BOAT.z = z;
+        if (Number.isFinite(rotY)) BOAT.heading = rotY;
+        boatGroup.position.set(x, waveYAt(x, z) + 0.02, z);
+        boatGroup.rotation.y = BOAT.heading;
+    } else if (p.type === 'plane') {
+        PLANE.x = x; PLANE.z = z;
+        if (Number.isFinite(rotY)) PLANE.heading = rotY;
+        PLANE.y = planeSupportY(x, z);
+        planeCollider.x = x; planeCollider.z = z;
+        planeGroup.position.set(x, PLANE.y, z);
+        planeGroup.rotation.set(0, PLANE.heading, 0);
+    } else if (p.type === 'balloon') {
+        moveBalloonHome(x, z);   // 회전 없음 — 계류장째 이사
     } else {
         p.rotY = rotY;
         p.obj.position.set(x, gy, z);
@@ -7405,7 +7457,7 @@ function pickMovable(e) {
     raycaster.setFromCamera(pointerNdc, camera);
     let best = null, bestD = Infinity;
     for (const q of PROPS) {
-        if (!q.obj || !(MOVABLE_TYPES.has(q.type) || q.type === 'car')) continue;
+        if (!q.obj || !(MOVABLE_TYPES.has(q.type) || q.type === 'car' || q.type === 'boat' || q.type === 'plane' || q.type === 'balloon')) continue;   // 🔨 운송기도 이동 (페리는 노선 시설이라 고정)
         const hits = raycaster.intersectObject(q.obj, true);
         if (hits.length && hits[0].distance < bestD) { best = q; bestD = hits[0].distance; }
     }
@@ -7422,6 +7474,12 @@ function buildGroundPoint(e, planeY) {
 function startBuildDrag(e) {
     const p = pickMovable(e);
     if (!p) return false;
+    if ((p.type === 'boat' && boatRide) || (p.type === 'plane' && planeRide)
+        || (p.type === 'balloon' && (balloonRide || BALLOON.mode !== 'docked'))
+        || (p.type === 'car' && carDrive)) {
+        showToast('🚧 지금 사용 중이에요 — 내린 뒤에 옮겨요');
+        return true;
+    }
     buildSelect(p);
     const planeY = terrainHeight(p.x, p.z);
     const g = buildGroundPoint(e, planeY);
@@ -7487,7 +7545,8 @@ const bbBtn = (label, fn) => {
 bbBtn('↺ 회전', () => {
     if (!buildSel) { showToast('먼저 사물을 탭해서 선택하세요'); return; }
     if (buildSel.type === 'house') { showToast('🏠 집은 회전 없이 이동만 돼요'); return; }
-    const r = (buildSel.type === 'car' ? CAR.heading : (buildSel.rotY || 0)) + Math.PI / 4;
+    if (buildSel.type === 'balloon') { showToast('🎈 열기구 계류장은 회전 없이 이동만 돼요'); return; }
+    const r = (buildSel.type === 'car' ? CAR.heading : buildSel.type === 'boat' ? BOAT.heading : buildSel.type === 'plane' ? PLANE.heading : (buildSel.rotY || 0)) + Math.PI / 4;
     applyPropMove(buildSel, buildSel.x, buildSel.z, r);
     saveLayoutSoon();
 });
@@ -7539,7 +7598,7 @@ function saveLayoutSoon() { buildDirty = true; clearTimeout(saveLayoutTimer); sa
 function saveLayout() {
     const out = {};
     for (const q of PROPS) {
-        if (!q.layoutId || !(MOVABLE_TYPES.has(q.type) || q.type === 'car' || q.type === 'boat' || q.type === 'plane')) continue;
+        if (!q.layoutId || !(MOVABLE_TYPES.has(q.type) || q.type === 'car' || q.type === 'boat' || q.type === 'plane' || q.type === 'balloon')) continue;
         out[q.layoutId] = {
             x: +q.x.toFixed(3), z: +q.z.toFixed(3),
             rotY: +(((q.type === 'car' ? CAR.heading : q.type === 'boat' ? BOAT.heading : q.type === 'plane' ? PLANE.heading : q.rotY) || 0)).toFixed(3),
@@ -10279,7 +10338,8 @@ function makePlane() {
 const PLANE = { x: -3.2, z: 10.05, y: 0, heading: 3.14, vel: 0, mode: 'parked' };   // 모래섬 남쪽 마른 모래 경사(해수면 -0.45 실측 기준 건조), 기수는 열린 바다
 {   // 🔨 저장된 주차 위치 (plane-1) — 수륙양용이라 뭍·물 어디든 유효, 월드 경계 밖만 무시
     const o = savedLayout['plane-1'];
-    if (o && Number.isFinite(o.x) && Number.isFinite(o.z) && Math.hypot(o.x, o.z) <= 20.5) {
+    if (o && Number.isFinite(o.x) && Number.isFinite(o.z) && Math.hypot(o.x, o.z) <= 20.5
+        && !window.__nearFerryPier(o.x, o.z, 1.5)) {
         PLANE.x = o.x; PLANE.z = o.z;
         if (Number.isFinite(o.rotY)) PLANE.heading = o.rotY;
     }
@@ -10728,7 +10788,7 @@ function makeBalloon() {
     g.userData = { envMat, moor, burnerY: 0.9 };
     return g;
 }
-const balloonDockY = terrainHeight(BALLOON_HOME.x, BALLOON_HOME.z) + 0.06;
+let balloonDockY = terrainHeight(BALLOON_HOME.x, BALLOON_HOME.z) + 0.06;
 const BALLOON = { x: BALLOON_HOME.x, y: balloonDockY, z: BALLOON_HOME.z, heading: -2.1, mode: 'docked' };
 const balloonCollider = { type: 'balloon', layoutId: 'balloon-1', x: BALLOON_HOME.x, z: BALLOON_HOME.z, rotY: 0, r: 0.5, def: { x: BALLOON_HOME.x, z: BALLOON_HOME.z, rotY: 0 } };
 PROPS.push(balloonCollider);
@@ -10737,7 +10797,16 @@ balloonCollider.obj = balloonGroup;
 balloonGroup.position.set(BALLOON.x, BALLOON.y, BALLOON.z);
 balloonGroup.rotation.y = BALLOON.heading;
 stage.add(balloonGroup);
+let balloonStation = null;   // 🔨 공사모드 이동용 — 그룹 오프셋으로 통째 이사
 {   // 계류장: 나무 데크 + 포스트 + 팻말 — 정적이라 월드 베이크에 편입
+    const saved = savedLayout['balloon-1'];   // 저장된 계류장 위치 자기적용 (섬 위만)
+    if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.z) && islandOf(saved.x, saved.z) >= 0) {
+        BALLOON_HOME.x = saved.x; BALLOON_HOME.z = saved.z;
+        BALLOON.x = saved.x; BALLOON.z = saved.z;
+        balloonCollider.x = saved.x; balloonCollider.z = saved.z;
+        balloonDockY = terrainHeight(saved.x, saved.z) + 0.06;
+        BALLOON.y = balloonDockY;
+    }
     const st = new THREE.Group();
     const deck = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.78, 0.06, 14), M(0xb08a60, { map: plankTex }));
     deck.position.set(BALLOON_HOME.x, balloonDockY - 0.05, BALLOON_HOME.z);
@@ -10752,6 +10821,16 @@ stage.add(balloonGroup);
     st.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     stage.add(st);
     WORLD_STATIC_ROOTS.push(st);
+    st.userData.base = { x: BALLOON_HOME.x, z: BALLOON_HOME.z, y: balloonDockY };   // 이동 델타 기준
+    balloonStation = st;
+}
+function moveBalloonHome(x, z) {   // 🔨 계류장 통째 이사 — 데크·포스트·팻말은 그룹 오프셋으로
+    BALLOON_HOME.x = x; BALLOON_HOME.z = z;
+    balloonDockY = terrainHeight(x, z) + 0.06;
+    const b = balloonStation.userData.base;
+    balloonStation.position.set(x - b.x, balloonDockY - b.y, z - b.z);
+    if (BALLOON.mode === 'docked') { BALLOON.x = x; BALLOON.z = z; BALLOON.y = balloonDockY; }
+    balloonCollider.x = x; balloonCollider.z = z;
 }
 let balloonRide = null;   // { p, friend, isAI, t, u, lap, route, burnerAt, burnerT, empty }
 let aiBalloonWalk = null; // AI가 계류장으로 걸어가는 중 { p, ownArrive }
@@ -11114,58 +11193,95 @@ function makeFerryRoute() {
     return null;   // 이론상 폴백(무지터 링)이 20~24회에서 통과 — null이면 호출측이 운항 보류
 }
 function makeFerry() {
+    // 고급 모터요트 리디자인: 화이트 선체 + 네이비 흘수선/틴티드 윈도우 밴드, 캐빈 위 플라이
+    // 브리지, 레이더 아치, 선수 레일, 애프트 선덱(네이비 쿠션 벤치) — 흰색 위주 팔레트
     const g = new THREE.Group();
-    // 선체: 눌러 늘인 반구 셸 (보트 문법, 2배급) — 크림 상부/틸 흘수선
-    const hullGeo = new THREE.SphereGeometry(0.5, 18, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
-    hullGeo.scale(0.86, 0.72, 1.9);
-    hullGeo.translate(0, 0.34, 0);
-    const hull = new THREE.Mesh(bakeGrad(hullGeo, 0xf4e6c8, 0x4f8f8a, { curve: 1.3 }), gradMatDS);
+    const hullGeo = new THREE.SphereGeometry(0.5, 20, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
+    hullGeo.scale(0.8, 0.76, 2.05);
+    hullGeo.translate(0, 0.36, 0);
+    const hull = new THREE.Mesh(bakeGrad(hullGeo, 0xfaf7f0, 0xdfe3e8, { curve: 1.4 }), gradMatDS);
     g.add(hull);
-    const wood = [];
-    const deckGeo = new THREE.CircleGeometry(0.46, 16).rotateX(-Math.PI / 2);
-    deckGeo.scale(0.86, 1, 1.82);
-    deckGeo.translate(0, 0.345, 0);
-    wood.push(deckGeo);
-    const rimGeo = new THREE.TorusGeometry(0.475, 0.028, 8, 20).rotateX(Math.PI / 2);
-    rimGeo.scale(0.86, 1, 1.82);
-    rimGeo.translate(0, 0.36, 0);
-    wood.push(rimGeo);
-    for (const [px, pz] of [[-0.3, 0.62], [0.3, 0.62], [-0.3, -0.62], [0.3, -0.62]]) {
-        const postGeo = new THREE.CylinderGeometry(0.02, 0.022, 0.62, 6);
-        postGeo.translate(px, 0.66, pz);
-        wood.push(postGeo);
+    const navy = [];
+    const lineGeo = new THREE.CylinderGeometry(0.502, 0.502, 0.045, 20, 1, true);   // 흘수선 스트라이프
+    lineGeo.scale(0.8, 1, 2.05);
+    lineGeo.translate(0, 0.185, 0);
+    navy.push(lineGeo);
+    const white = [];
+    const deckGeo = new THREE.CircleGeometry(0.46, 18).rotateX(-Math.PI / 2);   // 갑판 (화이트 몰딩)
+    deckGeo.scale(0.79, 1, 2.0);
+    deckGeo.translate(0, 0.365, 0);
+    white.push(deckGeo);
+    const rimGeo = new THREE.TorusGeometry(0.465, 0.022, 8, 22).rotateX(Math.PI / 2);
+    rimGeo.scale(0.79, 1, 2.0);
+    rimGeo.translate(0, 0.375, 0);
+    white.push(rimGeo);
+    // 캐빈(중앙 전방) + 틴티드 윈도우 밴드 + 플라이브리지 + 슬랜트 윈드실드
+    const whiteR = [];   // RoundedBox는 속성 불일치로 별도 병합 (비행기 시트백 선례)
+    const cabinGeo = new RoundedBoxGeometry(0.52, 0.3, 0.85, 2, 0.05);
+    cabinGeo.translate(0, 0.53, 0.22);
+    whiteR.push(cabinGeo);
+    const winGeo = new THREE.BoxGeometry(0.53, 0.1, 0.78);
+    winGeo.translate(0, 0.57, 0.24);
+    navy.push(winGeo);
+    const bridgeGeo = new RoundedBoxGeometry(0.4, 0.16, 0.5, 2, 0.04);
+    bridgeGeo.translate(0, 0.76, 0.16);
+    whiteR.push(bridgeGeo);
+    const shieldGeo = new THREE.BoxGeometry(0.36, 0.1, 0.03);
+    shieldGeo.rotateX(-0.5);
+    shieldGeo.translate(0, 0.84, 0.42);
+    navy.push(shieldGeo);
+    // 레이더 아치 (뒤로 기운 흰 문) + 안테나
+    for (const sx of [-1, 1]) {
+        const legGeo = new THREE.CylinderGeometry(0.02, 0.024, 0.34, 6);
+        legGeo.rotateX(0.35);
+        legGeo.translate(sx * 0.3, 0.56, -0.42);
+        white.push(legGeo);
     }
-    for (const bx of [-0.21, 0.21]) {   // 벤치 2 (세로)
-        const benchGeo = new THREE.BoxGeometry(0.15, 0.05, 0.85);
-        benchGeo.translate(bx, 0.45, 0.02);
-        wood.push(benchGeo);
+    const archGeo = new THREE.BoxGeometry(0.64, 0.05, 0.09);
+    archGeo.translate(0, 0.74, -0.48);
+    white.push(archGeo);
+    const antGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.16, 5);
+    antGeo.translate(0, 0.84, -0.48);
+    white.push(antGeo);
+    // 선수 레일 (짧은 포스트 4 + 상단 레일 아치)
+    for (const [px, pz] of [[-0.18, 0.98], [0.18, 0.98], [-0.3, 0.7], [0.3, 0.7]]) {
+        const postGeo = new THREE.CylinderGeometry(0.011, 0.011, 0.12, 5);
+        postGeo.translate(px, 0.43, pz);
+        white.push(postGeo);
     }
-    g.add(new THREE.Mesh(mergeGeometries(wood, false), M(0xb08a60, { map: plankTex })));
-    // 차양 지붕: 낮은 반원 아치 쉘 (배 길이 방향) + 굴뚝
-    const roofGeo = new THREE.CylinderGeometry(0.48, 0.48, 1.2, 14, 1, true, 0, Math.PI);
-    roofGeo.rotateZ(Math.PI / 2);     // 반원이 위를 덮는 아치로
-    roofGeo.rotateY(Math.PI / 2);     // 축을 배 길이(Z)로
-    roofGeo.scale(1, 0.38, 1);
-    roofGeo.translate(0, 0.9, 0);
-    const roof = new THREE.Mesh(bakeGrad(roofGeo, 0xe06a58, 0xb04a3c, { curve: 1 }), gradMatDS);
-    g.add(roof);
-    const chimney = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 0.3, 10), M(0x5a5f66));
-    chimney.position.set(0, 1.06, -0.42);
-    g.add(chimney);
-    const chimBand = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.07, 10), M(0xd05a4a));
-    chimBand.position.set(0, 1.13, -0.42);
-    g.add(chimBand);
-    // 구명튜브 비네트 (좌현) + 선미 깃발
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.026, 8, 14), M(0xf4e6c8));
-    ring.position.set(-0.42, 0.42, 0.25);
+    const railGeo = new THREE.TorusGeometry(0.31, 0.012, 6, 14, Math.PI).rotateX(Math.PI / 2);
+    railGeo.scale(1, 1, 1.35);
+    railGeo.translate(0, 0.49, 0.66);
+    white.push(railGeo);
+    // 애프트 선덱: 티크 바닥 + 네이비 쿠션 벤치 2
+    const teakGeo = new THREE.BoxGeometry(0.56, 0.025, 0.62);
+    teakGeo.translate(0, 0.375, -0.45);
+    const teak = new THREE.Mesh(teakGeo, M(0xb08a60, { map: plankTex }));
+    g.add(teak);
+    const navyR = [];
+    for (const bx of [-0.21, 0.21]) {
+        const benchGeo = new RoundedBoxGeometry(0.14, 0.05, 0.68, 2, 0.02);
+        benchGeo.translate(bx, 0.42, -0.42);
+        navyR.push(benchGeo);
+    }
+    const flagGeo = new THREE.PlaneGeometry(0.13, 0.085);
+    flagGeo.translate(0.065, 0.55, -0.99);
+    navy.push(flagGeo);
+    const poleGeo = new THREE.CylinderGeometry(0.007, 0.007, 0.2, 5);
+    poleGeo.translate(0, 0.47, -0.99);
+    white.push(poleGeo);
+    const whiteMat = M(0xf6f3ec);
+    g.add(new THREE.Mesh(mergeGeometries(white, false), whiteMat));
+    g.add(new THREE.Mesh(mergeGeometries(whiteR, false), whiteMat));
+    const navyMat = M(0x2e4a68, { unique: true });
+    navyMat.side = THREE.DoubleSide;
+    g.add(new THREE.Mesh(mergeGeometries(navy, false), navyMat));
+    g.add(new THREE.Mesh(mergeGeometries(navyR, false), navyMat));
+    // 구명튜브 (흰 바탕 그대로 — 좌현 캐빈 옆)
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.02, 8, 14), M(0xe06a58));
+    ring.position.set(-0.38, 0.47, 0.05);
     ring.rotation.y = Math.PI / 2;
     g.add(ring);
-    const flagPole = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.22, 5), M(0x8a6647, { map: woodTex }));
-    flagPole.position.set(0, 0.5, -0.92);
-    g.add(flagPole);
-    const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 0.09), M(0xd05a4a));
-    flag.position.set(0.07, 0.56, -0.92);
-    g.add(flag);
     g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     return g;
 }
@@ -11481,14 +11597,6 @@ function updateFerry(delta) {
             }
         }
     }
-    FERRY.smokeAt -= delta;
-    if (FERRY.mode === 'sail' && FERRY.smokeAt <= 0) {
-        FERRY.smokeAt = 1.15;
-        const spr = glowSprite(0xcfd3d8, 0.11, 0.7);
-        spr.position.set(FERRY.x - Math.sin(FERRY.heading) * 0.42, FERRY.y + 1.25, FERRY.z - Math.cos(FERRY.heading) * 0.42);
-        scene.add(spr);
-        hugBurst.push({ spr, vx: -Math.sin(FERRY.heading) * 0.2, vy: 0.5, vz: -Math.cos(FERRY.heading) * 0.2, t: 0.6 });
-    }
     // 파도 타기: 선수/선미/좌우 4점 샘플 → 피치·롤
     const fwdX = Math.sin(FERRY.heading), fwdZ = Math.cos(FERRY.heading);
     const rgX = Math.cos(FERRY.heading), rgZ = -Math.sin(FERRY.heading);
@@ -11505,9 +11613,9 @@ function updateFerry(delta) {
     if (r) {
         const seat = (q, side, phase) => {
             q.mover.position.set(
-                FERRY.x + rgX * side + fwdX * 0.02,
-                ferryDeckY() + 0.1 - 0.06,
-                FERRY.z + rgZ * side + fwdZ * 0.02
+                FERRY.x + rgX * side - fwdX * 0.42,   // 애프트 선덱 벤치
+                ferryDeckY() + 0.12 - 0.06,
+                FERRY.z + rgZ * side - fwdZ * 0.42
             );
             q.mover.rotation.y = FERRY.heading + Math.sin((r.t + phase) * 0.5) * 0.5;
             q.mover.rotation.x = 0;
