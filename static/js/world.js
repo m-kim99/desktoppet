@@ -11230,18 +11230,18 @@ function makeFerry() {
     shieldGeo.rotateX(-0.5);
     shieldGeo.translate(0, 0.84, 0.42);
     navy.push(shieldGeo);
-    // 레이더 아치 (뒤로 기운 흰 문) + 안테나
+    // 레이더 아치 (뒤로 기운 흰 문) + 안테나 — 벤치 뒤 선미 쪽 (승객 머리 관통 방지, 사용자 스샷 피드백)
     for (const sx of [-1, 1]) {
-        const legGeo = new THREE.CylinderGeometry(0.02, 0.024, 0.34, 6);
-        legGeo.rotateX(0.35);
-        legGeo.translate(sx * 0.3, 0.56, -0.42);
+        const legGeo = new THREE.CylinderGeometry(0.02, 0.024, 0.4, 6);
+        legGeo.rotateX(0.3);
+        legGeo.translate(sx * 0.26, 0.58, -0.72);
         white.push(legGeo);
     }
-    const archGeo = new THREE.BoxGeometry(0.64, 0.05, 0.09);
-    archGeo.translate(0, 0.74, -0.48);
+    const archGeo = new THREE.BoxGeometry(0.56, 0.05, 0.09);
+    archGeo.translate(0, 0.79, -0.78);
     white.push(archGeo);
     const antGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.16, 5);
-    antGeo.translate(0, 0.84, -0.48);
+    antGeo.translate(0, 0.89, -0.78);
     white.push(antGeo);
     // 선수 레일 (짧은 포스트 4 + 상단 레일 아치)
     for (const [px, pz] of [[-0.18, 0.98], [0.18, 0.98], [-0.3, 0.7], [0.3, 0.7]]) {
