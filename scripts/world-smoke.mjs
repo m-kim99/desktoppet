@@ -59,15 +59,25 @@ const browser = await chromium.launch({ headless: true, args: ['--use-angle=meta
         return parseInt((t.match(/(\d+) draws/) || [])[1] || '0', 10);
     });
     check('draws 상한(월드 베이크)', draws > 0 && draws <= 250, false, `${draws} draws`);
-    const bi = env.kids.indexOf('🔨');
-    if (bi >= 0) {
-        await page.evaluate((i) => document.getElementById('world-dock-ui').children[i].click(), bi);
+    // 독 정리(A안) 후 🔨는 ⚙️ 서랍 안 — 실제 사용자 플로우대로 서랍을 열고 누른다
+    const gear = await page.evaluate(() => {
+        const g = [...document.querySelectorAll('#world-dock-ui div')].find((b) => b.textContent.trim().startsWith('⚙️'));
+        if (g) g.click();
+        return !!g;
+    });
+    await page.waitForTimeout(400);
+    const hb = gear && await page.evaluate(() => {
+        const b = [...document.querySelectorAll('#world-dock-ui div')].find((el) => el.textContent === '🔨');
+        if (b) b.click();
+        return !!b;
+    });
+    if (hb) {
         await page.waitForTimeout(400);
         const on = await page.evaluate(() => [...document.body.children].some((el) => el.textContent && el.textContent.includes('공사 모드') && el.style.display === 'flex'));
         await page.keyboard.press('Escape');
         await page.waitForTimeout(300);
-        check('desktop 공사모드 토글', on);
-    } else check('desktop 공사모드 토글', false, false, '🔨 버튼 없음');
+        check('desktop 공사모드 토글(서랍 경유)', on);
+    } else check('desktop 공사모드 토글(서랍 경유)', false, false, '⚙️/🔨 버튼 없음');
     // 펫 우클릭 프로브 — __worldDev.petScreenXY로 펫을 정확히 조준한다 (예전 격자 스캔은 펫 위치
     // 랜덤에 수영·착석까지 겹치면 자주 빗나갔다). 두 마리 다 시도, 하나라도 메뉴가 뜨면 통과.
     let menu = false;

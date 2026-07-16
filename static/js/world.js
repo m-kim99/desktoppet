@@ -6990,7 +6990,7 @@ chatSend.addEventListener('click', sendWorldChat);
 let heldZoom = 0;
 const dockUI = document.createElement('div');
 dockUI.id = 'world-dock-ui';
-dockUI.style.cssText = 'position:fixed; right:14px; bottom:calc(70px + env(safe-area-inset-bottom, 0px)); display:flex; flex-direction:column; gap:6px; z-index:95; user-select:none; -webkit-user-select:none;';
+dockUI.style.cssText = 'position:fixed; right:14px; bottom:calc(70px + env(safe-area-inset-bottom, 0px)); display:flex; flex-direction:column; align-items:flex-end; gap:6px; z-index:95; user-select:none; -webkit-user-select:none;';
 function dockBtn(symbol, title) {
     const b = document.createElement('div');
     b.textContent = symbol;
@@ -7061,7 +7061,7 @@ weatherBtn.addEventListener('click', () => {
     weatherPanel.style.display = open ? 'flex' : 'none';
 });
 const ecoBtn = dockBtn('⚡', '절전 모드 — 30fps·1.5x 해상도 (배터리에선 자동)');
-const syncEcoBtn = () => { ecoBtn.style.opacity = ecoMode ? '0.5' : '1'; };
+const syncEcoBtn = () => { ecoBtn.style.opacity = ecoMode ? '0.5' : '1'; if (window.__syncDockBadges) window.__syncDockBadges(); };
 syncEcoBtn();
 ecoBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
 ecoBtn.addEventListener('click', () => {
@@ -7475,7 +7475,7 @@ function bindZoomBtn(b, dir) {
     b.addEventListener('lostpointercapture', stop);
 }
 const buildBtn = dockBtn('🔨', '공사 모드 — 사물 옮기기');
-const syncBuildBtn = () => { buildBtn.style.background = buildMode ? 'rgba(214,150,52,0.92)' : 'rgba(30,32,40,0.88)'; };
+const syncBuildBtn = () => { buildBtn.style.background = buildMode ? 'rgba(214,150,52,0.92)' : 'rgba(30,32,40,0.88)'; if (window.__syncDockBadges) window.__syncDockBadges(); };
 buildBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
 buildBtn.addEventListener('click', () => setBuildMode(!buildMode));
 // 🐤🐶 펫 바로가기: 누르면 카메라가 그 펫에게 날아가며(팔로우 캠) 즉시 조종 시작 — 같은 버튼을
@@ -7487,9 +7487,9 @@ function possessByName(name) {
     if (buildMode) setBuildMode(false);                // 공사 중이면 저장하고 나와서 조종
     possessPet(p);
 }
-const chickBtn = dockBtn('🐤', '병아리 조종하기 — 다시 누르면 해제');
+const chickBtn = dockBtn('🐥', '병아리 조종하기 — 다시 누르면 해제');
 chickBtn.onclick = () => possessByName('chick');
-const puppyBtn = dockBtn('🐶', '강아지 조종하기 — 다시 누르면 해제');
+const puppyBtn = dockBtn('🐕', '강아지 조종하기 — 다시 누르면 해제');
 puppyBtn.onclick = () => possessByName('puppy');
 const fishBtn = dockBtn('🎣', '낚싯대 들기/정리 — 물을 클릭해 캐스팅, 찌가 푹 잠기면 ⌘/Space 챔질');
 fishBtn.onclick = () => equipFishing();
@@ -7497,6 +7497,63 @@ const dexBtn = dockBtn('🐟', '물고기 도감 — 잡은 어종 컬렉션');
 dexBtn.onclick = () => toggleFishdex();
 bindZoomBtn(dockBtn('＋', '확대 (키보드 + 키)'), -1);
 bindZoomBtn(dockBtn('－', '축소 (키보드 - 키)'), 1);
+// ---- 독 정리 (A안): 상주 = 📷·🐥·🐕·(빙의 중만 🎣)·서랍 2·줌 — 12개 → 상주 6~7개.
+// 서랍은 왼쪽 가로 펼침(세로 절약), 하나만 열림, 자식 클릭·4초 무입력이면 자동 접힘.
+// 접혀 있어도 상태는 배지로: ⚙️ 초록점 = 공사/절전 켜짐, 📖 빨간점 = 도감 새 어종.
+let dockOpenDrawer = null;
+function dockDrawer(emoji, title, children) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; flex-direction:row; align-items:center; gap:6px;';
+    const panel = document.createElement('div');
+    panel.style.cssText = 'display:flex; flex-direction:row; gap:6px; overflow:hidden; max-width:0; opacity:0; transition:max-width 0.26s ease, opacity 0.2s ease;';
+    for (const c of children) panel.appendChild(c);   // dockUI 직속에서 서랍 안으로 이사
+    const launcher = dockBtn(emoji, title);
+    launcher.style.position = 'relative';
+    const badge = document.createElement('div');
+    badge.style.cssText = 'position:absolute; top:5px; right:5px; width:8px; height:8px; border-radius:50%; display:none; pointer-events:none; box-shadow:0 0 4px rgba(0,0,0,0.4);';
+    launcher.appendChild(badge);
+    row.appendChild(panel);
+    row.appendChild(launcher);
+    const d = { row, launcher, panel, badge, open: false, timer: 0 };
+    const setOpen = (v) => {
+        d.open = v;
+        panel.style.maxWidth = v ? `${children.length * (IS_TOUCH ? 54 : 46) + 8}px` : '0';
+        panel.style.opacity = v ? '1' : '0';
+        launcher.style.background = v ? 'rgba(70,76,92,0.92)' : 'rgba(30,32,40,0.88)';
+        clearTimeout(d.timer);
+        if (v) {
+            if (dockOpenDrawer && dockOpenDrawer !== d) dockOpenDrawer.setOpen(false);   // 하나만 열림
+            dockOpenDrawer = d;
+            d.timer = setTimeout(() => setOpen(false), 4000);   // 자동 접힘
+        } else if (dockOpenDrawer === d) dockOpenDrawer = null;
+    };
+    d.setOpen = setOpen;
+    launcher.onclick = () => setOpen(!d.open);
+    panel.addEventListener('click', () => setTimeout(() => setOpen(false), 120));   // 자식 실행 후 접기
+    return d;
+}
+const collDrawer = dockDrawer('📖', '컬렉션 — 도감·그림일기·대화 기록', [dexBtn, diaryBtn, logBtn]);
+collDrawer.badge.style.background = '#ff5f6b';
+const toolDrawer = dockDrawer('⚙️', '도구 — 날씨·공사·절전', [weatherBtn, buildBtn, ecoBtn]);
+toolDrawer.badge.style.background = '#5ede8a';
+const zoomBtns = [...dockUI.children].filter((b) => b.textContent === '＋' || b.textContent === '－');
+for (const el of [shotBtn, chickBtn, puppyBtn, fishBtn, collDrawer.row, toolDrawer.row, ...zoomBtns]) dockUI.appendChild(el);   // 상주 순서 재배열 (appendChild = 이동)
+const dexSeenN = () => { try { return Object.keys(JSON.parse(localStorage.getItem('world-fishdex') || '{}')).length; } catch (e) { return 0; } };
+function syncDockBadges() {
+    toolDrawer.badge.style.display = (buildMode || ecoMode) ? 'block' : 'none';
+    let seen = 0;
+    try { seen = +localStorage.getItem('world-dex-seen-n') || 0; } catch (e) {}
+    collDrawer.badge.style.display = dexSeenN() > seen ? 'block' : 'none';
+}
+dexBtn.addEventListener('click', () => {   // 도감을 열면 "새 어종" 배지 해소
+    try { localStorage.setItem('world-dex-seen-n', String(dexSeenN())); } catch (e) {}
+    syncDockBadges();
+});
+const syncFishBtn = () => { fishBtn.style.display = possessed ? 'flex' : 'none'; };   // 🎣 = 빙의 중만 (문맥 버튼)
+fishBtn.style.display = 'none';
+let dockBadgeAt = 0;
+window.__syncDockBadges = syncDockBadges;   // eco/build 토글의 즉시 배지 갱신 (eval 순서 안전한 간접 참조)
+syncDockBadges();
 document.body.appendChild(dockUI);
 
 // ---- 🔨 공사 모드 (동물의 숲식 사물 옮기기): 사물을 누르면 집어 들고(살짝 떠오름), 끌어서
@@ -9318,6 +9375,7 @@ if (IS_TOUCH) {
 }
 
 function possessPet(p) {
+    setTimeout(syncFishBtn, 0);   // 🎣 문맥 버튼 — 빙의 확정 후 표시 (possessed 대입은 이 함수 뒤)
     // 조종은 무조건 성공: whatever the pet was doing gets cleanly taken over. Bed/seat → instant
     // dismount; passenger seat → hop out; dips end themselves next frame (updateDips checks
     // possessed); any director awaiting this pet's arrival is resolved so it can never deadlock
@@ -9354,6 +9412,7 @@ function releasePossession() {
     if (!possessed) return;
     const p = possessed;
     possessed = null;
+    syncFishBtn();   // 🎣 문맥 버튼 숨김
     airborne = false; jumpVy = 0; jumpsLeft = 2;
     seaHop = null;
     if (carDrive) exitCar();
@@ -14072,6 +14131,7 @@ function animate() {
     updateFountain(delta);
     updateFireflies(delta);
     if (Date.now() > mailPollAt) { mailPollAt = Date.now() + 20000; updateMailFlag(); }
+    if (Date.now() > dockBadgeAt) { dockBadgeAt = Date.now() + 10000; syncDockBadges(); }
     // 텃밭 성장 티커: gardenStageHash는 만들어졌는데 비교하는 코드가 없었다 — 씨앗이 자라도
     // (다시 클릭하기 전엔) 화면에 안 나타나던 원인. 10초마다 단계 변화를 감지해 다시 그린다.
     if (Date.now() > gardenPollAt) {
