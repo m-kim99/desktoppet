@@ -6317,6 +6317,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     planeMenu.style.display = 'none';
     balloonMenu.style.display = 'none';
     ferryMenu.style.display = 'none';
+    mapMenu.style.display = 'none';
     if (!pressAt) return;
     const moved = Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y);
     const held = performance.now() - pressAt.t;
@@ -7051,6 +7052,8 @@ if (statsOn) window.__worldDev = {
     shellSpawn: () => trySpawnShell(true),
     stream: () => ({ loaded: isletChunks.size, islands: ISLANDS.length, queue: isletQueue.length, found: discoveredIslets.size }),
     mapToggle: () => { toggleWorldMap(); return mapOpen; },
+    recall: (t) => recallVehicle(t),
+    autoReturn: () => { checkAutoReturn(true); return window.__worldDev.vehicles(); },
     streamScan: (x, z, rad) => {   // 순수 스캔 — 로드 전에도 무인도 좌표를 알 수 있다 (E2E)
         const out = [];
         for (let cx = Math.floor((x - rad) / CHUNK); cx <= Math.floor((x + rad) / CHUNK); cx++) {
@@ -7470,11 +7473,13 @@ function applyPropMove(p, x, z, rotY) {
         carGroup.rotation.y = rotY;
     } else if (p.type === 'boat') {
         BOAT.x = x; BOAT.z = z;
+        vehicleLastUse.boat = Date.now();
         if (Number.isFinite(rotY)) BOAT.heading = rotY;
         boatGroup.position.set(x, waveYAt(x, z) + 0.02, z);
         boatGroup.rotation.y = BOAT.heading;
     } else if (p.type === 'plane') {
         PLANE.x = x; PLANE.z = z;
+        vehicleLastUse.plane = Date.now();
         if (Number.isFinite(rotY)) PLANE.heading = rotY;
         PLANE.y = planeSupportY(x, z);
         planeCollider.x = x; planeCollider.z = z;
@@ -10229,6 +10234,7 @@ function enterBoat() {
         passenger = friend;
     }
     boatRide = { driver, passenger, row: 0, lastPh: 0 };
+    vehicleLastUse.boat = Date.now();
     running = false;
     driver.swimming = false;
     logWorldEvent(`${petKo(driver)}가 보트에 올라 노를 잡았다${passenger ? ' (절친도 뱃머리에!)' : ''}`);
@@ -10253,6 +10259,7 @@ function exitBoat(force = false) {
     }
     boatRide = null;
     BOAT.vel = 0;
+    vehicleLastUse.boat = Date.now();
     const rX = Math.cos(BOAT.heading), rZ = -Math.sin(BOAT.heading);
     const dx = BOAT.x - rX * 0.8, dz = BOAT.z - rZ * 0.8;   // 뱃전 옆 물로 퐁당
     driver.mover.position.set(dx, waveYAt(dx, dz) + 0.02 - driver.height * 0.45, dz);
@@ -10608,6 +10615,7 @@ function enterPlane() {
     }
     if (aiFishing && aiFishing.p === passenger) endAiFishing();
     planeRide = { driver, passenger, liftT: 0, sprayT: 0, armed: true };   // armed = 이륙 무장 (착지 후 감속해야 재무장)
+    vehicleLastUse.plane = Date.now();
     running = false;
     driver.swimming = false;
     PLANE.mode = 'taxi';
@@ -10647,6 +10655,7 @@ function exitPlane(force = false) {
     planeRide = null;
     PLANE.vel = 0;
     PLANE.mode = 'parked';
+    vehicleLastUse.plane = Date.now();
     stopPlaneEngine();
     drop(driver, -0.85);
     if (driver.swimming) playSplashSound(driver.mover.position.x, driver.mover.position.z);
@@ -12089,6 +12098,49 @@ function refreshIsletChunks() {
 // ---- 🗺️ 지도: 좌측 상단 버튼 → 미니맵 패널. 코어 군도 + 발견한 무인도(포그 오브 워 —
 // 미발견은 안 보임) + 탈것 아이콘 + 네비식 회전 화살표(조종 펫 헤딩). 열려 있을 때만
 // 0.5초 간격 캔버스 리드로우 — 닫으면 비용 0 (발열 §1). ----
+// ---- 🧲 탈것 회수: 지도에서 아이콘 탭 → "원위치로 회수" + 수면 시간대 자동 귀항 (2시간
+// 미사용 + 홈에서 12m 이상 = 밤사이 스스로 돌아옴). 페리·열기구는 자가 귀환이라 제외. ----
+const vehicleLastUse = { boat: Date.now(), plane: Date.now() };
+function recallVehicle(type, quiet = false) {
+    if (type === 'boat') {
+        if (boatRide) { if (!quiet) showToast('🚣 지금 타는 중이에요'); return false; }
+        BOAT.x = boatCollider.def.x;
+        BOAT.z = boatCollider.def.z;
+        BOAT.heading = boatCollider.def.rotY;
+        BOAT.vel = 0;
+        boatCollider.x = BOAT.x;
+        boatCollider.z = BOAT.z;
+    } else if (type === 'plane') {
+        if (planeRide) { if (!quiet) showToast('🛩️ 지금 타는 중이에요'); return false; }
+        PLANE.x = planeCollider.def.x;
+        PLANE.z = planeCollider.def.z;
+        PLANE.heading = planeCollider.def.rotY;
+        PLANE.vel = 0;
+        PLANE.mode = 'parked';
+        PLANE.y = planeSupportY(PLANE.x, PLANE.z);
+        planeCollider.x = PLANE.x;
+        planeCollider.z = PLANE.z;
+        planeGroup.position.set(PLANE.x, PLANE.y, PLANE.z);
+        planeGroup.rotation.set(0, PLANE.heading, 0);
+    } else return false;
+    vehicleLastUse[type] = Date.now();
+    saveLayout();
+    const ko = type === 'boat' ? '나룻배' : '경비행기';
+    if (!quiet) {
+        showToast(`🧲 ${ko}를 원위치로 회수했어요`);
+        logWorldEvent(`멀리 있던 ${ko}를 집 앞으로 회수했다 🧲`);
+    } else logWorldEvent(`밤사이 ${ko}가 스스로 집 앞으로 돌아와 있었다 🌙`);
+    return true;
+}
+let autoReturnT = 0;
+function checkAutoReturn(force = false) {
+    const IDLE_MS = 2 * 3600 * 1000;   // 2시간 미사용
+    for (const [type, st, def] of [['boat', BOAT, boatCollider.def], ['plane', PLANE, planeCollider.def]]) {
+        const far = Math.hypot(st.x - def.x, st.z - def.z) > 12;
+        const idle = Date.now() - vehicleLastUse[type] > IDLE_MS;
+        if (far && (force || (idle && isSleepTime(currentHour())))) recallVehicle(type, true);
+    }
+}
 const mapBtn = document.createElement('div');
 mapBtn.textContent = '🗺️';
 mapBtn.title = '지도 — 현재 위치·방향·탈것·발견한 섬';
@@ -12105,6 +12157,27 @@ mapPanel.addEventListener('pointerdown', (e) => e.stopPropagation());
 document.body.appendChild(mapPanel);
 let mapOpen = false;
 let mapTickT = 0;
+const mapIconPts = [];   // 최근 드로우의 탈것 아이콘 위치 (탭 히트)
+const mapMenu = document.createElement('div');
+mapMenu.style.cssText = 'position:fixed; display:none; z-index:130; background:rgba(30,32,40,0.94); border-radius:10px; padding:6px; box-shadow:0 6px 18px rgba(0,0,0,0.35);';
+const mapMenuBtn = document.createElement('button');
+mapMenuBtn.style.cssText = 'display:block; background:none; border:none; color:#fff; font-size:13px; padding:7px 12px; border-radius:7px; cursor:pointer; font-family:sans-serif; white-space:nowrap;';
+mapMenuBtn.onmouseenter = () => { mapMenuBtn.style.background = 'rgba(255,255,255,0.14)'; };
+mapMenuBtn.onmouseleave = () => { mapMenuBtn.style.background = 'none'; };
+mapMenu.appendChild(mapMenuBtn);
+document.body.appendChild(mapMenu);
+mapPanel.addEventListener('pointerup', (e) => {   // 🧲 탈것 아이콘 탭 → 회수 메뉴
+    const rect = mapPanel.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (mapPanel.width / rect.width);
+    const my = (e.clientY - rect.top) * (mapPanel.height / rect.height);
+    const hit = mapIconPts.find((q) => Math.hypot(q.sx - mx, q.sy - my) < 20);
+    if (!hit) { mapMenu.style.display = 'none'; return; }
+    mapMenuBtn.textContent = `🧲 ${hit.type === 'boat' ? '나룻배' : '경비행기'} 원위치로 회수`;
+    mapMenuBtn.onclick = () => { mapMenu.style.display = 'none'; recallVehicle(hit.type); drawWorldMap(); };
+    mapMenu.style.left = `${Math.min(e.clientX + 6, window.innerWidth - 190)}px`;
+    mapMenu.style.top = `${Math.min(e.clientY, window.innerHeight - 56)}px`;
+    mapMenu.style.display = 'block';
+});
 let mapWide = false;   // 네비식 자동 줌: 마을(≤22)에선 군도 확대, 원양(>26)에선 해역 전체 (히스테리시스)
 function drawWorldMap() {
     const c = mapPanel.getContext('2d');
@@ -12150,16 +12223,19 @@ function drawWorldMap() {
     c.font = '22px sans-serif';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    const mark = (emoji, x, z) => {   // 뷰 밖 마커는 가장자리에 클램프 — 나침반처럼 방향을 알려준다
+    mapIconPts.length = 0;
+    const mark = (emoji, x, z, type) => {   // 뷰 밖 마커는 가장자리에 클램프 — 나침반처럼 방향을 알려준다
         const d = Math.hypot(x, z);
         const lim = viewR - 4;
         const k = d > lim ? lim / d : 1;
         c.globalAlpha = k < 1 ? 0.65 : 1;
-        c.fillText(emoji, px(x * k), py(z * k));
+        const sx = px(x * k), sy = py(z * k);
+        c.fillText(emoji, sx, sy);
         c.globalAlpha = 1;
+        if (type) mapIconPts.push({ type, sx, sy });   // 탭 히트용 (캔버스 좌표)
     };
-    mark('🚣', BOAT.x, BOAT.z);
-    mark('🛩️', PLANE.x, PLANE.z);
+    mark('🚣', BOAT.x, BOAT.z, 'boat');
+    mark('🛩️', PLANE.x, PLANE.z, 'plane');
     mark('⛴️', FERRY.x, FERRY.z);
     mark('🎈', BALLOON.x, BALLOON.z);
     // 펫: 조종 펫은 네비 화살표(헤딩 회전), 나머지는 점
@@ -13508,6 +13584,8 @@ function animate() {
     updateFerryHop(delta);                   // 절친 갑판 승선 아크
     updateStreaming(delta);                  // 🌊 무인도 스트리밍 — 1Hz 스캔 + 프레임당 1작업
     updateWorldMap(delta);                   // 🗺️ 지도 — 열려 있을 때만 2Hz 리드로우
+    autoReturnT += delta;
+    if (autoReturnT >= 300) { autoReturnT = 0; checkAutoReturn(); }   // 🌙 밤사이 자동 귀항 (5분 틱)
     updateShells(delta);                     // 🐚 조개 스폰/반짝/줍기 연출
     updateBalloon(delta);                    // 🎈 열기구 — 계류 살랑임/스플라인 투어/귀환
     updateBalloonHop(delta);                 // 절친 승선 큰 아크 — 데크에서 바구니로
