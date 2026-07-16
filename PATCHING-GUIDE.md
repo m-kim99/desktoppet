@@ -71,6 +71,7 @@ M 시리즈 맥북 발열로 대규모 수술을 했다. 새 코드가 지킬 �
 - 한자 스캔은 코드포인트 범위로 (정규식 리터럴 range는 한글 오탐)
 
 ## 8. 시스템별 핵심 포인터
+- **🌊 스트리밍(하이브리드 1단계)**: 코어(≤30)는 상주·불변, 해역(≤EXPLORE_R 74)은 시드 무인도가 카메라 28m 근접 시 로드/33m 이탈 시 언로드(프레임당 1작업 큐). **무인도는 ISLANDS에 push/splice — 지형·충돌·수영·낚시·페리회피 자동**. 언로드는 지오메트리만 dispose(M/gradMat 공유 재질 절대 금지), seasonGrass/PROPS(`islet:` layoutId) 정리 필수. isletFor는 순수 시드 함수 — 로드 전에도 좌표 계산 가능(streamScan 훅). 탈것 경계 상수는 EXPLORE_R 하나로 통일
 - **낚시**: 상태기계 idle→cast→wait→bite(0.65s)→hook→reel→land/miss (`updateFishingInstance`). 리그는 `_fishGear` 캐시(재생성 금지). 절친 자율 낚시 소유권 = onArrive 클로저 정체성 + began 플래그 — 다른 디렉터가 goto/busy 덮어쓰면 즉시 endAiFishing. 도감은 주인 조과 전용
 - **AI 디렉터**: releaseAI/gotoAsync/onArrive(막힘·10초 stall시 arrive-anyway — 데드락 없음), duoBusy가 듀오 연출 직렬화, ai.state: idle/walk/goto/busy/player/held
 - **보트/차**: 콜라이더가 PROPS에 push됨(boat-2/car-1). 뭍에 찍힌 정박 저장은 무시

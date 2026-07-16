@@ -1294,6 +1294,7 @@ function buildIslandMeshes(isl) {
     cliff.castShadow = true;         // islands shade the sea at low sun
     cliff.receiveShadow = true;
     stage.add(cliff);
+    return { grass, cliff };   // 🌊 스트리밍 무인도가 언로드 때 dispose할 수 있게
 }
 for (const isl of ISLANDS) buildIslandMeshes(isl);
 
@@ -5316,7 +5317,7 @@ function setManualSeason(id) {
 const OCEAN_LEVEL = -0.52;
 let oceanMesh = null;
 {
-    const inner = ISLAND_R * 0.81, outer = 40, rings = 40, segs = 112;
+    const inner = ISLAND_R * 0.81, outer = 82, rings = 48, segs = 112;   // 🌊 탐험 반경(74) 커버
     const positions = [], indices = [], fades = [], colors = [];   // fade: 수평선 밖 0 → 변위·법선 모두 원값 유지
     for (let i = 0; i <= rings; i++) {
         const r = inner * Math.pow(outer / inner, i / rings);
@@ -5324,7 +5325,7 @@ let oceanMesh = null;
             const a = (j / segs) * Math.PI * 2;
             const x = Math.cos(a) * r, z = Math.sin(a) * r;
             positions.push(x, OCEAN_LEVEL, z);
-            fades.push(1 - THREE.MathUtils.smoothstep(r, 24, 36));
+            fades.push(1 - THREE.MathUtils.smoothstep(r, 62, 76));   // 파도는 탐험 해역 전체에서 살아있게
             // 기슭 여울: 가장 가까운 섬 기슭까지의 거리로 근해를 밝고 초록끼 돌게, 원양은 살짝
             // 깊게 — 곱셈(1.0 근방) 정점색이라 낮/밤/계절 물빛(seaMat.color)과 그대로 합성된다.
             let minD = Infinity;
@@ -7048,6 +7049,17 @@ if (statsOn) window.__worldDev = {
     callFriend: () => { startPhoneCall(); return !!phoneCall; },
     shellState: () => ({ alive: shells.length, spots: shells.map((sh) => ({ t: sh.t.id, x: +sh.x.toFixed(2), z: +sh.z.toFixed(2) })), counts: shellCounts() }),
     shellSpawn: () => trySpawnShell(true),
+    stream: () => ({ loaded: isletChunks.size, islands: ISLANDS.length, queue: isletQueue.length, found: discoveredIslets.size }),
+    streamScan: (x, z, rad) => {   // 순수 스캔 — 로드 전에도 무인도 좌표를 알 수 있다 (E2E)
+        const out = [];
+        for (let cx = Math.floor((x - rad) / CHUNK); cx <= Math.floor((x + rad) / CHUNK); cx++) {
+            for (let cz = Math.floor((z - rad) / CHUNK); cz <= Math.floor((z + rad) / CHUNK); cz++) {
+                const il = isletFor(cx, cz);
+                if (il && Math.hypot(il.x - x, il.z - z) <= rad) out.push({ key: il.key, x: il.x, z: il.z, r: il.r, name: il.name, kind: il.kind || 'grass' });
+            }
+        }
+        return out;
+    },
     gotoFriend: () => { teleportToFriend(); return true; },
     social: () => ({
         calling: !!phoneCall,
@@ -7412,13 +7424,13 @@ function positionBuildRing(p) {
 function canPlace(p, x, z) {
     const pr = effR(p);
     if (p.type === 'boat') {   // 🚣 보트: 열린 물 (선석·잔교·통통호·비행기와 간섭 금지)
-        if (islandOf(x, z) >= 0 || onBridge(x, z) || Math.hypot(x, z) > 18) return false;
+        if (islandOf(x, z) >= 0 || onBridge(x, z) || Math.hypot(x, z) > EXPLORE_R) return false;
         if (Math.hypot(x - FERRY.x, z - FERRY.z) < 1.6 || window.__nearFerryPier(x, z, 1.1)) return false;
         if (Math.hypot(x - PLANE.x, z - PLANE.z) < 1.6) return false;
         return true;
     }
     if (p.type === 'plane') {   // 🛩️ 비행기: 뭍이든 물이든 (수륙양용)
-        if (Math.hypot(x, z) > 19.5) return false;
+        if (Math.hypot(x, z) > EXPLORE_R) return false;
         if (Math.hypot(x - FERRY.x, z - FERRY.z) < 1.8 || window.__nearFerryPier(x, z, 1.3)) return false;
         if (Math.hypot(x - BOAT.x, z - BOAT.z) < 1.5) return false;
         if (islandOf(x, z) < 0 && !onBridge(x, z)) return true;   // 물 위는 자유
@@ -9409,10 +9421,12 @@ window.addEventListener('blur', () => { heldKeys.clear(); resetTouchStick(); });
 const pondPropRef = PROPS.find((q) => q.type === 'pond');
 const POND_WATER_Y = terrainHeight(pondPropRef.x, pondPropRef.z) + 0.06;
 const SWIM_LEASH = 18;                           // 위성섬 + 휴양지 모래섬(중심 12.2, r 2.6)까지 수영 가능
+const EXPLORE_R = 74;                            // 🌊 하이브리드 스트리밍: 탈것 탐험 반경 (절차 무인도 해역)
 let seaHop = null;                               // climb-back tween { fx,fy,fz, tx,ty,tz, t }
 
 function playerBlocked(nx, nz) {
-    if (Math.hypot(nx, nz) > SWIM_LEASH) return true;
+    if (Math.hypot(nx, nz) > SWIM_LEASH
+        && !ISLANDS.some((il) => il.islet && Math.hypot(nx - il.x, nz - il.z) < il.r + 5)) return true;   // 🌊 무인도 기슭은 허용
     for (const q of PROPS) {
         if (q.type === 'pond') continue;                          // the pond is swimmable
         if (Math.hypot(nx - q.x, nz - q.z) < q.r) return true;
@@ -10197,7 +10211,7 @@ function waveYAt(x, z) {
 function boatBlocked(nx, nz) {
     if (Math.hypot(nx - FERRY.x, nz - FERRY.z) < 1.4) return true;   // ⛴️ 통통호 선체
     if (islandOf(nx, nz) >= 0) return true;               // 섬에 얹히지 않는다 (기슭까지는 접근)
-    if (Math.hypot(nx, nz) > 18) return true;             // 수평선 평탄 구간 전까지 (SWIM_LEASH와 동일)
+    if (Math.hypot(nx, nz) > EXPLORE_R) return true;      // 🌊 탐험 해역 끝까지
     return false;
 }
 function enterBoat() {
@@ -10508,7 +10522,7 @@ function makePlane() {
 const PLANE = { x: -3.2, z: 10.05, y: 0, heading: 3.14, vel: 0, mode: 'parked' };   // 모래섬 남쪽 마른 모래 경사(해수면 -0.45 실측 기준 건조), 기수는 열린 바다
 {   // 🔨 저장된 주차 위치 (plane-1) — 수륙양용이라 뭍·물 어디든 유효, 월드 경계 밖만 무시
     const o = savedLayout['plane-1'];
-    if (o && Number.isFinite(o.x) && Number.isFinite(o.z) && Math.hypot(o.x, o.z) <= 20.5
+    if (o && Number.isFinite(o.x) && Number.isFinite(o.z) && Math.hypot(o.x, o.z) <= EXPLORE_R
         && !window.__nearFerryPier(o.x, o.z, 1.5)) {
         PLANE.x = o.x; PLANE.z = o.z;
         if (Number.isFinite(o.rotY)) PLANE.heading = o.rotY;
@@ -10532,7 +10546,7 @@ function planeSupportY(x, z) {
 PLANE.y = planeSupportY(PLANE.x, PLANE.z);
 function planeBlocked(nx, nz) {
     // 보행 규칙(림 가드·물가 금지)은 수륙양용에 해당 없음 — 소품 원 + 집 벽 + 경계만 본다
-    if (Math.hypot(nx, nz) > 20.5) return true;                    // 수평선 전 경계 (보트와 동일 사상)
+    if (Math.hypot(nx, nz) > EXPLORE_R) return true;               // 🌊 탐험 해역 끝까지
     if (Math.hypot(nx - BOAT.x, nz - BOAT.z) < 1.1) return true;   // 정박 보트와 충돌
     if (Math.hypot(nx - FERRY.x, nz - FERRY.z) < 1.5) return true;  // 통통호 선체
     if (houseBlocked(nx, nz)) return true;                         // 집 벽 관통 방지
@@ -10711,7 +10725,7 @@ function stepPlane(delta, driver) {
         const nx = PLANE.x + Math.sin(PLANE.heading) * PLANE.vel * delta;
         const nz = PLANE.z + Math.cos(PLANE.heading) * PLANE.vel * delta;
         const rr = Math.hypot(nx, nz);
-        if (rr > 20.5) { PLANE.x = nx * (20.5 / rr); PLANE.z = nz * (20.5 / rr); }   // 경계 — 미끄러지듯 선회 유도
+        if (rr > EXPLORE_R) { PLANE.x = nx * (EXPLORE_R / rr); PLANE.z = nz * (EXPLORE_R / rr); }   // 경계 — 미끄러지듯 선회 유도
         else { PLANE.x = nx; PLANE.z = nz; }
         const sup = planeSupportY(PLANE.x, PLANE.z);
         if (PLANE.y <= sup + 0.1 && climb <= 0) {   // 터치다운
@@ -11942,6 +11956,172 @@ function updateShells(delta) {
     }
 }
 
+// ---- 🌊 하이브리드 스트리밍 1단계: 저작 코어(반경 ~30)는 오늘 그대로 상주, 그 바깥 탐험
+// 해역(~74)에 시드 절차 무인도가 카메라 근처에서만 실체화됐다 사라진다.
+// 안전 원칙: ① 코어는 스트리밍과 무관하게 100% 기존 동작 ② 생성은 프레임당 1작업(로딩 렉 금지)
+// ③ dispose는 지오메트리만(재질은 M/gradMat 공유 캐시 — 절대 dispose 금지) ④ 무인도는
+// ISLANDS에 push/splice — 지형·충돌·수영리시·페리 회피·낚시가 전부 자동으로 따라온다.
+// 시드 결정적: 같은 청크는 언제나 같은 섬 (마크의 시드 문법). ----
+const CHUNK = 24;
+const ISLET_LOAD_R = 28, ISLET_DROP_R = 33;   // 코어(controls.target≈원점)에선 로드도 잔류도 없게 — 최근접 무인도 d≥34
+const ISLET_NAMES = ['달팽이', '산들', '조약돌', '물안개', '별빛', '너울', '노을', '반딧', '소라', '구름', '솔바람', '흰모래', '거북', '물결', '몽글', '아늑'];
+const isletChunks = new Map();   // 'cx,cz' → { islet, grass, cliff, dress }
+const isletQueue = [];           // { op: 'load'|'unload', key, islet? }
+const isletQueued = new Set();
+let discoveredIslets = new Set();
+try { discoveredIslets = new Set(JSON.parse(localStorage.getItem('world-discover') || '[]')); } catch (e) {}
+function isletFor(cx, cz) {   // 순수 함수 — 로드 여부와 무관하게 같은 답 (시드 결정적)
+    const seed = (((cx * 73856093) ^ (cz * 19349663)) >>> 0) % 2147483645 + 1;
+    const rng = seededRand(seed);
+    if (rng() > 0.24) return null;   // 청크 24%에만 섬 — 항해 1~2분에 하나꼴
+    const x = (cx + 0.2 + rng() * 0.6) * CHUNK;
+    const z = (cz + 0.2 + rng() * 0.6) * CHUNK;
+    const d = Math.hypot(x, z);
+    if (d < 34 || d > EXPLORE_R - 4) return null;   // 코어 버퍼 밖 ~ 해역 끝 안
+    const islet = {
+        x: +x.toFixed(2), z: +z.toFixed(2), r: +(1.5 + rng() * 1.3).toFixed(2),
+        islet: true, seed, key: `${cx},${cz}`,
+        name: ISLET_NAMES[Math.floor(rng() * ISLET_NAMES.length)] + '섬',
+    };
+    if (rng() < 0.4) islet.kind = 'sand';
+    return islet;
+}
+function makeIsletDress(islet) {   // 침엽수·바위 1~3점 — 재질 공유 버킷 2메시로 병합
+    const rng = seededRand(islet.seed + 977);
+    const group = new THREE.Group();
+    const colliders = [];
+    const grad = [], rocks = [];
+    const n = 1 + Math.floor(rng() * 3);
+    for (let i = 0; i < n; i++) {
+        const a = rng() * Math.PI * 2;
+        const d = rng() * Math.max(0.2, islet.r - 0.9);
+        const x = islet.x + Math.cos(a) * d, z = islet.z + Math.sin(a) * d;
+        const y = terrainHeight(x, z);
+        if (y < 0.02) continue;   // 모래섬 젖은 링 회피
+        if (rng() < 0.62) {   // 야생 침엽수 (사계절 상록 — 계절 리틴트 불필요)
+            const h = 0.5 + rng() * 0.35;
+            const trunkGeo = new THREE.CylinderGeometry(0.045, 0.06, 0.3, 7);
+            trunkGeo.translate(x - islet.x, y + 0.15, z - islet.z);
+            grad.push(bakeGrad(trunkGeo, 0x8a6647, 0x6f5238, { curve: 1.2 }));
+            for (let t = 0; t < 3; t++) {
+                const coneGeo = new THREE.ConeGeometry(0.42 - t * 0.11, h * 0.55, 9);
+                coneGeo.translate(x - islet.x, y + 0.42 + t * h * 0.32, z - islet.z);
+                grad.push(bakeGrad(coneGeo, 0x5f9e48, 0x3c6e30, { curve: 1.1 }));
+            }
+            colliders.push({ type: 'islettree', x, z, rotY: 0, r: 0.35, layoutId: `islet:${islet.key}:${i}` });
+        } else {   // 풍화 바위
+            const rockGeo = new THREE.IcosahedronGeometry(0.22 + rng() * 0.14, 0);
+            rockGeo.scale(1, 0.72, 1);
+            rockGeo.rotateY(rng() * Math.PI);
+            rockGeo.translate(x - islet.x, y + 0.1, z - islet.z);
+            rocks.push(rockGeo);
+        }
+    }
+    if (grad.length) {
+        const m = new THREE.Mesh(mergeGeometries(grad, false), gradMat);
+        m.castShadow = true; m.receiveShadow = true;
+        group.add(m);
+    }
+    if (rocks.length) {
+        const m = new THREE.Mesh(mergeGeometries(rocks, false), M(0x9a9a92));
+        m.castShadow = true; m.receiveShadow = true;
+        group.add(m);
+    }
+    group.position.set(islet.x, 0, islet.z);
+    return { group, colliders };
+}
+function loadIslet(key, islet) {
+    if (isletChunks.has(key)) return;
+    ISLANDS.push(islet);                       // 지형·충돌·수영·낚시·페리 회피가 이 배열을 읽는다
+    const meshes = buildIslandMeshes(islet);   // 저작 섬과 동일 퀄리티 (스커트·절벽/해변)
+    const dress = makeIsletDress(islet);
+    stage.add(dress.group);
+    for (const c of dress.colliders) PROPS.push(c);
+    const entry = { islet, grass: meshes.grass, cliff: meshes.cliff, dress, rise: 0 };
+    for (const o of [entry.grass, entry.cliff, entry.dress.group]) o.position.y -= 1.5;   // 수평선 아래에서 떠오른다
+    isletChunks.set(key, entry);
+}
+function unloadIslet(key) {
+    const e = isletChunks.get(key);
+    if (!e) return;
+    // 펫이 그 섬(또는 근해)에 있으면 보류 — 다음 틱 재시도
+    if (pets.some((q) => Math.hypot(q.mover.position.x - e.islet.x, q.mover.position.z - e.islet.z) < e.islet.r + 6)) return;
+    stage.remove(e.grass, e.cliff, e.dress.group);
+    e.grass.geometry.dispose();
+    e.grass.material.dispose();      // 섬별 유니크 재질 (buildIslandMeshes가 생성)
+    e.cliff.geometry.dispose();
+    e.cliff.material.dispose();
+    e.dress.group.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });   // 재질은 공유 캐시 — dispose 금지
+    const gi = seasonGrass.indexOf(e.grass);
+    if (gi >= 0) seasonGrass.splice(gi, 1);
+    const ii = ISLANDS.indexOf(e.islet);
+    if (ii >= 0) ISLANDS.splice(ii, 1);
+    for (let i = PROPS.length - 1; i >= 0; i--) {
+        if (PROPS[i].layoutId && PROPS[i].layoutId.startsWith(`islet:${key}:`)) PROPS.splice(i, 1);
+    }
+    isletChunks.delete(key);
+}
+function refreshIsletChunks() {
+    const tx = controls.target.x, tz = controls.target.z;
+    const want = new Map();
+    const c0x = Math.floor((tx - ISLET_LOAD_R) / CHUNK), c1x = Math.floor((tx + ISLET_LOAD_R) / CHUNK);
+    const c0z = Math.floor((tz - ISLET_LOAD_R) / CHUNK), c1z = Math.floor((tz + ISLET_LOAD_R) / CHUNK);
+    for (let cx = c0x; cx <= c1x; cx++) {
+        for (let cz = c0z; cz <= c1z; cz++) {
+            const islet = isletFor(cx, cz);
+            if (islet && Math.hypot(islet.x - tx, islet.z - tz) < ISLET_LOAD_R) want.set(islet.key, islet);
+        }
+    }
+    for (const [key, islet] of want) {
+        if (!isletChunks.has(key) && !isletQueued.has(key)) {
+            isletQueued.add(key);
+            isletQueue.push({ op: 'load', key, islet });
+        }
+    }
+    for (const [key, e] of isletChunks) {
+        if (!want.has(key) && Math.hypot(e.islet.x - tx, e.islet.z - tz) > ISLET_DROP_R && !isletQueued.has(key)) {
+            isletQueued.add(key);
+            isletQueue.push({ op: 'unload', key });
+        }
+    }
+}
+let isletTickT = 0;
+function updateStreaming(delta) {
+    isletTickT += delta;
+    if (isletTickT >= 1.0) {   // 1Hz 스캔 — 청크 rng 몇십 개 평가 (사실상 무비용)
+        isletTickT = 0;
+        refreshIsletChunks();
+        // 🏝️ 발견: 조종 펫이 무인도에 첫 상륙
+        if (possessed) {
+            const idx = islandOf(possessed.mover.position.x, possessed.mover.position.z);
+            const il = idx >= 0 ? ISLANDS[idx] : null;
+            if (il && il.islet && !discoveredIslets.has(il.key)) {
+                discoveredIslets.add(il.key);
+                try { localStorage.setItem('world-discover', JSON.stringify([...discoveredIslets])); } catch (e) {}
+                fishFanfare();
+                showToast(`🏝️ 새 섬 발견 — ${il.name}! (${discoveredIslets.size}번째)`);
+                logWorldEvent(`수평선 너머 ${il.name}을 발견했다! 🏝️ (${discoveredIslets.size}번째 무인도)`);
+                maybeProactive(null, `주인과 수평선 너머 무인도 "${il.name}"을 발견했다! 우리가 ${discoveredIslets.size}번째로 찾은 섬이다!`);
+            }
+        }
+    }
+    const job = isletQueue.shift();   // 프레임당 1작업 — 로딩 스파이크 금지 (발열 §1)
+    if (job) {
+        isletQueued.delete(job.key);
+        if (job.op === 'load') loadIslet(job.key, job.islet);
+        else unloadIslet(job.key);
+    }
+    for (const e of isletChunks.values()) {   // 🏝️ 떠오름 연출 — 팝인을 "발견"으로 바꾼다
+        if (e.rise >= 1) continue;
+        e.rise = Math.min(1, e.rise + delta / 0.9);
+        const k = e.rise * e.rise * (3 - 2 * e.rise);
+        const y = -1.5 * (1 - k);
+        e.grass.position.y = y;
+        e.cliff.position.y = y;
+        e.dress.group.position.y = y;
+    }
+}
+
 // ---- 🎣 낚시 (동숲식 — 어떤 물가든): 독 🎣로 낚싯대를 들고, 물을 클릭해 캐스팅, 입질 타이밍에
 // ⌘/클릭으로 챔질. 모든 동작은 이 파일의 전용 안무(아래 updateFishing) — 캔 모션 재활용 없음.
 // 어종은 절차 생성(외부 에셋 0), 도감은 localStorage 'world-fishdex'. ----
@@ -12308,7 +12488,7 @@ function aiCastNow(f) {
         for (const reach of [1.7, 2.4]) {
             const cx = m.position.x + Math.sin(ang) * reach, cz = m.position.z + Math.cos(ang) * reach;
             const water = Math.hypot(cx - pondPropRef.x, cz - pondPropRef.z) < 0.55 ? 'pond'
-                : (islandOf(cx, cz) < 0 && Math.hypot(cx, cz) < 22 ? 'sea' : null);
+                : (islandOf(cx, cz) < 0 && Math.hypot(cx, cz) < EXPLORE_R ? 'sea' : null);
             if (water) {
                 m.rotation.y = ang;
                 f.aiActed = false;
@@ -12408,7 +12588,7 @@ function tryCastAtScreen() {
     const mp = possessed.mover.position;
     const waterAt = (x, z) => {
         if (Math.hypot(x - pondPropRef.x, z - pondPropRef.z) < 0.55) return 'pond';
-        if (islandOf(x, z) < 0 && Math.hypot(x, z) < 22) return 'sea';
+        if (islandOf(x, z) < 0 && Math.hypot(x, z) < EXPLORE_R) return 'sea';
         return null;
     };
     _fishPlane.constant = -POND_WATER_Y;
@@ -12418,7 +12598,7 @@ function tryCastAtScreen() {
     else {
         _fishPlane.constant = -(OCEAN_LEVEL + tideOffset());
         pt = raycaster.ray.intersectPlane(_fishPlane, _fishHit);
-        if (pt && islandOf(pt.x, pt.z) < 0 && Math.hypot(pt.x, pt.z) < 22) water = 'sea';
+        if (pt && islandOf(pt.x, pt.z) < 0 && Math.hypot(pt.x, pt.z) < EXPLORE_R) water = 'sea';
     }
     if (water) {
         const d = Math.hypot(pt.x - mp.x, pt.z - mp.z);
@@ -13200,6 +13380,7 @@ function animate() {
     updateBoatHop(delta);                    // 절친 승선 아크 — 물가에서 뱃머리로 폴짝
     updateFerry(delta);                      // ⛴️ 통통호 — 정박/항해/정차 서비스
     updateFerryHop(delta);                   // 절친 갑판 승선 아크
+    updateStreaming(delta);                  // 🌊 무인도 스트리밍 — 1Hz 스캔 + 프레임당 1작업
     updateShells(delta);                     // 🐚 조개 스폰/반짝/줍기 연출
     updateBalloon(delta);                    // 🎈 열기구 — 계류 살랑임/스플라인 투어/귀환
     updateBalloonHop(delta);                 // 절친 승선 큰 아크 — 데크에서 바구니로
