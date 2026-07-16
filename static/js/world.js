@@ -7046,6 +7046,8 @@ if (statsOn) window.__worldDev = {
     ferryState: () => ({ mode: FERRY.mode, x: +FERRY.x.toFixed(2), z: +FERRY.z.toFixed(2), u: +FERRY.u.toFixed(3), riding: !!ferryRide, rider: ferryRide && ferryRide.p ? ferryRide.p.name : null, friend: ferryRide && ferryRide.friend ? ferryRide.friend.name : null, dwellT: +FERRY.dwellT.toFixed(1) }),
     ferrySummon: () => { summonFerryFriend(); return !!ferryHop; },
     callFriend: () => { startPhoneCall(); return !!phoneCall; },
+    shellState: () => ({ alive: shells.length, spots: shells.map((sh) => ({ t: sh.t.id, x: +sh.x.toFixed(2), z: +sh.z.toFixed(2) })), counts: shellCounts() }),
+    shellSpawn: () => trySpawnShell(true),
     gotoFriend: () => { teleportToFriend(); return true; },
     social: () => ({
         calling: !!phoneCall,
@@ -9332,6 +9334,10 @@ function doInteract() {
         && Math.hypot(possessed.mover.position.x - FERRY.x, possessed.mover.position.z - FERRY.z) < 1.7) {
         enterFerry(possessed);   // ⛴️ 정박 중 통통호 — 갑판으로 (본섬 출항 / 모래섬 합류)
         return;
+    }
+    {   // 🐚 조개 줍기 — 곁에 있으면 ⌘
+        const sh = nearestShell(0.85);
+        if (sh) { pickShell(sh); return; }
     }
     if (handHold) { releaseHandHold(); return; }
     if (tryGrabHand()) return;
@@ -11799,6 +11805,143 @@ function updateFerryPose() {   // 벤치 앉기 — 다리 앞접기 (엔티티 
     }
 }
 
+// ---- 🐚 조개줍기: 휴양지 모래섬 마른 모래에 조개가 드물게 씻겨온다 — 동시 최대 3개,
+// 스폰 롤 2~4분(65%)이라 평균 1~2개. 조종 펫이 곁에서 ⌘ = 줍기(둥실 떠오르며 반짝).
+// 진주조개는 레어(가중 8) — 팡파르 + 선제대화. 컬렉션은 localStorage 'world-shells'. ----
+const SHELL_TYPES = [
+    { id: 'scallop', ko: '가리비',   w: 40, col: 0xf2d8b8 },
+    { id: 'conch',   ko: '소라',     w: 30, col: 0xe8b090 },
+    { id: 'clam',    ko: '분홍조개', w: 22, col: 0xf0c2cc },
+    { id: 'pearl',   ko: '진주조개', w: 8,  col: 0xfaf4e8, rare: true },
+];
+let shells = [];        // { t, x, z, mesh }
+let shellFly = [];      // 줍기 연출 (둥실 + 축소)
+let shellNextAt = 50;   // 첫 시도 50초 후
+let shellGlintAt = 7;
+function shellCounts() {
+    try { return JSON.parse(localStorage.getItem('world-shells') || '{}'); } catch (e) { return {}; }
+}
+function makeShellMesh(t) {
+    const g = new THREE.Group();
+    if (t.id === 'conch') {   // 소라: 통통한 몸 + 뾰족 나선 팁
+        const body = new THREE.Mesh(new THREE.SphereGeometry(0.045, 9, 7), M(t.col));
+        body.scale.set(1, 0.75, 0.8);
+        body.position.y = 0.032;
+        g.add(body);
+        const tip = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.06, 8), M(0xc89070));
+        tip.rotation.z = -1.25;
+        tip.position.set(0.055, 0.035, 0);
+        g.add(tip);
+    } else if (t.id === 'pearl') {   // 진주조개: 벌어진 두 껍데기 + 진주알
+        for (const [ry, py] of [[0, 0.012], [-2.5, 0.05]]) {
+            const half = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), M(t.col));
+            half.scale.set(1, 0.42, 0.9);
+            half.rotation.x = ry;
+            half.position.y = py;
+            g.add(half);
+        }
+        const bead = new THREE.Mesh(new THREE.SphereGeometry(0.018, 10, 8), M(0xffffff));
+        bead.position.y = 0.032;
+        g.add(bead);
+    } else {   // 가리비/분홍조개: 눌린 부채 껍데기 (기울여 모래에 반쯤 얹힌 느낌)
+        const shell = new THREE.Mesh(new THREE.SphereGeometry(0.052, 10, 7), M(t.col));
+        shell.scale.set(1, 0.3, 0.88);
+        shell.position.y = 0.02;
+        shell.rotation.z = 0.25;
+        g.add(shell);
+        const hinge = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 6), M(0xc89070));
+        hinge.position.set(-0.045, 0.018, 0);
+        g.add(hinge);
+    }
+    g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    return g;
+}
+function trySpawnShell(force = false) {
+    if (shells.length >= 3) return false;
+    if (!force && Math.random() > 0.65) return false;   // 빈손 롤 — 희귀감
+    const SAND = ISLANDS[4];
+    for (let i = 0; i < 14; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const d = 0.9 + Math.random() * 1.05;   // 마른 모래 링 (물가선 ~2.05 안쪽)
+        const x = SAND.x + Math.sin(a) * d, z = SAND.z + Math.cos(a) * d;
+        if (terrainHeight(x, z) < -0.3) continue;                                    // 젖은 모래 제외
+        if (Math.hypot(x - PLANE.x, z - PLANE.z) < 1.3) continue;                    // 주차 비행기
+        if (shells.some((sh) => Math.hypot(x - sh.x, z - sh.z) < 0.7)) continue;
+        let clear = true;
+        for (const q of PROPS) {
+            if (q.r > 0 && Math.hypot(x - q.x, z - q.z) < q.r + 0.35) { clear = false; break; }
+        }
+        if (!clear) continue;
+        const roll = Math.random() * SHELL_TYPES.reduce((sum, t) => sum + t.w, 0);
+        let acc = 0, type = SHELL_TYPES[0];
+        for (const t of SHELL_TYPES) { acc += t.w; if (roll < acc) { type = t; break; } }
+        const mesh = makeShellMesh(type);
+        mesh.position.set(x, terrainHeight(x, z) + 0.005, z);
+        mesh.rotation.y = Math.random() * Math.PI * 2;
+        stage.add(mesh);
+        shells.push({ t: type, x, z, mesh });
+        return true;
+    }
+    return false;
+}
+function nearestShell(maxD) {
+    if (!possessed) return null;
+    let best = null, bd = maxD;
+    for (const sh of shells) {
+        const d = Math.hypot(sh.x - possessed.mover.position.x, sh.z - possessed.mover.position.z);
+        if (d < bd) { bd = d; best = sh; }
+    }
+    return best;
+}
+function pickShell(sh) {
+    shells.splice(shells.indexOf(sh), 1);
+    shellFly.push({ mesh: sh.mesh, t: 0, x: sh.x, z: sh.z });
+    const counts = shellCounts();
+    counts[sh.t.id] = (counts[sh.t.id] || 0) + 1;
+    try { localStorage.setItem('world-shells', JSON.stringify(counts)); } catch (e) {}
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    const spr = glowSprite(sh.t.rare ? 0xfff1cf : 0x9be7ff, 0.14, 0.9);
+    spr.position.set(sh.x, sh.mesh.position.y + 0.25, sh.z);
+    scene.add(spr);
+    hugBurst.push({ spr, vx: 0, vy: 0.4, vz: 0, t: 0.45 });
+    if (sh.t.rare) {
+        fishFanfare();
+        showToast(`🐚✨ 진주조개다!! (컬렉션 ${total}개째)`);
+        maybeProactive(null, '주인이 모래섬에서 진주조개를 주웠다! 반짝반짝하다!');
+    } else {
+        playBuffer(swishBuf, { vol: 0.3, rate: 1.7, filterFreq: 1600 });
+        showToast(`🐚 ${sh.t.ko} 주웠다! (컬렉션 ${total}개째)`);
+    }
+    logWorldEvent(`모래섬에서 ${sh.t.ko}를 주웠다 🐚 (총 ${total}개)`);
+}
+function updateShells(delta) {
+    shellNextAt -= delta;
+    if (shellNextAt <= 0) {
+        shellNextAt = 100 + Math.random() * 140;   // 다음 롤 2~4분
+        trySpawnShell();
+    }
+    shellGlintAt -= delta;   // 은은한 발견 힌트 — 7초마다 아무 조개 하나 반짝
+    if (shellGlintAt <= 0) {
+        shellGlintAt = 7;
+        if (shells.length) {
+            const sh = shells[Math.floor(Math.random() * shells.length)];
+            const spr = glowSprite(0xfff6dc, 0.07, 0.7);
+            spr.position.set(sh.x, sh.mesh.position.y + 0.09, sh.z);
+            scene.add(spr);
+            hugBurst.push({ spr, vx: 0, vy: 0.12, vz: 0, t: 0.35 });
+        }
+    }
+    for (let i = shellFly.length - 1; i >= 0; i--) {   // 줍기 연출: 둥실 + 축소 → 제거
+        const f = shellFly[i];
+        f.t += delta;
+        const k = Math.min(1, f.t / 0.6);
+        f.mesh.position.y += delta * 0.7;
+        f.mesh.rotation.y += delta * 6;
+        f.mesh.scale.setScalar(1 - k * 0.9);
+        if (k >= 1) { stage.remove(f.mesh); shellFly.splice(i, 1); }
+    }
+}
+
 // ---- 🎣 낚시 (동숲식 — 어떤 물가든): 독 🎣로 낚싯대를 들고, 물을 클릭해 캐스팅, 입질 타이밍에
 // ⌘/클릭으로 챔질. 모든 동작은 이 파일의 전용 안무(아래 updateFishing) — 캔 모션 재활용 없음.
 // 어종은 절차 생성(외부 에셋 0), 도감은 localStorage 'world-fishdex'. ----
@@ -11991,8 +12134,7 @@ function fishdexIcons() {
     sc.add(sun);
     const holder = new THREE.Group();
     sc.add(holder);
-    for (const sp of FISH_SPECIES) {
-        const mesh = makeFishMesh(sp, (sp.len[0] + sp.len[1]) / 2);
+    const snap = (key, mesh) => {
         holder.add(mesh);
         const box = new THREE.Box3().setFromObject(holder);   // holder는 이 시점 스케일 1·원점
         const c = box.getCenter(new THREE.Vector3());
@@ -12000,11 +12142,13 @@ function fishdexIcons() {
         holder.scale.setScalar(k);
         holder.position.set(-c.x * k, -c.y * k, -c.z * k);
         rd.render(sc, cam);
-        _dexIcons[sp.id] = rd.domElement.toDataURL('image/png');
+        _dexIcons[key] = rd.domElement.toDataURL('image/png');
         holder.remove(mesh);
         holder.scale.setScalar(1);
         holder.position.set(0, 0, 0);
-    }
+    };
+    for (const sp of FISH_SPECIES) snap(sp.id, makeFishMesh(sp, (sp.len[0] + sp.len[1]) / 2));
+    for (const t of SHELL_TYPES) snap(`shell:${t.id}`, makeShellMesh(t));   // 🐚 조개도 같은 세션에서
     rd.dispose();
     rd.forceContextLoss();
     return _dexIcons;
@@ -12042,6 +12186,34 @@ function renderFishdex() {
         grid.appendChild(cell);
     }
     dexUI.body.appendChild(grid);
+    // ---- 🐚 조개 컬렉션 (모래섬 해변) ----
+    const shellsHave = shellCounts();
+    const gotShells = SHELL_TYPES.filter((t) => shellsHave[t.id]).length;
+    const shHead = document.createElement('div');
+    shHead.style.cssText = 'font-size:12px; font-weight:700; opacity:0.82; margin-top:6px; border-top:1px solid rgba(120,90,50,0.2); padding-top:8px;';
+    shHead.textContent = `🐚 조개 컬렉션 ${gotShells} / ${SHELL_TYPES.length}${gotShells >= SHELL_TYPES.length ? ' — 완성! 🎉' : ''}`;
+    dexUI.body.appendChild(shHead);
+    const shGrid = document.createElement('div');
+    shGrid.style.cssText = 'display:grid; grid-template-columns:repeat(4, 1fr); gap:7px;';
+    for (const t of SHELL_TYPES) {
+        const n = shellsHave[t.id] || 0;
+        const cell = document.createElement('div');
+        cell.style.cssText = 'background:rgba(120,90,50,0.09); border-radius:10px; padding:6px 3px 7px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:2px;';
+        const img = document.createElement('img');
+        img.src = icons[`shell:${t.id}`];
+        img.style.cssText = `width:44px; height:44px;${n ? '' : ' filter:brightness(0) opacity(0.5);'}`;
+        cell.appendChild(img);
+        const nm = document.createElement('div');
+        nm.style.cssText = 'font-size:10.5px; font-weight:700;';
+        nm.textContent = n ? t.ko : '???';
+        cell.appendChild(nm);
+        const sub = document.createElement('div');
+        sub.style.cssText = 'font-size:9px; opacity:0.72; line-height:1.25; min-height:12px;';
+        sub.textContent = n ? `${t.rare ? '★ ' : ''}${n}개` : '해변에서';
+        cell.appendChild(sub);
+        shGrid.appendChild(cell);
+    }
+    dexUI.body.appendChild(shGrid);
 }
 function toggleFishdex() {
     if (dexUI.panel.style.display === 'flex') { dexUI.panel.style.display = 'none'; return; }
@@ -13028,6 +13200,7 @@ function animate() {
     updateBoatHop(delta);                    // 절친 승선 아크 — 물가에서 뱃머리로 폴짝
     updateFerry(delta);                      // ⛴️ 통통호 — 정박/항해/정차 서비스
     updateFerryHop(delta);                   // 절친 갑판 승선 아크
+    updateShells(delta);                     // 🐚 조개 스폰/반짝/줍기 연출
     updateBalloon(delta);                    // 🎈 열기구 — 계류 살랑임/스플라인 투어/귀환
     updateBalloonHop(delta);                 // 절친 승선 큰 아크 — 데크에서 바구니로
     updatePlaneIdle();                       // 🛩️ 주차 비행기 (물 위면 살랑임, 프로펠러 정지)
