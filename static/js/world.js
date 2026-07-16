@@ -7048,8 +7048,24 @@ if (statsOn) window.__worldDev = {
     ferryState: () => ({ mode: FERRY.mode, x: +FERRY.x.toFixed(2), z: +FERRY.z.toFixed(2), u: +FERRY.u.toFixed(3), riding: !!ferryRide, rider: ferryRide && ferryRide.p ? ferryRide.p.name : null, friend: ferryRide && ferryRide.friend ? ferryRide.friend.name : null, dwellT: +FERRY.dwellT.toFixed(1) }),
     ferrySummon: () => { summonFerryFriend(); return !!ferryHop; },
     callFriend: () => { startPhoneCall(); return !!phoneCall; },
-    shellState: () => ({ alive: shells.length, spots: shells.map((sh) => ({ t: sh.t.id, x: +sh.x.toFixed(2), z: +sh.z.toFixed(2) })), counts: shellCounts() }),
+    shellState: () => ({ alive: shells.length, spots: shells.map((sh) => ({ t: sh.t.id, x: +sh.x.toFixed(2), z: +sh.z.toFixed(2), il: sh.islet || null })), counts: shellCounts() }),
     shellSpawn: () => trySpawnShell(true),
+    shellDiag: () => {   // 스폰 링 가용률 분해 — 배치 튜닝용
+        const SAND = ISLANDS[4];
+        const out = { ok: 0, wet: 0, plane: 0, blockers: {}, shellsNow: shells.length, nextAt: Math.round(shellNextAt) };
+        for (let i = 0; i < 4000; i++) {
+            const a = Math.random() * Math.PI * 2;
+            const d = 0.9 + Math.random() * 1.05;
+            const x = SAND.x + Math.sin(a) * d, z = SAND.z + Math.cos(a) * d;
+            if (terrainHeight(x, z) < -0.3) { out.wet++; continue; }
+            if (Math.hypot(x - PLANE.x, z - PLANE.z) < 1.3) { out.plane++; continue; }
+            let hit = null;
+            for (const q of PROPS) { if (q.r > 0 && Math.hypot(x - q.x, z - q.z) < q.r + 0.35) { hit = q; break; } }
+            if (hit) { const k = hit.layoutId || hit.kind || 'prop?'; out.blockers[k] = (out.blockers[k] || 0) + 1; continue; }
+            out.ok++;
+        }
+        return out;
+    },
     stream: () => ({ loaded: isletChunks.size, islands: ISLANDS.length, queue: isletQueue.length, found: discoveredIslets.size }),
     mapToggle: () => { toggleWorldMap(); return mapOpen; },
     recall: (t) => recallVehicle(t),
@@ -7059,8 +7075,16 @@ if (statsOn) window.__worldDev = {
         for (let cx = Math.floor((x - rad) / CHUNK); cx <= Math.floor((x + rad) / CHUNK); cx++) {
             for (let cz = Math.floor((z - rad) / CHUNK); cz <= Math.floor((z + rad) / CHUNK); cz++) {
                 const il = isletFor(cx, cz);
-                if (il && Math.hypot(il.x - x, il.z - z) <= rad) out.push({ key: il.key, x: il.x, z: il.z, r: il.r, name: il.name, kind: il.kind || 'grass' });
+                if (il && Math.hypot(il.x - x, il.z - z) <= rad) out.push({ key: il.key, x: il.x, z: il.z, r: il.r, name: il.name, kind: il.kind || 'grass', theme: il.theme, treasure: !!il.treasure });
             }
+        }
+        return out;
+    },
+    isletTreasure: () => {   // 로드된 보물섬 상태 — 표식 좌표·파냈는지 (E2E)
+        const out = [];
+        for (const e of isletChunks.values()) {
+            if (!e.islet.treasure) continue;
+            out.push({ key: e.islet.key, name: e.islet.name, dug: isletDug(e.islet.key), mark: !!e.dress.markGroup, x: e.dress.digSpot ? +e.dress.digSpot.x.toFixed(2) : null, z: e.dress.digSpot ? +e.dress.digSpot.z.toFixed(2) : null });
         }
         return out;
     },
@@ -9352,6 +9376,15 @@ function doInteract() {
         && Math.hypot(possessed.mover.position.x - FERRY.x, possessed.mover.position.z - FERRY.z) < 1.7) {
         enterFerry(possessed);   // ⛴️ 정박 중 통통호 — 갑판으로 (본섬 출항 / 모래섬 합류)
         return;
+    }
+    if (!isletDigDoing) {   // ⛏️ 무인도 보물 — ✕ 표식 곁 ⌘는 명백한 파기 의도 (조개보다 먼저)
+        for (const e of isletChunks.values()) {
+            if (e.dress.digSpot
+                && Math.hypot(possessed.mover.position.x - e.dress.digSpot.x, possessed.mover.position.z - e.dress.digSpot.z) < 0.9) {
+                startIsletDig(possessed, e);
+                return;
+            }
+        }
     }
     {   // 🐚 조개 줍기 — 곁에 있으면 ⌘
         const sh = nearestShell(0.85);
@@ -11751,6 +11784,7 @@ function updateFerry(delta) {
         }
     } else if (FERRY.mode === 'sail') {
         const rt = FERRY.route;
+        if (!rt) { console.warn('[ferry] sail without route — self-heal to docked'); FERRY.mode = 'docked'; return; }   // 불변식 가드: 동결 대신 복구
         FERRY.u += (rt.speed * delta) / rt.len;
         if (!rt.stopped && FERRY.u >= rt.stopU) {   // 모래섬 정박
             rt.stopped = true;
@@ -11840,8 +11874,9 @@ const SHELL_TYPES = [
 ];
 let shells = [];        // { t, x, z, mesh }
 let shellFly = [];      // 줍기 연출 (둥실 + 축소)
-let shellNextAt = 50;   // 첫 시도 50초 후
+let shellNextAt = 50;   // 첫 시도 50초 후 (시딩과 별개 — 3개까지 리필용)
 let shellGlintAt = 7;
+let shellSeeded = false;   // 로드 직후 1~2개 즉시 — 레이아웃·소품이 다 선 첫 프레임에 심는다
 function shellCounts() {
     try { return JSON.parse(localStorage.getItem('world-shells') || '{}'); } catch (e) { return {}; }
 }
@@ -11889,7 +11924,7 @@ function trySpawnShell(force = false) {
         const d = 0.9 + Math.random() * 1.05;   // 마른 모래 링 (물가선 ~2.05 안쪽)
         const x = SAND.x + Math.sin(a) * d, z = SAND.z + Math.cos(a) * d;
         if (terrainHeight(x, z) < -0.3) continue;                                    // 젖은 모래 제외
-        if (Math.hypot(x - PLANE.x, z - PLANE.z) < 1.3) continue;                    // 주차 비행기
+        if (Math.hypot(x - PLANE.x, z - PLANE.z) < 0.9) continue;                    // 주차 비행기
         if (shells.some((sh) => Math.hypot(x - sh.x, z - sh.z) < 0.7)) continue;
         let clear = true;
         for (const q of PROPS) {
@@ -11919,6 +11954,7 @@ function nearestShell(maxD) {
 }
 function pickShell(sh) {
     shells.splice(shells.indexOf(sh), 1);
+    if (sh.islet) isletShellPicked.add(`${sh.islet}:${sh.slot}`);   // 세션 내 재방문 시 재생성 방지
     shellFly.push({ mesh: sh.mesh, t: 0, x: sh.x, z: sh.z });
     const counts = shellCounts();
     counts[sh.t.id] = (counts[sh.t.id] || 0) + 1;
@@ -11928,29 +11964,39 @@ function pickShell(sh) {
     spr.position.set(sh.x, sh.mesh.position.y + 0.25, sh.z);
     scene.add(spr);
     hugBurst.push({ spr, vx: 0, vy: 0.4, vz: 0, t: 0.45 });
+    const where = sh.islet ? '무인도' : '모래섬';
     if (sh.t.rare) {
         fishFanfare();
         showToast(`🐚✨ 진주조개다!! (컬렉션 ${total}개째)`);
-        maybeProactive(null, '주인이 모래섬에서 진주조개를 주웠다! 반짝반짝하다!');
+        maybeProactive(null, `주인이 ${where}에서 진주조개를 주웠다! 반짝반짝하다!`);
     } else {
         playBuffer(swishBuf, { vol: 0.3, rate: 1.7, filterFreq: 1600 });
         showToast(`🐚 ${sh.t.ko} 주웠다! (컬렉션 ${total}개째)`);
     }
-    logWorldEvent(`모래섬에서 ${sh.t.ko}를 주웠다 🐚 (총 ${total}개)`);
+    logWorldEvent(`${where}에서 ${sh.t.ko}를 주웠다 🐚 (총 ${total}개)`);
 }
 function updateShells(delta) {
+    if (!shellSeeded) {   // 첫 프레임 시딩 — 켤 때마다 해변이 빈 모래밭에서 시작하던 체감 버그의 수정
+        shellSeeded = true;
+        trySpawnShell(true);
+        if (Math.random() < 0.7) trySpawnShell(true);
+    }
     shellNextAt -= delta;
     if (shellNextAt <= 0) {
         shellNextAt = 100 + Math.random() * 140;   // 다음 롤 2~4분
         trySpawnShell();
     }
-    shellGlintAt -= delta;   // 은은한 발견 힌트 — 7초마다 아무 조개 하나 반짝
+    shellGlintAt -= delta;   // 은은한 발견 힌트 — 7초마다 조개/보물 표식 하나 반짝
     if (shellGlintAt <= 0) {
         shellGlintAt = 7;
-        if (shells.length) {
-            const sh = shells[Math.floor(Math.random() * shells.length)];
+        const spots = shells.map((sh) => ({ x: sh.x, y: sh.mesh.position.y + 0.09, z: sh.z }));
+        for (const e of isletChunks.values()) {
+            if (e.dress.digSpot) spots.push({ x: e.dress.digSpot.x, y: terrainHeight(e.dress.digSpot.x, e.dress.digSpot.z) + 0.12, z: e.dress.digSpot.z });
+        }
+        if (spots.length) {
+            const s = spots[Math.floor(Math.random() * spots.length)];
             const spr = glowSprite(0xfff6dc, 0.07, 0.7);
-            spr.position.set(sh.x, sh.mesh.position.y + 0.09, sh.z);
+            spr.position.set(s.x, s.y, s.z);
             scene.add(spr);
             hugBurst.push({ spr, vx: 0, vy: 0.12, vz: 0, t: 0.35 });
         }
@@ -11983,7 +12029,7 @@ try { discoveredIslets = new Set(JSON.parse(localStorage.getItem('world-discover
 function isletFor(cx, cz) {   // 순수 함수 — 로드 여부와 무관하게 같은 답 (시드 결정적)
     const seed = (((cx * 73856093) ^ (cz * 19349663)) >>> 0) % 2147483645 + 1;
     const rng = seededRand(seed);
-    if (rng() > 0.24) return null;   // 청크 24%에만 섬 — 항해 1~2분에 하나꼴
+    if (rng() > 0.32) return null;   // 청크 32%에만 섬 — 항해 1~2분에 하나꼴 (0.24→0.32: 기존 섬은 부분집합이라 전부 보존)
     const x = (cx + 0.2 + rng() * 0.6) * CHUNK;
     const z = (cz + 0.2 + rng() * 0.6) * CHUNK;
     const d = Math.hypot(x, z);
@@ -11991,40 +12037,142 @@ function isletFor(cx, cz) {   // 순수 함수 — 로드 여부와 무관하게
     const islet = {
         x: +x.toFixed(2), z: +z.toFixed(2), r: +(1.5 + rng() * 1.3).toFixed(2),
         islet: true, seed, key: `${cx},${cz}`,
-        name: ISLET_NAMES[Math.floor(rng() * ISLET_NAMES.length)] + '섬',
     };
-    if (rng() < 0.4) islet.kind = 'sand';
+    // 개성 롤 — 위치·크기는 위 본 체인이라 불변. 본 체인(rng)에서 그대로 뽑으면 이웃 청크
+    // 시드의 초기 추첨 상관관계로 링 전체가 한 테마로 뭉친다(실측 꽃 5/7, p<1%) — 황금비
+    // 아발란치로 재해시한 별도 체인(rngT)에서 테마·지형·보물·이름을 뽑는다. 테마가 먼저,
+    // 지형(kind)이 테마를 따른다(야자·조개=모래, 숲·꽃=풀, 바위=반반) — kind를 먼저 굴리면
+    // 링의 kind 운에 따라 테마 두어 종이 이 세계에서 영영 안 나올 수 있다(실측 6모래+1풀).
+    const rngT = seededRand((Math.imul(seed, 2654435761) >>> 0) % 2147483645 + 1);
+    const tRoll = rngT();
+    islet.theme = tRoll < 0.22 ? 'forest' : tRoll < 0.41 ? 'flower' : tRoll < 0.65 ? 'palm' : tRoll < 0.8 ? 'shell' : 'rock';   // 0.41 경계: 이 세계 링(7섬)에 5테마가 모두 나오는 배분
+    if (islet.theme === 'palm' || islet.theme === 'shell' || (islet.theme === 'rock' && rngT() < 0.5)) islet.kind = 'sand';
+    if (rngT() < 0.42) islet.treasure = true;   // ⛏️ 파묻힌 보물 — 판 뒤 48시간이면 파도가 새로 실어온다
+    islet.name = ISLET_NAMES[Math.floor(rngT() * ISLET_NAMES.length)] + '섬';   // rngT에서 — 본 체인은 이름 하나로 7섬 중 2섬이 겹쳤다
     return islet;
 }
-function makeIsletDress(islet) {   // 침엽수·바위 1~3점 — 재질 공유 버킷 2메시로 병합
+const THEME_EMOJI = { forest: '🌲', flower: '🌼', rock: '🪨', palm: '🌴', shell: '🐚' };
+let dugIslets = {};   // 파낸 보물섬 { key: 판 시각 } — 48시간 지나면 다시 묻힌다 (재보급)
+try { dugIslets = JSON.parse(localStorage.getItem('world-islet-dug') || '{}') || {}; } catch (e) { dugIslets = {}; }
+const isletDug = (key) => !!dugIslets[key] && Date.now() - dugIslets[key] < 48 * 3600 * 1000;
+const isletShellPicked = new Set();   // 세션 내 재방문 시 주운 조개 재생성 방지 (다음 실행부턴 다시 자란다)
+function placeIsletShell(islet, rng, slot, digSpot) {   // 모래 무인도 특산 조개 — 시드 결정적 배치
+    for (let i = 0; i < 12; i++) {
+        const a = rng() * Math.PI * 2;
+        const d = rng() * Math.max(0.2, islet.r - 0.75);
+        const x = islet.x + Math.cos(a) * d, z = islet.z + Math.sin(a) * d;
+        const y = terrainHeight(x, z);
+        if (y < -0.12) continue;   // 물에 잠기는 자리만 제외 — 촉촉한 모래는 조개 명당 (홈 해변은 -0.3)
+        if (digSpot && Math.hypot(x - digSpot.x, z - digSpot.z) < 0.7) continue;   // ✕ 표식 곁 ⌘ 경합 방지 (파기가 우선순위라 0.7이면 충분)
+        if (PROPS.some((q) => q.r > 0 && q.layoutId && q.layoutId.startsWith(`islet:${islet.key}:`) && Math.hypot(x - q.x, z - q.z) < q.r + 0.25)) continue;
+        const roll = rng() * SHELL_TYPES.reduce((sum, t) => sum + t.w, 0);
+        let acc = 0, type = SHELL_TYPES[0];
+        for (const t of SHELL_TYPES) { acc += t.w; if (roll < acc) { type = t; break; } }
+        if (isletShellPicked.has(`${islet.key}:${slot}`)) return;   // rng 소모는 동일하게 끝낸 뒤 스킵
+        const mesh = makeShellMesh(type);
+        mesh.position.set(x, y + 0.005, z);
+        mesh.rotation.y = rng() * Math.PI * 2;
+        stage.add(mesh);
+        shells.push({ t: type, x, z, mesh, islet: islet.key, slot });
+        return;
+    }
+}
+function makeIsletDress(islet) {   // 테마별 드레싱 — 재질 공유 버킷 병합 (보물 표식만 단독 메시)
     const rng = seededRand(islet.seed + 977);
     const group = new THREE.Group();
     const colliders = [];
     const grad = [], rocks = [];
-    const n = 1 + Math.floor(rng() * 3);
-    for (let i = 0; i < n; i++) {
-        const a = rng() * Math.PI * 2;
-        const d = rng() * Math.max(0.2, islet.r - 0.9);
-        const x = islet.x + Math.cos(a) * d, z = islet.z + Math.sin(a) * d;
-        const y = terrainHeight(x, z);
-        if (y < 0.02) continue;   // 모래섬 젖은 링 회피
-        if (rng() < 0.62) {   // 야생 침엽수 (사계절 상록 — 계절 리틴트 불필요)
-            const h = 0.5 + rng() * 0.35;
-            const trunkGeo = new THREE.CylinderGeometry(0.045, 0.06, 0.3, 7);
-            trunkGeo.translate(x - islet.x, y + 0.15, z - islet.z);
-            grad.push(bakeGrad(trunkGeo, 0x8a6647, 0x6f5238, { curve: 1.2 }));
-            for (let t = 0; t < 3; t++) {
-                const coneGeo = new THREE.ConeGeometry(0.42 - t * 0.11, h * 0.55, 9);
-                coneGeo.translate(x - islet.x, y + 0.42 + t * h * 0.32, z - islet.z);
-                grad.push(bakeGrad(coneGeo, 0x5f9e48, 0x3c6e30, { curve: 1.1 }));
-            }
-            colliders.push({ type: 'islettree', x, z, rotY: 0, r: 0.35, layoutId: `islet:${islet.key}:${i}` });
-        } else {   // 풍화 바위
-            const rockGeo = new THREE.IcosahedronGeometry(0.22 + rng() * 0.14, 0);
-            rockGeo.scale(1, 0.72, 1);
-            rockGeo.rotateY(rng() * Math.PI);
-            rockGeo.translate(x - islet.x, y + 0.1, z - islet.z);
-            rocks.push(rockGeo);
+    const flowers = [[0xff9db8, []], [0xffe08a, []], [0xc9b4ff, []]];
+    const spotFor = (margin) => {   // 마른 땅 자리 잡기 — rng 소모가 시드 결정적
+        for (let i = 0; i < 12; i++) {
+            const a = rng() * Math.PI * 2;
+            const d = rng() * Math.max(0.2, islet.r - margin);
+            const x = islet.x + Math.cos(a) * d, z = islet.z + Math.sin(a) * d;
+            const y = terrainHeight(x, z);
+            if (y >= 0.02) return { x, z, y };
+        }
+        return null;
+    };
+    const addTree = (s, i) => {   // 야생 침엽수 (사계절 상록 — 계절 리틴트 불필요)
+        const h = 0.5 + rng() * 0.35;
+        const trunkGeo = new THREE.CylinderGeometry(0.045, 0.06, 0.3, 7);
+        trunkGeo.translate(s.x - islet.x, s.y + 0.15, s.z - islet.z);
+        grad.push(bakeGrad(trunkGeo, 0x8a6647, 0x6f5238, { curve: 1.2 }));
+        for (let t = 0; t < 3; t++) {
+            const coneGeo = new THREE.ConeGeometry(0.42 - t * 0.11, h * 0.55, 9);
+            coneGeo.translate(s.x - islet.x, s.y + 0.42 + t * h * 0.32, s.z - islet.z);
+            grad.push(bakeGrad(coneGeo, 0x5f9e48, 0x3c6e30, { curve: 1.1 }));
+        }
+        colliders.push({ type: 'islettree', x: s.x, z: s.z, rotY: 0, r: 0.35, layoutId: `islet:${islet.key}:${i}` });
+    };
+    const addRock = (s, tall) => {   // 풍화 바위 / 우뚝 선 기암
+        const rockGeo = new THREE.IcosahedronGeometry(0.22 + rng() * 0.14, 0);
+        if (tall) rockGeo.scale(0.72, 2.0 + rng() * 0.5, 0.72);
+        else rockGeo.scale(1, 0.72, 1);
+        rockGeo.rotateY(rng() * Math.PI);
+        rockGeo.translate(s.x - islet.x, s.y + (tall ? 0.4 : 0.1), s.z - islet.z);
+        rocks.push(rockGeo);
+        if (tall) colliders.push({ type: 'isletrock', x: s.x, z: s.z, rotY: 0, r: 0.3, layoutId: `islet:${islet.key}:mono` });
+    };
+    const addPalm = (s, i) => {   // 굽은 야자 — 줄기 4조각이 한쪽으로 기울고 끝에 프론드 6장
+        const lean = 0.15 + rng() * 0.3, la = rng() * Math.PI * 2;
+        for (let t = 0; t < 4; t++) {
+            const seg = new THREE.CylinderGeometry(0.048 - t * 0.006, 0.055 - t * 0.006, 0.23, 7);
+            const off = (t / 3) * lean;
+            seg.translate(s.x - islet.x + Math.sin(la) * off, s.y + 0.11 + t * 0.2, s.z - islet.z + Math.cos(la) * off);
+            grad.push(bakeGrad(seg, 0x9a7248, 0x7c5a38, { curve: 1.15 }));
+        }
+        const tx = s.x - islet.x + Math.sin(la) * lean, tz = s.z - islet.z + Math.cos(la) * lean, ty = s.y + 0.82;
+        for (let f = 0; f < 6; f++) {
+            const fa = (f / 6) * Math.PI * 2 + rng() * 0.35;
+            const frond = new THREE.ConeGeometry(0.085, 0.5, 5);
+            frond.scale(1, 1, 0.3);
+            frond.rotateX(Math.PI / 2.6);   // 끝이 바깥 아래로 처진다
+            frond.rotateY(fa);
+            frond.translate(tx + Math.sin(fa) * 0.18, ty, tz + Math.cos(fa) * 0.18);
+            grad.push(bakeGrad(frond, 0x58a848, 0x2f7030, { curve: 1.1 }));
+        }
+        for (let cN = 0; cN < 2; cN++) {
+            const coco = new THREE.SphereGeometry(0.034, 7, 6);
+            const ca = rng() * Math.PI * 2;
+            coco.translate(tx + Math.sin(ca) * 0.06, ty - 0.07, tz + Math.cos(ca) * 0.06);
+            grad.push(bakeGrad(coco, 0x7a4c28, 0x5c381c, { curve: 1 }));
+        }
+        colliders.push({ type: 'islettree', x: s.x, z: s.z, rotY: 0, r: 0.32, layoutId: `islet:${islet.key}:p${i}` });
+    };
+    const addFlower = (s) => {   // 들꽃 — 줄기는 grad, 머리는 3색 버킷 중 하나 (0.03은 점으로만 보였다 — 스샷 실측)
+        const stem = new THREE.CylinderGeometry(0.008, 0.011, 0.11, 5);
+        stem.translate(s.x - islet.x, s.y + 0.055, s.z - islet.z);
+        grad.push(bakeGrad(stem, 0x4e8f3c, 0x3a6e2c, { curve: 1 }));
+        const head = new THREE.SphereGeometry(0.048, 7, 5);
+        head.scale(1, 0.8, 1);
+        head.translate(s.x - islet.x, s.y + 0.13, s.z - islet.z);
+        flowers[Math.floor(rng() * 3)][1].push(head);
+    };
+    if (islet.theme === 'palm') {
+        const n = 1 + (rng() < 0.5 ? 1 : 0);
+        for (let i = 0; i < n; i++) { const s = spotFor(0.9); if (s) addPalm(s, i); }
+        if (rng() < 0.5) { const s = spotFor(0.7); if (s) addRock(s, false); }
+    } else if (islet.theme === 'rock') {
+        const n = 3 + Math.floor(rng() * 3);
+        for (let i = 0; i < n; i++) { const s = spotFor(0.7); if (s) addRock(s, false); }
+        const s = spotFor(0.9);
+        if (s) addRock(s, true);   // 우뚝 선 기암 하나가 실루엣을 만든다
+    } else if (islet.theme === 'flower') {
+        const s0 = spotFor(0.95);
+        if (s0) addTree(s0, 0);
+        const n = 9 + Math.floor(rng() * 6);
+        for (let i = 0; i < n; i++) { const s = spotFor(0.5); if (s) addFlower(s); }
+    } else if (islet.theme === 'shell') {   // 민모래섬 — 조개가 주인공 (loadIslet이 넉넉히 심는다)
+        const n = 1 + Math.floor(rng() * 2);
+        for (let i = 0; i < n; i++) { const s = spotFor(0.7); if (s) addRock(s, false); }
+    } else {   // forest — 원조 침엽수·바위 믹스
+        const n = 1 + Math.floor(rng() * 3);
+        for (let i = 0; i < n; i++) {
+            const s = spotFor(0.9);
+            if (!s) continue;
+            if (rng() < 0.62) addTree(s, i);
+            else addRock(s, false);
         }
     }
     if (grad.length) {
@@ -12037,8 +12185,40 @@ function makeIsletDress(islet) {   // 침엽수·바위 1~3점 — 재질 공유
         m.castShadow = true; m.receiveShadow = true;
         group.add(m);
     }
+    for (const [col, arr] of flowers) {
+        if (!arr.length) continue;
+        const m = new THREE.Mesh(mergeGeometries(arr, false), M(col));
+        m.castShadow = true; m.receiveShadow = true;
+        group.add(m);
+    }
+    // ⛏️ 보물 표식 — rng 체인 맨 끝(파냈어도 다른 소품 배치가 안 바뀐다) + 병합 안 함(파낸 뒤 단독 제거)
+    let digSpot = null, markGroup = null;
+    if (islet.treasure && !isletDug(islet.key)) {
+        let ms = null;
+        for (let i = 0; i < 8 && !ms; i++) {
+            const s = spotFor(0.85);
+            if (s && !colliders.some((q) => Math.hypot(q.x - s.x, q.z - s.z) < q.r + 0.3)) ms = s;
+        }
+        for (let i = 0; i < 10 && !ms; i++) ms = spotFor(0.7);   // 완화 폴백 — 소품 곁이라도 마른 땅이면 (야자섬처럼 마른 면적이 좁을 때)
+        if (ms) {
+            markGroup = new THREE.Group();
+            const mound = new THREE.Mesh(new THREE.SphereGeometry(0.17, 9, 6), M(islet.kind === 'sand' ? 0xe2cfa2 : 0x8f7a55));
+            mound.scale.y = 0.26;
+            mound.position.set(ms.x - islet.x, ms.y + 0.012, ms.z - islet.z);
+            markGroup.add(mound);
+            for (const rot of [0.8, -0.8]) {   // ✕ 십자 널빤지
+                const plank = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.016, 0.075), M(0x6e4f38));
+                plank.rotation.y = rot;
+                plank.position.set(ms.x - islet.x, ms.y + 0.058, ms.z - islet.z);
+                markGroup.add(plank);
+            }
+            markGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+            group.add(markGroup);
+            digSpot = { x: ms.x, z: ms.z };
+        }
+    }
     group.position.set(islet.x, 0, islet.z);
-    return { group, colliders };
+    return { group, colliders, digSpot, markGroup };
 }
 function loadIslet(key, islet) {
     if (isletChunks.has(key)) return;
@@ -12047,6 +12227,11 @@ function loadIslet(key, islet) {
     const dress = makeIsletDress(islet);
     stage.add(dress.group);
     for (const c of dress.colliders) PROPS.push(c);
+    if (islet.kind === 'sand') {   // 🐚 모래 무인도 특산 — 조개섬은 넉넉히
+        const srng = seededRand(islet.seed + 411);
+        const n = islet.theme === 'shell' ? 2 + Math.floor(srng() * 2) : 1 + Math.floor(srng() * 2);
+        for (let s = 0; s < n; s++) placeIsletShell(islet, srng, s, dress.digSpot);
+    }
     const entry = { islet, grass: meshes.grass, cliff: meshes.cliff, dress, rise: 0 };
     for (const o of [entry.grass, entry.cliff, entry.dress.group]) o.position.y -= 1.5;   // 수평선 아래에서 떠오른다
     isletChunks.set(key, entry);
@@ -12062,6 +12247,12 @@ function unloadIslet(key) {
     e.cliff.geometry.dispose();
     e.cliff.material.dispose();
     e.dress.group.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });   // 재질은 공유 캐시 — dispose 금지
+    for (let i = shells.length - 1; i >= 0; i--) {   // 이 섬의 특산 조개도 함께 내린다 (재방문 시 재생성)
+        if (shells[i].islet !== key) continue;
+        stage.remove(shells[i].mesh);
+        shells[i].mesh.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
+        shells.splice(i, 1);
+    }
     const gi = seasonGrass.indexOf(e.grass);
     if (gi >= 0) seasonGrass.splice(gi, 1);
     const ii = ISLANDS.indexOf(e.islet);
@@ -12217,7 +12408,14 @@ function drawWorldMap() {
     for (const key of discoveredIslets) {
         const [ix, iz] = key.split(',').map(Number);
         const il = isletFor(ix, iz);
-        if (il) drawIsle(il);
+        if (!il) continue;
+        drawIsle(il);
+        if (THEME_EMOJI[il.theme]) {   // 개성 이모지 — 어느 섬이 야자섬이었는지 지도만 봐도 안다
+            c.font = '11px sans-serif';
+            c.textAlign = 'center';
+            c.textBaseline = 'middle';
+            c.fillText(THEME_EMOJI[il.theme], px(il.x), py(il.z) - 7);
+        }
     }
     // 탈것 아이콘
     c.font = '22px sans-serif';
@@ -12301,9 +12499,10 @@ function updateStreaming(delta) {
                 discoveredIslets.add(il.key);
                 try { localStorage.setItem('world-discover', JSON.stringify([...discoveredIslets])); } catch (e) {}
                 fishFanfare();
-                showToast(`🏝️ 새 섬 발견 — ${il.name}! (${discoveredIslets.size}번째)`);
-                logWorldEvent(`수평선 너머 ${il.name}을 발견했다! 🏝️ (${discoveredIslets.size}번째 무인도)`);
+                showToast(`🏝️ 새 섬 발견 — ${il.name}! ${THEME_EMOJI[il.theme] || ''} (${discoveredIslets.size}번째)`);
+                logWorldEvent(`수평선 너머 ${il.name}을 발견했다! ${THEME_EMOJI[il.theme] || '🏝️'} (${discoveredIslets.size}번째 무인도)`);
                 maybeProactive(null, `주인과 수평선 너머 무인도 "${il.name}"을 발견했다! 우리가 ${discoveredIslets.size}번째로 찾은 섬이다!`);
+                if (il.treasure && !isletDug(il.key)) setTimeout(() => showToast('어라… 이 섬 어딘가에 뭔가 파묻혀 있는 것 같다 ✕'), 2800);
             }
         }
     }
@@ -12321,6 +12520,68 @@ function updateStreaming(delta) {
         e.grass.position.y = y;
         e.cliff.position.y = y;
         e.dress.group.position.y = y;
+    }
+}
+// ⛏️ 무인도 보물 파기 — 모래밭 파기와 같은 안무, 보상은 진주조개/코디/옛 동전
+let isletDigDoing = false;
+async function startIsletDig(p, e) {
+    isletDigDoing = true;
+    try {
+        const w = e.dress.digSpot;
+        p.mover.rotation.y = Math.atan2(w.x - p.mover.position.x, w.z - p.mover.position.z);
+        p.pet.action = { id: 'dig', t: 0 };
+        const y = terrainHeight(w.x, w.z);
+        for (let i = 0; i < 10; i++) {
+            const puff = new THREE.Sprite(new THREE.SpriteMaterial({ map: blobTex, transparent: true, opacity: 0.75, depthWrite: false }));
+            puff.scale.setScalar(0.12 + Math.random() * 0.12);
+            puff.position.set(w.x + (Math.random() - 0.5) * 0.3, y + 0.06, w.z + (Math.random() - 0.5) * 0.3);
+            scene.add(puff);
+            hugBurst.push({ spr: puff, vx: (Math.random() - 0.5) * 0.8, vy: 0.7 + Math.random() * 0.6, vz: (Math.random() - 0.5) * 0.8, t: Math.random() * -0.9 });
+        }
+        await sleepMs(2900);
+        dugIslets[e.islet.key] = Date.now();
+        try { localStorage.setItem('world-islet-dug', JSON.stringify(dugIslets)); } catch (err) {}
+        if (e.dress.markGroup) {   // ✕ 표식 걷어내기 (버킷에 병합 안 했으니 단독 제거 가능)
+            e.dress.group.remove(e.dress.markGroup);
+            e.dress.markGroup.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
+            e.dress.markGroup = null;
+        }
+        e.dress.digSpot = null;
+        const chest = new THREE.Group();   // 궤짝이 둥실 떠오르며 사라진다 (조개 줍기 연출 재사용)
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.11), M(0x8a5a30));
+        body.position.y = 0.05;
+        const lid = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.035, 0.12), M(0xa8763e));
+        lid.position.y = 0.115;
+        const band = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.145, 0.125), M(0xd8b04a));
+        band.position.y = 0.07;
+        chest.add(body, lid, band);
+        chest.position.set(w.x, y + 0.02, w.z);
+        stage.add(chest);
+        shellFly.push({ mesh: chest, t: 0, x: w.x, z: w.z });
+        triggerHugBurst(w.x, y + 0.3, w.z);
+        fishFanfare();
+        const roll = Math.random();
+        const nextAcc = DIG_UNLOCK_ORDER.find((id) => !accUnlocked.has(id));
+        if (roll < 0.5) {
+            const counts = shellCounts();
+            counts.pearl = (counts.pearl || 0) + 1;
+            try { localStorage.setItem('world-shells', JSON.stringify(counts)); } catch (err) {}
+            showToast(`⛏️💛 ${e.islet.name}의 보물 — 진주조개가 나왔다!!`);
+            logWorldEvent(`${e.islet.name}에 파묻힌 보물 상자에서 진주조개를 찾았다 ⛏️🐚`);
+            maybeProactive(p, `무인도 "${e.islet.name}"에서 보물 상자를 파냈다! 안에서 진주조개가 나왔다!`);
+        } else if (roll < 0.72 && nextAcc) {
+            accUnlocked.add(nextAcc);
+            saveAccUnlocked();
+            const label = GLB_ACCESSORIES.find((a) => a.id === nextAcc)?.label || nextAcc;
+            showToast(`⛏️🎁 ${e.islet.name}의 보물 — ${label} 코디가 열렸어요!`);
+            logWorldEvent(`${e.islet.name}의 보물 상자에서 ${label} 코디를 찾았다 ⛏️🎁`);
+            maybeProactive(p, `무인도 보물 상자에서 ${label}이(가) 나왔다!`);
+        } else {
+            showToast(`⛏️✨ ${e.islet.name}의 보물 — 반짝이는 옛 동전이다`);
+            logWorldEvent(`${e.islet.name}의 보물 상자에서 반짝이는 옛 동전을 찾았다 ⛏️✨`);
+        }
+    } finally {
+        isletDigDoing = false;
     }
 }
 
@@ -12775,6 +13036,10 @@ function startCast(f, target) {
         let r2 = Math.random() * w.reduce((a, b) => a + b, 0);
         f.species = pool[0];
         for (let i = 0; i < pool.length; i++) { r2 -= w[i]; if (r2 <= 0) { f.species = pool[i]; break; } }
+    }
+    if (!f.species) {   // 불변식 가드: 풀이 비면(원인 불명 1회 실측) 동결 대신 기본 어종 폴백 + 흔적
+        console.warn('[fish] species pool empty — fallback', target.water);
+        f.species = FISH_SPECIES.find((s) => s.water === target.water && !s.when) || FISH_SPECIES[0];
     }
     f.len = Math.round(f.species.len[0] + Math.random() * (f.species.len[1] - f.species.len[0]));
     f.big = f.len >= f.species.len[0] + (f.species.len[1] - f.species.len[0]) * 0.85 && f.species.rarity > 0;
