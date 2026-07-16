@@ -29,12 +29,15 @@ const savedLayout = await (async () => {
 // 이동 가능한 타입 (연못=지형 함몰이라 고정, furniture=집 내부 파생이라 집을 따라감)
 const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'library', 'flowerbasket']);
 // 섬 정의 지문 — 섬을 옮기거나 크기를 바꾸면 값이 달라진다(재발 방지: 저장 배치의 "섬 이사" 자동 감지).
-const ISLAND_SIG = ISLANDS.map((i) => `${i.x},${i.z},${i.r}`).join('|');
+// 'v2|' 접두 = 배치 리뉴얼 세대: 섬 기하가 그대로여도 접두를 올리면 위성섬 소품이 전부 새 기본값으로
+// 리셋된다. 좌표 테이블(MOVED_DEFAULTS)은 클라이언트별 사본(서버 파일/localStorage 오리진들)의
+// 세대 차이를 못 이긴다는 게 실측 교훈 — 강제 리셋 레버는 이 접두 하나로 통일.
+const ISLAND_SIG = 'v2|' + ISLANDS.map((i) => `${i.x},${i.z},${i.r}`).join('|');
 // 섬은 그대로인데 기본 배치만 리뉴얼한 프롭: 저장값이 '옛 기본값 그대로'면 사용자가 손대지 않은
 // 것이니 새 기본값을 따라간다 (지문 메커니즘의 사각지대 보완 — 놀이터섬 분산 배치가 첫 사례).
 const MOVED_DEFAULTS = {
-    'swing-1':  [[11.05, 6.3], [11.59, 6.58]],
-    'seesaw-1': [[12.17, 4.77], [12.71, 5.05]],
+    'swing-1':  [[11.05, 6.3], [11.59, 6.58], [11.7, 7.6]],
+    'seesaw-1': [[12.17, 4.77], [12.71, 5.05], [13.15, 4.6]],
     'gym-1':    [[8.62, 6.51], [9.16, 6.79]],
     'lamp-7':   [[9.71, 4.3], [9.35, 5.05]],
     'tree-5':   [[11.19, 3.28]],
@@ -42,7 +45,7 @@ const MOVED_DEFAULTS = {
 {
     const counts = {};
     // 저장본 지문이 현재와 다르면 위성섬이 이사/확장된 것 — 그 섬 프롭의 옛 저장 좌표는 버리고 base로.
-    const islandsChanged = savedLayout._sig !== undefined && savedLayout._sig !== ISLAND_SIG;
+    const islandsChanged = savedLayout._sig !== ISLAND_SIG;   // undefined(지문 이전 세대 저장본)도 리셋 대상 — !== undefined 가드가 고대 저장본을 영원히 안 놓아주던 구멍
     for (const p of PROPS) {
         p.layoutId = `${p.type}-${counts[p.type] = (counts[p.type] || 0) + 1}`;
         p.def = { x: p.x, z: p.z, rotY: p.rotY || 0 };            // "전부 원위치"용 원본 좌표
@@ -11193,6 +11196,7 @@ stage.add(balloonGroup);
 let balloonStation = null;   // 🔨 공사모드 이동용 — 그룹 오프셋으로 통째 이사
 {   // 계류장: 나무 데크 + 포스트 + 팻말 — 정적이라 월드 베이크에 편입
     let saved = savedLayout['balloon-1'];   // 저장된 계류장 위치 자기적용 (섬 위만)
+    if (savedLayout._sig !== ISLAND_SIG && saved) { saved = null; delete savedLayout['balloon-1']; }   // 지문 세대 교체 — 계류장도 리셋 (PROPS 루프 밖이라 별도)
     // 기본 배치 리뉴얼 추종 — 옛 기본값 그대로면 새 기본값(BALLOON_HOME)으로
     if (saved && [[13.05, 6.75], [13.59, 7.03]].some(([ox, oz]) => Math.hypot(saved.x - ox, saved.z - oz) < 0.06)) {
         saved = null;

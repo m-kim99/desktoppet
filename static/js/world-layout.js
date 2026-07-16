@@ -63,8 +63,8 @@ export const FLAT_SPOTS = [
     { x: 0.0, z: 0.0, r: 1.7 },     // central plaza (hug point / monument to come)
     { x: 2.7, z: 2.05, r: 2.05, follow: 'house-1' },   // house pad — 리모델로 커진 집 + 앞마당 여유 (1.7→2.05)
     { x: -2.6, z: -2.9, r: 0.95 },  // pond basin (연못은 이동 불가 — 지형 함몰)
-    { x: 11.7, z: 7.6, r: 1.0, follow: 'swing-1' },   // NE island swing pad (level ground under the A-frame legs)
-    { x: 13.15, z: 4.6, r: 1.0, follow: 'seesaw-1' }, // NE island seesaw pad (level ground under the fulcrum + plank)
+    { x: 13.15, z: 4.6, r: 1.0, follow: 'swing-1' },   // NE island swing pad (level ground under the A-frame legs)
+    { x: 11.7, z: 7.6, r: 1.0, follow: 'seesaw-1' }, // NE island seesaw pad (level ground under the fulcrum + plank)
     { x: 8.9, z: 6.8, r: 1.15, follow: 'gym-1' },    // NE island gym pad — 매트/아령이 구릉에 뚫리지 않게 (그네·시소 패드와 같은 원리)
     { x: 9.9, z: 3.9, r: 1.1, follow: 'trampoline-1' },  // NE island trampoline pad — 확장된 남쪽 새 공간
     { x: -10.72, z: -4.69, r: 1.55 },  // 추억의 섬 중앙 뜰 — 기념비·소원우물·타임캡슐이 반듯하게 선다
@@ -106,8 +106,8 @@ export const PROPS = [
     { type: 'tree',  x: -12.35, z: -3.6,  rotY: 2.9, r: 0.45, big: false },   // 추억의 섬 북서
     { type: 'lamp', x:  9.28, z:  5.12,  rotY: 0, r: 0.18 },   // NE 다리목   // (트램펄린 존과 분리 — 다리목 쪽으로)
     { type: 'lamp', x: -9.42, z: -4.82, rotY: 0, r: 0.18 },   // SW 다리목
-    { type: 'swing', x: 11.7, z: 7.6, rotY: 3.14, r: 0.55 }, // NE 섬 그네 — 북쪽 존 (확장 후 분산 배치)
-    { type: 'seesaw', x: 13.15, z: 4.6, rotY: 0, r: 0.62 },  // NE 섬 시소 — 남동 존
+    { type: 'swing', x: 13.15, z: 4.6, rotY: -1.04, r: 0.55 }, // NE 섬 그네 — 남동 존, 섬 안쪽을 본다 (사용자 스왑 지정)
+    { type: 'seesaw', x: 11.7, z: 7.6, rotY: 1.57, r: 0.62 },  // NE 섬 시소 — 북 중앙, 플랭크는 해안선과 나란히
     { type: 'trampoline', x: 9.9, z: 3.9, rotY: 0, r: 0 },  // NE 섬 트램펄린 — r 0(비차단): 매트는 걸어 올라가는 지면(world.groundHeightAt 훅)
     // 벚꽃나무 (P1 ③): 봄에 분홍으로 만개하고 꽃잎이 흩날린다 — 계절 시스템이 칠한다.
     // (공사 모드 저장 id가 타입별 순번이라 새 프롭은 반드시 목록 끝에 추가)
