@@ -9420,13 +9420,13 @@ window.addEventListener('blur', () => { heldKeys.clear(); resetTouchStick(); });
 // in water the pet floats half-submerged with a gentle bob, leans forward and paddles.
 const pondPropRef = PROPS.find((q) => q.type === 'pond');
 const POND_WATER_Y = terrainHeight(pondPropRef.x, pondPropRef.z) + 0.06;
-const SWIM_LEASH = 18;                           // 위성섬 + 휴양지 모래섬(중심 12.2, r 2.6)까지 수영 가능
-const EXPLORE_R = 74;                            // 🌊 하이브리드 스트리밍: 탈것 탐험 반경 (절차 무인도 해역)
+const EXPLORE_R = 74;                            // 🌊 하이브리드 스트리밍: 탐험 해역 반경 (절차 무인도)
+const SWIM_LEASH = EXPLORE_R;                    // 수영도 같은 경계 — 18이던 시절의 벽이 원양 한가운데 남으면
+                                                 // "수영이 안 되고 점프로만 전진"하는 유령 벽이 된다 (사용자 스샷)
 let seaHop = null;                               // climb-back tween { fx,fy,fz, tx,ty,tz, t }
 
 function playerBlocked(nx, nz) {
-    if (Math.hypot(nx, nz) > SWIM_LEASH
-        && !ISLANDS.some((il) => il.islet && Math.hypot(nx - il.x, nz - il.z) < il.r + 5)) return true;   // 🌊 무인도 기슭은 허용
+    if (Math.hypot(nx, nz) > SWIM_LEASH) return true;   // 해역 끝 = 수평선 평탄 구간 (탈것과 동일 경계)
     for (const q of PROPS) {
         if (q.type === 'pond') continue;                          // the pond is swimmable
         if (Math.hypot(nx - q.x, nz - q.z) < q.r) return true;
