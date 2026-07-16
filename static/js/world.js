@@ -2742,27 +2742,27 @@ function makeTrampoline() {
     // 동숲식 조형: 파스텔 민트 프레임 링 + 그네와 같은 나무 언어의 벌어진 다리 4개 + 도톰한
     // 하늘색 캔버스 매트. 매트는 바운스 스쿼시 애니 대상 — userData.mat으로 빼둔다(병합 안 함).
     const g = new THREE.Group();
-    const frame = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.045, 10, 28), M(0x8fd0b8));
+    const frame = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.05, 10, 28), M(0x8fd0b8));
     frame.rotation.x = Math.PI / 2;
     frame.position.y = 0.26;
     g.add(frame);
-    const stitch = new THREE.Mesh(new THREE.TorusGeometry(0.555, 0.011, 6, 24), M(0xf3ead8));   // 스프링 스티치 링
+    const stitch = new THREE.Mesh(new THREE.TorusGeometry(0.65, 0.012, 6, 24), M(0xf3ead8));   // 스프링 스티치 링
     stitch.rotation.x = Math.PI / 2;
     stitch.position.y = 0.255;
     g.add(stitch);
     for (let i = 0; i < 4; i++) {   // 바깥으로 살짝 벌어진 테이퍼 다리 + 발볼
         const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
         const leg = GM(new THREE.CylinderGeometry(0.028, 0.04, 0.27, 8), 0xb08a60, 0x8a6647);
-        leg.position.set(Math.sin(a) * 0.58, 0.125, Math.cos(a) * 0.58);
+        leg.position.set(Math.sin(a) * 0.67, 0.125, Math.cos(a) * 0.67);
         leg.rotation.z = -Math.sin(a) * 0.14;
         leg.rotation.x = Math.cos(a) * 0.14;
         g.add(leg);
         const foot = GM(new THREE.SphereGeometry(0.045, 8, 6), 0x8a6647, 0x6f5238);
         foot.scale.y = 0.5;
-        foot.position.set(Math.sin(a) * 0.6, 0.012, Math.cos(a) * 0.6);
+        foot.position.set(Math.sin(a) * 0.7, 0.012, Math.cos(a) * 0.7);
         g.add(foot);
     }
-    const mat = GM(new THREE.CylinderGeometry(0.565, 0.585, 0.05, 26), 0x8fc2e2, 0x5f8fb2);
+    const mat = GM(new THREE.CylinderGeometry(0.66, 0.68, 0.05, 26), 0x8fc2e2, 0x5f8fb2);
     mat.position.y = 0.225;
     g.userData.mat = mat;
     g.add(mat);
@@ -4928,7 +4928,7 @@ stage.add(boatGroup);
 
 // 🤸 트램펄린 매트 = 걷기 지면 (다리 데크 문법): matY 0.24는 걷기 턱 0.26 미만이라 펫이 그냥
 // 걸어 올라간다. 콜라이더 r 0(비차단) — 바운스 물리는 updateTrampoline이 소유.
-const TRAMP = { matY: 0.24, matR: 0.62 };
+const TRAMP = { matY: 0.24, matR: 0.7 };
 let trampPr = null;   // PROPS 엔트리 지연 조회 — 공사모드 이동을 그대로 따라간다
 function trampInfo() {
     if (!trampPr || PROPS.indexOf(trampPr) < 0) trampPr = PROPS.find((q) => q.type === 'trampoline') || null;
@@ -7139,7 +7139,7 @@ if (statsOn) window.__worldDev = {
             x: t ? +t.x.toFixed(2) : null, z: t ? +t.z.toFixed(2) : null, matY: t ? +t.y.toFixed(2) : null,
             pets: pets.filter((q) => q.tramp).map((q) => ({ n: q.name, y: +q.mover.position.y.toFixed(2), vy: +q.tramp.vy.toFixed(2), b: q.tramp.bounces, flip: !!q.tramp.flip })),
             ai: aiTramp ? { n: aiTramp.p.name, began: aiTramp.began, left: aiTramp.bouncesLeft } : null,
-            flips: trampStats.flips, doubles: trampStats.doubles,
+            flips: trampStats.flips, stars: trampStats.stars || 0, doubles: trampStats.doubles,
         };
     },
     trampGo: (name) => startAiTramp(pets.find((q) => q.name === (name || 'puppy'))),
@@ -12056,9 +12056,11 @@ function trampContact(p, t, vy) {
             trampStats.lastDoubleLog = now;
             logWorldEvent(`더블 바운스!! ${petKo(p)}가 하늘 높이 솟아올랐다 🤸✨`);
         }
-    } else if (vy >= 3.1) {
-        p.tramp.flip = { t: 0, dur: airDur * 0.85 };   // 앞구르기 — 인사 목소리와 함께
+    } else if (vy >= 3.1 && Math.random() < (vy >= 4.0 ? 0.6 : 0.3)) {   // 묘기는 '가끔' — 매번이면 안 귀하다
+        const star = Math.random() < 0.25;   // 별포즈: 몸 젖히고 다리 쫙 (앞구르기의 희귀 변주)
+        p.tramp.flip = { t: 0, dur: airDur * 0.85, star };
         trampStats.flips++;
+        if (star) trampStats.stars = (trampStats.stars || 0) + 1;
         petVoice(p);
     }
     trampLastContact = { at: now, p };
@@ -12132,10 +12134,17 @@ function updateTrampoline(delta) {
             ny = floorY + 0.001;
         }
         m.position.y = ny;
-        if (p.tramp && p.tramp.flip) {   // 앞구르기 — 엔티티가 매 프레임 리셋하는 wrap.rotation.x를 절대값 덮어쓰기
-            p.tramp.flip.t += delta;
-            const k = Math.min(1, p.tramp.flip.t / p.tramp.flip.dur);
-            p.pet.wrap.rotation.x = -Math.PI * 2 * (k * k * (3 - 2 * k));
+        if (p.tramp && p.tramp.flip) {   // 묘기 — 엔티티가 매 프레임 리셋하는 wrap.rotation.x를 절대값 덮어쓰기
+            const fl = p.tramp.flip;
+            fl.t += delta;
+            const k = Math.min(1, fl.t / fl.dur);
+            if (fl.star) {   // 별포즈: 정점에서 몸 뒤로 젖히고 다리 쫙 (앉기 문법의 공중판)
+                const s2 = Math.sin(k * Math.PI);
+                p.pet.wrap.rotation.x = -0.5 * s2;
+                for (const ft of p.pet.feet) ft.rotation.x = (ft.userData._restRotX || 0) - 1.35 * s2;
+            } else {
+                p.pet.wrap.rotation.x = -Math.PI * 2 * (k * k * (3 - 2 * k));
+            }
             if (k >= 1) p.tramp.flip = null;
         }
     }

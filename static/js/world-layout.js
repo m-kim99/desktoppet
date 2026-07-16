@@ -104,7 +104,7 @@ export const PROPS = [
     // Satellite islands: a tree and a lamp at each bridgehead (otherwise open feature ground)
     { type: 'tree',  x:  11.73, z:  3.56, rotY: 0.7, r: 0.45, big: true  },   // NE 남쪽 공터 (섬 델타 동반)
     { type: 'tree',  x: -12.35, z: -3.6,  rotY: 2.9, r: 0.45, big: false },   // 추억의 섬 북서
-    { type: 'lamp', x:  9.35, z:  5.05,  rotY: 0, r: 0.18 },   // NE 다리목   // (트램펄린 존과 분리 — 다리목 쪽으로)
+    { type: 'lamp', x:  9.28, z:  5.12,  rotY: 0, r: 0.18 },   // NE 다리목   // (트램펄린 존과 분리 — 다리목 쪽으로)
     { type: 'lamp', x: -9.42, z: -4.82, rotY: 0, r: 0.18 },   // SW 다리목
     { type: 'swing', x: 11.59, z: 6.58, rotY: 3.14, r: 0.55 }, // NE 섬 그네 (2인 A자, 앞자리 섬 안쪽 향함)
     { type: 'seesaw', x: 12.71, z: 5.05, rotY: 0, r: 0.62 },  // NE 섬 시소 (플랭크 남북 방향, 양끝 마주봄)
