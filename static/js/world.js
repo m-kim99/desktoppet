@@ -30,6 +30,15 @@ const savedLayout = await (async () => {
 const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'library', 'flowerbasket']);
 // 섬 정의 지문 — 섬을 옮기거나 크기를 바꾸면 값이 달라진다(재발 방지: 저장 배치의 "섬 이사" 자동 감지).
 const ISLAND_SIG = ISLANDS.map((i) => `${i.x},${i.z},${i.r}`).join('|');
+// 섬은 그대로인데 기본 배치만 리뉴얼한 프롭: 저장값이 '옛 기본값 그대로'면 사용자가 손대지 않은
+// 것이니 새 기본값을 따라간다 (지문 메커니즘의 사각지대 보완 — 놀이터섬 분산 배치가 첫 사례).
+const MOVED_DEFAULTS = {
+    'swing-1':  [[11.05, 6.3], [11.59, 6.58]],
+    'seesaw-1': [[12.17, 4.77], [12.71, 5.05]],
+    'gym-1':    [[8.62, 6.51], [9.16, 6.79]],
+    'lamp-7':   [[9.71, 4.3], [9.35, 5.05]],
+    'tree-5':   [[11.19, 3.28]],
+};
 {
     const counts = {};
     // 저장본 지문이 현재와 다르면 위성섬이 이사/확장된 것 — 그 섬 프롭의 옛 저장 좌표는 버리고 base로.
@@ -41,6 +50,11 @@ const ISLAND_SIG = ISLANDS.map((i) => `${i.x},${i.z},${i.r}`).join('|');
         // ① 섬이 바뀌었고 이 프롭의 홈 섬(base 기준)이 위성섬(≥1)이면 옛 저장값 폐기 → base 정위치로 스냅
         //    (섬이 통째로 이사가면 옛 절대좌표는 무의미 — world-layout.js에서 함께 옮긴 base가 정답)
         if (o && islandsChanged && islandOf(p.def.x, p.def.z) >= 1) { o = null; delete savedLayout[p.layoutId]; }
+        // ①.5 기본 배치 리뉴얼 추종 — 저장값이 옛 기본값과 같으면(±6cm) 폐기하고 새 기본값으로
+        if (o && MOVED_DEFAULTS[p.layoutId] && MOVED_DEFAULTS[p.layoutId].some(([ox, oz]) => Math.hypot(o.x - ox, o.z - oz) < 0.06)) {
+            o = null;
+            delete savedLayout[p.layoutId];
+        }
         // ② 옛 저장 좌표가 물 위에 고립됐으면 버리고 새 기본 위치로 — islandOf(r−0.3 마진)·다리 위만 유효한 뭍.
         if (o && Number.isFinite(o.x) && Number.isFinite(o.z) && (islandOf(o.x, o.z) >= 0 || onBridge(o.x, o.z))) {
             p.x = o.x; p.z = o.z;
@@ -7143,6 +7157,9 @@ if (statsOn) window.__worldDev = {
         };
     },
     trampGo: (name) => startAiTramp(pets.find((q) => q.name === (name || 'puppy'))),
+    prop: (id) => { const q = PROPS.find((r) => r.layoutId === id); return q ? { x: +q.x.toFixed(2), z: +q.z.toFixed(2) } : null; },   // 배치 마이그레이션 E2E
+    bedInfo: (name) => { const q = pets.find((r) => r.name === (name || 'chick')); return q && q.bed ? { id: q.bed.id, seat: SWINGS.indexOf(q.bed) } : null; },   // 그네 자리 랜덤 E2E (빙의는 탑승 순간 풀린다 — 이름으로 조회)
+    swingDiag: () => SWINGS.map((b) => ({ occ: b.occupant ? b.occupant.name : null, x: +b.lie.x.toFixed(2), z: +b.lie.z.toFixed(2), d: possessed ? +Math.hypot(possessed.mover.position.x - b.lie.x, possessed.mover.position.z - b.lie.z).toFixed(2) : null })),
     trampSync: () => {   // 듀오 더블 바운스 E2E — 두 펫의 페이즈를 강제로 겹친다
         const t = trampInfo();
         if (!t) return false;
@@ -11052,7 +11069,7 @@ function updatePlaneHop(delta) {
 // 경유지 셔플(3~5곳) + 방향 코인플립 + 지터 = 매 바퀴 다른 경로 (순항 밴드 위라 전부 안전).
 // 한 바퀴 ≈ 2분 15초, 안 내리면 무한 루프(바퀴마다 새 경로). ⌘ = 저공 물스침에선 바로 퐁당,
 // 아니면 정거장 귀환 요청. 한가한 펫은 가끔 혼자 타러 간다 (자율 낚시 문법). ----
-const BALLOON_HOME = { x: 13.59, z: 7.03 };   // NE섬 동쪽 계류장 — 섬 확장 델타(+0.54,+0.28) 동반
+const BALLOON_HOME = { x: 14.0, z: 7.25 };   // NE섬 동쪽 '가장자리' 계류장 — 림에서 바다를 등지고 이륙
 const BALLOON_CRUISE = [4.6, 6.0];   // 순항 고도 밴드 — 전망대 언덕(1.1+데크)·집 지붕 위
 const BALLOON_POIS = [
     { x: 0, z: 0, ko: '광장 분수' },
@@ -11175,7 +11192,12 @@ balloonGroup.rotation.y = BALLOON.heading;
 stage.add(balloonGroup);
 let balloonStation = null;   // 🔨 공사모드 이동용 — 그룹 오프셋으로 통째 이사
 {   // 계류장: 나무 데크 + 포스트 + 팻말 — 정적이라 월드 베이크에 편입
-    const saved = savedLayout['balloon-1'];   // 저장된 계류장 위치 자기적용 (섬 위만)
+    let saved = savedLayout['balloon-1'];   // 저장된 계류장 위치 자기적용 (섬 위만)
+    // 기본 배치 리뉴얼 추종 — 옛 기본값 그대로면 새 기본값(BALLOON_HOME)으로
+    if (saved && [[13.05, 6.75], [13.59, 7.03]].some(([ox, oz]) => Math.hypot(saved.x - ox, saved.z - oz) < 0.06)) {
+        saved = null;
+        delete savedLayout['balloon-1'];
+    }
     if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.z) && islandOf(saved.x, saved.z) >= 0) {
         BALLOON_HOME.x = saved.x; BALLOON_HOME.z = saved.z;
         BALLOON.x = saved.x; BALLOON.z = saved.z;
@@ -13787,6 +13809,11 @@ function nearestFreeBed(p, maxDist) {
         if (b.occupant) continue;
         const d = Math.hypot(p.mover.position.x - b.lie.x, p.mover.position.z - b.lie.z);
         if (d < bestD) { bestD = d; best = b; }
+    }
+    if (best && best.id === 'swing') {   // 2인 그네: 둘 다 비어 있고 둘 다 닿으면 자리 랜덤 — 늘 같은(갈색) 쪽만 타지 않게
+        const twins = BEDS.filter((b) => b.id === 'swing' && !b.occupant
+            && Math.hypot(p.mover.position.x - b.lie.x, p.mover.position.z - b.lie.z) < maxDist);
+        if (twins.length > 1) best = twins[Math.floor(Math.random() * twins.length)];
     }
     return best;
 }
