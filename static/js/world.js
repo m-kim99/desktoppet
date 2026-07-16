@@ -27,7 +27,7 @@ const savedLayout = await (async () => {
     try { return JSON.parse(localStorage.getItem('world-layout')) || {}; } catch (err) { return {}; }
 })();
 // 이동 가능한 타입 (연못=지형 함몰이라 고정, furniture=집 내부 파생이라 집을 따라감)
-const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'piano', 'photoboard', 'mailbox', 'gym', 'library', 'flowerbasket']);
+const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'library', 'flowerbasket']);
 // 섬 정의 지문 — 섬을 옮기거나 크기를 바꾸면 값이 달라진다(재발 방지: 저장 배치의 "섬 이사" 자동 감지).
 const ISLAND_SIG = ISLANDS.map((i) => `${i.x},${i.z},${i.r}`).join('|');
 {
@@ -2738,6 +2738,36 @@ fetchMail();   // 부팅 — 깃발 상태 복원
 // ---- 운동 공간 (⑦): 요가 매트 둘 + 아령 + 스트레칭 바. 매트 클릭 = 가까운 펫이 와서 스트레칭
 // (신규 16번째 모션), 조종 중 ⌘ 근접 = 내 펫이 직접, 한가할 땐 스스로도 한다. ----
 const GYM_MAT_LOCAL = [[-0.34, 0.05], [0.34, -0.05]];
+function makeTrampoline() {
+    // 동숲식 조형: 파스텔 민트 프레임 링 + 그네와 같은 나무 언어의 벌어진 다리 4개 + 도톰한
+    // 하늘색 캔버스 매트. 매트는 바운스 스쿼시 애니 대상 — userData.mat으로 빼둔다(병합 안 함).
+    const g = new THREE.Group();
+    const frame = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.045, 10, 28), M(0x8fd0b8));
+    frame.rotation.x = Math.PI / 2;
+    frame.position.y = 0.26;
+    g.add(frame);
+    const stitch = new THREE.Mesh(new THREE.TorusGeometry(0.555, 0.011, 6, 24), M(0xf3ead8));   // 스프링 스티치 링
+    stitch.rotation.x = Math.PI / 2;
+    stitch.position.y = 0.255;
+    g.add(stitch);
+    for (let i = 0; i < 4; i++) {   // 바깥으로 살짝 벌어진 테이퍼 다리 + 발볼
+        const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+        const leg = GM(new THREE.CylinderGeometry(0.028, 0.04, 0.27, 8), 0xb08a60, 0x8a6647);
+        leg.position.set(Math.sin(a) * 0.58, 0.125, Math.cos(a) * 0.58);
+        leg.rotation.z = -Math.sin(a) * 0.14;
+        leg.rotation.x = Math.cos(a) * 0.14;
+        g.add(leg);
+        const foot = GM(new THREE.SphereGeometry(0.045, 8, 6), 0x8a6647, 0x6f5238);
+        foot.scale.y = 0.5;
+        foot.position.set(Math.sin(a) * 0.6, 0.012, Math.cos(a) * 0.6);
+        g.add(foot);
+    }
+    const mat = GM(new THREE.CylinderGeometry(0.565, 0.585, 0.05, 26), 0x8fc2e2, 0x5f8fb2);
+    mat.position.y = 0.225;
+    g.userData.mat = mat;
+    g.add(mat);
+    return g;
+}
 function makeGym() {
     const g = new THREE.Group();
     // 동숲식 조형: 매트는 더 도톰+큰 라운딩+톱라이트 그라디언트, 바는 그네와 같은 나무 언어
@@ -4215,6 +4245,7 @@ const PROP_CLICKS = {
     library: () => petRead(),
     flowerbasket: () => onBasketClick(),
     sandcastle: () => petSandPlay(),
+    trampoline: () => petTramp(),
 };
 // 호버 프롬프트: 클릭형은 "· 클릭", 몸이 필요한 것은 ⌘ 안내, 나머지는 이름표만.
 const HOVER_PROMPTS = {
@@ -4226,6 +4257,7 @@ const HOVER_PROMPTS = {
     coffee: () => '☕ 커피 주문 · 클릭',
     food: () => '🍞 간식 주문 · 클릭',
     swing: () => '🛝 그네 — 조종 중 ⌘/✋로 타요',
+    trampoline: () => '🤸 트램펄린 — 올라서면 통통! · 클릭 = 절친 부르기',
     seesaw: () => '🛝 시소 — 조종 중 ⌘/✋로 타요',
     sunbed: () => '🛏️ 선베드 — 조종 중 ⌘/✋로 누워요',
     hammock: () => '🛏️ 해먹 — 조종 중 ⌘/✋로 누워요',
@@ -4383,7 +4415,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointerleave', () => { hoverActive = false; });
 fetchCapsules();   // 부팅 시 한 번 — 개봉 알림용
 
-const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket, palm: makePalm, sandcastle: makeSandcastle };
+const PROP_BUILDERS = { tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, trampoline: makeTrampoline, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket, palm: makePalm, sandcastle: makeSandcastle };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -4894,6 +4926,19 @@ boatGroup.rotation.y = BOAT.heading;
 boatGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
 stage.add(boatGroup);
 
+// 🤸 트램펄린 매트 = 걷기 지면 (다리 데크 문법): matY 0.24는 걷기 턱 0.26 미만이라 펫이 그냥
+// 걸어 올라간다. 콜라이더 r 0(비차단) — 바운스 물리는 updateTrampoline이 소유.
+const TRAMP = { matY: 0.24, matR: 0.62 };
+let trampPr = null;   // PROPS 엔트리 지연 조회 — 공사모드 이동을 그대로 따라간다
+function trampInfo() {
+    if (!trampPr || PROPS.indexOf(trampPr) < 0) trampPr = PROPS.find((q) => q.type === 'trampoline') || null;
+    if (!trampPr) return null;
+    return { x: trampPr.x, z: trampPr.z, y: terrainHeight(trampPr.x, trampPr.z) + TRAMP.matY, pr: trampPr };
+}
+function onTrampolineY(x, z) {
+    const t = trampInfo();
+    return t && Math.hypot(x - t.x, z - t.z) < TRAMP.matR ? t.y : null;
+}
 // ---- World interface: the ONLY way pets sense the ground/space (keeps them portable) ----
 const world = {
     islandRadius: ISLAND_R,
@@ -4902,6 +4947,8 @@ const world = {
         if (hf !== null) return hf;                              // house floors / stairs / loft
         const hit = onBridge(x, z);
         if (hit) return bridgeDeckY(hit);                        // bridge decks count as ground
+        const ty = onTrampolineY(x, z);
+        if (ty !== null) return ty;                              // 트램펄린 매트도 지면
         return terrainHeight(x, z);
     },
     isBlocked(x, z) {
@@ -5960,6 +6007,12 @@ function updateWander(p, delta) {
                 startAiBalloon(p);
                 return;
             }
+            // …또는 트램펄린으로 폴짝 — 혼자 신나게 예닐곱 번 (낮, 쿨다운 시드 필수)
+            if (!p.nextTrampAt) p.nextTrampAt = Date.now() + 180000 + Math.random() * 300000;
+            else if (!isSleepTime(currentHour()) && !aiTramp && Date.now() > p.nextTrampAt && Math.random() < 0.06) {
+                p.nextTrampAt = Date.now() + 360000 + Math.random() * 360000;
+                if (startAiTramp(p) === 'ok') return;
+            }
             // …또는 통통호를 타러 잔교로 — 모래섬 찍고 오는 뱃놀이 (낮, 쿨다운 시드)
             if (!p.nextFerryAt) p.nextFerryAt = Date.now() + 300000 + Math.random() * 480000;
             else if (!isSleepTime(currentHour()) && !ferryRide && !aiFerryWalk && FERRY.mode === 'docked'
@@ -6795,7 +6848,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호' };
+const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -6816,7 +6869,7 @@ function describeSpot(x, z) {
     if (idx === 3) return '모험의 섬';
     return '바다';
 }
-const BED_KO = { sunbed: '선베드', hammock: '해먹', swing: '그네', seesaw: '시소', sofa: '소파', loftbed: '2층 침대' };
+const BED_KO = { sunbed: '선베드', hammock: '해먹', swing: '그네', seesaw: '시소', trampoline: '트램펄린', sofa: '소파', loftbed: '2층 침대' };
 function petStatusLine(p) {
     const pos = p.mover.position;
     const parts = [`위치: ${describeSpot(pos.x, pos.z)}`];
@@ -7079,6 +7132,22 @@ if (statsOn) window.__worldDev = {
             }
         }
         return out;
+    },
+    trampState: () => {
+        const t = trampInfo();
+        return {
+            x: t ? +t.x.toFixed(2) : null, z: t ? +t.z.toFixed(2) : null, matY: t ? +t.y.toFixed(2) : null,
+            pets: pets.filter((q) => q.tramp).map((q) => ({ n: q.name, y: +q.mover.position.y.toFixed(2), vy: +q.tramp.vy.toFixed(2), b: q.tramp.bounces, flip: !!q.tramp.flip })),
+            ai: aiTramp ? { n: aiTramp.p.name, began: aiTramp.began, left: aiTramp.bouncesLeft } : null,
+            flips: trampStats.flips, doubles: trampStats.doubles,
+        };
+    },
+    trampGo: (name) => startAiTramp(pets.find((q) => q.name === (name || 'puppy'))),
+    trampSync: () => {   // 듀오 더블 바운스 E2E — 두 펫의 페이즈를 강제로 겹친다
+        const t = trampInfo();
+        if (!t) return false;
+        for (const q of pets) if (q.tramp) { q.tramp.vy = -0.5; q.mover.position.y = t.y + 0.02; }
+        return true;
     },
     isletTreasure: () => {   // 로드된 보물섬 상태 — 표식 좌표·파냈는지 (E2E)
         const out = [];
@@ -7436,7 +7505,7 @@ document.body.appendChild(dockUI);
 // 배치는 서버(/api/world_layout)+localStorage에 저장되고 다음 접속 때 씬을 짓기 전에 적용된다
 // (파일 상단 savedLayout). 지형 평탄화 패드는 섬 메시에 구워져 있어 리로드 후에야 새 위치를
 // 따라간다 — 그때까지 잔디가 살짝 울퉁불퉁할 수 있는 게 유일한 시각적 타협점.
-const PROP_LABELS = { tree: '나무', bowl: '밥그릇', fence: '울타리', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', house: '집', car: '자동차' };
+const PROP_LABELS = { tree: '나무', bowl: '밥그릇', fence: '울타리', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', house: '집', car: '자동차' };
 const buildRingMat = new THREE.MeshBasicMaterial({ color: 0x66d9ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
 const buildRing = new THREE.Mesh(new THREE.RingGeometry(0.82, 1.0, 40), buildRingMat);
 buildRing.rotation.x = -Math.PI / 2;
@@ -8081,6 +8150,18 @@ function synthNoiseBuffer(dur, shape) {
 }
 const splashBuf = synthNoiseBuffer(0.45, (t) => Math.pow(1 - t, 2.2) * (t < 0.04 ? t / 0.04 : 1));
 const swishBuf  = synthNoiseBuffer(0.22, (t) => Math.sin(t * Math.PI) * 0.7);
+const boingBuf = (() => {   // 🤸 트램펄린 보잉 — 저음 스프링: 220→130Hz 슬라이드 + 옥타브 배음, 0.24s 감쇠
+    const dur = 0.24;
+    const buf = audioCtx.createBuffer(1, Math.ceil(audioCtx.sampleRate * dur), audioCtx.sampleRate);
+    const d = buf.getChannelData(0);
+    let ph = 0;
+    for (let i = 0; i < d.length; i++) {
+        const t = i / d.length;
+        ph += ((220 - 90 * t) * 2 * Math.PI) / audioCtx.sampleRate;
+        d[i] = (Math.sin(ph) + 0.35 * Math.sin(ph * 2)) * Math.pow(1 - t, 1.6) * 0.75;
+    }
+    return buf;
+})();
 const swimLoopBuf = synthNoiseBuffer(2.6, (t) => 0.28 * (0.7 + 0.3 * Math.sin(t * Math.PI * 6)));
 
 async function loadStepBuffer(url) {
@@ -9300,6 +9381,7 @@ function doJump() {
     if (planeRide) return;   // 🛩️ 탑승 중 Space 무시 — 고도는 W/S
     if (balloonRide && (balloonRide.p === possessed || balloonRide.friend === possessed)) return;   // 🎈 바구니에서 점프 금지
     if (ferryRide && (ferryRide.p === possessed || ferryRide.friend === possessed)) return;   // ⛴️ 갑판에서 점프 금지
+    if (possessed.tramp) { possessed.tramp.boost = true; return; }   // 🤸 바운스 중 Space = 다음 발사 부스트
     if (fishing && (fishing.state === 'bite' || fishing.state === 'wait')) { fishingIntercept(); return; }   // Space도 챔질
     if (fishing && fishing.state !== 'idle') return;   // 시전·파이팅 중 점프 잠금
     if (jumpsLeft <= 0) return;
@@ -9515,8 +9597,10 @@ function playerSupportY(p, x, z) {
     } else {
         const hf = houseFloorY(x, z);
         const hit = hf === null && onBridge(x, z);
+        const ty = hf === null && !hit ? onTrampolineY(x, z) : null;
         if (hf !== null) base = { y: hf, medium: 'land' };
         else if (hit) base = { y: bridgeDeckY(hit), medium: 'land' };
+        else if (ty !== null) base = { y: ty, medium: 'land' };   // 🤸 매트도 지지면 (groundHeightAt과 동일 문법)
         else {
             base = { y: OCEAN_LEVEL + tideOffset() + 0.02 - p.height * 0.45, medium: 'sea' };   // 수영 높이도 조수를 탄다
             for (const s of ISLANDS) {
@@ -9685,6 +9769,12 @@ function updatePlayer(delta) {
     }
     // Vertical: land / pond / sea. Stepping past a drop (rim, pond edge) starts a fall; landing on
     // water splashes and switches to swimming. On the surface the pet bobs with the waves.
+    if (p.tramp) {   // 🤸 바운스 중 — updateTrampoline이 y를 소유 (이중 적분 금지)
+        p.swimming = false;
+        const tHint = `🤸 ${petKo(p)} 통통 중 — ${IS_TOUCH ? '🦘' : 'Space'} = 더 높이 · 걸어 나가면 끝`;
+        if (controlHint.textContent !== tHint) controlHint.textContent = tHint;
+        return;
+    }
     const sup = playerSupportY(p, p.mover.position.x, p.mover.position.z);
     if (!airborne && p.mover.position.y > sup.y + 0.09) { airborne = true; jumpVy = Math.min(jumpVy, 0); }
     if (airborne) {
@@ -10903,7 +10993,7 @@ function updatePlaneHop(delta) {
 // 경유지 셔플(3~5곳) + 방향 코인플립 + 지터 = 매 바퀴 다른 경로 (순항 밴드 위라 전부 안전).
 // 한 바퀴 ≈ 2분 15초, 안 내리면 무한 루프(바퀴마다 새 경로). ⌘ = 저공 물스침에선 바로 퐁당,
 // 아니면 정거장 귀환 요청. 한가한 펫은 가끔 혼자 타러 간다 (자율 낚시 문법). ----
-const BALLOON_HOME = { x: 13.05, z: 6.75 };
+const BALLOON_HOME = { x: 13.59, z: 7.03 };   // NE섬 동쪽 계류장 — 섬 확장 델타(+0.54,+0.28) 동반
 const BALLOON_CRUISE = [4.6, 6.0];   // 순항 고도 밴드 — 전망대 언덕(1.1+데크)·집 지붕 위
 const BALLOON_POIS = [
     { x: 0, z: 0, ko: '광장 분수' },
@@ -11874,6 +11964,154 @@ const SHELL_TYPES = [
 ];
 let shells = [];        // { t, x, z, mesh }
 let shellFly = [];      // 줍기 연출 (둥실 + 축소)
+// ---- 🤸 트램펄린 바운스: 매트에 선 펫은 자동 통통(바운스마다 사다리처럼 높이 상승), 조종 펫은
+// Space=부스트, 발사 속도 3.1+면 앞구르기(인사 목소리 petVoice와 함께). 둘이 타면 주기 차이로
+// 페이즈가 흐르다 겹치는 순간 더블 바운스(늦게 닿은 쪽이 1.5× 발사). 물리는 절대 y 적분(§4) —
+// 매트 밖으로 나가도 착지까지 이 모듈이 y를 소유(지형 스냅 충돌 방지). 파티클 0 (발열 §1). ----
+let trampSquash = 0;
+let trampLastContact = { at: 0, p: null };
+let trampStats = { flips: 0, doubles: 0 };
+let aiTramp = null;   // { p, ownArrive, began, bouncesLeft } — 자율 낚시와 같은 소유권 문법
+function trampExcluded(p) {
+    return p.bed || p.dip || p.pet.sleeping
+        || (boatRide && boatRide.p === p) || (planeRide && (planeRide.p === p || planeRide.passenger === p))
+        || (balloonRide && (balloonRide.p === p || balloonRide.friend === p))
+        || (ferryRide && (ferryRide.p === p || ferryRide.friend === p))
+        || (fishing && fishing.p === p) || (aiFishing && aiFishing.p === p);
+}
+function trampContact(p, t, vy) {
+    const wasFirst = p.tramp.bounces === 0;
+    p.tramp.vy = vy;
+    p.tramp.bounces++;
+    trampSquash = 0.16;
+    playBuffer(boingBuf, { vol: wasFirst ? 0.3 : 0.45, rate: 0.82 + vy * 0.1 });
+    const now = performance.now();
+    const airDur = (2 * vy) / 7.0;   // 포물선 체공 시간
+    if (trampLastContact.p && trampLastContact.p !== p && now - trampLastContact.at < 150 && Math.random() < 0.5) {
+        p.tramp.vy = Math.min(vy * 1.5, 4.6);   // 🎯 더블 바운스 — 파트너가 방금 닿았다: 스프링이 겹친다
+        p.tramp.flip = { t: 0, dur: ((2 * p.tramp.vy) / 7.0) * 0.85 };
+        trampStats.doubles++;
+        petVoice(p);
+        triggerHugBurst(p.mover.position.x, t.y + 0.5, p.mover.position.z);
+        if (now - (trampStats.lastDoubleLog || 0) > 30000) {
+            trampStats.lastDoubleLog = now;
+            logWorldEvent(`더블 바운스!! ${petKo(p)}가 하늘 높이 솟아올랐다 🤸✨`);
+        }
+    } else if (vy >= 3.1) {
+        p.tramp.flip = { t: 0, dur: airDur * 0.85 };   // 앞구르기 — 인사 목소리와 함께
+        trampStats.flips++;
+        petVoice(p);
+    }
+    trampLastContact = { at: now, p };
+    if (aiTramp && aiTramp.p === p && aiTramp.began) aiTramp.bouncesLeft--;
+}
+function endTramp(p, landedY) {
+    if (Number.isFinite(landedY)) p.mover.position.y = landedY;
+    p.tramp = null;
+    if (aiTramp && aiTramp.p === p && aiTramp.began) {   // 자율 세션 종료 — 내려와서 한 발 물러난다
+        if (p.ai.state !== 'busy') { aiTramp = null; return; }   // 스틸당했다 — 새 디렉터의 goto를 존중
+        const t = trampInfo();
+        aiTramp = null;
+        p.nextTrampAt = Date.now() + 360000 + Math.random() * 360000;
+        logWorldEvent(`${petKo(p)}가 트램펄린에서 폴짝 내려왔다 — 만족한 얼굴 🤸`);
+        if (t) {
+            const a0 = Math.atan2(p.mover.position.z - t.z, p.mover.position.x - t.x);
+            for (let i = 0; i < 8; i++) {   // 내려설 자리 다각 스캔 — 막히면 매트 위 방치 대신 다른 방향
+                const a = a0 + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * (Math.PI / 4);
+                const ex = t.x + Math.cos(a) * (TRAMP.matR + 0.55), ez = t.z + Math.sin(a) * (TRAMP.matR + 0.55);
+                if (world.isBlocked(ex, ez)) continue;
+                p.ai.state = 'goto';
+                p.ai.target = { x: ex, z: ez };
+                p.ai.waypoints = null;
+                p.ai.stall = 0;
+                p.ai.onArrive = () => releaseAI(p, 2);
+                return;
+            }
+        }
+        releaseAI(p, 2);
+    }
+}
+function updateTrampoline(delta) {
+    const t = trampInfo();
+    if (!t) return;
+    const matMesh = t.pr.obj && t.pr.obj.userData.mat;   // 매트 스쿼시 — 눌렸다 튕겨 오른다
+    if (trampSquash > 0) {
+        trampSquash = Math.max(0, trampSquash - delta);
+        if (matMesh) {
+            const k = Math.sin((trampSquash / 0.16) * Math.PI);
+            matMesh.scale.y = 1 - 0.45 * k;
+            matMesh.position.y = 0.225 - 0.035 * k;
+        }
+    } else if (matMesh && matMesh.scale.y !== 1) {
+        matMesh.scale.y = 1;
+        matMesh.position.y = 0.225;
+    }
+    for (const p of pets) {
+        const m = p.mover;
+        const onMat = Math.hypot(m.position.x - t.x, m.position.z - t.z) < TRAMP.matR;
+        if (!p.tramp) {
+            if (onMat && !trampExcluded(p) && m.position.y <= t.y + 0.06 && m.position.y >= t.y - 0.1) {
+                p.tramp = { vy: 0, flip: null, bounces: 0, boost: false };
+                trampContact(p, t, 1.7);   // 올라선 순간 첫 통통 (작게)
+            }
+            continue;
+        }
+        if (trampExcluded(p)) { endTramp(p); continue; }   // 침대/탑승 등이 채갔다 — 그쪽 연출 우선
+        if (aiTramp && aiTramp.p === p && aiTramp.began && p.ai.state !== 'busy') aiTramp = null;   // 디렉터 스틸 — 소유권 반납 (착지는 계속 이 모듈이)
+        p.tramp.vy -= 7.0 * delta;
+        let ny = m.position.y + p.tramp.vy * delta;
+        const floorY = onMat ? t.y : world.groundHeightAt(m.position.x, m.position.z);
+        if (ny <= floorY && p.tramp.vy <= 0) {
+            if (!onMat) { endTramp(p, floorY); playStep(surfaceFor(p), 1.1); continue; }   // 매트 밖 착지 — 일상 복귀
+            if (aiTramp && aiTramp.p === p && aiTramp.began && aiTramp.bouncesLeft <= 0) { endTramp(p, floorY); continue; }
+            ny = floorY;
+            // 발사 사다리: 지날수록 높이 — 병아리는 깃털처럼 조금 더 (주기 차이 = 듀오 페이즈 드리프트)
+            const passing = p !== possessed && !(aiTramp && aiTramp.p === p && aiTramp.began);
+            let vy = Math.min(2.0 + 0.32 * p.tramp.bounces, passing ? 2.5 : 3.35) + (p.name === 'chick' ? 0.12 : 0);
+            if (p === possessed && p.tramp.boost) { vy = Math.min(vy + 0.9, 4.3); p.tramp.boost = false; }
+            trampContact(p, t, vy);
+            ny = floorY + 0.001;
+        }
+        m.position.y = ny;
+        if (p.tramp && p.tramp.flip) {   // 앞구르기 — 엔티티가 매 프레임 리셋하는 wrap.rotation.x를 절대값 덮어쓰기
+            p.tramp.flip.t += delta;
+            const k = Math.min(1, p.tramp.flip.t / p.tramp.flip.dur);
+            p.pet.wrap.rotation.x = -Math.PI * 2 * (k * k * (3 - 2 * k));
+            if (k >= 1) p.tramp.flip = null;
+        }
+    }
+}
+function startAiTramp(p) {
+    const t = trampInfo();
+    if (!t || !p || aiTramp || p === possessed || trampExcluded(p) || p.tramp) return 'busy';
+    if (p.ai.state !== 'idle' && p.ai.state !== 'walk') return 'busy';
+    // 매트 앞까지 걸어가서(펫 쪽에서 가까운 가장자리) 폴짝 올라탄다
+    const a = Math.atan2(p.mover.position.z - t.z, p.mover.position.x - t.x);
+    const ax = t.x + Math.cos(a) * (TRAMP.matR + 0.4), az = t.z + Math.sin(a) * (TRAMP.matR + 0.4);
+    if (world.isBlocked(ax, az)) return 'busy';
+    releaseAI(p);
+    p.ai.state = 'goto';
+    p.ai.target = { x: ax, z: az };
+    p.ai.waypoints = buildRoute(p.mover.position, { x: ax, z: az });
+    p.ai.stall = 0;
+    aiTramp = { p, began: false, bouncesLeft: 6 + Math.floor(Math.random() * 5) };
+    aiTramp.ownArrive = () => {   // 클로저 정체성 = 소유권 (다른 디렉터가 goto를 덮으면 식별)
+        if (!aiTramp || aiTramp.p !== p) return;
+        aiTramp.began = true;
+        p.ai.state = 'busy';   // 바운스 동안 배회 금지 — updateTrampoline이 y를 소유
+        p.mover.position.set(t.x + (Math.random() - 0.5) * 0.24, t.y, t.z + (Math.random() - 0.5) * 0.24);
+        p.mover.rotation.y = Math.atan2(possessed ? possessed.mover.position.x - t.x : -t.x, possessed ? possessed.mover.position.z - t.z : -t.z);
+        logWorldEvent(`${petKo(p)}가 트램펄린 위로 폴짝 — 통통 뛰기 시작! 🤸`);
+    };
+    p.ai.onArrive = aiTramp.ownArrive;
+    logWorldEvent(`${petKo(p)}가 트램펄린 쪽으로 신나게 달려갔다 🤸`);
+    return 'ok';
+}
+function petTramp() {   // 클릭 = 절친 대리주문 (모래놀이 문법)
+    const p = pets.find((q) => q !== possessed && !q.pet.sleeping && !q.bed && !q.dip && !q.tramp
+        && (q.ai.state === 'idle' || q.ai.state === 'walk'));
+    if (!p || startAiTramp(p) !== 'ok') { showToast('🤸 지금은 뛸 친구가 없어요'); return; }
+}
 let shellNextAt = 50;   // 첫 시도 50초 후 (시딩과 별개 — 3개까지 리필용)
 let shellGlintAt = 7;
 let shellSeeded = false;   // 로드 직후 1~2개 즉시 — 레이아웃·소품이 다 선 첫 프레임에 심는다
@@ -13859,6 +14097,7 @@ function animate() {
     updatePlanePose();                       // 비행 맞바람 — 귀·날개 눕기 (엔티티 뒤 덮어쓰기)
     updateFerryPose();                       // 페리 벤치 앉기 — 다리 접기 (엔티티 뒤 덮어쓰기)
     updatePhoneCall(delta);                  // 📞 전화 안무 — 폰 위치·고개 기울임·옹알이 (엔티티 뒤)
+    updateTrampoline(delta);                 // 🤸 트램펄린 바운스 — y 소유 + 앞구르기 포즈 (엔티티 뒤)
     updateFishing(delta);                    // 🎣 낚시 안무 — 엔티티 업데이트 뒤라 포즈 덮어쓰기 가능
     updateHeartFx(delta);
     updateFestiveFx(delta);

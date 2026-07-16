@@ -16,7 +16,7 @@ export const ISLAND_R = 6.2;   // 5.6→6.2: 배치 리뉴얼 — 점유율을 �
 // 다리를 건너 가는 진짜 목적지가 되도록. 방위각은 유지(델타 이동), SWIM_LEASH 18 안쪽.
 export const ISLANDS = [
     { x: 0,      z: 0,     r: ISLAND_R },
-    { x: 10.69,  z: 5.45,  r: 3.2 },     // NE island — 놀이터 (그네·시소·운동 공간), 간격 2.6m
+    { x: 11.23,  z: 5.73,  r: 3.8 },     // NE island — 놀이터 (그네·시소·운동·트램펄린), r 3.2→3.8 + 방위각 유지 델타(+0.54,+0.28)로 간격 2.6m 유지
     { x: -10.72, z: -4.69, r: 2.9 },     // SW island — 추억의 섬 (기념비·쪼아쪼아나무·소원우물·타임캡슐), 간격 2.6m
     { x: 10.12,  z: -7.17, r: 3.5 },     // SE island — 모험의 섬 (언덕·동굴·전망대·보물 모래밭), 간격 2.7m
     // 휴양지 모래섬 — 다리 없음(보트/수영으로만): kind:'sand'가 지면 텍스처·해변 경사·발소리를
@@ -26,7 +26,7 @@ export const ISLANDS = [
 // 주의: buildRoute가 BRIDGES[섬 인덱스-1]로 다리를 찾는다 — 다리 순서는 위 위성섬 순서와 같아야 한다.
 // 공식(섬 중심선 방사축): A = u·(본섬R−0.5), B = 위성중심 − u·(위성R−0.5), inner = A−0.4u, outer = B+0.4u
 export const BRIDGES = [
-    { A: { x: 5.08,  z: 2.59 },  B: { x: 8.28,  z: 4.22 },  inner: { x: 4.72,  z: 2.41 },  outer: { x: 8.64,  z: 4.40 } },
+    { A: { x: 5.08,  z: 2.59 },  B: { x: 8.29,  z: 4.23 },  inner: { x: 4.72,  z: 2.41 },  outer: { x: 8.65,  z: 4.41 } },
     { A: { x: -5.22, z: -2.29 }, B: { x: -8.52, z: -3.73 }, inner: { x: -4.86, z: -2.13 }, outer: { x: -8.89, z: -3.89 } },
     { A: { x: 4.65,  z: -3.30 }, B: { x: 7.67,  z: -5.44 }, inner: { x: 4.32,  z: -3.06 }, outer: { x: 7.99,  z: -5.67 } },
 ];
@@ -63,9 +63,10 @@ export const FLAT_SPOTS = [
     { x: 0.0, z: 0.0, r: 1.7 },     // central plaza (hug point / monument to come)
     { x: 2.7, z: 2.05, r: 2.05, follow: 'house-1' },   // house pad — 리모델로 커진 집 + 앞마당 여유 (1.7→2.05)
     { x: -2.6, z: -2.9, r: 0.95 },  // pond basin (연못은 이동 불가 — 지형 함몰)
-    { x: 11.05, z: 6.3, r: 1.0, follow: 'swing-1' },   // NE island swing pad (level ground under the A-frame legs)
-    { x: 12.17, z: 4.77, r: 1.0, follow: 'seesaw-1' }, // NE island seesaw pad (level ground under the fulcrum + plank)
-    { x: 8.62, z: 6.51, r: 1.15, follow: 'gym-1' },    // NE island gym pad — 매트/아령이 구릉에 뚫리지 않게 (그네·시소 패드와 같은 원리)
+    { x: 11.59, z: 6.58, r: 1.0, follow: 'swing-1' },   // NE island swing pad (level ground under the A-frame legs)
+    { x: 12.71, z: 5.05, r: 1.0, follow: 'seesaw-1' }, // NE island seesaw pad (level ground under the fulcrum + plank)
+    { x: 9.16, z: 6.79, r: 1.15, follow: 'gym-1' },    // NE island gym pad — 매트/아령이 구릉에 뚫리지 않게 (그네·시소 패드와 같은 원리)
+    { x: 9.9, z: 3.9, r: 1.1, follow: 'trampoline-1' },  // NE island trampoline pad — 확장된 남쪽 새 공간
     { x: -10.72, z: -4.69, r: 1.55 },  // 추억의 섬 중앙 뜰 — 기념비·소원우물·타임캡슐이 반듯하게 선다
     { x: 9.77, z: -7.12, r: 1.15 },    // 모험의 섬 동굴 포켓 — 언덕 남서면을 파서 만든 평탄 바닥
     { x: -3.3, z: 11.6, r: 0.6 },      // 휴양지 섬 모래성 받침 — 사구 굴곡 위에 반듯하게
@@ -101,12 +102,13 @@ export const PROPS = [
     { type: 'coffee', x: -3.35, z: 2.18, rotY: 2.2, r: 0.5 },  // NW 카페 거리 — 커피 부스 (Ctrl/⌘로 주문)
     { type: 'food', x: -3.11, z: 3.98, rotY: 2.73, r: 0.5 },   // NW 카페 거리 — 간식 부스 (Ctrl/⌘로 주문)
     // Satellite islands: a tree and a lamp at each bridgehead (otherwise open feature ground)
-    { type: 'tree',  x:  11.19, z:  3.28, rotY: 0.7, r: 0.45, big: true  },   // NE 남쪽 공터
+    { type: 'tree',  x:  11.73, z:  3.56, rotY: 0.7, r: 0.45, big: true  },   // NE 남쪽 공터 (섬 델타 동반)
     { type: 'tree',  x: -12.35, z: -3.6,  rotY: 2.9, r: 0.45, big: false },   // 추억의 섬 북서
-    { type: 'lamp', x:  9.71, z:  4.3,  rotY: 0, r: 0.18 },   // NE 다리목
+    { type: 'lamp', x:  9.35, z:  5.05,  rotY: 0, r: 0.18 },   // NE 다리목   // (트램펄린 존과 분리 — 다리목 쪽으로)
     { type: 'lamp', x: -9.42, z: -4.82, rotY: 0, r: 0.18 },   // SW 다리목
-    { type: 'swing', x: 11.05, z: 6.3, rotY: 3.14, r: 0.55 }, // NE 섬 그네 (2인 A자, 앞자리 섬 안쪽 향함)
-    { type: 'seesaw', x: 12.17, z: 4.77, rotY: 0, r: 0.62 },  // NE 섬 시소 (플랭크 남북 방향, 양끝 마주봄)
+    { type: 'swing', x: 11.59, z: 6.58, rotY: 3.14, r: 0.55 }, // NE 섬 그네 (2인 A자, 앞자리 섬 안쪽 향함)
+    { type: 'seesaw', x: 12.71, z: 5.05, rotY: 0, r: 0.62 },  // NE 섬 시소 (플랭크 남북 방향, 양끝 마주봄)
+    { type: 'trampoline', x: 9.9, z: 3.9, rotY: 0, r: 0 },  // NE 섬 트램펄린 — r 0(비차단): 매트는 걸어 올라가는 지면(world.groundHeightAt 훅)
     // 벚꽃나무 (P1 ③): 봄에 분홍으로 만개하고 꽃잎이 흩날린다 — 계절 시스템이 칠한다.
     // (공사 모드 저장 id가 타입별 순번이라 새 프롭은 반드시 목록 끝에 추가)
     { type: 'tree',  x:  1.35, z: -3.5, rotY: 0.9, r: 0.45, big: true, cherry: true },
@@ -144,7 +146,7 @@ export const PROPS = [
     // 마지막 6종 — 우체통(N 뜰 길가)·운동 공간(NE 놀이터 섬)·도서관(W 뜰)·
     // 분수(광장 남가 랜드마크)·꽃바구니(N 뜰 토글).
     { type: 'mailbox',      x:  0.38, z:  3.9,  rotY: -3.04, r: 0.15 },
-    { type: 'gym',           x:  8.62, z:  6.51, rotY: 3.6,   r: 0.8 },   // NE 놀이터 섬 — 그네·시소와 한 존
+    { type: 'gym',           x:  9.16, z:  6.79, rotY: 3.6,   r: 0.8 },   // NE 놀이터 섬 — 그네·시소와 한 존
     { type: 'library',       x: -4.99, z: -0.57, rotY: 2.0,   r: 0.65 },
     { type: 'fountain',      x:  0,    z:  0,    rotY: 0,     r: 0.55 },  // 광장 정중앙 — 마을 분수 랜드마크
     { type: 'flowerbasket',  x:  0.85, z:  4.83, rotY: 1.3,   r: 0.15 },
