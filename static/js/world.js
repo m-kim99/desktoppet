@@ -32,12 +32,12 @@ const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'la
 // 'v2|' 접두 = 배치 리뉴얼 세대: 섬 기하가 그대로여도 접두를 올리면 위성섬 소품이 전부 새 기본값으로
 // 리셋된다. 좌표 테이블(MOVED_DEFAULTS)은 클라이언트별 사본(서버 파일/localStorage 오리진들)의
 // 세대 차이를 못 이긴다는 게 실측 교훈 — 강제 리셋 레버는 이 접두 하나로 통일.
-const ISLAND_SIG = 'v2|' + ISLANDS.map((i) => `${i.x},${i.z},${i.r}`).join('|');
+const ISLAND_SIG = 'v3|' + ISLANDS.map((i) => `${i.x},${i.z},${i.r}`).join('|');   // v3: 그네=북쪽 가, 시소=남동 (사용자 재스왑)
 // 섬은 그대로인데 기본 배치만 리뉴얼한 프롭: 저장값이 '옛 기본값 그대로'면 사용자가 손대지 않은
 // 것이니 새 기본값을 따라간다 (지문 메커니즘의 사각지대 보완 — 놀이터섬 분산 배치가 첫 사례).
 const MOVED_DEFAULTS = {
-    'swing-1':  [[11.05, 6.3], [11.59, 6.58], [11.7, 7.6]],
-    'seesaw-1': [[12.17, 4.77], [12.71, 5.05], [13.15, 4.6]],
+    'swing-1':  [[11.05, 6.3], [11.59, 6.58], [11.7, 7.6], [13.15, 4.6]],
+    'seesaw-1': [[12.17, 4.77], [12.71, 5.05], [13.15, 4.6], [11.7, 7.6]],
     'gym-1':    [[8.62, 6.51], [9.16, 6.79]],
     'lamp-7':   [[9.71, 4.3], [9.35, 5.05]],
     'tree-5':   [[11.19, 3.28]],
@@ -14234,3 +14234,24 @@ function animate() {
 }
 worldBake();   // 씬이 전부 지어진 뒤 첫 베이크 — 이후엔 공사모드 종료 때마다 재베이크
 renderer.setAnimationLoop(animate);
+
+// ---- 🔄 버전 워치독: 폰 PWA/홈화면 웹뷰는 오래 살아서 새 배포를 모른다 — 화면에 복귀할 때
+// world.js의 ETag를 HEAD로 재확인해 바뀌었으면 토스트 후 자동 새로고침. 데스크톱/테스트 서버처럼
+// ETag가 없으면 조용히 무력화된다 (LAN HEAD 1회 = 무비용). ----
+let buildTag = null;
+async function fetchBuildTag() {
+    try {
+        const r = await fetch('js/world.js', { method: 'HEAD', cache: 'no-store' });
+        return r.headers.get('etag') || r.headers.get('last-modified') || null;
+    } catch (e) { return null; }
+}
+fetchBuildTag().then((t) => { buildTag = t; });
+document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible' || !buildTag) return;
+    const t = await fetchBuildTag();
+    if (t && t !== buildTag) {
+        buildTag = t;   // 재진입 중복 방지
+        showToast('🔄 새 버전이 도착했어요 — 새로고침합니다');
+        setTimeout(() => location.reload(), 1400);
+    }
+});
