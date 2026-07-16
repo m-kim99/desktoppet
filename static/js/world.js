@@ -7050,6 +7050,7 @@ if (statsOn) window.__worldDev = {
     shellState: () => ({ alive: shells.length, spots: shells.map((sh) => ({ t: sh.t.id, x: +sh.x.toFixed(2), z: +sh.z.toFixed(2) })), counts: shellCounts() }),
     shellSpawn: () => trySpawnShell(true),
     stream: () => ({ loaded: isletChunks.size, islands: ISLANDS.length, queue: isletQueue.length, found: discoveredIslets.size }),
+    mapToggle: () => { toggleWorldMap(); return mapOpen; },
     streamScan: (x, z, rad) => {   // 순수 스캔 — 로드 전에도 무인도 좌표를 알 수 있다 (E2E)
         const out = [];
         for (let cx = Math.floor((x - rad) / CHUNK); cx <= Math.floor((x + rad) / CHUNK); cx++) {
@@ -12085,6 +12086,131 @@ function refreshIsletChunks() {
         }
     }
 }
+// ---- 🗺️ 지도: 좌측 상단 버튼 → 미니맵 패널. 코어 군도 + 발견한 무인도(포그 오브 워 —
+// 미발견은 안 보임) + 탈것 아이콘 + 네비식 회전 화살표(조종 펫 헤딩). 열려 있을 때만
+// 0.5초 간격 캔버스 리드로우 — 닫으면 비용 0 (발열 §1). ----
+const mapBtn = document.createElement('div');
+mapBtn.textContent = '🗺️';
+mapBtn.title = '지도 — 현재 위치·방향·탈것·발견한 섬';
+{
+    const sz = IS_TOUCH ? 48 : 40;
+    mapBtn.style.cssText = `position:fixed; left:14px; top:calc(12px + env(safe-area-inset-top, 0px)); width:${sz}px; height:${sz}px; display:flex; align-items:center; justify-content:center; background:rgba(30,32,40,0.88); color:#fff; font-size:${IS_TOUCH ? 20 : 17}px; border-radius:11px; cursor:pointer; box-shadow:0 3px 10px rgba(0,0,0,0.3); z-index:95; user-select:none; -webkit-user-select:none;`;
+}
+document.body.appendChild(mapBtn);
+const mapPanel = document.createElement('canvas');
+mapPanel.width = 340;
+mapPanel.height = 340;
+mapPanel.style.cssText = `position:fixed; left:14px; top:calc(${IS_TOUCH ? 68 : 60}px + env(safe-area-inset-top, 0px)); width:190px; height:190px; display:none; z-index:95; border-radius:14px; box-shadow:0 8px 26px rgba(0,0,0,0.4); background:rgba(20,28,38,0.92);`;
+mapPanel.addEventListener('pointerdown', (e) => e.stopPropagation());
+document.body.appendChild(mapPanel);
+let mapOpen = false;
+let mapTickT = 0;
+let mapWide = false;   // 네비식 자동 줌: 마을(≤22)에선 군도 확대, 원양(>26)에선 해역 전체 (히스테리시스)
+function drawWorldMap() {
+    const c = mapPanel.getContext('2d');
+    const W = mapPanel.width;
+    const cx = W / 2, cy = W / 2;
+    const focus = possessed ? possessed.mover.position : controls.target;
+    const fd = Math.hypot(focus.x, focus.z);
+    if (mapWide && fd < 22) mapWide = false;
+    else if (!mapWide && fd > 26) mapWide = true;
+    const viewR = mapWide ? EXPLORE_R : 26;
+    const sc = (W / 2 - 12) / viewR;
+    const px = (x) => cx + x * sc;
+    const py = (z) => cy - z * sc;   // +z = 지도 위쪽
+    c.clearRect(0, 0, W, W);
+    // 탐험 해역
+    c.beginPath();
+    c.arc(cx, cy, Math.min(W / 2 - 4, EXPLORE_R * sc), 0, Math.PI * 2);
+    c.fillStyle = '#2c6f95';
+    c.fill();
+    c.strokeStyle = 'rgba(255,255,255,0.25)';
+    c.lineWidth = 2;
+    c.stroke();
+    if (mapWide) {   // 확대 뷰 표시링 — 마을 반경 참고선
+        c.beginPath();
+        c.arc(cx, cy, 26 * sc, 0, Math.PI * 2);
+        c.strokeStyle = 'rgba(255,255,255,0.12)';
+        c.stroke();
+    }
+    // 섬: 코어는 항상, 무인도는 발견한 것만 (로드 여부 무관 — 시드로 위치 재계산)
+    const drawIsle = (il) => {
+        c.beginPath();
+        c.arc(px(il.x), py(il.z), Math.max(2.5, il.r * sc), 0, Math.PI * 2);
+        c.fillStyle = il.kind === 'sand' ? '#e6d3a1' : '#6fbf58';
+        c.fill();
+    };
+    for (const il of ISLANDS) if (!il.islet) drawIsle(il);
+    for (const key of discoveredIslets) {
+        const [ix, iz] = key.split(',').map(Number);
+        const il = isletFor(ix, iz);
+        if (il) drawIsle(il);
+    }
+    // 탈것 아이콘
+    c.font = '22px sans-serif';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    const mark = (emoji, x, z) => {   // 뷰 밖 마커는 가장자리에 클램프 — 나침반처럼 방향을 알려준다
+        const d = Math.hypot(x, z);
+        const lim = viewR - 4;
+        const k = d > lim ? lim / d : 1;
+        c.globalAlpha = k < 1 ? 0.65 : 1;
+        c.fillText(emoji, px(x * k), py(z * k));
+        c.globalAlpha = 1;
+    };
+    mark('🚣', BOAT.x, BOAT.z);
+    mark('🛩️', PLANE.x, PLANE.z);
+    mark('⛴️', FERRY.x, FERRY.z);
+    mark('🎈', BALLOON.x, BALLOON.z);
+    // 펫: 조종 펫은 네비 화살표(헤딩 회전), 나머지는 점
+    for (const q of pets) {
+        const qx = px(q.mover.position.x), qy = py(q.mover.position.z);
+        if (q === possessed) {
+            c.save();
+            c.translate(qx, qy);
+            c.rotate(q.mover.rotation.y);   // heading 0 = +z = 지도 위 — 삼각형도 위를 보게 그린다
+            c.beginPath();
+            c.moveTo(0, -11);
+            c.lineTo(7, 8);
+            c.lineTo(0, 4);
+            c.lineTo(-7, 8);
+            c.closePath();
+            c.fillStyle = '#ffd54f';
+            c.fill();
+            c.lineWidth = 2.5;
+            c.strokeStyle = '#3d2f18';
+            c.stroke();
+            c.restore();
+        } else {
+            c.beginPath();
+            c.arc(qx, qy, 5, 0, Math.PI * 2);
+            c.fillStyle = q.name === 'chick' ? '#e8e28a' : '#d8c9b8';
+            c.fill();
+            c.lineWidth = 1.5;
+            c.strokeStyle = 'rgba(0,0,0,0.4)';
+            c.stroke();
+        }
+    }
+    // 발견 카운트
+    c.font = '600 17px sans-serif';
+    c.textAlign = 'left';
+    c.fillStyle = 'rgba(255,255,255,0.85)';
+    c.fillText(`🏝️ ${discoveredIslets.size}`, 14, 24);
+}
+function toggleWorldMap(force) {
+    mapOpen = force !== undefined ? force : !mapOpen;
+    mapPanel.style.display = mapOpen ? 'block' : 'none';
+    if (mapOpen) drawWorldMap();
+}
+mapBtn.addEventListener('click', () => toggleWorldMap());
+function updateWorldMap(delta) {
+    if (!mapOpen) return;
+    mapTickT += delta;
+    if (mapTickT >= 0.5) {   // 열려 있을 때만 2Hz 리드로우
+        mapTickT = 0;
+        drawWorldMap();
+    }
+}
 let isletTickT = 0;
 function updateStreaming(delta) {
     isletTickT += delta;
@@ -13381,6 +13507,7 @@ function animate() {
     updateFerry(delta);                      // ⛴️ 통통호 — 정박/항해/정차 서비스
     updateFerryHop(delta);                   // 절친 갑판 승선 아크
     updateStreaming(delta);                  // 🌊 무인도 스트리밍 — 1Hz 스캔 + 프레임당 1작업
+    updateWorldMap(delta);                   // 🗺️ 지도 — 열려 있을 때만 2Hz 리드로우
     updateShells(delta);                     // 🐚 조개 스폰/반짝/줍기 연출
     updateBalloon(delta);                    // 🎈 열기구 — 계류 살랑임/스플라인 투어/귀환
     updateBalloonHop(delta);                 // 절친 승선 큰 아크 — 데크에서 바구니로
