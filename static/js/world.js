@@ -7349,6 +7349,10 @@ if (statsOn) window.__worldDev = {
     diveState: () => (dive ? { phase: dive.phase, t: +dive.t.toFixed(2), ai: !!dive.isAI, y: dive.p ? +dive.p.mover.position.y.toFixed(2) : null } : null),
     seaState: () => ({ under: camUnderwater, chunks: seaChunks.size, spawns: seaSpawns.map((q) => ({ t: q.t.id, x: +q.x.toFixed(1), z: +q.z.toFixed(1) })), treasures: [...seaChunks.entries()].filter(([k, e]) => e.treasure).map(([k, e]) => ({ key: k, x: +e.tx.toFixed(1), z: +e.tz.toFixed(1) })), fogNear: +scene.fog.near.toFixed(1) }),
     seabedAt: (x, z) => +seabedHeight(x, z).toFixed(2),
+    callFriend: () => startPhoneCall(),   // 📞 친구 부르기 (E2E)
+    handState: () => (handHold ? { y: +handHold.partner.mover.position.y.toFixed(2), swim: handHold.partner.swimming, state: handHold.partner.ai.state } : null),
+    seaMapInfo: () => ({ found: Object.keys(seaFound).length, wreck: !!seaFound.wreck, seaMode: camUnderwater && mapOpen }),
+    mapToggle: (f) => toggleWorldMap(f),
     seaSpawnNow: (id, dx, dz) => {   // E2E — 펫 곁 확정 스폰
         const pp = dive && dive.p;
         if (!pp) return false;
@@ -10083,8 +10087,8 @@ function doInteract() {
             }
             return;
         }
+        if (startDive(possessed)) return;   // 🤿 열린 바다 ⌘ = 퐁당 잠수 (손잡은 채면 절친도 함께)
         if (handHold) releaseHandHold();
-        if (startDive(possessed)) return;   // 🤿 열린 바다 ⌘ = 퐁당 잠수
         return;
     }
     if (carDrive) { exitCar(); return; }
@@ -10435,7 +10439,7 @@ function updatePlayer(delta) {
     // water splashes and switches to swimming. On the surface the pet bobs with the waves.
     if (dive && dive.p === p && !dive.isAI) {   // 🤿 딥 다이브 — updateDive가 y를 소유
         p.swimming = 'sea';
-        const dHint = `🤿 ${petKo(p)} 잠수 중 — ${IS_TOUCH ? '조이스틱' : '방향키'} 유영 · ${IS_TOUCH ? '⬆️ 버튼' : 'W/S 수심 · ⌘'} 부상`;
+        const dHint = `🤿 ${petKo(p)} 잠수 중${handHold ? ' 🤝' : ''} — ${IS_TOUCH ? '조이스틱' : '방향키'} 유영 · ${IS_TOUCH ? '⬆️ 버튼' : 'W/S 수심 · ⌘'} 부상`;
         if (controlHint.textContent !== dHint) controlHint.textContent = dHint;
         return;
     }
@@ -10494,7 +10498,7 @@ function updatePlayer(delta) {
         : lampNear ? ` · ${IKEY} 가로등 ${Math.round(lampBrightness * 100)}%` : '';
     const shiftSeg = IS_TOUCH ? '' : ` · Shift ${running ? '걷기' : '달리기'}`;
     const hint = p.swimming
-        ? `🏊 ${petName} 수영 중${handHold ? ' 🤝' : ''} — ${MOVEK} 이동 · ${JUMPK} 물장구${nearCliff ? ` · ${IKEY} 섬으로 올라가기` : handHold ? ` · ${IKEY} 손 놓기` : ''} · ${RELK} 해제`
+        ? `🏊 ${petName} 수영 중${handHold ? ' 🤝' : ''} — ${MOVEK} 이동 · ${JUMPK} 물장구${nearCliff ? ` · ${IKEY} 섬으로 올라가기` : handHold ? ` · ${IKEY} ${p.swimming === 'sea' ? '같이 잠수' : '손 놓기'}` : ''} · ${RELK} 해제`
         : `${runNow ? '🏃' : '🎮'} ${petName} ${runNow ? '달리는 중' : '조종 중'}${handHold ? ' 🤝' : ''} — ${MOVEK} 이동${shiftSeg} · ${JUMPK} 점프${act} · ${RELK} 해제`;
     if (controlHint.textContent !== hint) controlHint.textContent = hint;
 }
@@ -10855,8 +10859,15 @@ function updatePhoneCall(delta) {
         scene.add(spr);
         hugBurst.push({ spr, vx: 0, vy: 0.35, vz: 0, t: 0.4 });
         petVoice(friend);   // 달려온 절친의 대답
-        showToast('📞 통화 끝 — 절친이 포르르 달려와 손을 잡았어요!');
-        logWorldEvent(`${petKo(friend)}가 전화를 받자마자 포르르 달려와 ${petKo(p)}의 손을 잡았다`);
+        if (dive && dive.p === p && !dive.isAI) {   // 🤿 해저에서 불렀다 — 수면에 퐁당, 손잡고 스르륵 내려온다
+            spawnSplash(sx, sup.y + 0.05, sz);
+            playBuffer(splashBuf, { vol: 0.4, rate: 1.1, filterFreq: 2200 });
+            showToast('📞 통화 끝 — 절친이 퐁당 뛰어들어 곁으로 내려와요!');
+            logWorldEvent(`${petKo(friend)}가 전화를 받고 퐁당 뛰어들어 ${petKo(p)} 곁으로 헤엄쳐 내려왔다 🤿`);
+        } else {
+            showToast('📞 통화 끝 — 절친이 포르르 달려와 손을 잡았어요!');
+            logWorldEvent(`${petKo(friend)}가 전화를 받자마자 포르르 달려와 ${petKo(p)}의 손을 잡았다`);
+        }
     }
 }
 function teleportToFriend() {
@@ -13303,7 +13314,8 @@ function ensureUnderPlane() {
 function updateUnderwater() {
     ensureUnderPlane();
     const wy = OCEAN_LEVEL + tideOffset() + 0.02;
-    const now = camera.position.y < wy - 0.04;
+    // 얕은 셸프 잠수는 팔로우캠이 수면께에 떠서 카메라 판정이 플랩한다 — 딥 다이브 중엔 수중 확정
+    const now = camera.position.y < wy - 0.04 || !!(dive && !dive.isAI && dive.phase === 'deep');
     underPlane.position.y = wy + 0.01;
     if (now === camUnderwater) return;
     camUnderwater = now;
@@ -13341,7 +13353,7 @@ function rollSeafood(zone) {
 }
 function startDive(p, force, isAI) {
     if (dive || !p || p.swimming !== 'sea') return false;
-    releaseHandHold();
+    if (isAI) releaseHandHold();   // 빙의 딥 다이브는 손잡은 채 — 절친이 함께 내려온다 (updateHandHold 수중판)
     let blob = null;
     if (isAI) {   // AI는 동숲식 실루엣(A단계), 빙의는 진짜 물속(deep)으로
         blob = new THREE.Sprite(new THREE.SpriteMaterial({ map: blobTex, color: 0x1c3a4a, transparent: true, opacity: 0.55, depthWrite: false }));
@@ -13449,9 +13461,11 @@ function updateDive(delta) {
             scene.add(bub);
             hugBurst.push({ spr: bub, vx: (Math.random() - 0.5) * 0.06, vy: 0.35, vz: (Math.random() - 0.5) * 0.06, t: 0.1 });
         }
-        // 카메라도 물속으로 — 궤도는 자유, y만 수면 아래로 캡
+        // 카메라도 물속으로 — 궤도는 자유, y만 수면 아래로 캡 + 모래 사구에 파묻히지 않게 바닥 가드
         const camCeil = waveYAt(camera.position.x, camera.position.z) - 0.26;
         if (camera.position.y > camCeil) camera.position.y = camCeil;
+        const camFloor = seabedHeight(camera.position.x, camera.position.z) + 0.35;
+        if (camera.position.y < camFloor) camera.position.y = camFloor;
         updateSeaFloor(delta);   // 해저 청크·채집물·보물 (수중에서만 산다)
     } else if (dive.phase === 'up') {
         const ceil = waveYAt(m.position.x, m.position.z);
@@ -13489,6 +13503,14 @@ let dugSeabed = {};
 try { dugSeabed = JSON.parse(localStorage.getItem('world-seabed-dug') || '{}') || {}; } catch (e) { dugSeabed = {}; }
 const seabedDug = (k) => !!dugSeabed[k] && Date.now() - dugSeabed[k] < 72 * 3600 * 1000;
 const WRECK_AT = { x: 31.5, z: -18.5 };   // 난파선 — 먼바다 고정 POI (심연 방향)
+// 🗺️ 해저 포그오브워: 잠수 중 청크가 로드되면 그 보물 자리를 '알게 된다' (소나식) — 지도에 ✕로 남는다
+let seaFound = {};
+try { seaFound = JSON.parse(localStorage.getItem('world-sea-found') || '{}') || {}; } catch (e) { seaFound = {}; }
+function recordSeaFind(key, x, z, kind) {
+    if (seaFound[key]) return;
+    seaFound[key] = { x: +x.toFixed(1), z: +z.toFixed(1), k: kind };
+    try { localStorage.setItem('world-sea-found', JSON.stringify(seaFound)); } catch (e) {}
+}
 const seaSandMat = new THREE.MeshLambertMaterial({ color: 0xcfc09a, map: sandTex });
 function seaChunkInfo(cx, cz) {   // 시드 결정적 (아발란치 rngT — 시드 3계명)
     const seed = (((cx * 92837111) ^ (cz * 68943481)) >>> 0) % 2147483645 + 1;
@@ -13573,6 +13595,7 @@ function loadSeaChunk(key, cx, cz) {
     }
     // ⛏️ 해저 보물 ✕ (섬 밑·발굴済 제외)
     let treasure = null;
+    if (info.treasure && islandOf(info.tx, info.tz) < 0) recordSeaFind(key, info.tx, info.tz, 't');   // 지도 소나 — 발굴 여부 무관 '아는 자리'
     if (info.treasure && !seabedDug(key) && islandOf(info.tx, info.tz) < 0) {
         treasure = new THREE.Group();
         const ty = seabedHeight(info.tx, info.tz);
@@ -13651,6 +13674,13 @@ function updateSeaFloor(delta) {
     // 채집물: 펫 주변 12m 내 4개 유지 (존 풀)
     const p = dive && dive.p;
     if (!p) return;
+    if (!seaFound.wreck && Math.hypot(p.mover.position.x - WRECK_AT.x, p.mover.position.z - WRECK_AT.z) < 9) {
+        recordSeaFind('wreck', WRECK_AT.x, WRECK_AT.z, 'w');   // 🚢 난파선 발견 — 지도에 영구 표시
+        fishFanfare();
+        showToast('🚢 가라앉은 난파선을 발견했다!! (지도에 표시)');
+        logWorldEvent(`${petKo(p)}가 해저에서 가라앉은 난파선을 발견했다 🚢✨`);
+        maybeProactive(p, '방금 바다 밑에서 진짜 난파선을 발견했다!! 돛대랑 보물상자도 있었다!!');
+    }
     seaSpawnAt -= delta;
     if (seaSpawnAt <= 0) {
         seaSpawnAt = 2.6;
@@ -14350,7 +14380,104 @@ mapPanel.addEventListener('pointerup', (e) => {   // 🧲 탈것 아이콘 탭 �
     mapMenu.style.display = 'block';
 });
 let mapWide = false;   // 네비식 자동 줌: 마을(≤22)에선 군도 확대, 원양(>26)에선 해역 전체 (히스테리시스)
+function drawPetMarkers(c, px, py) {   // 펫: 조종 펫은 네비 화살표(헤딩 회전), 나머지는 점 — 지상/해저 지도 공용
+    for (const q of pets) {
+        const qx = px(q.mover.position.x), qy = py(q.mover.position.z);
+        if (q === possessed) {
+            c.save();
+            c.translate(qx, qy);
+            c.rotate(q.mover.rotation.y);   // heading 0 = +z = 지도 위 — 삼각형도 위를 보게 그린다
+            c.beginPath();
+            c.moveTo(0, -11);
+            c.lineTo(7, 8);
+            c.lineTo(0, 4);
+            c.lineTo(-7, 8);
+            c.closePath();
+            c.fillStyle = '#ffd54f';
+            c.fill();
+            c.lineWidth = 2.5;
+            c.strokeStyle = '#3d2f18';
+            c.stroke();
+            c.restore();
+        } else {
+            c.beginPath();
+            c.arc(qx, qy, 5, 0, Math.PI * 2);
+            c.fillStyle = q.name === 'chick' ? '#e8e28a' : '#d8c9b8';
+            c.fill();
+            c.lineWidth = 1.5;
+            c.strokeStyle = 'rgba(0,0,0,0.4)';
+            c.stroke();
+        }
+    }
+}
+function drawSeaMap() {   // 🌊 해저 지도 — 수중이면 자동 전환: 셸프/외해/심연 수심 밴드 + 알게 된 보물 ✕ + 난파선
+    const c = mapPanel.getContext('2d');
+    const W = mapPanel.width;
+    const cx = W / 2, cy = W / 2;
+    const focus = possessed ? possessed.mover.position : controls.target;
+    const fd = Math.hypot(focus.x, focus.z);
+    if (mapWide && fd < 22) mapWide = false;
+    else if (!mapWide && fd > 26) mapWide = true;
+    const viewR = mapWide ? EXPLORE_R : 26;
+    const sc = (W / 2 - 12) / viewR;
+    const px = (x) => cx + x * sc;
+    const py = (z) => cy - z * sc;
+    c.clearRect(0, 0, W, W);
+    mapIconPts.length = 0;   // 탈것 회수 탭은 수면 지도 전용
+    const edgeR = Math.min(W / 2 - 4, EXPLORE_R * sc);
+    c.beginPath();
+    c.arc(cx, cy, edgeR, 0, Math.PI * 2);
+    c.fillStyle = '#1d4d60';   // 외해 해저
+    c.fill();
+    c.beginPath();   // 심연 절벽 테두리 — 경계 밖은 어둠
+    c.arc(cx, cy, edgeR, 0, Math.PI * 2);
+    c.strokeStyle = 'rgba(6,20,30,0.85)';
+    c.lineWidth = 7;
+    c.stroke();
+    for (const il of ISLANDS) {   // 근해 셸프 — 섬 둘레 얕은 모래 링
+        c.beginPath();
+        c.arc(px(il.x), py(il.z), Math.max(3, (il.r + 6) * sc), 0, Math.PI * 2);
+        c.fillStyle = 'rgba(214,201,150,0.30)';
+        c.fill();
+    }
+    for (const il of ISLANDS) {   // 섬 = 머리 위 육지 실루엣 (무인도 포함 — 로드된 것만이라 곧 발견물)
+        c.beginPath();
+        c.arc(px(il.x), py(il.z), Math.max(2.5, il.r * sc), 0, Math.PI * 2);
+        c.fillStyle = 'rgba(18,34,30,0.78)';
+        c.fill();
+        c.strokeStyle = 'rgba(150,210,220,0.35)';
+        c.lineWidth = 1.5;
+        c.stroke();
+    }
+    let treN = 0;
+    for (const [k, f] of Object.entries(seaFound)) {   // 알게 된 자리들
+        const sx = px(f.x), sy = py(f.z);
+        if (Math.hypot(f.x, f.z) > EXPLORE_R) continue;
+        if (f.k === 'w') {
+            c.font = '18px sans-serif';
+            c.textAlign = 'center';
+            c.textBaseline = 'middle';
+            c.fillText('🚢', sx, sy);
+        } else {
+            treN++;
+            const dug = seabedDug(k);
+            c.strokeStyle = dug ? 'rgba(255,255,255,0.30)' : '#ff7a66';   // 파낸 자리는 희미하게 (72h 재보급 후 다시 선명)
+            c.lineWidth = dug ? 2 : 3;
+            c.beginPath();
+            c.moveTo(sx - 5, sy - 5); c.lineTo(sx + 5, sy + 5);
+            c.moveTo(sx + 5, sy - 5); c.lineTo(sx - 5, sy + 5);
+            c.stroke();
+        }
+    }
+    drawPetMarkers(c, px, py);
+    c.font = '600 17px sans-serif';
+    c.textAlign = 'left';
+    c.textBaseline = 'alphabetic';
+    c.fillStyle = 'rgba(190,235,250,0.9)';
+    c.fillText(`🌊 해저 · ✕ ${treN}`, 14, 24);
+}
 function drawWorldMap() {
+    if (camUnderwater) { drawSeaMap(); return; }   // 🤿 물속 = 해저 지도 (부상하면 자동 복귀)
     const c = mapPanel.getContext('2d');
     const W = mapPanel.width;
     const cx = W / 2, cy = W / 2;
@@ -14416,35 +14543,7 @@ function drawWorldMap() {
     mark('🛩️', PLANE.x, PLANE.z, 'plane');
     mark('⛴️', FERRY.x, FERRY.z);
     mark('🎈', BALLOON.x, BALLOON.z);
-    // 펫: 조종 펫은 네비 화살표(헤딩 회전), 나머지는 점
-    for (const q of pets) {
-        const qx = px(q.mover.position.x), qy = py(q.mover.position.z);
-        if (q === possessed) {
-            c.save();
-            c.translate(qx, qy);
-            c.rotate(q.mover.rotation.y);   // heading 0 = +z = 지도 위 — 삼각형도 위를 보게 그린다
-            c.beginPath();
-            c.moveTo(0, -11);
-            c.lineTo(7, 8);
-            c.lineTo(0, 4);
-            c.lineTo(-7, 8);
-            c.closePath();
-            c.fillStyle = '#ffd54f';
-            c.fill();
-            c.lineWidth = 2.5;
-            c.strokeStyle = '#3d2f18';
-            c.stroke();
-            c.restore();
-        } else {
-            c.beginPath();
-            c.arc(qx, qy, 5, 0, Math.PI * 2);
-            c.fillStyle = q.name === 'chick' ? '#e8e28a' : '#d8c9b8';
-            c.fill();
-            c.lineWidth = 1.5;
-            c.strokeStyle = 'rgba(0,0,0,0.4)';
-            c.stroke();
-        }
-    }
+    drawPetMarkers(c, px, py);
     // 발견 카운트
     c.font = '600 17px sans-serif';
     c.textAlign = 'left';
@@ -15442,11 +15541,12 @@ function updateHandHold(delta) {
     const rightX = Math.cos(h), rightZ = -Math.sin(h);
     let sx = leader.mover.position.x + rightX * handHold.side * 0.4;
     let sz = leader.mover.position.z + rightZ * handHold.side * 0.4;
+    const deep = dive && dive.p === leader && !dive.isAI;   // 🤿 함께 잠수 — 절친 y는 리더 수심 추종
     // Narrow ground (bridges): if the side slot hangs over open water while the leader is on
     // land, tuck into single file just behind instead.
     const leaderSup = playerSupportY(leader, leader.mover.position.x, leader.mover.position.z);
     let slotSup = playerSupportY(q, sx, sz);
-    if (slotSup.medium === 'sea' && leaderSup.medium !== 'sea') {
+    if (!deep && slotSup.medium === 'sea' && leaderSup.medium !== 'sea') {
         sx = leader.mover.position.x - fwdX * 0.42;
         sz = leader.mover.position.z - fwdZ * 0.42;
         slotSup = playerSupportY(q, sx, sz);
@@ -15455,9 +15555,26 @@ function updateHandHold(delta) {
     const k = Math.min(1, delta * 7);
     q.mover.position.x += (sx - q.mover.position.x) * k;
     q.mover.position.z += (sz - q.mover.position.z) * k;
-    q.swimming = slotSup.medium === 'land' ? false : slotSup.medium;
-    q.mover.position.y = slotSup.y + (q.swimming ? Math.sin(q.pet.t * 2.6) * 0.02 : 0);
-    q.mover.rotation.x = q.swimming ? 0.3 : 0;
+    if (deep) {   // 수중: 지지면 대신 리더 수심으로 스르륵 (수면에서 불려온 절친이 헤엄쳐 내려온다 — 1.6/s면 입수가 눈에 읽힌다)
+        q.swimming = 'sea';
+        q.mover.position.y += (leader.mover.position.y - q.mover.position.y) * Math.min(1, delta * 1.6);
+        q.mover.rotation.x = 0.08;   // 수평 유영 (딥 포즈 미러)
+        handHold.bubbleAt = (handHold.bubbleAt || 0) - delta;
+        if (handHold.bubbleAt <= 0) {   // 🫧 절친 기포 — 잠수자 패턴 재사용
+            handHold.bubbleAt = 0.7 + Math.random() * 0.5;
+            const bub = new THREE.Sprite(new THREE.SpriteMaterial({ map: blobTex, color: 0xd8f2ff, transparent: true, opacity: 0.7, depthWrite: false }));
+            bub.scale.setScalar(0.03 + Math.random() * 0.03);
+            bub.position.set(q.mover.position.x, q.mover.position.y + 0.12, q.mover.position.z);
+            scene.add(bub);
+            hugBurst.push({ spr: bub, vx: (Math.random() - 0.5) * 0.06, vy: 0.35, vz: (Math.random() - 0.5) * 0.06, t: 0.1 });
+        }
+    } else {
+        q.swimming = slotSup.medium === 'land' ? false : slotSup.medium;
+        const ty = slotSup.y + (q.swimming ? Math.sin(q.pet.t * 2.6) * 0.02 : 0);
+        if (Math.abs(ty - q.mover.position.y) > 0.4) q.mover.position.y += (ty - q.mover.position.y) * Math.min(1, delta * 3.2);   // 부상 복귀 — 스냅 대신 스르륵
+        else q.mover.position.y = ty;
+        q.mover.rotation.x = q.swimming ? 0.3 : 0;
+    }
     let dh = h - q.mover.rotation.y;
     while (dh > Math.PI) dh -= Math.PI * 2;
     while (dh < -Math.PI) dh += Math.PI * 2;
