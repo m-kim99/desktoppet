@@ -396,7 +396,7 @@ let seasonBlend = null;       // in-flight 2.5s crossfade, advanced by updateSea
 let buildMode = false;        // 🔨 공사모드 — 핸들러들은 아래쪽에, 선언은 초기 계절 적용보다 먼저
 // Season palettes (여름 = 원본). Leaf pairs are [top, bottom] for the baked lobe gradients.
 const LEAF_AUTUMN = [[0xffc95e, 0xc07a28], [0xff9448, 0xbb5a22], [0xe8654e, 0xa03a28]];   // 금빛/주황/빨강 — 나무마다 하나
-const CHERRY_LEAF = { spring: [0xffc9de, 0xf095bb], summer: [0x8bd678, 0x4a9345], autumn: [0xff9a66, 0xc25a35], winter: [0xd3ccda, 0x968ea2] };
+const CHERRY_LEAF = { spring: [0xffc9de, 0xf095bb], summer: [0xf4b4cc, 0xd985a9], autumn: [0xff9a66, 0xc25a35], winter: [0xd3ccda, 0x968ea2] };   // 여름도 연분홍 — 초록이면 '일반 나무에 체리' 오해 (실측)
 const GRASS_TINT  = { spring: [0.97, 1.03, 0.9], summer: [1, 1, 1], autumn: [1.28, 0.92, 0.48], winter: [1, 1, 1] };
 const TUFT_COLOR  = { spring: 0x63bb46, summer: 0x5fae44, autumn: 0xb99a3e, winter: 0x5fae44 };
 const SEA_TINT    = { spring: null, summer: null, autumn: [0x4d7a86, 0.18], winter: [0x2e5f83, 0.35] };
@@ -12526,8 +12526,8 @@ function fruitAnchors(pr) {   // 프롭 로컬 → 월드 (스윙 회전 관례:
     // 로브 반지름보다 살짝 바깥(몸통 ~70% 노출)이 정답. 좌표는 로브 지오메트리와 1:1.
     // 좌표 = 로브 중심 + 로브 반지름 방향 + 몸통 반지름 × 0.55 (몸통 ~70% 노출, 잎 포켓에 안김)
     return pr.big
-        ? [W(0.55, 0.66, 0.26), W(-0.59, 0.68, -0.16), W(0.22, 1.04, 0.22)]
-        : [W(0.45, 0.58, 0.2), W(-0.45, 0.61, -0.13), W(0.16, 0.94, 0.16)];
+        ? [W(0.48, 0.66, 0.23), W(-0.52, 0.68, -0.14), W(0.22, 1.04, 0.22)]
+        : [W(0.41, 0.58, 0.18), W(-0.41, 0.61, -0.12), W(0.16, 0.94, 0.16)];
 }
 const fruitBearing = [];   // { pr, type, group, shakeT }
 let groundFruits = [];     // { type, x, z, y, vy, mesh, settled, at, wilting }
