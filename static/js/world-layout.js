@@ -141,6 +141,9 @@ export const PROPS = [
     { type: 'portal', x: 9.3,  z: -6.39, rotY: -0.93, r: 0 },
     // 본섬 N 뜰: 텃밭(⑫) + 광장 북서가 스트리트 피아노(⑪) + 광장 서가 사진 게시판(⑭)
     { type: 'garden',     x: -1.11, z: 4.88, rotY: 0.55,  r: 0.72 },
+    { type: 'vine', vine: 'tomato',   x: 0.62, z: -2.02, rotY: 0.4,  r: 0.24 },   // 🍅 남쪽 뜰 길목 티피 지주
+    { type: 'vine', vine: 'eggplant', x: -1.9, z: 1.3, rotY: -0.3, r: 0.24 },   // 🍆
+    { type: 'fruitbasket', x: 5.5, z: 1.25, rotY: -0.6, r: 0.24 },               // 🧺 집 마당 어귀 (동쪽 림)
     { type: 'piano',      x: -0.61, z: 1.95, rotY: 2.6,   r: 0.4 },
     { type: 'photoboard', x: -1.95, z: -0.73, rotY: 1.21, r: 0.42 },   // 커뮤니티 보드 — 광장을 본다
     // 마지막 6종 — 우체통(N 뜰 길가)·운동 공간(NE 놀이터 섬)·도서관(W 뜰)·
