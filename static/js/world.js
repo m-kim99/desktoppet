@@ -4629,7 +4629,11 @@ function mergePropGroup(root) {
     if (mailFlag) mailFlag.traverse((o) => skip.add(o));
     if (root.userData.seats) for (const s of root.userData.seats) s.traverse((o) => skip.add(o));
     if (root.userData.plank) root.userData.plank.traverse((o) => skip.add(o));
-    root.updateMatrixWorld(true);   // 아직 씬에 붙기 전(원점) — matrixWorld = 그룹 기준 상대 변환
+    root.updateMatrixWorld(true);
+    // 병합본은 루트의 "자식"으로 다시 들어간다 — 굽는 행렬은 루트 기준 상대 변환이어야 한다.
+    // matrixWorld를 그대로 구우면 루트 자체 변환(복층집 HOUSE_K 스케일!)이 지오에 박힌 채 루트
+    // 스케일을 또 받아 이중 적용된다 (골조만 1.44×로 떠 보이던 원인). 일반 프롭은 루트=identity라 무변화.
+    const rootInv = root.matrixWorld.clone().invert();
     const buckets = new Map();      // 재질 인스턴스 + attribute 시그니처 → 메시 목록
     root.traverse((o) => {
         if (!o.isMesh || !o.visible || skip.has(o)) return;
@@ -4642,7 +4646,7 @@ function mergePropGroup(root) {
     });
     for (const list of buckets.values()) {
         if (list.length < 2) continue;   // 혼자면 합칠 이유가 없다
-        const merged = mergeGeometries(list.map((m) => m.geometry.clone().applyMatrix4(m.matrixWorld)), false);
+        const merged = mergeGeometries(list.map((m) => m.geometry.clone().applyMatrix4(rootInv.clone().multiply(m.matrixWorld))), false);
         if (!merged) continue;           // 시그니처가 같아도 실패하면 원본 유지 (안전망)
         const mm = new THREE.Mesh(merged, list[0].material);
         mm.matrixAutoUpdate = false;     // 그룹 원점에 identity 고정 — 부모가 움직이면 따라간다
