@@ -13473,7 +13473,10 @@ function updateRoofFade(delta) {
         roofFadeMats = pr.obj.userData.roofFade.map((m) => m.material);
     }
     const d = Math.hypot(camera.position.x - HOUSE.x, (camera.position.y - 1.3) * 1.3, camera.position.z - HOUSE.z);
-    const target = 0.08 + 0.92 * THREE.MathUtils.smoothstep(d, 4.5, 7.5);   // 근접 구간을 넓게 — 확대하면 확실히 걷힌다
+    let target = 0.08 + 0.92 * THREE.MathUtils.smoothstep(d, 4.5, 7.5);   // 근접 구간을 넓게 — 확대하면 확실히 걷힌다
+    for (const p of pets) {   // 🐥 누가 집 안에 있으면 카메라가 멀어도 걷는다 — 안의 동물이 항상 보이게
+        if (houseFloorY(p.mover.position.x, p.mover.position.z) !== null) { target = Math.min(target, 0.14); break; }
+    }
     if (Math.abs(target - roofFadeK) < 0.004) return;
     roofFadeK = THREE.MathUtils.lerp(roofFadeK, target, Math.min(1, delta * 6));
     for (const m of roofFadeMats) {
