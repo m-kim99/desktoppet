@@ -7767,6 +7767,16 @@ function syncDiveBtn() {   // 🤿 문맥 버튼: 바다 수영=🤿, 잠수 중
             diveBtn.title = diving ? '수면으로 올라가기 — 평소처럼 수영' : '잠수 — 물속 세계로';
         }
     }
+    if (touchDiveBtns) {   // 📱 딥 다이브 = 🦘 자리에 🔼🔽 스왑 (마크 모바일 문법)
+        const deepNow = diving && dive.phase === 'deep';
+        const dDisp = deepNow ? 'flex' : 'none';
+        if (touchDiveBtns.up.style.display !== dDisp) {
+            touchDiveBtns.up.style.display = dDisp;
+            touchDiveBtns.down.style.display = dDisp;
+            touchDiveBtns.jump.style.display = deepNow ? 'none' : 'flex';
+            if (!deepNow) { heldKeys.delete('KeyW'); heldKeys.delete('KeyS'); }   // 손가락 둔 채 부상해도 잔류 입력 없음
+        }
+    }
 }
 const dexBtn = dockBtn('🐟', '물고기 도감 — 잡은 어종 컬렉션');
 dexBtn.onclick = () => toggleFishdex();
@@ -9900,7 +9910,7 @@ scene.add(selectRing);
 
 const controlHint = document.createElement('div');
 // 📱 터치에선 좌하단이 조이스틱 자리라 힌트를 좌상단으로 올린다.
-controlHint.style.cssText = `position:fixed; left:14px; ${IS_TOUCH ? 'top:calc(14px + env(safe-area-inset-top, 0px));' : 'bottom:14px;'} display:none; z-index:90; background:rgba(30,32,40,0.85); color:#fff; font-size:12px; font-family:sans-serif; padding:8px 12px; border-radius:10px; box-shadow:0 3px 10px rgba(0,0,0,0.3); pointer-events:none;`;
+controlHint.style.cssText = `position:fixed; left:14px; ${IS_TOUCH ? 'top:calc(68px + env(safe-area-inset-top, 0px));' : 'bottom:14px;'} display:none; z-index:90; background:rgba(30,32,40,0.85); color:#fff; font-size:12px; font-family:sans-serif; padding:8px 12px; border-radius:10px; box-shadow:0 3px 10px rgba(0,0,0,0.3); pointer-events:none;`;   // 터치는 🗺️ 버튼(top 12 + 48px) 아래로 — 14px이면 지도 버튼이 힌트를 가린다 (스샷 실측)
 document.body.appendChild(controlHint);
 
 // 📱 마인크래프트 모바일식 조종 UI: 좌하단 가상 조이스틱(민 방향으로 이동, 70% 넘게 밀면
@@ -9910,6 +9920,7 @@ document.body.appendChild(controlHint);
 // 회전이 동시에 된다.
 const touchMove = { x: 0, z: 0, mag: 0, active: false };
 let touchUI = null;
+let touchDiveBtns = null;   // 🤿 딥 다이브 전용 🔼🔽 (마크 모바일식 버튼 스왑 — syncDiveBtn이 켠다)
 let resetTouchStick = () => {};
 if (IS_TOUCH) {
     touchUI = document.createElement('div');
@@ -9965,8 +9976,24 @@ if (IS_TOUCH) {
         return b;
     };
     actionBtn('✕', 44, () => escapeAction());                     // Esc
-    actionBtn('🦘', 48, () => doJump());                          // Space
+    const jumpBtn = actionBtn('🦘', 48, () => doJump());          // Space
     actionBtn('✋', 48, () => doInteract());                      // Ctrl/⌘ — 독(📷) 버튼과 같은 크기
+    // 🤿 수심 홀드 버튼 — 잠수 중 🦘 자리에 스왑 (마크 모바일 문법: 수영·비행 시 점프↔상승 교체).
+    // 누르는 동안 heldKeys에 KeyW/KeyS 주입 — 데탑 W/S와 완전히 같은 경로라 별도 물리 없음.
+    const holdBtn = (label, code) => {
+        const b = actionBtn(label, 48, () => {});
+        b.addEventListener('pointerdown', (e) => {
+            heldKeys.add(code);
+            try { b.setPointerCapture(e.pointerId); } catch (err) {}
+        });
+        const end = () => heldKeys.delete(code);
+        b.addEventListener('pointerup', end);
+        b.addEventListener('pointercancel', end);
+        b.addEventListener('lostpointercapture', end);
+        b.style.display = 'none';
+        return b;
+    };
+    touchDiveBtns = { up: holdBtn('🔼', 'KeyW'), down: holdBtn('🔽', 'KeyS'), jump: jumpBtn };
     touchUI.appendChild(btnCol);
     document.body.appendChild(touchUI);
 }
@@ -10451,7 +10478,7 @@ function updatePlayer(delta) {
     // water splashes and switches to swimming. On the surface the pet bobs with the waves.
     if (dive && dive.p === p && !dive.isAI) {   // 🤿 딥 다이브 — updateDive가 y를 소유
         p.swimming = 'sea';
-        const dHint = `🤿 ${petKo(p)} 잠수 중${handHold ? ' 🤝' : ''} — ${IS_TOUCH ? '조이스틱' : '방향키'} 유영 · ${IS_TOUCH ? '⬆️ 버튼' : 'W/S 수심 · ⌘'} 부상`;
+        const dHint = `🤿 ${petKo(p)} 잠수 중${handHold ? ' 🤝' : ''} — ${IS_TOUCH ? '조이스틱 유영 · 🔼🔽 수심 · ✋ 줍기 · ⬆️' : '방향키 유영 · W/S 수심 · ⌘'} 부상`;
         if (controlHint.textContent !== dHint) controlHint.textContent = dHint;
         return;
     }
@@ -13455,9 +13482,8 @@ function updateDive(delta) {
     } else if (dive.phase === 'deep') {
         // 수심 조절: W=상승 S=하강 (비행기 고도 문법) — y는 이 블록이 소유 (updatePlayer 수직 양보)
         let vy = 0;
-        if (heldKeys.has('KeyW')) vy += 1.4;
+        if (heldKeys.has('KeyW')) vy += 1.4;   // 📱 터치 🔼🔽도 heldKeys로 주입 — 같은 경로
         if (heldKeys.has('KeyS')) vy -= 1.4;
-        if (touchMove.active) vy += 0;   // 📱 터치는 ⬆️ 버튼으로 부상 (수심은 자동 유지)
         const floor = seabedHeight(m.position.x, m.position.z) + 0.2;
         const ceil = waveYAt(m.position.x, m.position.z) - 0.32;
         m.position.y = THREE.MathUtils.clamp(m.position.y + vy * delta, Math.min(floor, ceil), ceil);
