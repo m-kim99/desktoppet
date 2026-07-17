@@ -6097,6 +6097,12 @@ function updateWander(p, delta) {
                 p.nextFruitAt = Date.now() + 420000 + Math.random() * 480000;
                 if (startAiFruit(p) === 'ok') return;
             }
+            // …또는 굴러다니는 낙과 정리 — 주워서 바구니에 (낮, 쿨다운 시드)
+            if (!p.nextTidyAt) p.nextTidyAt = Date.now() + 300000 + Math.random() * 300000;
+            else if (!isSleepTime(currentHour()) && !aiTidy && Date.now() > p.nextTidyAt && Math.random() < 0.06) {
+                p.nextTidyAt = Date.now() + 360000 + Math.random() * 420000;
+                if (startAiTidy(p) === 'ok') return;
+            }
             // …또는 통통호를 타러 잔교로 — 모래섬 찍고 오는 뱃놀이 (낮, 쿨다운 시드)
             if (!p.nextFerryAt) p.nextFerryAt = Date.now() + 300000 + Math.random() * 480000;
             else if (!isSleepTime(currentHour()) && !ferryRide && !aiFerryWalk && FERRY.mode === 'docked'
@@ -7229,7 +7235,7 @@ if (statsOn) window.__worldDev = {
     trampGo: (name) => startAiTramp(pets.find((q) => q.name === (name || 'puppy'))),
     fruitState: () => ({
         bearing: fruitBearing.map((e) => ({ id: e.pr.layoutId, t: e.type, x: +e.pr.x.toFixed(2), z: +e.pr.z.toFixed(2), hanging: e.group && e.anchors ? e.anchors.length : 0 })),
-        ground: groundFruits.map((g) => ({ t: g.type, x: +g.x.toFixed(2), z: +g.z.toFixed(2), settled: g.settled })),
+        ground: groundFruits.map((g) => ({ t: g.type, x: +g.x.toFixed(2), z: +g.z.toFixed(2), settled: g.settled, age: g.at ? Date.now() - g.at : 0, wilting: g.wilting !== undefined })),
         held: possessed && possessed.food && possessed.food.def ? possessed.food.def.fruit || 'food' : null,
         basket: { ...basketCounts },
     }),
@@ -7238,6 +7244,17 @@ if (statsOn) window.__worldDev = {
     fruitAge: (id, ms) => { fruitPicked[id] = Date.now() - ms; saveFruitPicked(); fruitTickT = 60; return fruitPicked[id]; },
     basketOpen: () => { openFruitBasket(); return basketPanel && basketPanel.style.display !== 'none'; },
     fruitGo: (name, gift) => startAiFruit(pets.find((q) => q.name === (name || 'puppy')), { gift: gift === undefined ? true : !!gift }),
+    fruitInject: (t, x, z, ageMs) => {   // E2E — 나이 조작된 낙과 주입
+        const mesh = makeFruitMesh(t, 1);
+        const gy = terrainHeight(x, z) + 0.005;
+        mesh.position.set(x, gy + 0.1, z);
+        fruitLayer.add(mesh);
+        groundFruits.push({ type: t, x, z, y: gy + 0.1, vy: 0, mesh, settled: true, gy, bounced: true, at: Date.now() - (ageMs || 0) });
+        saveGroundFruits();
+        return groundFruits.length;
+    },
+    fruitTidyGo: (name) => startAiTidy(pets.find((q) => q.name === (name || 'puppy'))),
+    fruitTick: () => { fruitTickT = 60; return true; },
     fruitRow: () => {   // 조형 라인업 QA — 광장에 11종 한 줄 (스샷용, 리로드로 제거)
         Object.keys(FRUITS).forEach((t, i) => {
             const m = makeFruitMesh(t, 2.2);
@@ -12511,7 +12528,24 @@ function fruitAnchors(pr) {   // 프롭 로컬 → 월드 (스윙 회전 관례:
         : [W(0.24, 0.3, 0.1), W(-0.21, 0.31, -0.12), W(0.04, 0.29, 0.24)];
 }
 const fruitBearing = [];   // { pr, type, group, shakeT }
-let groundFruits = [];     // { type, x, z, y, vy, mesh, settled }
+let groundFruits = [];     // { type, x, z, y, vy, mesh, settled, at, wilting }
+const FRUIT_WILT_MS = 6 * 3600 * 1000;   // 낙과 6시간 방치 = 시들어 흙으로
+function saveGroundFruits() {
+    try { localStorage.setItem('world-fruit-ground', JSON.stringify(groundFruits.filter((g) => g.settled).map((g) => ({ t: g.type, x: +g.x.toFixed(2), z: +g.z.toFixed(2), at: g.at })))); } catch (e) {}
+}
+function loadGroundFruits() {   // 리로드 복원 — 시들 시간이 지난 건 조용히 흙으로
+    let arr = [];
+    try { arr = JSON.parse(localStorage.getItem('world-fruit-ground') || '[]') || []; } catch (e) { arr = []; }
+    for (const g of arr) {
+        if (!FRUITS[g.t] || !Number.isFinite(g.x) || !Number.isFinite(g.z)) continue;
+        if (Date.now() - (g.at || 0) > FRUIT_WILT_MS) continue;
+        const mesh = makeFruitMesh(g.t, 1);
+        const gy = terrainHeight(g.x, g.z) + 0.005;
+        mesh.position.set(g.x, gy + 0.1, g.z);
+        fruitLayer.add(mesh);
+        groundFruits.push({ type: g.t, x: g.x, z: g.z, y: gy + 0.1, vy: 0, mesh, settled: true, gy, bounced: true, at: g.at || Date.now() });
+    }
+}
 function clearFruitGroup(e) {
     if (!e.group) return;
     e.group.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
@@ -12604,6 +12638,7 @@ function pickGroundFruit(p, gf) {
     groundFruits.splice(groundFruits.indexOf(gf), 1);
     gf.mesh.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
     fruitLayer.remove(gf.mesh);
+    saveGroundFruits();
     giveFruit(p, gf.type);
     playBuffer(swishBuf, { vol: 0.3, rate: 1.6, filterFreq: 1500 });
     showToast(`${FRUITS[gf.type].emoji} ${FRUITS[gf.type].ko} 주웠다! (⌘ 냠냠 · 바구니 곁 ⌘ 담기)`);
@@ -12684,13 +12719,37 @@ function updateFruits(delta) {
             } else {
                 gf.y = gf.gy + 0.1;
                 gf.settled = true;
+                gf.at = gf.at || Date.now();
+                saveGroundFruits();
             }
         }
         gf.mesh.position.y = gf.y;
     }
+    for (let i = groundFruits.length - 1; i >= 0; i--) {   // 🍂 시들기 연출 — 2.5초 쪼그라들며 흙으로
+        const gf = groundFruits[i];
+        if (gf.wilting === undefined) continue;
+        gf.wilting += delta;
+        const k = Math.min(1, gf.wilting / 2.5);
+        gf.mesh.scale.setScalar(1 - k * 0.94);
+        gf.mesh.position.y = gf.y - k * 0.07;
+        if (k >= 1) {
+            gf.mesh.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
+            fruitLayer.remove(gf.mesh);
+            groundFruits.splice(i, 1);
+            saveGroundFruits();
+        }
+    }
     fruitTickT += delta;
-    if (fruitTickT >= 60) {   // 재성장·주간 변경 감시 (1분 틱 — 무비용)
+    if (fruitTickT >= 60) {   // 재성장·주간 변경·시들기 감시 (1분 틱 — 무비용)
         fruitTickT = 0;
+        let wiltedKo = null;
+        for (const gf of groundFruits) {
+            if (gf.settled && gf.wilting === undefined && Date.now() - (gf.at || 0) > FRUIT_WILT_MS) {
+                gf.wilting = 0;
+                wiltedKo = FRUITS[gf.type].ko;
+            }
+        }
+        if (wiltedKo) logWorldEvent(`아무도 줍지 않은 ${wiltedKo}가 시들어 흙으로 돌아갔다 🍂`);
         const wk = fruitWeek();
         const regrown = fruitBearing.some((e) => !e.group && !e.shakeT && fruitPicked[e.pr.layoutId] && Date.now() - fruitPicked[e.pr.layoutId] > FRUIT_REGROW_MS);
         if (regrown || fruitBearing.some((e) => e.week !== wk)) refreshFruit();
@@ -12765,7 +12824,8 @@ function updateAiFruit(delta) {
                     const fz = possessed ? possessed.mover.position.z : p.mover.position.z;
                     mesh.position.set(fx, terrainHeight(fx, fz) + 0.105, fz);
                     fruitLayer.add(mesh);
-                    groundFruits.push({ type: t, x: fx, z: fz, y: mesh.position.y, vy: 0, mesh, settled: true, gy: mesh.position.y - 0.1, bounced: true });
+                    groundFruits.push({ type: t, x: fx, z: fz, y: mesh.position.y, vy: 0, mesh, settled: true, gy: mesh.position.y - 0.1, bounced: true, at: Date.now() });
+                    saveGroundFruits();
                     triggerHugBurst(fx, mesh.position.y + 0.3, fz);
                     playBuffer(swishBuf, { vol: 0.3, rate: 1.8, filterFreq: 1600 });
                     showToast(`${FRUITS[t].emoji} ${petKo(p)}가 ${FRUITS[t].ko}를 물어다 줬어요!!`);
@@ -12780,6 +12840,80 @@ function updateAiFruit(delta) {
         if (!p.food) { endAiFruit(); return; }   // 다 먹었다 (updateHeldPose가 6입에서 제거)
         if (!p.food.seq && aiFruit.t > 0.9) { p.food.seq = { count: 3, t: 0, played: -1 }; aiFruit.t = 0; }
     } else if (aiFruit.phase === 'deliver' && aiFruit.t > 25) endAiFruit();   // 배달 안전망
+}
+// 🧹 절친 청소부: 3분 넘게 방치된 낙과를 주워 바구니에 넣어둔다 — 방치가 손해 대신
+// 귀여운 장면이 되는 장치 (자율 낚시 소유권 문법, 모래섬·무인도 낙과는 다리가 없어 제외).
+let aiTidy = null;
+function startAiTidy(p) {
+    if (aiTidy || aiFruit || !p || p === possessed || p.bed || p.dip || p.pet.sleeping || p.tramp || p.food || p.drink) return 'busy';
+    if (p.ai.state !== 'idle' && p.ai.state !== 'walk') return 'busy';
+    if ((fishing && fishing.p === p) || (aiFishing && aiFishing.p === p)) return 'busy';
+    const basketPr = PROPS.find((q) => q.type === 'fruitbasket');
+    if (!basketPr) return 'busy';
+    const cands = groundFruits.filter((g) => g.settled && g.wilting === undefined
+        && Date.now() - (g.at || 0) > 180000
+        && islandOf(g.x, g.z) >= 0 && islandOf(g.x, g.z) <= 3);   // 다리로 갈 수 있는 섬만
+    if (!cands.length) return 'busy';
+    const gf = cands[Math.floor(Math.random() * cands.length)];
+    releaseAI(p);
+    p.ai.state = 'goto';
+    p.ai.target = { x: gf.x + 0.25, z: gf.z };
+    p.ai.waypoints = buildRoute(p.mover.position, p.ai.target);
+    p.ai.stall = 0;
+    aiTidy = { p, gf, basketPr, began: false, t: 0, phase: 'walk' };
+    aiTidy.ownArrive = () => {
+        if (!aiTidy || aiTidy.p !== p) return;
+        aiTidy.began = true;
+        aiTidy.t = 0;
+        p.ai.state = 'busy';
+        aiTidy.phase = 'pick';
+    };
+    p.ai.onArrive = aiTidy.ownArrive;
+    logWorldEvent(`${petKo(p)}가 떨어진 과일을 정리하러 나섰다 🧹`);
+    return 'ok';
+}
+function endAiTidy(wait = 2) {
+    if (!aiTidy) return;
+    const p = aiTidy.p;
+    aiTidy = null;
+    if (p.ai.state === 'busy') releaseAI(p, wait);
+}
+function updateAiTidy(delta) {
+    if (!aiTidy || !aiTidy.began) return;
+    const { p, gf, basketPr } = aiTidy;
+    aiTidy.t += delta;
+    if (aiTidy.phase === 'pick') {
+        if (p.ai.state !== 'busy') { aiTidy = null; return; }   // 디렉터 스틸
+        if (!groundFruits.includes(gf) || gf.wilting !== undefined) { endAiTidy(); return; }   // 그 사이 사라짐
+        p.mover.rotation.y = Math.atan2(gf.x - p.mover.position.x, gf.z - p.mover.position.z);
+        groundFruits.splice(groundFruits.indexOf(gf), 1);
+        gf.mesh.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
+        fruitLayer.remove(gf.mesh);
+        saveGroundFruits();
+        giveFruit(p, gf.type);
+        aiTidy.phase = 'carry';   // 🧺 바구니로 총총
+        aiTidy.t = 0;
+        p.ai.state = 'goto';
+        p.ai.target = { x: basketPr.x - 0.45, z: basketPr.z + 0.2 };
+        p.ai.waypoints = buildRoute(p.mover.position, p.ai.target);
+        p.ai.stall = 0;
+        p.ai.onArrive = () => {
+            if (!aiTidy || aiTidy.p !== p) return;
+            if (p.food && p.food.def && p.food.def.fruit) {
+                const t = p.food.def.fruit;
+                removeFood(p);
+                basketCounts[t] = (basketCounts[t] || 0) + 1;
+                saveBasket();
+                basketVisualRefresh();
+                refreshBasketPanel();
+                playBuffer(munchBuf, { vol: 0.35, rate: 0.6, filterFreq: 700 });
+                logWorldEvent(`${petKo(p)}가 떨어져 있던 ${FRUITS[t].ko}를 주워 바구니에 넣어뒀다 ${FRUITS[t].emoji}🧺`);
+                maybeProactive(p, `굴러다니던 ${FRUITS[t].ko}를 주워서 바구니에 정리해 뒀다! 착하지?`);
+            }
+            aiTidy = null;
+            releaseAI(p, 2);
+        };
+    } else if (aiTidy.phase === 'carry' && aiTidy.t > 30) endAiTidy();   // 배달 안전망
 }
 // 🧺 바구니 패널 — 11칸 카운트 + 꺼내기 (빙의 중·손 비었을 때)
 let basketPanel = null;
@@ -14813,6 +14947,7 @@ function animate() {
     updateShells(delta);                     // 🐚 조개 스폰/반짝/줍기 연출
     updateFruits(delta);                     // 🍎 흔들림/낙과/재성장 틱
     updateAiFruit(delta);                    // 🍊 절친 자율 수확·선물
+    updateAiTidy(delta);                     // 🧹 절친 청소부 — 방치 낙과를 바구니로
     updateBalloon(delta);                    // 🎈 열기구 — 계류 살랑임/스플라인 투어/귀환
     updateBalloonHop(delta);                 // 절친 승선 큰 아크 — 데크에서 바구니로
     updatePlaneIdle();                       // 🛩️ 주차 비행기 (물 위면 살랑임, 프로펠러 정지)
@@ -14859,6 +14994,7 @@ worldBake();   // 씬이 전부 지어진 뒤 첫 베이크 — 이후엔 공사
 renderer.setAnimationLoop(animate);
 
 refreshFruit();   // 🍎 과일 초기 매달기 — 레이아웃·소품이 다 선 뒤 1회
+loadGroundFruits();   // 낙과 복원 (시들 시간 지난 건 조용히 흙으로)
 // ---- 🔄 버전 워치독: 폰 PWA/홈화면 웹뷰는 오래 살아서 새 배포를 모른다 — 화면에 복귀할 때
 // world.js의 ETag를 HEAD로 재확인해 바뀌었으면 토스트 후 자동 새로고침. 데스크톱/테스트 서버처럼
 // ETag가 없으면 조용히 무력화된다 (LAN HEAD 1회 = 무비용). ----
