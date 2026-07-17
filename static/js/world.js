@@ -6099,7 +6099,7 @@ function updateWander(p, delta) {
             }
             // …또는 굴러다니는 낙과 정리 — 주워서 바구니에 (낮, 쿨다운 시드)
             if (!p.nextTidyAt) p.nextTidyAt = Date.now() + 300000 + Math.random() * 300000;
-            else if (!isSleepTime(currentHour()) && !aiTidy && Date.now() > p.nextTidyAt && Math.random() < 0.06) {
+            else if (!isSleepTime(currentHour()) && !aiTidy && Date.now() > p.nextTidyAt && Math.random() < 0.04) {   // 확률은 다른 자율활동보다 낮게 — 과일 줍느라 딴 놀이 못 하지 않게
                 p.nextTidyAt = Date.now() + 360000 + Math.random() * 420000;
                 if (startAiTidy(p) === 'ok') return;
             }
@@ -12521,11 +12521,13 @@ function fruitAnchors(pr) {   // 프롭 로컬 → 월드 (스윙 회전 관례:
     const W = (lx, y, lz) => [pr.x + lx * cy + lz * sy, y, pr.z - lx * sy + lz * cy];
     if (pr.type === 'palm') return [W(0.44, 0.74, 0.1), W(0.3, 0.7, -0.14)];   // 수관 밑에 대롱대롱 (트렁크는 +x로 휜다 — 몸통과 겹치지 않게 바깥·아래로)
     if (pr.type === 'vine') return [W(0.15, 0.3, 0.05), W(-0.13, 0.42, -0.08), W(0.02, 0.52, 0.13)];   // 티피 나선 곁
-    // 나무: 수관 로브(구 뭉치) '안'에 넣으면 파묻힌다(실측 — 3알 중 1알만 보임) — 로브 밑단
-    // (big 바닥 ~0.38, small ~0.32) 아래에 대롱대롱: 동숲처럼 캐노피 밑에서 또렷이 보인다.
+    // 나무: 동숲 레퍼런스 그대로 — 과일이 수관 '표면' 잎 포켓에 반쯤 안겨 삼각 배치
+    // (위 1 + 아래 양옆 2). 로브 중심에 넣으면 파묻히고(실측), 밑에 매달면 동숲 느낌이 아니다:
+    // 로브 반지름보다 살짝 바깥(몸통 ~70% 노출)이 정답. 좌표는 로브 지오메트리와 1:1.
+    // 좌표 = 로브 중심 + 로브 반지름 방향 + 몸통 반지름 × 0.55 (몸통 ~70% 노출, 잎 포켓에 안김)
     return pr.big
-        ? [W(0.3, 0.36, 0.12), W(-0.27, 0.34, -0.14), W(0.05, 0.35, 0.3)]
-        : [W(0.24, 0.3, 0.1), W(-0.21, 0.31, -0.12), W(0.04, 0.29, 0.24)];
+        ? [W(0.55, 0.66, 0.26), W(-0.59, 0.68, -0.16), W(0.22, 1.04, 0.22)]
+        : [W(0.45, 0.58, 0.2), W(-0.45, 0.61, -0.13), W(0.16, 0.94, 0.16)];
 }
 const fruitBearing = [];   // { pr, type, group, shakeT }
 let groundFruits = [];     // { type, x, z, y, vy, mesh, settled, at, wilting }
@@ -12563,7 +12565,7 @@ function refreshFruit() {   // 로드·60초 틱·주간 변경 — 매달림 �
         if (!ts || Date.now() - ts > FRUIT_REGROW_MS) {
             const gy = terrainHeight(pr.x, pr.z);
             e.anchors = fruitAnchors(pr).map(([x, y, z]) => [x, gy + y, z]);
-            const geos = e.anchors.map(([x, y, z]) => makeFruitGeo(type).rotateY(Math.random() * Math.PI * 2).translate(x, y, z));
+            const geos = e.anchors.map(([x, y, z]) => { const g2 = makeFruitGeo(type); g2.scale(1.3, 1.3, 1.3); g2.rotateY(Math.random() * Math.PI * 2); g2.translate(x, y, z); return g2; });   // 동숲 비율 — 수관 폭의 ~1/4
             const m = new THREE.Mesh(mergeGeometries(geos, false), gradMat);
             m.castShadow = true;
             m.receiveShadow = true;
@@ -12696,7 +12698,7 @@ function updateFruits(delta) {
             for (const [ax, ay, az] of e.anchors || []) {
                 const jx = (Math.random() - 0.5) * 0.24, jz = (Math.random() - 0.5) * 0.24;
                 const gx = ax + jx, gz2 = az + jz;
-                const mesh = makeFruitMesh(e.type, 1);
+                const mesh = makeFruitMesh(e.type, 1.15);
                 mesh.position.set(gx, ay, gz2);
                 fruitLayer.add(mesh);
                 groundFruits.push({ type: e.type, x: gx, z: gz2, y: ay, vy: 0, mesh, settled: false, gy: terrainHeight(gx, gz2) + 0.005, bounced: false });
