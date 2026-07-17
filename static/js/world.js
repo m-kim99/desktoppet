@@ -7373,7 +7373,7 @@ if (statsOn) window.__worldDev = {
     callFriend: () => startPhoneCall(),   // 📞 친구 부르기 (E2E)
     subState: () => ({
         mode: SUB.mode, x: +SUB.x.toFixed(1), y: +SUB.y.toFixed(2), z: +SUB.z.toFixed(1),
-        ride: subRide ? { isAI: subRide.isAI, manual: subRide.manual, friend: !!subRide.friend, u: +(subRide.u || 0).toFixed(3) } : null,
+        ride: subRide ? { isAI: subRide.isAI, manual: subRide.manual, friend: !!subRide.friend, u: +(subRide.u || 0).toFixed(3), gap: subRide.friend ? +Math.hypot(subRide.p.mover.position.x - subRide.friend.mover.position.x, subRide.p.mover.position.z - subRide.friend.mover.position.z).toFixed(2) : null } : null,
         stops: subRide && subRide.route ? subRide.route.stops.map((q) => q.kind + (q.visited ? '✓' : '')) : [],
     }),
     subEnter: () => enterSub(possessed),
@@ -10147,7 +10147,7 @@ function doInteract() {
         const pos = possessed.mover.position;
         if (Math.hypot(pos.x - BOAT.x, pos.z - BOAT.z) < 1.15) { enterBoat(); return; }   // 헤엄쳐 와서 승선
         if (Math.hypot(pos.x - PLANE.x, pos.z - PLANE.z) < 1.35 && PLANE.mode === 'parked') { enterPlane(); return; }   // 물에 뜬 비행기도 승선
-        if (SUB.mode === 'docked' && !subRide && Math.hypot(pos.x - SUB.x, pos.z - SUB.z) < 1.35) { enterSub(possessed); return; }   // 🟡 헤엄쳐 와서 노랑호 승선
+        if (SUB.mode === 'docked' && !subRide && Math.hypot(pos.x - SUB.x, pos.z - SUB.z) < 1.7) { enterSub(possessed); return; }   // 🟡 헤엄쳐 와서 노랑호 승선
         const spot = nearestClimbSpot(pos);
         if (spot && !seaHop) {
             seaHop = { fx: pos.x, fy: pos.y, fz: pos.z, tx: spot.tx, tz: spot.tz, ty: spot.ty, t: 0 };
@@ -10186,7 +10186,7 @@ function doInteract() {
         return;
     }
     if (SUB.mode === 'docked' && !subRide
-        && Math.hypot(possessed.mover.position.x - SUB.x, possessed.mover.position.z - SUB.z) < 1.5) {
+        && Math.hypot(possessed.mover.position.x - SUB.x, possessed.mover.position.z - SUB.z) < 1.85) {
         enterSub(possessed);   // 🟡 물가에 계류된 노랑호 — 뭍에서 폴짝 (손잡던 절친은 조수석)
         return;
     }
@@ -12746,12 +12746,15 @@ function updateFerryPose() {   // 벤치 앉기 — 다리 앞접기 (엔티티 
 // 피날레 50%) → 조작 입력 = 그 순간부터 수동("핸들 잡기") → ⌘ = 부상 후 하차, 빈 배 자율
 // 귀항. 열기구의 스플라인·자율탑승·하이재킹 문법 + 페리의 정차 + 보트의 물 조종 + 딥 다이브의
 // 수중 렌더/발견 연동. y는 매 프레임 [해저+0.6, 수면−0.42] 클램프 — 항로 y 사전검증 불필요. ----
-const SUB_HOME = { x: -6.4, z: 13.9 };   // 모래섬 북서 물가 1.2m 밖 (동쪽 잔교=페리, 남해변=비행기)
+const SUB_HOME = { x: -7.0, z: 14.3 };   // 모래섬 북서 물가 (동쪽 잔교=페리, 남해변=비행기) — 1.5× 선체 꼬리가 해변을 안 찌르는 거리
+const SUB_K = 1.5;   // ⚠️ 전체 배율은 이 상수 하나 — 그룹 scale·좌석·전조등·기포 오프셋·콜라이더가 같이 소비 (HOUSE.k 문법)
+const SUB_R = 0.55 * SUB_K;
 const SUB = { x: SUB_HOME.x, z: SUB_HOME.z, y: 0, heading: -0.99, vel: 0, mode: 'docked' };   // docked|tour|manual|surface|return
-const subCollider = { type: 'sub', layoutId: 'sub-1', x: SUB_HOME.x, z: SUB_HOME.z, rotY: -0.99, r: 0.55, def: { x: SUB_HOME.x, z: SUB_HOME.z, rotY: -0.99 } };
+const subCollider = { type: 'sub', layoutId: 'sub-1', x: SUB_HOME.x, z: SUB_HOME.z, rotY: -0.99, r: SUB_R, def: { x: SUB_HOME.x, z: SUB_HOME.z, rotY: -0.99 } };
 PROPS.push(subCollider);
 {   // 저장된 계류 위치 자기적용 (열린 물만 — 보트 문법)
-    const saved = savedLayout['sub-1'];
+    let saved = savedLayout['sub-1'];
+    if (saved && Math.hypot(saved.x - (-6.4), saved.z - 13.9) < 0.06) { saved = null; delete savedLayout['sub-1']; }   // 구 기본값 그대로면 새 기본값 추종
     if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.z) && islandOf(saved.x, saved.z) < 0 && !onBridge(saved.x, saved.z) && Math.hypot(saved.x, saved.z) < EXPLORE_R) {
         SUB_HOME.x = saved.x; SUB_HOME.z = saved.z;
         SUB.x = saved.x; SUB.z = saved.z;
@@ -12868,6 +12871,7 @@ function makeSub() {
     return g;
 }
 const subGroup = makeSub();
+subGroup.scale.setScalar(SUB_K);
 subCollider.obj = subGroup;
 subGroup.position.set(SUB.x, 0, SUB.z);
 subGroup.rotation.y = SUB.heading;
@@ -13032,7 +13036,7 @@ function subBallast(n, up) {   // 밸러스트 기포 버스트 — 잠항 "퐁�
     for (let i = 0; i < n; i++) {
         const bub = new THREE.Sprite(new THREE.SpriteMaterial({ map: blobTex, color: 0xd8f2ff, transparent: true, opacity: 0.7, depthWrite: false }));
         bub.scale.setScalar(0.035 + Math.random() * 0.05);
-        bub.position.set(SUB.x + (Math.random() - 0.5) * 0.5, SUB.y + 0.1, SUB.z + (Math.random() - 0.5) * 0.8);
+        bub.position.set(SUB.x + (Math.random() - 0.5) * 0.5 * SUB_K, SUB.y + 0.1, SUB.z + (Math.random() - 0.5) * 0.8 * SUB_K);
         scene.add(bub);
         hugBurst.push({ spr: bub, vx: (Math.random() - 0.5) * 0.15, vy: up ? 0.5 : 0.3, vz: (Math.random() - 0.5) * 0.15, t: 0.1 });
     }
@@ -13083,7 +13087,7 @@ function enterSub(rider, isAI = false) {
 function subDismountInto(q, side) {   // 수면 하차 — 잠수정 옆 바다로 (열기구 저공 하차 문법)
     if (!q) return;
     const rgX = Math.cos(SUB.heading), rgZ = -Math.sin(SUB.heading);
-    const dx = SUB.x + rgX * side * 0.9, dz = SUB.z + rgZ * side * 0.9;
+    const dx = SUB.x + rgX * side * 0.9 * SUB_K, dz = SUB.z + rgZ * side * 0.9 * SUB_K;
     q.mover.position.set(dx, waveYAt(dx, dz) + 0.02 - q.height * 0.45, dz);
     q.swimming = 'sea';
     q.mover.rotation.x = 0;
@@ -13099,7 +13103,7 @@ function exitSubForce() {   // Esc/빙의 해제 — 라이더는 계류장 곁 
     if (r.isAI && r.p) releaseAI(r.p, 2);
     subRide = null;
     SUB.mode = Math.hypot(SUB.x - SUB_HOME.x, SUB.z - SUB_HOME.z) < 2 ? 'docked' : 'return';
-    if (SUB.mode === 'docked') { SUB.x = SUB_HOME.x; SUB.z = SUB_HOME.z; subCollider.x = SUB.x; subCollider.z = SUB.z; subCollider.r = 0.55; }
+    if (SUB.mode === 'docked') { SUB.x = SUB_HOME.x; SUB.z = SUB_HOME.z; subCollider.x = SUB.x; subCollider.z = SUB.z; subCollider.r = SUB_R; }
 }
 function requestSubExit() {   // ⌘ — 수면으로 부상해 하차
     if (!subRide) return;
@@ -13280,7 +13284,7 @@ function updateSub(delta) {
             SUB.mode = 'docked';
             SUB.x = SUB_HOME.x; SUB.z = SUB_HOME.z;
             subCollider.x = SUB.x; subCollider.z = SUB.z;
-            subCollider.r = 0.55;
+            subCollider.r = SUB_R;
             logWorldEvent('노랑호가 계류장에 사뿐히 돌아왔다 🟡');
         }
     }
@@ -13294,7 +13298,7 @@ function updateSub(delta) {
     if (r && submerged && Math.random() < delta * 3.2) {   // 꽁무니 기포 트레일
         const bub = new THREE.Sprite(new THREE.SpriteMaterial({ map: blobTex, color: 0xd8f2ff, transparent: true, opacity: 0.6, depthWrite: false }));
         bub.scale.setScalar(0.025 + Math.random() * 0.03);
-        const bx = SUB.x - Math.sin(SUB.heading) * 1.05, bz = SUB.z - Math.cos(SUB.heading) * 1.05;
+        const bx = SUB.x - Math.sin(SUB.heading) * 1.05 * SUB_K, bz = SUB.z - Math.cos(SUB.heading) * 1.05 * SUB_K;
         bub.position.set(bx, SUB.y + (Math.random() - 0.5) * 0.1, bz);
         scene.add(bub);
         hugBurst.push({ spr: bub, vx: 0, vy: 0.3, vz: 0, t: 0.1 });
@@ -13318,7 +13322,7 @@ function updateSub(delta) {
     }
     if (subLightOn) {
         const fx = Math.sin(SUB.heading), fz = Math.cos(SUB.heading);
-        subLight.position.set(SUB.x + fx * 0.8, SUB.y + 0.16, SUB.z + fz * 0.8);
+        subLight.position.set(SUB.x + fx * 0.8 * SUB_K, SUB.y + 0.16 * SUB_K, SUB.z + fz * 0.8 * SUB_K);
         subLight.intensity = 2.4;
         subLightTarget.position.set(SUB.x + fx * 6.5, SUB.y - 1.6, SUB.z + fz * 6.5);
     }
@@ -13328,7 +13332,7 @@ function updateSub(delta) {
         const fx = Math.sin(SUB.heading), fz = Math.cos(SUB.heading);
         const seat = (q, side) => {
             if (!q) return;
-            q.mover.position.set(SUB.x + rgX * side * 0.13 + fx * -0.02, SUB.y + 0.05, SUB.z + rgZ * side * 0.13 + fz * -0.02);
+            q.mover.position.set(SUB.x + rgX * side * 0.16 * SUB_K + fx * -0.02 * SUB_K, SUB.y + 0.14 * SUB_K, SUB.z + rgZ * side * 0.16 * SUB_K + fz * -0.02 * SUB_K);   // 상체가 돔 유리 안에 보이는 높이 (낮으면 선체에 파묻힘 — 스샷 실측)
             q.mover.rotation.y = SUB.heading;
             q.mover.rotation.x = 0;
             q.mover.rotation.z = 0;
@@ -15121,7 +15125,7 @@ function recallVehicle(type, quiet = false) {
         SUB.vel = 0;
         subCollider.x = SUB.x;
         subCollider.z = SUB.z;
-        subCollider.r = 0.55;
+        subCollider.r = SUB_R;
     } else if (type === 'plane') {
         if (planeRide) { if (!quiet) showToast('🛩️ 지금 타는 중이에요'); return false; }
         PLANE.x = planeCollider.def.x;
