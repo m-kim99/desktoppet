@@ -11471,6 +11471,10 @@ async def world_set_layout(request: Request):
     layout = data.get("layout")
     if not isinstance(layout, dict):
         return {"ok": False}
+    # 빈/무지문 레이아웃 거부 — 구버전 캐시 창이 {}를 쏘아 실배치를 덮은 사고(2026-07-17) 재발 방지.
+    # 정상 저장은 항상 소품 수십 키 + _sig 지문을 동봉한다 (전부 원위치도 좌표를 다 적는 풀 저장).
+    if len([k for k in layout.keys() if not k.startswith("_")]) < 5 or "_sig" not in layout:
+        return {"ok": False, "reason": "empty-or-unsigned layout rejected"}
     os.makedirs(os.path.dirname(WORLD_LAYOUT_FILE), exist_ok=True)
     with open(WORLD_LAYOUT_FILE, "w", encoding="utf-8") as f:
         json.dump(layout, f, ensure_ascii=False, indent=2)

@@ -8011,6 +8011,7 @@ function saveLayout() {
         };
     }
     out._sig = ISLAND_SIG;   // 현재 섬 지문 동봉 — 다음 로드가 "그 사이 섬이 바뀌었나"를 판정하는 기준점
+    if (Object.keys(out).length < 6) return;   // 안전망: 빈 저장은 절대 쏘지 않는다 (서버도 거부하지만 양단 방어)
     try { localStorage.setItem('world-layout', JSON.stringify(out)); } catch (err) {}
     fetch('/api/world_layout', {
         method: 'POST',
