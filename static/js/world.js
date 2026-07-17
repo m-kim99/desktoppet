@@ -7341,6 +7341,18 @@ if (statsOn) window.__worldDev = {
     },
     fruitTidyGo: (name) => startAiTidy(pets.find((q) => q.name === (name || 'puppy'))),
     fruitTick: () => { fruitTickT = 60; return true; },
+    diveState: () => (dive ? { phase: dive.phase, t: +dive.t.toFixed(2), ai: !!dive.isAI } : null),
+    diveNow: (id) => (possessed ? startDive(possessed, id || null) : false),   // E2E — force = 확정 채집
+    seafood: () => seafoodCounts(),
+    seafoodRow: () => {   // 조형 QA — 11종 과일 옆줄에 해산물 8종
+        SEAFOOD.forEach((t, i) => {
+            const m = makeSeafoodMesh(t.id, 2.4);
+            const x = -1.2 + i * 0.36;
+            m.position.set(x, terrainHeight(x, -0.5) + 0.34, -0.5);
+            stage.add(m);
+        });
+        return SEAFOOD.length;
+    },
     fruitRow: () => {   // 조형 라인업 QA — 광장에 11종 한 줄 (스샷용, 리로드로 제거)
         Object.keys(FRUITS).forEach((t, i) => {
             const m = makeFruitMesh(t, 2.2);
@@ -8876,6 +8888,161 @@ function makeFruitMesh(type, scale = 1) {
     mesh.userData.topH = 0.05 * scale;   // 입가 정렬용 (updateHeldPose)
     return mesh;
 }
+// ---- 🤿 해산물 8종 (잠수 채집 — 동숲 다이빙 문법): 과일과 같은 규율 — 실루엣 우선,
+// 시그니처 1디테일, 전 파트 bakeGrad 정점색 병합 = 1종 1드로우. zone: 근해(섬 5m 이내)/외해.
+const SEAFOOD = [
+    { id: 'wakame',   ko: '미역',     zone: 'near', w: 30, rarity: 1 },
+    { id: 'starfish', ko: '불가사리', zone: 'near', w: 26, rarity: 1 },
+    { id: 'oyster',   ko: '굴',       zone: 'near', w: 18, rarity: 2 },
+    { id: 'seasquirt', ko: '멍게',    zone: 'near', w: 14, rarity: 2 },
+    { id: 'urchin',   ko: '성게',     zone: 'far',  w: 30, rarity: 1 },
+    { id: 'seacuke',  ko: '해삼',     zone: 'far',  w: 26, rarity: 1 },
+    { id: 'shrimp',   ko: '새우',     zone: 'far',  w: 18, rarity: 2 },
+    { id: 'octopus',  ko: '문어',     zone: 'far',  w: 7,  rarity: 3 },
+];
+function makeSeafoodGeo(id) {
+    const g = [];
+    if (id === 'urchin') {   // 성게 — 검보라 구 + 가시 침 (실루엣이 곧 정체성)
+        const body = new THREE.SphereGeometry(0.045, 12, 10);
+        body.translate(0, -0.055, 0);
+        g.push(bakeGrad(body, 0x4a3a5e, 0x241830, { curve: 1.2 }));
+        for (let i = 0; i < 22; i++) {
+            const a = (i / 22) * Math.PI * 2, b = ((i * 7) % 11) / 11 * Math.PI - Math.PI / 2;
+            const spike = new THREE.ConeGeometry(0.006, 0.05, 4);
+            const dx = Math.cos(a) * Math.cos(b), dy = Math.sin(b), dz = Math.sin(a) * Math.cos(b);
+            spike.rotateX(Math.PI / 2);
+            spike.lookAt ? null : null;
+            const m4 = new THREE.Matrix4().lookAt(new THREE.Vector3(0, 0, 0), new THREE.Vector3(dx, dy, dz), new THREE.Vector3(0, 1, 0));
+            const spike2 = new THREE.ConeGeometry(0.006, 0.05, 4);
+            spike2.rotateX(Math.PI / 2);
+            spike2.applyMatrix4(m4);
+            spike2.translate(dx * 0.062, -0.055 + dy * 0.062, dz * 0.062);
+            g.push(bakeGrad(spike2, 0x5a4a70, 0x32243f, { curve: 1 }));
+        }
+    } else if (id === 'starfish') {   // 불가사리 — 5팔 별, 끝으로 갈수록 밝은 주황
+        for (let i = 0; i < 5; i++) {
+            const a = (i / 5) * Math.PI * 2;
+            const arm = new THREE.ConeGeometry(0.026, 0.085, 5);
+            arm.scale(1, 1, 0.42);
+            arm.rotateX(Math.PI / 2);
+            arm.rotateY(-a);
+            arm.translate(Math.sin(a) * 0.045, -0.06, Math.cos(a) * 0.045);
+            g.push(bakeGrad(arm, 0xffab52, 0xe0702e, { curve: 1.1 }));
+        }
+        const core = new THREE.SphereGeometry(0.03, 8, 6);
+        core.scale(1, 0.55, 1);
+        core.translate(0, -0.052, 0);
+        g.push(bakeGrad(core, 0xffb866, 0xe0702e, { curve: 1.1 }));
+    } else if (id === 'seacuke') {   // 해삼 — 길쭉 오돌토돌 검갈색
+        const body = new THREE.CapsuleGeometry ? new THREE.CapsuleGeometry(0.028, 0.09, 4, 10) : new THREE.SphereGeometry(0.04, 10, 8);
+        body.rotateZ(Math.PI / 2);
+        body.translate(0, -0.055, 0);
+        g.push(bakeGrad(body, 0x4a3c30, 0x291f16, { curve: 1.15 }));
+        for (let i = 0; i < 9; i++) {
+            const bump = new THREE.SphereGeometry(0.007, 5, 4);
+            bump.translate(-0.05 + (i % 5) * 0.025, -0.028 + (i % 2) * -0.008, (i % 3 - 1) * 0.02);
+            g.push(bakeGrad(bump, 0x5c4c3c, 0x38291c, { curve: 1 }));
+        }
+    } else if (id === 'seasquirt') {   // 멍게 — 빨간 울퉁불퉁 덩이 + 뿔 두 개
+        const body = new THREE.SphereGeometry(0.042, 10, 8);
+        body.scale(1, 1.12, 1);
+        body.translate(0, -0.06, 0);
+        g.push(bakeGrad(body, 0xf25c3c, 0xb92e18, { curve: 1.25 }));
+        for (const [sx, sz] of [[0.014, 0.01], [-0.016, -0.008]]) {
+            const horn = new THREE.CylinderGeometry(0.008, 0.013, 0.03, 6);
+            horn.rotateZ(sx > 0 ? -0.4 : 0.45);
+            horn.translate(sx, -0.012, sz);
+            g.push(bakeGrad(horn, 0xff7a52, 0xc93d20, { curve: 1 }));
+        }
+        for (let i = 0; i < 7; i++) {
+            const wart = new THREE.SphereGeometry(0.006, 5, 4);
+            const a = i * 0.9;
+            wart.translate(Math.cos(a) * 0.038, -0.06 + Math.sin(i * 1.7) * 0.028, Math.sin(a) * 0.038);
+            g.push(bakeGrad(wart, 0xff8a62, 0xd24824, { curve: 1 }));
+        }
+    } else if (id === 'wakame') {   // 미역 — 초록 리본 세 가닥이 하늘하늘
+        for (let i = 0; i < 3; i++) {
+            const pts = [];
+            for (let j = 0; j <= 6; j++) {
+                const t = j / 6;
+                pts.push(new THREE.Vector3(Math.sin(t * Math.PI * 2 + i * 2) * 0.014 + (i - 1) * 0.02, -0.115 + t * 0.11, Math.cos(t * Math.PI * 1.5 + i) * 0.01));
+            }
+            const ribbon = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 12, 0.011, 5);
+            ribbon.scale(1.6, 1, 0.42);   // 납작 리본화
+            g.push(bakeGrad(ribbon, 0x4f9a44, 0x2a5c26, { curve: 1.1 }));
+        }
+    } else if (id === 'oyster') {   // 굴 — 벌어진 입이 위를 본다: 아래 껍데기(그릇) + 크림 속살 + 젖혀진 뚜껑
+        const bottom = new THREE.SphereGeometry(0.052, 10, 7, 0, Math.PI * 2, 0, Math.PI / 2);
+        bottom.scale(1, 0.5, 0.85);
+        bottom.rotateX(Math.PI);
+        bottom.translate(0, -0.075, 0);
+        g.push(bakeGrad(bottom, 0x9a938a, 0x5c554b, { curve: 1 }));
+        for (let i = 0; i < 4; i++) {   // 껍데기 성장 골(거친 굴 질감)
+            const ridge = new THREE.TorusGeometry(0.028 + i * 0.008, 0.0035, 4, 14);
+            ridge.rotateX(Math.PI / 2);
+            ridge.scale(1, 1, 0.85);
+            ridge.translate(0, -0.086 + i * 0.007, 0);
+            g.push(bakeGrad(ridge, 0x8a8378, 0x504a41, { curve: 1 }));
+        }
+        const flesh = new THREE.SphereGeometry(0.038, 9, 7);
+        flesh.scale(1, 0.35, 0.8);
+        flesh.translate(0, -0.068, 0);
+        g.push(bakeGrad(flesh, 0xfff4de, 0xe3cba6, { curve: 1.2 }));
+        const top = new THREE.SphereGeometry(0.05, 10, 7, 0, Math.PI * 2, 0, Math.PI / 2);   // 뚜껑 — 뒤로 활짝
+        top.scale(1, 0.42, 0.82);
+        top.rotateX(-1.15);
+        top.translate(0, -0.05, -0.052);
+        g.push(bakeGrad(top, 0xa39c92, 0x635c52, { curve: 1 }));
+    } else if (id === 'shrimp') {   // 새우 — 굽은 마디 몸 + 꼬리 부채
+        for (let i = 0; i < 5; i++) {
+            const t = i / 4;
+            const a = -0.5 + t * 2.4;
+            const seg = new THREE.SphereGeometry(0.026 - t * 0.009, 8, 6);
+            seg.translate(Math.sin(a) * 0.055, -0.075 + Math.cos(a) * 0.05, 0);
+            g.push(bakeGrad(seg, 0xff9a72, 0xd85838, { curve: 1.2 }));
+        }
+        const tail = new THREE.ConeGeometry(0.024, 0.035, 4);
+        tail.scale(1, 1, 0.3);
+        tail.rotateZ(1.9);
+        tail.translate(0.058, -0.115, 0);
+        g.push(bakeGrad(tail, 0xffb086, 0xe06840, { curve: 1 }));
+        for (const wy of [0.008, -0.004]) {   // 더듬이
+            const ant = new THREE.CylinderGeometry(0.0025, 0.0025, 0.07, 4);
+            ant.rotateZ(1.2);
+            ant.translate(-0.075, -0.045 + wy, 0);
+            g.push(bakeGrad(ant, 0xd85838, 0xb0401f, { curve: 1 }));
+        }
+    } else {   // octopus — 문어: 돔 머리 + 말린 다리 8 + 순한 눈
+        const head = new THREE.SphereGeometry(0.05, 12, 10);
+        head.scale(1, 1.08, 1);
+        head.translate(0, -0.052, 0);
+        g.push(bakeGrad(head, 0xe86a8a, 0xb03a58, { curve: 1.3 }));
+        for (let i = 0; i < 8; i++) {
+            const a = (i / 8) * Math.PI * 2 + 0.2;
+            const leg = new THREE.TorusGeometry(0.022, 0.009, 6, 10, Math.PI * 1.3);
+            leg.rotateX(Math.PI / 2.3);
+            leg.rotateY(-a);
+            leg.translate(Math.sin(a) * 0.045, -0.098, Math.cos(a) * 0.045);
+            g.push(bakeGrad(leg, 0xd85878, 0xa02c48, { curve: 1.1 }));
+        }
+        for (const ex of [-0.018, 0.018]) {   // 눈 — 흰자+점
+            const eye = new THREE.SphereGeometry(0.011, 8, 6);
+            eye.translate(ex, -0.038, 0.042);
+            g.push(bakeGrad(eye, 0xffffff, 0xe8e8e8, { curve: 1 }));
+            const pupil = new THREE.SphereGeometry(0.005, 6, 4);
+            pupil.translate(ex, -0.038, 0.051);
+            g.push(bakeGrad(pupil, 0x222226, 0x111114, { curve: 1 }));
+        }
+    }
+    return mergeGeometries(g, false);
+}
+function makeSeafoodMesh(id, scale = 1) {
+    const mesh = new THREE.Mesh(makeSeafoodGeo(id), gradMat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    if (scale !== 1) mesh.scale.setScalar(scale);
+    return mesh;
+}
 function makeFoodMesh(f) {
     const g = new THREE.Group();
     if (f.id === 'toast') {
@@ -9868,7 +10035,12 @@ function doInteract() {
             seaHop = { fx: pos.x, fy: pos.y, fz: pos.z, tx: spot.tx, tz: spot.tz, ty: spot.ty, t: 0 };
             return;
         }
+        if (dive && dive.p === possessed) {   // 🤿 잠수 중 ⌘ = 조기 부상 (즉석 롤)
+            if (dive.phase === 'under') endDive(dive.force ? SEAFOOD.find((t) => t.id === dive.force) : rollSeafood(diveZoneAt(pos.x, pos.z)));
+            return;
+        }
         if (handHold) releaseHandHold();
+        if (startDive(possessed)) return;   // 🤿 열린 바다 ⌘ = 퐁당 잠수
         return;
     }
     if (carDrive) { exitCar(); return; }
@@ -13049,6 +13221,124 @@ function openFruitBasket() {
     basketPanel.style.display = basketPanel.style.display === 'none' ? 'block' : (basketPanel.style.display ? 'none' : 'block');
     if (basketPanel.style.display !== 'none') refreshBasketPanel();
 }
+// ---- 🤿 잠수 채집 (동숲 다이빙 문법): 바다 수영 중 ⌘ = 퐁당 — 펫 모델을 숨기고 수면에
+// 실루엣 블롭+버블만 남긴다(물리는 그대로 수면 수영 = 지지면·조향 시스템 무개조). 몇 초 뒤
+// 떠오르며 해산물 채집: 근해(섬 5m 이내)/외해 풀이 갈리고 문어(★3)는 외해 레어. 도감은
+// world-seafood. Esc/빙의 해제 등 어떤 경로로 끝나도 모델 가시성은 endDive가 복원한다. ----
+let dive = null;   // { p, t, phase: down|under|up, blob, bubbleAt, force }
+function seafoodCounts() {
+    try { return JSON.parse(localStorage.getItem('world-seafood') || '{}') || {}; } catch (e) { return {}; }
+}
+function diveZoneAt(x, z) {
+    for (const isl of ISLANDS) if (Math.hypot(x - isl.x, z - isl.z) < isl.r + 5) return 'near';
+    return 'far';
+}
+function rollSeafood(zone) {
+    if (Math.random() < 0.2) return null;   // 빈손 — "물풀만 스쳤다"
+    const pool = SEAFOOD.filter((t) => t.zone === zone);
+    const total = pool.reduce((a, t) => a + t.w, 0);
+    let r = Math.random() * total;
+    for (const t of pool) { r -= t.w; if (r <= 0) return t; }
+    return pool[0];
+}
+function startDive(p, force, isAI) {
+    if (dive || !p || p.swimming !== 'sea') return false;
+    releaseHandHold();
+    const blob = new THREE.Sprite(new THREE.SpriteMaterial({ map: blobTex, color: 0x1c3a4a, transparent: true, opacity: 0.55, depthWrite: false }));
+    blob.scale.set(0.52, 0.34, 1);
+    scene.add(blob);
+    dive = { p, t: 0, phase: 'down', blob, bubbleAt: 0, force: force || null, isAI: !!isAI };
+    playBuffer(splashBuf, { vol: 0.5, rate: 1.15, filterFreq: 2200 });
+    spawnSplash(p.mover.position.x, p.mover.position.y + 0.1, p.mover.position.z);
+    logWorldEvent(`${petKo(p)}가 숨을 크게 들이쉬고 퐁당 잠수했다 🤿`);
+    return true;
+}
+function endDive(caught) {
+    if (!dive) return;
+    const { p, blob, isAI } = dive;
+    p.pet.wrap.visible = true;
+    scene.remove(blob);
+    blob.material.dispose();
+    dive = null;
+    if (isAI) {   // 절친 잠수 — 구경만 하고 살며시 놓아준다 (도감은 주인 전용, 낚시 문법)
+        if (caught) {
+            const mesh = makeSeafoodMesh(caught.id, 1.4);
+            mesh.position.set(p.mover.position.x, p.mover.position.y + 0.4, p.mover.position.z);
+            fruitLayer.add(mesh);
+            shellFly.push({ mesh, t: 0, x: p.mover.position.x, z: p.mover.position.z });
+            logWorldEvent(`${petKo(p)}가 잠수해서 ${caught.ko}를 구경하고 살며시 놓아줬다 🤿`);
+            maybeProactive(p, `방금 물속에서 ${caught.ko}를 봤다! 신기했다!`);
+        } else logWorldEvent(`${petKo(p)}가 물속을 한 바퀴 둘러보고 떠올랐다 🫧`);
+        playBuffer(splashBuf, { vol: 0.4, rate: 1.0, filterFreq: 2000 });
+        spawnSplash(p.mover.position.x, p.mover.position.y + 0.1, p.mover.position.z);
+        return;
+    }
+    playBuffer(splashBuf, { vol: 0.45, rate: 0.95, filterFreq: 2000 });
+    spawnSplash(p.mover.position.x, p.mover.position.y + 0.1, p.mover.position.z);
+    if (caught === undefined) return;   // 중단 (Esc·빙의 해제) — 롤 없음
+    if (!caught) {
+        showToast('🫧 이번엔 물풀만 스쳤다…');
+        logWorldEvent(`${petKo(p)}가 빈손으로 떠올랐다 🫧`);
+        return;
+    }
+    const counts = seafoodCounts();
+    const first = !counts[caught.id];
+    counts[caught.id] = (counts[caught.id] || 0) + 1;
+    try { localStorage.setItem('world-seafood', JSON.stringify(counts)); } catch (e) {}
+    const mesh = makeSeafoodMesh(caught.id, 1.5);   // 머리 위로 둥실 (조개 줍기 연출 재사용)
+    mesh.position.set(p.mover.position.x, p.mover.position.y + 0.42, p.mover.position.z);
+    fruitLayer.add(mesh);
+    shellFly.push({ mesh, t: 0, x: p.mover.position.x, z: p.mover.position.z });
+    if (caught.rarity >= 3) {
+        fishFanfare();
+        showToast(`🤿✨ ${caught.ko}다!! (★★★${first ? ' · 처음!' : ''})`);
+        maybeProactive(p, `방금 잠수해서 ${caught.ko}를 잡았다!! 대박이다!!`);
+    } else {
+        playBuffer(swishBuf, { vol: 0.35, rate: 1.5, filterFreq: 1600 });
+        showToast(`🤿 ${caught.ko} 잡았다!${first ? ' — 도감에 처음 올랐다 📖' : ''}`);
+    }
+    logWorldEvent(`${petKo(p)}가 잠수로 ${caught.ko}를 건져 올렸다 🤿${caught.rarity >= 3 ? ' ★★★' : ''}`);
+}
+let aiDiveAt = 0;
+function updateDive(delta) {
+    if (!dive) {   // 🤿 절친 자율: 바다 물놀이 중이면 가끔 혼자 잠수 (25초 폴 — 무비용)
+        if (Date.now() > aiDiveAt) {
+            aiDiveAt = Date.now() + 25000;
+            const cand = pets.find((q) => q !== possessed && q.swimming === 'sea' && q.dip && !q.pet.sleeping);
+            if (cand && Math.random() < 0.3) startDive(cand, null, true);
+        }
+        return;
+    }
+    const { p } = dive;
+    if (p !== possessed && !dive.isAI) { endDive(); return; }   // 빙의 해제 — 즉시 부상 (가시성 복원)
+    if (p.swimming !== 'sea') { endDive(); return; }            // 뭍/보트 등 — 강제 부상
+    dive.t += delta;
+    const m = p.mover;
+    dive.blob.position.set(m.position.x, waveYAt(m.position.x, m.position.z) + 0.015, m.position.z);
+    if (dive.phase === 'down') {
+        p.pet.wrap.rotation.x = Math.min(1.1, dive.t * 3.2);   // 곤두박질 (엔티티 뒤 덮어쓰기)
+        if (dive.t >= 0.45) {
+            dive.phase = 'under';
+            dive.t = 0;
+            p.pet.wrap.visible = false;   // 물속으로 — 이제 실루엣 블롭이 연기한다
+        }
+    } else if (dive.phase === 'under') {
+        dive.bubbleAt -= delta;
+        if (dive.bubbleAt <= 0) {   // 🫧 기포 — dig 퍼프 패턴 (파이어&포겟)
+            dive.bubbleAt = 0.4 + Math.random() * 0.3;
+            const bub = new THREE.Sprite(new THREE.SpriteMaterial({ map: blobTex, color: 0xd8f2ff, transparent: true, opacity: 0.75, depthWrite: false }));
+            bub.scale.setScalar(0.035 + Math.random() * 0.045);
+            bub.position.set(m.position.x + (Math.random() - 0.5) * 0.2, waveYAt(m.position.x, m.position.z) + 0.03, m.position.z + (Math.random() - 0.5) * 0.2);
+            scene.add(bub);
+            hugBurst.push({ spr: bub, vx: (Math.random() - 0.5) * 0.1, vy: 0.22, vz: (Math.random() - 0.5) * 0.1, t: 0.1 });
+        }
+        const dur = dive.isAI ? 2.8 : 3.8;
+        if (dive.t >= dur) {
+            const zone = diveZoneAt(m.position.x, m.position.z);
+            endDive(dive.force ? SEAFOOD.find((t) => t.id === dive.force) : rollSeafood(zone));
+        }
+    }
+}
 let shellNextAt = 50;   // 첫 시도 50초 후 (시딩과 별개 — 3개까지 리필용)
 let shellGlintAt = 7;
 let shellSeeded = false;   // 로드 직후 1~2개 즉시 — 레이아웃·소품이 다 선 첫 프레임에 심는다
@@ -14041,6 +14331,7 @@ function fishdexIcons() {
         holder.position.set(0, 0, 0);
     };
     for (const sp of FISH_SPECIES) snap(sp.id, makeFishMesh(sp, (sp.len[0] + sp.len[1]) / 2));
+    for (const t of SEAFOOD) snap(`sf:${t.id}`, makeSeafoodMesh(t.id, 1));
     for (const t of SHELL_TYPES) snap(`shell:${t.id}`, makeShellMesh(t));   // 🐚 조개도 같은 세션에서
     rd.dispose();
     rd.forceContextLoss();
@@ -14107,6 +14398,34 @@ function renderFishdex() {
         shGrid.appendChild(cell);
     }
     dexUI.body.appendChild(shGrid);
+    // ---- 🤿 해산물 컬렉션 (잠수 채집) ----
+    const sfHave = seafoodCounts();
+    const gotSf = SEAFOOD.filter((t) => sfHave[t.id]).length;
+    const sfHead = document.createElement('div');
+    sfHead.style.cssText = 'font-size:12px; font-weight:700; opacity:0.82; margin-top:6px; border-top:1px solid rgba(120,90,50,0.2); padding-top:8px;';
+    sfHead.textContent = `🤿 해산물 컬렉션 ${gotSf} / ${SEAFOOD.length}${gotSf >= SEAFOOD.length ? ' — 완성! 🎉' : ''}`;
+    dexUI.body.appendChild(sfHead);
+    const sfGrid = document.createElement('div');
+    sfGrid.style.cssText = 'display:grid; grid-template-columns:repeat(4, 1fr); gap:7px;';
+    for (const t of SEAFOOD) {
+        const n = sfHave[t.id] || 0;
+        const cell = document.createElement('div');
+        cell.style.cssText = 'background:rgba(120,90,50,0.09); border-radius:10px; padding:6px 3px 7px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:2px;';
+        const img = document.createElement('img');
+        img.src = icons[`sf:${t.id}`];
+        img.style.cssText = `width:44px; height:44px;${n ? '' : ' filter:brightness(0) opacity(0.5);'}`;
+        cell.appendChild(img);
+        const nm = document.createElement('div');
+        nm.style.cssText = 'font-size:10.5px; font-weight:700;';
+        nm.textContent = n ? t.ko : '???';
+        cell.appendChild(nm);
+        const sub = document.createElement('div');
+        sub.style.cssText = 'font-size:9px; opacity:0.72; line-height:1.25; min-height:12px;';
+        sub.textContent = n ? `${'★'.repeat(t.rarity)} ${n}개` : (t.zone === 'near' ? '근해에서 잠수' : '먼바다에서 잠수');
+        cell.appendChild(sub);
+        sfGrid.appendChild(cell);
+    }
+    dexUI.body.appendChild(sfGrid);
 }
 function toggleFishdex() {
     if (dexUI.panel.style.display === 'flex') { dexUI.panel.style.display = 'none'; return; }
@@ -15121,6 +15440,7 @@ function animate() {
     updateFerryPose();                       // 페리 벤치 앉기 — 다리 접기 (엔티티 뒤 덮어쓰기)
     updatePhoneCall(delta);                  // 📞 전화 안무 — 폰 위치·고개 기울임·옹알이 (엔티티 뒤)
     updateTrampoline(delta);                 // 🤸 트램펄린 바운스 — y 소유 + 앞구르기 포즈 (엔티티 뒤)
+    updateDive(delta);                       // 🤿 잠수 — 실루엣 블롭·버블·부상 롤 (엔티티 뒤)
     updateFishing(delta);                    // 🎣 낚시 안무 — 엔티티 업데이트 뒤라 포즈 덮어쓰기 가능
     updateHeartFx(delta);
     updateFestiveFx(delta);
