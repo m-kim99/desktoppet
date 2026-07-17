@@ -7347,7 +7347,19 @@ if (statsOn) window.__worldDev = {
     fruitTidyGo: (name) => startAiTidy(pets.find((q) => q.name === (name || 'puppy'))),
     fruitTick: () => { fruitTickT = 60; return true; },
     diveState: () => (dive ? { phase: dive.phase, t: +dive.t.toFixed(2), ai: !!dive.isAI, y: dive.p ? +dive.p.mover.position.y.toFixed(2) : null } : null),
-    seaState: () => ({ under: camUnderwater, chunks: seaChunks.size, spawns: seaSpawns.map((q) => ({ t: q.t.id, x: +q.x.toFixed(1), z: +q.z.toFixed(1) })), treasures: [...seaChunks.entries()].filter(([k, e]) => e.treasure).map(([k, e]) => ({ key: k, x: +e.tx.toFixed(1), z: +e.tz.toFixed(1) })), fogNear: +scene.fog.near.toFixed(1) }),
+    seaState: () => ({ under: camUnderwater, chunks: seaChunks.size, spawns: seaSpawns.map((q) => ({ t: q.t.id, x: +q.x.toFixed(1), z: +q.z.toFixed(1) })), treasures: [...seaChunks.entries()].filter(([k, e]) => e.treasure).map(([k, e]) => ({ key: k, x: +e.tx.toFixed(1), z: +e.tz.toFixed(1) })), fogNear: +scene.fog.near.toFixed(1), vents: [...seaChunks.values()].reduce((n, e) => n + ((e.vents && e.vents.length) || 0), 0), forests: [...seaChunks.values()].filter((e) => e.forest).length }),
+    seaPoiScan: () => {   // E2E — 경계 안 첫 열수구/켈프숲 청크 좌표 (시드 순수 평가)
+        const out = { vent: null, forest: null };
+        for (let r = 0; r < 5 && (!out.vent || !out.forest); r++) {   // 중앙 군도는 셸프(수심 게이트)라 넓게 훑는다
+            for (let cx = -r; cx <= r && (!out.vent || !out.forest); cx++) for (let cz = -r; cz <= r; cz++) {
+                if (Math.max(Math.abs(cx), Math.abs(cz)) !== r) continue;
+                const inf = seaChunkInfo(cx, cz);
+                if (!out.vent && inf.vent && islandOf(inf.vx, inf.vz) < 0 && seabedHeight(inf.vx, inf.vz) < -2.6 && Math.hypot(inf.vx, inf.vz) < 68) out.vent = { x: +inf.vx.toFixed(1), z: +inf.vz.toFixed(1) };
+                if (!out.forest && inf.kelpForest && islandOf(inf.kfx, inf.kfz) < 0 && seabedHeight(inf.kfx, inf.kfz) < -1.6 && Math.hypot(inf.kfx, inf.kfz) < 68) out.forest = { x: +inf.kfx.toFixed(1), z: +inf.kfz.toFixed(1) };
+            }
+        }
+        return out;
+    },
     seabedAt: (x, z) => +seabedHeight(x, z).toFixed(2),
     callFriend: () => startPhoneCall(),   // 📞 친구 부르기 (E2E)
     handState: () => (handHold ? { y: +handHold.partner.mover.position.y.toFixed(2), swim: handHold.partner.swimming, state: handHold.partner.ai.state } : null),
@@ -13511,11 +13523,101 @@ function recordSeaFind(key, x, z, kind) {
     seaFound[key] = { x: +x.toFixed(1), z: +z.toFixed(1), k: kind };
     try { localStorage.setItem('world-sea-found', JSON.stringify(seaFound)); } catch (e) {}
 }
-const seaSandMat = new THREE.MeshLambertMaterial({ color: 0xcfc09a, map: sandTex });
+// ☀️ 커스틱 정적 굽기 — 수면이 모래에 드리우는 빛 그물을 텍스처에 굽는다 (승인된 발열 설계:
+// 런타임 0비용). 셀 가장자리를 물결 폐곡선으로 그리고, 타일 경계는 9-탭 랩으로 이음새 제거.
+const seaCausticTex = canvasTex(128, 5, 5, (ctx, s) => {
+    ctx.fillStyle = '#dccfa2';
+    ctx.fillRect(0, 0, s, s);
+    const rnd = seededRand(4177);
+    for (let i = 0; i < 220; i++) {
+        ctx.fillStyle = `rgba(${rnd() < 0.5 ? '168,148,98' : '250,246,216'},0.18)`;
+        ctx.fillRect(rnd() * s, rnd() * s, 1.5, 1.5);
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 22; i++) {
+        const ccx = rnd() * s, ccy = rnd() * s, r = 7 + rnd() * 11;
+        const alpha = 0.045 + rnd() * 0.055;   // 은은하게 — 근거리에서 낙서처럼 도드라지면 안 된다 (스샷 실측)
+        const lw = 1.3 + rnd() * 1.3;
+        const wob = 1.8 + rnd() * 2, ph = rnd() * Math.PI * 2, lobes = 4 + Math.floor(rnd() * 3);
+        for (const ox of [-s, 0, s]) for (const oy of [-s, 0, s]) {   // 랩 — 경계 걸친 셀도 반대편에 이어진다
+            ctx.strokeStyle = `rgba(216,255,248,${alpha})`;
+            ctx.lineWidth = lw;
+            ctx.beginPath();
+            for (let a = 0; a <= 22; a++) {
+                const t = (a / 22) * Math.PI * 2;
+                const rr = r + Math.sin(t * lobes + ph) * wob;
+                const x = ccx + ox + Math.cos(t) * rr, y = ccy + oy + Math.sin(t) * rr;
+                if (a === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.stroke();
+        }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+});
+const seaSandMat = new THREE.MeshLambertMaterial({ color: 0xcfc09a, map: seaCausticTex });
+// 🌿 켈프 스웨이 — 정점 벤딩(야자·오션 문법): aBend(밑동 0→끝 1)·aPh(다발 위상)로 물결에 흔들린다.
+// 청크의 모든 켈프가 이 재질 하나로 병합돼 +1드로우, CPU 0 (wxTime이 돌린다).
+const seaKelpMat = gradMat.clone();
+seaKelpMat.onBeforeCompile = (sh) => {
+    sh.uniforms.uWxT = wxTime;
+    sh.vertexShader = 'uniform float uWxT;\nattribute float aBend;\nattribute float aPh;\n' + sh.vertexShader.replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\n'
+        + 'transformed.x += sin(uWxT * 1.05 + aPh) * 0.16 * aBend;\n'
+        + 'transformed.z += cos(uWxT * 0.8 + aPh * 1.7) * 0.1 * aBend;'
+    );
+};
+// 🫧 열수구 기포 기둥 — 분수 물방울 문법(셰이더 Points·wxTime 루프·CPU 0). 재질은 전 열수구 공유.
+const ventBubMat = new THREE.PointsMaterial({
+    map: glowTex, color: 0xcfeef2, size: 1, transparent: true, opacity: 0.5,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+});
+ventBubMat.onBeforeCompile = (sh) => {
+    sh.uniforms.uWxT = wxTime;
+    sh.vertexShader = 'uniform float uWxT;\nattribute float aSpeed;\nattribute float aPhase;\nattribute float aSize;\n'
+        + sh.vertexShader
+            .replace('#include <begin_vertex>',
+                '#include <begin_vertex>\n'
+                + 'float bT = mod(uWxT * aSpeed + aPhase, 3.4);\n'
+                + 'transformed.y += bT;\n'
+                + 'transformed.x += sin(uWxT * 1.9 + aPhase * 9.0) * 0.06 * bT;\n'
+                + 'transformed.z += cos(uWxT * 1.55 + aPhase * 7.0) * 0.05 * bT;')
+            .replace('gl_PointSize = size;', 'gl_PointSize = size * aSize * (0.55 + bT * 0.3);');
+};
+function kelpBladeGeo(bx, bz, by, h, lean, phase) {   // 잎 하나 — aBend/aPh 어트리뷰트 포함 (seaKelpMat 전용)
+    const blade = new THREE.ConeGeometry(0.05 + h * 0.014, h, 5);
+    blade.scale(1, 1, 0.3);
+    blade.translate(0, h / 2, 0);
+    blade.rotateZ(lean);
+    blade.rotateY(phase * 2.3);
+    blade.translate(bx, by, bz);
+    bakeGrad(blade, 0x47905f, 0x1d4a26, { curve: 1.15 });
+    const pos = blade.attributes.position;
+    const bend = new Float32Array(pos.count), ph = new Float32Array(pos.count);
+    for (let i = 0; i < pos.count; i++) {
+        bend[i] = THREE.MathUtils.clamp((pos.getY(i) - by) / h, 0, 1);
+        ph[i] = phase;
+    }
+    blade.setAttribute('aBend', new THREE.Float32BufferAttribute(bend, 1));
+    blade.setAttribute('aPh', new THREE.Float32BufferAttribute(ph, 1));
+    return blade;
+}
 function seaChunkInfo(cx, cz) {   // 시드 결정적 (아발란치 rngT — 시드 3계명)
     const seed = (((cx * 92837111) ^ (cz * 68943481)) >>> 0) % 2147483645 + 1;
     const rng = seededRand((Math.imul(seed, 2654435761) >>> 0) % 2147483645 + 1);
-    return { seed, rocks: Math.floor(rng() * 4), kelp: rng() < 0.5 ? 1 + Math.floor(rng() * 2) : 0, coral: rng() < 0.4 ? 1 + Math.floor(rng() * 2) : 0, treasure: rng() < 0.16, tx: (cx + 0.25 + rng() * 0.5) * SEA_CHUNK, tz: (cz + 0.25 + rng() * 0.5) * SEA_CHUNK };
+    const base = { seed, rocks: Math.floor(rng() * 4), kelp: rng() < 0.5 ? 1 + Math.floor(rng() * 2) : 0, coral: rng() < 0.4 ? 1 + Math.floor(rng() * 2) : 0, treasure: rng() < 0.16, tx: (cx + 0.25 + rng() * 0.5) * SEA_CHUNK, tz: (cz + 0.25 + rng() * 0.5) * SEA_CHUNK };
+    // POI 롤은 기존 체인 '뒤'에만 붙인다(시드 3계명 — 보물 tx/tz가 밀리면 소나 지도가 거짓말한다).
+    // 게이트와 무관하게 항상 소비 — 체인 길이 고정.
+    const ventRoll = rng() < 0.08, vx = (cx + 0.2 + rng() * 0.6) * SEA_CHUNK, vz = (cz + 0.2 + rng() * 0.6) * SEA_CHUNK;
+    const forestRoll = rng() < 0.1, kfx = (cx + 0.22 + rng() * 0.56) * SEA_CHUNK, kfz = (cz + 0.22 + rng() * 0.56) * SEA_CHUNK;
+    base.vent = ventRoll;
+    base.vx = vx;
+    base.vz = vz;
+    base.kelpForest = !ventRoll && forestRoll;   // 한 청크에 하나만 — 읽히는 해저
+    base.kfx = kfx;
+    base.kfz = kfz;
+    return base;
 }
 function loadSeaChunk(key, cx, cz) {
     if (seaChunks.has(key)) return;
@@ -13535,9 +13637,9 @@ function loadSeaChunk(key, cx, cz) {
     floor.position.set((cx + 0.5) * SEA_CHUNK, 0, (cz + 0.5) * SEA_CHUNK);
     floor.receiveShadow = false;
     group.add(floor);
-    // 드레싱 — grad(인덱스드)와 rocks(폴리헤드론=논인덱스드)는 버킷 분리 (무인도 문법 —
-    // 섞으면 mergeGeometries가 null을 리턴하고 new Mesh(null)이 rAF 루프를 즉사시킨다)
-    const grad = [], rocks = [];
+    // 드레싱 — grad(인덱스드)·rocks(폴리헤드론=논인덱스드)·kelps(스웨이 어트리뷰트) 버킷 분리
+    // (무인도 문법 — 섞으면 mergeGeometries가 null을 리턴하고 new Mesh(null)이 rAF 루프를 즉사시킨다)
+    const grad = [], rocks = [], kelps = [];
     const spot = () => {
         const x = (cx + 0.1 + rng() * 0.8) * SEA_CHUNK, z = (cz + 0.1 + rng() * 0.8) * SEA_CHUNK;
         if (islandOf(x, z) >= 0) return null;   // 섬 밑 제외
@@ -13552,19 +13654,24 @@ function loadSeaChunk(key, cx, cz) {
         rock.translate(sp.x, sp.y + 0.08, sp.z);
         rocks.push(bakeGrad(rock, 0x8a94a0, 0x525c68, { curve: 1 }));
     }
-    for (let i = 0; i < info.kelp; i++) {   // 켈프 다발 — 길쭉 잎 3~5장이 흔들리듯 기울어 서있다
+    for (let i = 0; i < info.kelp; i++) {   // 켈프 다발 — 길쭉 잎 3~5장이 물결 따라 흔들린다 (스웨이 셰이더)
         const sp = spot();
         if (!sp) continue;
         const blades = 3 + Math.floor(rng() * 3);
         for (let b = 0; b < blades; b++) {
             const h = 0.9 + rng() * 1.4;
-            const blade = new THREE.ConeGeometry(0.055, h, 5);
-            blade.scale(1, 1, 0.3);
-            blade.translate(0, h / 2, 0);
-            blade.rotateZ((rng() - 0.5) * 0.5);
-            blade.rotateY(rng() * Math.PI * 2);
-            blade.translate(sp.x + (rng() - 0.5) * 0.4, sp.y, sp.z + (rng() - 0.5) * 0.4);
-            grad.push(bakeGrad(blade, 0x3f7d3a, 0x1e4a20, { curve: 1.15 }));
+            kelps.push(kelpBladeGeo(sp.x + (rng() - 0.5) * 0.4, sp.z + (rng() - 0.5) * 0.4, sp.y, h, (rng() - 0.5) * 0.5, rng() * Math.PI * 2));
+        }
+    }
+    // 🌿 켈프 숲 군락 — 키 큰 잎 13~17장이 빽빽한 수풀 (숲 사이를 헤엄쳐 지나는 맛)
+    if (info.kelpForest && islandOf(info.kfx, info.kfz) < 0 && seabedHeight(info.kfx, info.kfz) < -1.6) {
+        const n = 13 + Math.floor(rng() * 5);
+        for (let b = 0; b < n; b++) {
+            const a = rng() * Math.PI * 2, rr = Math.sqrt(rng()) * 2.4;
+            const bx = info.kfx + Math.cos(a) * rr, bz = info.kfz + Math.sin(a) * rr;
+            if (islandOf(bx, bz) >= 0) continue;
+            const h = 1.5 + rng() * 1.2;
+            kelps.push(kelpBladeGeo(bx, bz, seabedHeight(bx, bz), h, (rng() - 0.5) * 0.4, rng() * Math.PI * 2));
         }
     }
     const shelfHere = -seabedHeight((cx + 0.5) * SEA_CHUNK, (cz + 0.5) * SEA_CHUNK);
@@ -13585,6 +13692,40 @@ function loadSeaChunk(key, cx, cz) {
         fan.translate(sp.x + 0.3, sp.y + 0.16, sp.z);
         grad.push(bakeGrad(fan, 0xc98ad8, 0x8a4a9a, { curve: 1.1 }));
     }
+    // 🫧 열수구 — 검은 굴뚝 무리 + 셰이더 기포 기둥 (먼바다 깊은 곳만)
+    const vents = [];
+    if (info.vent && islandOf(info.vx, info.vz) < 0 && seabedHeight(info.vx, info.vz) < -2.6) {
+        const vy = seabedHeight(info.vx, info.vz);
+        for (const [dx, dz, w, h] of [[0, 0, 1, 1], [0.34, 0.12, 0.55, 0.55], [-0.26, 0.3, 0.45, 0.4]]) {
+            const chim = new THREE.CylinderGeometry(0.09 * w, 0.3 * w, 0.75 * h, 7);
+            chim.rotateY(rng() * Math.PI);
+            chim.translate(info.vx + dx, vy + 0.375 * h, info.vz + dz);
+            grad.push(bakeGrad(chim, 0x5c6270, 0x23262c, { curve: 1.2 }));
+            const skirt = new THREE.CylinderGeometry(0.34 * w, 0.5 * w, 0.16, 7);
+            skirt.translate(info.vx + dx, vy + 0.08, info.vz + dz);
+            grad.push(bakeGrad(skirt, 0x3c414c, 0x1e2126, { curve: 1 }));
+        }
+        const N = 26;
+        const bpos = new Float32Array(N * 3), bspd = new Float32Array(N), bph = new Float32Array(N), bsz = new Float32Array(N);
+        for (let i = 0; i < N; i++) {
+            const src = i % 3, sx = [0, 0.34, -0.26][src], sz2 = [0, 0.12, 0.3][src], sh = [1, 0.55, 0.4][src];
+            bpos[i * 3] = info.vx + sx + (rng() - 0.5) * 0.05;
+            bpos[i * 3 + 1] = vy + 0.75 * sh;
+            bpos[i * 3 + 2] = info.vz + sz2 + (rng() - 0.5) * 0.05;
+            bspd[i] = 0.75 + rng() * 0.6;
+            bph[i] = rng() * 3.4;
+            bsz[i] = (0.045 + rng() * 0.05) * 2.414;   // 월드 크기 → gl_PointSize 환산 (분수 문법, fov 45)
+        }
+        const bgeo = new THREE.BufferGeometry();
+        bgeo.setAttribute('position', new THREE.BufferAttribute(bpos, 3));
+        bgeo.setAttribute('aSpeed', new THREE.BufferAttribute(bspd, 1));
+        bgeo.setAttribute('aPhase', new THREE.BufferAttribute(bph, 1));
+        bgeo.setAttribute('aSize', new THREE.BufferAttribute(bsz, 1));
+        const bub = new THREE.Points(bgeo, ventBubMat);
+        bub.frustumCulled = false;   // 셰이더가 기포를 움직인다 — 정적 바운즈 불신 (분수 문법)
+        group.add(bub);
+        vents.push({ x: info.vx, z: info.vz });
+    }
     if (grad.length) {
         const mg = mergeGeometries(grad, false);
         if (mg) group.add(new THREE.Mesh(mg, gradMat));
@@ -13592,6 +13733,10 @@ function loadSeaChunk(key, cx, cz) {
     if (rocks.length) {
         const mr = mergeGeometries(rocks, false);
         if (mr) group.add(new THREE.Mesh(mr, gradMat));
+    }
+    if (kelps.length) {
+        const mk = mergeGeometries(kelps, false);
+        if (mk) group.add(new THREE.Mesh(mk, seaKelpMat));
     }
     // ⛏️ 해저 보물 ✕ (섬 밑·발굴済 제외)
     let treasure = null;
@@ -13630,12 +13775,15 @@ function loadSeaChunk(key, cx, cz) {
         group.add(chest);
     }
     stage.add(group);
-    seaChunks.set(key, { group, treasure, tx: info.tx, tz: info.tz });
+    seaChunks.set(key, {
+        group, treasure, tx: info.tx, tz: info.tz, vents,
+        forest: !!(info.kelpForest && islandOf(info.kfx, info.kfz) < 0 && seabedHeight(info.kfx, info.kfz) < -1.6),
+    });
 }
 function unloadSeaChunk(key) {
     const e = seaChunks.get(key);
     if (!e) return;
-    e.group.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
+    e.group.traverse((o) => { if (o.isMesh || o.isPoints) o.geometry.dispose(); });   // 기포 Points도 — 재질은 공유라 남긴다
     stage.remove(e.group);
     seaChunks.delete(key);
 }
@@ -13694,10 +13842,16 @@ function updateSeaFloor(delta) {
             const a = Math.random() * Math.PI * 2, dd = 2.5 + Math.random() * 4.5;
             const x = p.mover.position.x + Math.cos(a) * dd, z = p.mover.position.z + Math.sin(a) * dd;
             if (islandOf(x, z) < 0 && Math.hypot(x, z) < EXPLORE_R - 3) {
+                let nearVent = false;   // 🫧 열수구 곁은 새우가 모인다 (온천 맛집)
+                for (const e of seaChunks.values()) {
+                    if (e.vents) for (const v of e.vents) if (Math.hypot(v.x - x, v.z - z) < 6) { nearVent = true; break; }
+                    if (nearVent) break;
+                }
                 const pool = SEAFOOD.filter((t) => t.zone === diveZoneAt(x, z));
-                const total = pool.reduce((q, t) => q + t.w, 0);
+                const wOf = (t) => (nearVent && t.id === 'shrimp' ? 70 : t.w);
+                const total = pool.reduce((q, t) => q + wOf(t), 0);
                 let r = Math.random() * total, type = pool[0];
-                for (const t of pool) { r -= t.w; if (r <= 0) { type = t; break; } }
+                for (const t of pool) { r -= wOf(t); if (r <= 0) { type = t; break; } }
                 const mesh = makeSeafoodMesh(type.id, 1.5);
                 mesh.position.set(x, seabedHeight(x, z) + 0.1, z);
                 mesh.rotation.y = Math.random() * Math.PI * 2;
