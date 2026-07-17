@@ -6,12 +6,21 @@ const warn = (s) => { console.log('  ✗ ' + s); bad++; };
 const CLEAR = 0.5;    // 두 소품 사이 펫이 지나갈 최소 여유
 const LAMP_CLEAR = 0.3;   // 가로등 기둥은 얇음
 // 시각 풋프린트(콜라이더보다 큰 타입 보정)
-const VIS = { garden: 1.0, coffee: 0.62, food: 0.62, library: 0.8, piano: 0.5, fountain: 0.72, photoboard: 0.45, fence: 0.72, hammock: 0.8, swing: 0.62, seesaw: 0.7, gym: 1.05, trampoline: 0.77, vine: 0.32, fruitbasket: 0.26, pecktree: 0.6, well: 0.62, capsule: 0.4, monument: 0.5, cave: 1.0, lookout: 1.0, sunbed: 0.55, palm: 0.5, sandcastle: 0.45, tree: 0.5, boulder: 0.55, house: 2.0, pond: 0.95, mailbox: 0.22, radio: 0.3, bowl: 0.3, lamp: 0.2, flowerbasket: 0.25, hugspot: 0.3, digsite: 0.7, portal: 0.45, car: 0.72, boat: 0.6, plane: 0.75, balloon: 0.8, ferry: 0.95, pier: 0.3 };
+const VIS = { garden: 1.0, coffee: 0.62, food: 0.62, library: 0.8, piano: 0.5, fountain: 0.72, photoboard: 0.45, fence: 0.72, hammock: 0.8, swing: 0.62, seesaw: 0.7, gym: 1.05, trampoline: 0.77, vine: 0.32, fruitbasket: 0.26, pecktree: 0.6, well: 0.62, capsule: 0.4, monument: 0.5, cave: 1.0, lookout: 1.0, sunbed: 0.55, palm: 0.5, sandcastle: 0.45, tree: 0.5, boulder: 0.55, house: 2.4, pond: 0.95, mailbox: 0.22, radio: 0.3, bowl: 0.3, lamp: 0.2, flowerbasket: 0.25, hugspot: 0.3, digsite: 0.7, portal: 0.45, car: 0.72, boat: 0.6, plane: 0.75, balloon: 0.8, ferry: 0.95, pier: 0.3 };
 const vOf = (p) => Math.max(p.r || 0.2, VIS[p.type] ?? 0.4);
-const ALL = [...PROPS, { type: 'car', x: 2.5, z: -1.35, r: 0.5 }, { type: 'plane', x: -3.2, z: 10.05, r: 0.55 }, { type: 'balloon', x: 14.0, z: 7.25, r: 0.5 },
+const ALL = [...PROPS, { type: 'car', x: 2.44, z: -1.64, r: 0.5 }, { type: 'plane', x: -3.2, z: 10.05, r: 0.55 }, { type: 'balloon', x: 14.0, z: 7.25, r: 0.5 },
     { type: 'ferry', x: 0.94, z: 7.77, r: 0.9, water: true }, { type: 'pier', x: FERRY_PIERS[0].B.x, z: FERRY_PIERS[0].B.z, r: 0.3, water: true }, { type: 'pier', x: FERRY_PIERS[1].B.x, z: FERRY_PIERS[1].B.z, r: 0.3, water: true },
     { type: 'boat', x: 2.4, z: 6.95, r: 0.5, water: true }];
 const hillSet = new Set(['boulder', 'lookout', 'cave', 'digsite']);
+// 집은 직사각형(hw×hd×k + 포치) — 원-vis 페어는 코너를 과차단한다. 로컬 사각형 + 상대 vis 마진.
+const HOUSE_RECT = { x: 2.75, z: 2.1, rotY: -2.22, hw: 1.3, hd: 1.04, k: 1.2, porch: 0.5 };
+function houseRectClear(q, vq) {
+    const c = Math.cos(HOUSE_RECT.rotY), sn = Math.sin(HOUSE_RECT.rotY);
+    const dx = q.x - HOUSE_RECT.x, dz = q.z - HOUSE_RECT.z;
+    const lx = (dx * c - dz * sn) / HOUSE_RECT.k, lz = (dx * sn + dz * c) / HOUSE_RECT.k;
+    const m = (vq + 0.5) / HOUSE_RECT.k;
+    return Math.abs(lx) > HOUSE_RECT.hw + m || lz < -(HOUSE_RECT.hd + m) || lz > HOUSE_RECT.hd + HOUSE_RECT.porch + m;
+}
 const exempt = (a, b) => {
     if (a.type === 'hugspot' || b.type === 'hugspot') return true;
     if (hillSet.has(a.type) && hillSet.has(b.type)) return true;              // 언덕 드레싱 세트
@@ -19,7 +28,7 @@ const exempt = (a, b) => {
     if ((a.type === 'plane' && b.type === 'sandcastle') || (a.type === 'sandcastle' && b.type === 'plane')) return true;   // 해변 이웃 세트 (꼬리-성 실간격 0.4 확인)
     const marine = new Set(['ferry', 'pier', 'boat']);
     if (marine.has(a.type) && marine.has(b.type)) return true;   // 해상 이웃 세트 — 선석·잔교·보트 (실간격 눈검사 완료)
-    const yard = new Set(['bowl', 'radio', 'lamp']);
+    const yard = new Set(['bowl', 'radio', 'lamp', 'mailbox', 'fruitbasket']);
     if ((a.type === 'house' && yard.has(b.type)) || (b.type === 'house' && yard.has(a.type))) return true;   // 마당 세트 + 마당길 가로등
     return false;
 };
@@ -28,6 +37,11 @@ console.log('== ① 소품 페어 통로 여유 ==');
 for (let i = 0; i < ALL.length; i++) for (let j = i + 1; j < ALL.length; j++) {
     const a = ALL[i], b = ALL[j];
     if (exempt(a, b)) continue;
+    if (a.type === 'house' || b.type === 'house') {   // 집 = 사각 풋프린트 판정
+        const q = a.type === 'house' ? b : a;
+        if (!houseRectClear(q, vOf(q))) warn(`house ↔ ${q.type}(${q.x},${q.z}) 풋프린트 여백 부족`);
+        continue;
+    }
     const gap = Math.hypot(a.x - b.x, a.z - b.z) - vOf(a) - vOf(b);
     const lim = (a.type === 'tree' && b.type === 'tree') ? 0.15   // 나무끼리는 숲 무리로 붙어도 자연스러움
         : (a.type === 'lamp' || b.type === 'lamp') ? LAMP_CLEAR : CLEAR;
@@ -52,15 +66,15 @@ for (const s of FLAT_SPOTS) {
     if (d > ISLANDS[i].r - 0.1) warn(`패드(${s.x},${s.z}) 섬${i} 중심 이탈`);
 }
 
-console.log('== ③ 본섬 도로 침범 (루프 r3.0 w0.55 · 스포크 t1.25~3.4 · 광장 r1.45) ==');
-const ROAD_LOOP_R = 3.0, ROAD_W = 0.55, PLAZA_R = 1.45, SPOKES = [0.92, 1.67, 3.6, 5.0];
+console.log('== ③ 본섬 도로 침범 (루프 r3.6 w0.55 · 스포크 t1.25~3.4 · 광장 r1.45) ==');
+const ROAD_LOOP_R = 3.6, ROAD_W = 0.55, PLAZA_R = 1.45, SPOKES = [0.92, 3.6];
 for (const p of ALL) {
     if (Math.hypot(p.x, p.z) > 6.3 || ['hugspot', 'portal', 'boat', 'car', 'house', 'lamp', 'pond'].includes(p.type)) continue;   // 연못가 도로는 의도된 풍경
     if (p.type === 'fountain' && Math.hypot(p.x, p.z) < 0.2) continue;   // 광장 정중앙 분수 = 센터피스
     const trunk = (p.type === 'tree') ? 0.3 : Math.min(vOf(p), 0.75);   // 가로수는 줄기만 도로 밖이면 OK (수관 드리움 허용)
     const rr = Math.hypot(p.x, p.z);
     const need = ROAD_W / 2 + 0.1 + trunk;
-    if (Math.abs(rr - ROAD_LOOP_R) < need) warn(`${p.type}(${p.x},${p.z}) 루프길 침범 (|r-3.0|=${Math.abs(rr - 3).toFixed(2)} < ${need.toFixed(2)})`);
+    if (Math.abs(rr - ROAD_LOOP_R) < need) warn(`${p.type}(${p.x},${p.z}) 루프길 침범 (|r-3.6|=${Math.abs(rr - 3.6).toFixed(2)} < ${need.toFixed(2)})`);
     if (rr < PLAZA_R + trunk + 0.05) warn(`${p.type}(${p.x},${p.z}) 광장 침범`);
     for (const a of SPOKES) {
         const dx = Math.sin(a), dz = Math.cos(a);

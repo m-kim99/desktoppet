@@ -41,6 +41,22 @@ const MOVED_DEFAULTS = {
     'gym-1':    [[8.62, 6.51], [9.16, 6.79]],
     'lamp-7':   [[9.71, 4.3], [9.35, 5.05]],
     'tree-5':   [[11.19, 3.28]],
+    'house-1':  [[2.7, 2.05]],      // 회전·배율 리뉴얼 — 저장된 옛 rotY가 새 기본 rotY를 가리면 안 된다
+    'bowl-1':   [[0.95, 1.62]],
+    'radio-1':  [[2.2, 0.63]],
+    'tree-3':   [[2.05, 5.2]],
+    'coffee-1': [[-3.35, 2.18]],
+    'vine-2':   [[-1.9, 1.3]],
+    'piano-1':  [[-0.61, 1.95]],
+    'photoboard-1': [[-1.95, -0.73]],
+    'mailbox-1': [[0.38, 3.9]],
+    'tree-7':   [[1.35, -3.5]],
+    'lamp-1':   [[1.3, 3.09]],
+    'lamp-2':   [[3.34, 0.24]],
+    'lamp-3':   [[2.0, -2.68]],
+    'lamp-4':   [[-1.05, -3.3]],
+    'lamp-5':   [[-3.33, -0.37]],
+    'lamp-6':   [[-1.85, 2.79]],
 };
 {
     const counts = {};
@@ -1141,26 +1157,27 @@ function bridgeDeckY(hit) {
 // returns the walk height inside (null outside); houseBlocked fences the walls, porch posts and
 // the loft-edge line (which doubles as the under-loft partition below and the railing above).
 const HOUSE_COS = Math.cos(HOUSE.rotY), HOUSE_SIN = Math.sin(HOUSE.rotY);
+const HOUSE_K = HOUSE.k || 1;   // 전체 배율 — 로컬 좌표계는 원치수 유지, 경계에서만 나누고 곱한다
 function houseLocal(x, z) {
     const dx = x - HOUSE.x, dz = z - HOUSE.z;
-    return { lx: dx * HOUSE_COS - dz * HOUSE_SIN, lz: dx * HOUSE_SIN + dz * HOUSE_COS };
+    return { lx: (dx * HOUSE_COS - dz * HOUSE_SIN) / HOUSE_K, lz: (dx * HOUSE_SIN + dz * HOUSE_COS) / HOUSE_K };
 }
 function houseWorld(lx, lz) {
     return {
-        x: HOUSE.x + lx * HOUSE_COS + lz * HOUSE_SIN,
-        z: HOUSE.z - lx * HOUSE_SIN + lz * HOUSE_COS,
+        x: HOUSE.x + (lx * HOUSE_COS + lz * HOUSE_SIN) * HOUSE_K,
+        z: HOUSE.z - (lx * HOUSE_SIN - lz * HOUSE_COS) * HOUSE_K,
     };
 }
 // 리모델(1.3×1.04) 로컬 상수 — makeHouse 지오메트리와 1:1로 맞춘 값들 (기존 1.0×0.8의 ×1.3)
 function houseFloorY(x, z) {
     const { lx, lz } = houseLocal(x, z);
     if (Math.abs(lx) > HOUSE.hw || Math.abs(lz) > HOUSE.hd) return null;
-    if (lz <= -0.325) return HOUSE.loftY;                                  // loft over the back half
+    if (lz <= -0.325) return HOUSE.loftY * HOUSE_K;                        // loft over the back half
     if (lx >= 0.81 && lz <= 0.715) {                                       // stair ramp along the right wall
         const k = THREE.MathUtils.clamp((0.715 - lz) / 1.04, 0, 1);
-        return HOUSE.floorY + k * (HOUSE.loftY - HOUSE.floorY);
+        return (HOUSE.floorY + k * (HOUSE.loftY - HOUSE.floorY)) * HOUSE_K;
     }
-    return HOUSE.floorY;
+    return HOUSE.floorY * HOUSE_K;
 }
 function houseBlocked(x, z) {
     const { lx, lz } = houseLocal(x, z);
@@ -1797,6 +1814,7 @@ function makeHouse() {
     stand.add(flame);
     stand.position.set(0.065, 0.78, -0.806);
     g.add(stand);
+    g.scale.setScalar(HOUSE_K);   // k 배율 — 보행 로직(houseLocal/houseWorld/houseFloorY)과 동시 스케일
     return g;
 }
 
@@ -4829,7 +4847,7 @@ const HOUSE_DERIVED = { cols: [], beds: [], light: null };
     const sofaW = houseWorld(-0.884, 0.26), sofaA = houseWorld(-0.364, 0.754);
     const sofa = {
         id: 'sofa', mode: 'sit', occupant: null, sway: 0, shelter: true,   // 비 피신 폴백 자리
-        lie: { x: sofaW.x, z: sofaW.z, y: HOUSE.floorY + 0.21, rotY: HOUSE.rotY + Math.PI / 2, tilt: -0.35 },
+        lie: { x: sofaW.x, z: sofaW.z, y: (HOUSE.floorY + 0.21) * HOUSE_K, rotY: HOUSE.rotY + Math.PI / 2, tilt: -0.35 },
         approach: { x: sofaA.x, z: sofaA.z },
     };
     BEDS.push(sofa);
@@ -4837,14 +4855,14 @@ const HOUSE_DERIVED = { cols: [], beds: [], light: null };
     const bedW = houseWorld(-0.585, -0.65), bedA = houseWorld(0.39, -0.585);
     const loftbed = {
         id: 'loftbed', mode: 'sleep', occupant: null, sway: 0,
-        lie: { x: bedW.x, z: bedW.z, y: HOUSE.loftY + 0.2, rotY: HOUSE.rotY, tilt: -1.2 },
+        lie: { x: bedW.x, z: bedW.z, y: (HOUSE.loftY + 0.2) * HOUSE_K, rotY: HOUSE.rotY, tilt: -1.2 },
         approach: { x: bedA.x, z: bedA.z },
     };
     BEDS.push(loftbed);
     HOUSE_DERIVED.beds.push({ entry: loftbed, lx: -0.585, lz: -0.65, alx: 0.39, alz: -0.585 });
     const lampW = houseWorld(0, 0.195);
     const indoor = new THREE.PointLight(0xffd9a0, 0, 3.0, 2);   // 커진 거실 — 도달 2.4→3.0, 펜던트 높이에서
-    indoor.position.set(lampW.x, HOUSE.floorY + 1.0, lampW.z);
+    indoor.position.set(lampW.x, (HOUSE.floorY + 1.0) * HOUSE_K, lampW.z);
     scene.add(indoor);
     lamps.push({ light: indoor });
     HOUSE_DERIVED.light = indoor;
@@ -4867,9 +4885,10 @@ function refreshHouseDerived() {
 // friend takes the passenger seat), arrow keys drive at 3× walking speed, Ctrl/⌘ again hops out.
 // Bridges count as road, so you can drive to the satellite islands (wheels overhang, who cares).
 // The collider entry moves with the car so wandering pets steer around it, parked or not.
-const CAR = { x: 2.5, z: -1.35, heading: 1.05, vel: 0 };   // 광장 남동쪽 길가 — 광장 가운데는 기념비·포옹 포인트의 자리
+const CAR = { x: 2.44, z: -1.64, heading: 1.05, vel: 0 };   // 광장 남동쪽 길가 — 커진 집 풋프린트 밖으로 (리뉴얼)
 {   // 🔨 저장된 주차 위치 — 차는 PROPS 루프 밖에서 만들어져 여기서 따로 적용한다
-    const o = savedLayout['car-1'];
+    let o = savedLayout['car-1'];
+    if (o && Math.hypot(o.x - 2.5, o.z + 1.35) < 0.06) { o = null; delete savedLayout['car-1']; }   // 옛 기본 주차 그대로면 새 기본값 추종 (리뉴얼)
     if (o && Number.isFinite(o.x) && Number.isFinite(o.z)) {
         CAR.x = o.x; CAR.z = o.z;
         if (Number.isFinite(o.rotY)) CAR.heading = o.rotY;
@@ -5048,10 +5067,10 @@ const world = {
 // ---- 길 (roads & plaza): a stone-dust loop at mid-radius with four spokes out of the central
 // plaza — ribbons that hug the terrain (every vertex sits on terrainHeight), so movement between
 // zones reads as real paths. Pets bias their wandering onto ROAD_NODES; decorations avoid paths.
-const ROAD_LOOP_R = 3.0;
+const ROAD_LOOP_R = 3.6;   // 3.0→3.6 — 링이 바깥 존들을 꿰게 (중심 밀집 완화)
 const ROAD_W = 0.55;
 const PLAZA_R = 1.45;
-const SPOKE_ANGLES = [0.92, 1.67, 3.6, 5.0];    // toward house yard / rest area / pond·hammock / west lawn
+const SPOKE_ANGLES = [0.92, 3.6];    // 다이어트 4→2: 집·NE다리 방향 + 연못·남서 방향만 (목적지 있는 길)
 
 // `pad` widens (decorations keep their distance) or tightens (footstep sounds only count as road
 // when clearly ON the pavement) the road test.
@@ -7233,6 +7252,8 @@ if (statsOn) window.__worldDev = {
         };
     },
     trampGo: (name) => startAiTramp(pets.find((q) => q.name === (name || 'puppy'))),
+    house: (x, z) => ({ floor: houseFloorY(x, z), blocked: houseBlocked(x, z) }),   // 하우스 보행 E2E
+    houseW: (lx, lz) => houseWorld(lx, lz),
     fruitState: () => ({
         bearing: fruitBearing.map((e) => ({ id: e.pr.layoutId, t: e.type, x: +e.pr.x.toFixed(2), z: +e.pr.z.toFixed(2), hanging: e.group && e.anchors ? e.anchors.length : 0 })),
         ground: groundFruits.map((g) => ({ t: g.type, x: +g.x.toFixed(2), z: +g.z.toFixed(2), settled: g.settled, age: g.at ? Date.now() - g.at : 0, wilting: g.wilting !== undefined })),
@@ -7692,7 +7713,7 @@ const buildRing = new THREE.Mesh(new THREE.RingGeometry(0.82, 1.0, 40), buildRin
 buildRing.rotation.x = -Math.PI / 2;
 buildRing.visible = false;
 scene.add(buildRing);
-const effR = (q) => (q.type === 'house' ? 1.25 : q.type === 'car' ? 0.55 : Math.max(q.r || 0, 0.22));
+const effR = (q) => (q.type === 'house' ? 1.25 * HOUSE_K : q.type === 'car' ? 0.55 : Math.max(q.r || 0, 0.22));
 function positionBuildRing(p) {
     if (!p) { buildRing.visible = false; return; }
     buildRing.visible = true;
