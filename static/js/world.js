@@ -7363,7 +7363,7 @@ if (statsOn) window.__worldDev = {
     seabedAt: (x, z) => +seabedHeight(x, z).toFixed(2),
     callFriend: () => startPhoneCall(),   // 📞 친구 부르기 (E2E)
     handState: () => (handHold ? { y: +handHold.partner.mover.position.y.toFixed(2), swim: handHold.partner.swimming, state: handHold.partner.ai.state } : null),
-    seaMapInfo: () => ({ found: Object.keys(seaFound).length, wreck: !!seaFound.wreck, seaMode: camUnderwater && mapOpen }),
+    seaMapInfo: () => ({ found: Object.keys(seaFound).length, wreck: !!seaFound.wreck, seaMode: camUnderwater && mapOpen, ventsFound: Object.values(seaFound).filter((f) => f.k === 'v').length, forestsFound: Object.values(seaFound).filter((f) => f.k === 'f').length }),
     mapToggle: (f) => toggleWorldMap(f),
     seaSpawnNow: (id, dx, dz) => {   // E2E — 펫 곁 확정 스폰
         const pp = dive && dive.p;
@@ -13777,7 +13777,8 @@ function loadSeaChunk(key, cx, cz) {
     stage.add(group);
     seaChunks.set(key, {
         group, treasure, tx: info.tx, tz: info.tz, vents,
-        forest: !!(info.kelpForest && islandOf(info.kfx, info.kfz) < 0 && seabedHeight(info.kfx, info.kfz) < -1.6),
+        forest: (info.kelpForest && islandOf(info.kfx, info.kfz) < 0 && seabedHeight(info.kfx, info.kfz) < -1.6)
+            ? { x: info.kfx, z: info.kfz } : null,   // 좌표째 — 발견 판정·지도 아이콘용
     });
 }
 function unloadSeaChunk(key) {
@@ -13828,6 +13829,24 @@ function updateSeaFloor(delta) {
         showToast('🚢 가라앉은 난파선을 발견했다!! (지도에 표시)');
         logWorldEvent(`${petKo(p)}가 해저에서 가라앉은 난파선을 발견했다 🚢✨`);
         maybeProactive(p, '방금 바다 밑에서 진짜 난파선을 발견했다!! 돛대랑 보물상자도 있었다!!');
+    }
+    // 🫧🌿 명소 발견 — 7m 접근 시 (레어함이 재미가 되려면 "찾았다!"가 기록돼야 한다)
+    for (const [ckey, e] of seaChunks) {
+        if (e.vents) for (const v of e.vents) {
+            if (seaFound[`v:${ckey}`] || Math.hypot(v.x - p.mover.position.x, v.z - p.mover.position.z) > 7) continue;
+            recordSeaFind(`v:${ckey}`, v.x, v.z, 'v');
+            fishFanfare();
+            showToast('🫧 보글보글 — 해저 열수구를 발견했다!! (지도에 표시)');
+            logWorldEvent(`${petKo(p)}가 기포가 끓어오르는 해저 열수구를 발견했다 🫧✨`);
+            maybeProactive(p, '방금 바다 밑에서 뜨거운 기포가 보글보글 솟는 온천 굴뚝을 발견했다!! 새우들이 모여 살았다!');
+        }
+        if (e.forest && !seaFound[`f:${ckey}`] && Math.hypot(e.forest.x - p.mover.position.x, e.forest.z - p.mover.position.z) <= 7) {
+            recordSeaFind(`f:${ckey}`, e.forest.x, e.forest.z, 'f');
+            fishFanfare();
+            showToast('🌿 흔들리는 켈프 숲을 발견했다! (지도에 표시)');
+            logWorldEvent(`${petKo(p)}가 물결 따라 흔들리는 켈프 숲을 발견했다 🌿✨`);
+            maybeProactive(p, '방금 바다 밑에서 커다란 켈프 숲을 발견했다! 미역 잎 사이로 헤엄치니 숨바꼭질 같았다!');
+        }
     }
     seaSpawnAt -= delta;
     if (seaSpawnAt <= 0) {
@@ -14603,15 +14622,17 @@ function drawSeaMap() {   // 🌊 해저 지도 — 수중이면 자동 전환: 
         c.lineWidth = 1.5;
         c.stroke();
     }
-    let treN = 0;
+    let treN = 0, ventN = 0, forestN = 0;
     for (const [k, f] of Object.entries(seaFound)) {   // 알게 된 자리들
         const sx = px(f.x), sy = py(f.z);
         if (Math.hypot(f.x, f.z) > EXPLORE_R) continue;
-        if (f.k === 'w') {
-            c.font = '18px sans-serif';
+        if (f.k === 'w' || f.k === 'v' || f.k === 'f') {
+            if (f.k === 'v') ventN++;
+            if (f.k === 'f') forestN++;
+            c.font = f.k === 'w' ? '18px sans-serif' : '15px sans-serif';
             c.textAlign = 'center';
             c.textBaseline = 'middle';
-            c.fillText('🚢', sx, sy);
+            c.fillText(f.k === 'w' ? '🚢' : f.k === 'v' ? '🫧' : '🌿', sx, sy);
         } else {
             treN++;
             const dug = seabedDug(k);
@@ -14628,7 +14649,10 @@ function drawSeaMap() {   // 🌊 해저 지도 — 수중이면 자동 전환: 
     c.textAlign = 'left';
     c.textBaseline = 'alphabetic';
     c.fillStyle = 'rgba(190,235,250,0.9)';
-    c.fillText(`🌊 해저 · ✕ ${treN}`, 14, 24);
+    let seaLabel = `🌊 해저 · ✕ ${treN}`;   // 발견 컬렉션 — 명소는 찾은 것만 센다
+    if (ventN) seaLabel += ` · 🫧 ${ventN}`;
+    if (forestN) seaLabel += ` · 🌿 ${forestN}`;
+    c.fillText(seaLabel, 14, 24);
 }
 function drawWorldMap() {
     if (camUnderwater) { drawSeaMap(); return; }   // 🤿 물속 = 해저 지도 (부상하면 자동 복귀)
