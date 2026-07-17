@@ -119,10 +119,12 @@ const scene = new THREE.Scene();
 // sun, a moon, and a bed of stars that fades in after dark.
 scene.background = new THREE.Color(0xdff1fd);
 scene.fog = new THREE.Fog(0xdff1fd, 14, 34);
+let camUnderwater = false;   // 🤿 카메라가 수면 아래 — updateUnderwater가 판정, 안개·하늘 전환의 단일 신호
 const skyCv = document.createElement('canvas');
 skyCv.width = 1; skyCv.height = 256;
 const skyCtx = skyCv.getContext('2d');
 const skyTex = new THREE.CanvasTexture(skyCv);
+let skyDomeMesh = null;   // 🤿 수중 모드가 잠깐 숨긴다
 {
     const sky = new THREE.Mesh(
         new THREE.SphereGeometry(42, 32, 24),
@@ -131,6 +133,7 @@ const skyTex = new THREE.CanvasTexture(skyCv);
         new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false, toneMapped: false })
     );
     scene.add(sky);
+    skyDomeMesh = sky;
 }
 // Sun & moon share one east→west arc (rise 6시 / set 18시 — the moon takes the night shift); both
 // ignore fog so they glow through the haze. Stars sit on the upper dome, opacity driven at night.
@@ -484,10 +487,12 @@ function updateDayNight(force = false) {
     skyTex.needsUpdate = true;
     _skyStop.copy(SKY_NIGHT[3]).lerp(SKY_DAY[3], dayF).lerp(SKY_DUSK[3], glow * 0.8);
     if (wxF > 0) _skyStop.lerp(_gloomStop.copy(SKY_GLOOM[3]).multiplyScalar((0.3 + 0.7 * dayF) * (1 - 0.55 * stormF)), wxF * 0.8);
+    if (camUnderwater) { /* 🤿 수중 안개는 updateUnderwater가 소유 */ } else {
     scene.fog.color.copy(_skyStop);
     scene.background.copy(_skyStop);
     scene.fog.near = 14 - 5.5 * wxF;   // the wet front pulls the haze in close
     scene.fog.far = 34 - 9 * wxF;
+    }
 
     // Sun & moon ride their arcs across the season's daylight window; each shows around its shift.
     const { sunrise, sunset } = SEASONS[season];
@@ -7341,7 +7346,20 @@ if (statsOn) window.__worldDev = {
     },
     fruitTidyGo: (name) => startAiTidy(pets.find((q) => q.name === (name || 'puppy'))),
     fruitTick: () => { fruitTickT = 60; return true; },
-    diveState: () => (dive ? { phase: dive.phase, t: +dive.t.toFixed(2), ai: !!dive.isAI } : null),
+    diveState: () => (dive ? { phase: dive.phase, t: +dive.t.toFixed(2), ai: !!dive.isAI, y: dive.p ? +dive.p.mover.position.y.toFixed(2) : null } : null),
+    seaState: () => ({ under: camUnderwater, chunks: seaChunks.size, spawns: seaSpawns.map((q) => ({ t: q.t.id, x: +q.x.toFixed(1), z: +q.z.toFixed(1) })), treasures: [...seaChunks.entries()].filter(([k, e]) => e.treasure).map(([k, e]) => ({ key: k, x: +e.tx.toFixed(1), z: +e.tz.toFixed(1) })), fogNear: +scene.fog.near.toFixed(1) }),
+    seabedAt: (x, z) => +seabedHeight(x, z).toFixed(2),
+    seaSpawnNow: (id, dx, dz) => {   // E2E — 펫 곁 확정 스폰
+        const pp = dive && dive.p;
+        if (!pp) return false;
+        const t = SEAFOOD.find((q) => q.id === id) || SEAFOOD[0];
+        const x = pp.mover.position.x + (dx || 0.5), z = pp.mover.position.z + (dz || 0);
+        const mesh = makeSeafoodMesh(t.id, 1.5);
+        mesh.position.set(x, seabedHeight(x, z) + 0.1, z);
+        fruitLayer.add(mesh);
+        seaSpawns.push({ t, x, z, mesh });
+        return true;
+    },
     diveNow: (id) => (possessed ? startDive(possessed, id || null) : false),   // E2E — force = 확정 채집
     seafood: () => seafoodCounts(),
     seafoodRow: () => {   // 조형 QA — 11종 과일 옆줄에 해산물 8종
@@ -7715,6 +7733,25 @@ const puppyBtn = dockBtn('🐕', '강아지 조종하기 — 다시 누르면 �
 puppyBtn.onclick = () => possessByName('puppy');
 const fishBtn = dockBtn('🎣', '낚싯대 들기/정리 — 물을 클릭해 캐스팅, 찌가 푹 잠기면 ⌘/Space 챔질');
 fishBtn.onclick = () => equipFishing();
+const diveBtn = dockBtn('🤿', '잠수 — 물속 세계로 (바다에서 헤엄칠 때)');
+diveBtn.onclick = () => {
+    if (dive && possessed && dive.p === possessed && !dive.isAI) {
+        if (dive.phase === 'deep') { dive.phase = 'up'; dive.t = 0; }   // ⬆️ 부상
+    } else if (possessed && possessed.swimming === 'sea') startDive(possessed);
+};
+function syncDiveBtn() {   // 🤿 문맥 버튼: 바다 수영=🤿, 잠수 중=⬆️ (매 프레임 — 변경 가드로 무비용)
+    const diving = !!(dive && possessed && dive.p === possessed && !dive.isAI);
+    const show = !!(possessed && (possessed.swimming === 'sea' || diving));
+    const disp = show ? 'flex' : 'none';
+    if (diveBtn.style.display !== disp) diveBtn.style.display = disp;
+    if (show) {
+        const want = diving ? '⬆️' : '🤿';
+        if (diveBtn.textContent !== want) {
+            diveBtn.textContent = want;
+            diveBtn.title = diving ? '수면으로 올라가기 — 평소처럼 수영' : '잠수 — 물속 세계로';
+        }
+    }
+}
 const dexBtn = dockBtn('🐟', '물고기 도감 — 잡은 어종 컬렉션');
 dexBtn.onclick = () => toggleFishdex();
 bindZoomBtn(dockBtn('＋', '확대 (키보드 + 키)'), -1);
@@ -7759,7 +7796,7 @@ collDrawer.badge.style.background = '#ff5f6b';
 const toolDrawer = dockDrawer('⚙️', '도구 — 날씨·공사·절전', [weatherBtn, buildBtn, ecoBtn]);
 toolDrawer.badge.style.background = '#5ede8a';
 const zoomBtns = [...dockUI.children].filter((b) => b.textContent === '＋' || b.textContent === '－');
-for (const el of [shotBtn, chickBtn, puppyBtn, fishBtn, collDrawer.row, toolDrawer.row, ...zoomBtns]) dockUI.appendChild(el);   // 상주 순서 재배열 (appendChild = 이동)
+for (const el of [shotBtn, chickBtn, puppyBtn, fishBtn, diveBtn, collDrawer.row, toolDrawer.row, ...zoomBtns]) dockUI.appendChild(el);   // 상주 순서 재배열 (appendChild = 이동)
 const dexSeenN = () => { try { return Object.keys(JSON.parse(localStorage.getItem('world-fishdex') || '{}')).length; } catch (e) { return 0; } };
 function syncDockBadges() {
     toolDrawer.badge.style.display = (buildMode || ecoMode) ? 'block' : 'none';
@@ -7773,6 +7810,7 @@ dexBtn.addEventListener('click', () => {   // 도감을 열면 "새 어종" 배�
 });
 const syncFishBtn = () => { fishBtn.style.display = possessed ? 'flex' : 'none'; };   // 🎣 = 빙의 중만 (문맥 버튼)
 fishBtn.style.display = 'none';
+diveBtn.style.display = 'none';
 let dockBadgeAt = 0;
 window.__syncDockBadges = syncDockBadges;   // eco/build 토글의 즉시 배지 갱신 (eval 순서 안전한 간접 참조)
 syncDockBadges();
@@ -10035,8 +10073,14 @@ function doInteract() {
             seaHop = { fx: pos.x, fy: pos.y, fz: pos.z, tx: spot.tx, tz: spot.tz, ty: spot.ty, t: 0 };
             return;
         }
-        if (dive && dive.p === possessed) {   // 🤿 잠수 중 ⌘ = 조기 부상 (즉석 롤)
-            if (dive.phase === 'under') endDive(dive.force ? SEAFOOD.find((t) => t.id === dive.force) : rollSeafood(diveZoneAt(pos.x, pos.z)));
+        if (dive && dive.p === possessed) {   // 🤿 잠수 중 ⌘: 수거 > 보물 발굴 > 부상
+            if (dive.phase === 'deep') {
+                if (collectNearbySeafood()) return;
+                if (digNearbySeaTreasure()) return;
+                dive.phase = 'up';
+                dive.t = 0;
+                return;
+            }
             return;
         }
         if (handHold) releaseHandHold();
@@ -10389,6 +10433,12 @@ function updatePlayer(delta) {
     }
     // Vertical: land / pond / sea. Stepping past a drop (rim, pond edge) starts a fall; landing on
     // water splashes and switches to swimming. On the surface the pet bobs with the waves.
+    if (dive && dive.p === p && !dive.isAI) {   // 🤿 딥 다이브 — updateDive가 y를 소유
+        p.swimming = 'sea';
+        const dHint = `🤿 ${petKo(p)} 잠수 중 — ${IS_TOUCH ? '조이스틱' : '방향키'} 유영 · ${IS_TOUCH ? '⬆️ 버튼' : 'W/S 수심 · ⌘'} 부상`;
+        if (controlHint.textContent !== dHint) controlHint.textContent = dHint;
+        return;
+    }
     if (p.tramp) {   // 🤸 바운스 중 — updateTrampoline이 y를 소유 (이중 적분 금지)
         p.swimming = false;
         const tHint = `🤸 ${petKo(p)} 통통 중 — ${IS_TOUCH ? '🦘' : 'Space'} = 더 높이 · 걸어 나가면 끝`;
@@ -13225,7 +13275,55 @@ function openFruitBasket() {
 // 실루엣 블롭+버블만 남긴다(물리는 그대로 수면 수영 = 지지면·조향 시스템 무개조). 몇 초 뒤
 // 떠오르며 해산물 채집: 근해(섬 5m 이내)/외해 풀이 갈리고 문어(★3)는 외해 레어. 도감은
 // world-seafood. Esc/빙의 해제 등 어떤 경로로 끝나도 모델 가시성은 endDive가 복원한다. ----
-let dive = null;   // { p, t, phase: down|under|up, blob, bubbleAt, force }
+let dive = null;   // { p, t, phase: down|under(AI 블롭)|deep(빙의 실잠수)|up, blob, bubbleAt, force }
+// ---- 🌊 B단계 해저: 카메라가 수면 아래로 들어가면 안개·하늘·수면 밑면이 물속 세계로 전환.
+// 해저 지형 seabedHeight: 근해 셸프(-1.1)→외해 사구(-4~-6)→EXPLORE_R 밖 심연 절벽.
+// 렌더 규율: 수중 안개(near 2/far 16)가 원거리 컬링을 겸한다 — 포스트 이펙트 0. ----
+function seabedHeight(x, z) {
+    let base = -4.2 - 1.1 * Math.sin(x * 0.21 + 1.7) * Math.sin(z * 0.19 - 0.6) - 0.7 * Math.sin((x + z) * 0.11 + 0.8);
+    let shelf = 1e9;
+    for (const isl of ISLANDS) shelf = Math.min(shelf, Math.hypot(x - isl.x, z - isl.z) - isl.r);
+    if (shelf < 6) base = THREE.MathUtils.lerp(-1.1, base, THREE.MathUtils.smoothstep(shelf, 0, 6));   // 근해 셸프
+    const d = Math.hypot(x, z);
+    if (d > EXPLORE_R - 2) base -= (d - (EXPLORE_R - 2)) * 6;   // 심연 절벽 — 리시가 낭떠러지 서사를 얻는다
+    return base;
+}
+const UNDERWATER_FOG = new THREE.Color(0x123a46);
+let underPlane = null;   // 수면 밑면 — 아래서 올려다보는 밝은 '천장'
+function ensureUnderPlane() {
+    if (underPlane) return;
+    underPlane = new THREE.Mesh(
+        new THREE.CircleGeometry(84, 40),
+        new THREE.MeshBasicMaterial({ color: 0x9adcee, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, fog: true, toneMapped: false })   // fog:true — 천장이 원거리에서 물색으로 잦아들어야 far 클립 경계가 안 보인다
+    );
+    underPlane.rotation.x = Math.PI / 2;
+    underPlane.visible = false;
+    scene.add(underPlane);
+}
+function updateUnderwater() {
+    ensureUnderPlane();
+    const wy = OCEAN_LEVEL + tideOffset() + 0.02;
+    const now = camera.position.y < wy - 0.04;
+    underPlane.position.y = wy + 0.01;
+    if (now === camUnderwater) return;
+    camUnderwater = now;
+    skyDomeMesh.visible = !now;
+    sunMesh.visible = !now;
+    underPlane.visible = now;
+    if (now) {   // 물속 — 안개가 분위기이자 컬링 (background도 물색 — far 너머 빈 공간이 하늘색이면 깨진다)
+        scene.fog.color.copy(UNDERWATER_FOG);
+        scene.fog.near = 2;
+        scene.fog.far = 16;
+        scene.background.copy(UNDERWATER_FOG);
+        camera.far = 18;   // 안개 너머는 어차피 안 보인다 — far를 당겨야 지상 드로우가 진짜로 컬링된다 (근해 실측 324→베이스 회귀)
+        camera.updateProjectionMatrix();
+    } else {   // 물 밖 — 해저 전부 내리고 안개·하늘·far 즉시 원복 (스로틀 대기 시 최대 30초 물안개가 남는다)
+        clearSeaFloor();
+        camera.far = 100;   // 생성 시 기본값
+        camera.updateProjectionMatrix();
+        updateDayNight(true);
+    }
+}
 function seafoodCounts() {
     try { return JSON.parse(localStorage.getItem('world-seafood') || '{}') || {}; } catch (e) { return {}; }
 }
@@ -13244,9 +13342,12 @@ function rollSeafood(zone) {
 function startDive(p, force, isAI) {
     if (dive || !p || p.swimming !== 'sea') return false;
     releaseHandHold();
-    const blob = new THREE.Sprite(new THREE.SpriteMaterial({ map: blobTex, color: 0x1c3a4a, transparent: true, opacity: 0.55, depthWrite: false }));
-    blob.scale.set(0.52, 0.34, 1);
-    scene.add(blob);
+    let blob = null;
+    if (isAI) {   // AI는 동숲식 실루엣(A단계), 빙의는 진짜 물속(deep)으로
+        blob = new THREE.Sprite(new THREE.SpriteMaterial({ map: blobTex, color: 0x1c3a4a, transparent: true, opacity: 0.55, depthWrite: false }));
+        blob.scale.set(0.52, 0.34, 1);
+        scene.add(blob);
+    }
     dive = { p, t: 0, phase: 'down', blob, bubbleAt: 0, force: force || null, isAI: !!isAI };
     playBuffer(splashBuf, { vol: 0.5, rate: 1.15, filterFreq: 2200 });
     spawnSplash(p.mover.position.x, p.mover.position.y + 0.1, p.mover.position.z);
@@ -13256,9 +13357,9 @@ function startDive(p, force, isAI) {
 function endDive(caught) {
     if (!dive) return;
     const { p, blob, isAI } = dive;
+    if (!isAI) clearSeaFloor();
     p.pet.wrap.visible = true;
-    scene.remove(blob);
-    blob.material.dispose();
+    if (blob) { scene.remove(blob); blob.material.dispose(); }
     dive = null;
     if (isAI) {   // 절친 잠수 — 구경만 하고 살며시 놓아준다 (도감은 주인 전용, 낚시 문법)
         if (caught) {
@@ -13314,14 +13415,50 @@ function updateDive(delta) {
     if (p.swimming !== 'sea') { endDive(); return; }            // 뭍/보트 등 — 강제 부상
     dive.t += delta;
     const m = p.mover;
-    dive.blob.position.set(m.position.x, waveYAt(m.position.x, m.position.z) + 0.015, m.position.z);
+    if (dive.blob) dive.blob.position.set(m.position.x, waveYAt(m.position.x, m.position.z) + 0.015, m.position.z);   // 빙의 딥 다이브는 블롭 없음 (B단계)
     if (dive.phase === 'down') {
         p.pet.wrap.rotation.x = Math.min(1.1, dive.t * 3.2);   // 곤두박질 (엔티티 뒤 덮어쓰기)
         if (dive.t >= 0.45) {
-            dive.phase = 'under';
             dive.t = 0;
-            p.pet.wrap.visible = false;   // 물속으로 — 이제 실루엣 블롭이 연기한다
+            if (dive.isAI) {
+                dive.phase = 'under';
+                p.pet.wrap.visible = false;   // AI: 실루엣 블롭이 연기한다 (A단계)
+            } else {
+                dive.phase = 'deep';           // 빙의: 진짜 물속으로 (B단계)
+                m.position.y = waveYAt(m.position.x, m.position.z) - 0.9;
+            }
         }
+    } else if (dive.phase === 'deep') {
+        // 수심 조절: W=상승 S=하강 (비행기 고도 문법) — y는 이 블록이 소유 (updatePlayer 수직 양보)
+        let vy = 0;
+        if (heldKeys.has('KeyW')) vy += 1.4;
+        if (heldKeys.has('KeyS')) vy -= 1.4;
+        if (touchMove.active) vy += 0;   // 📱 터치는 ⬆️ 버튼으로 부상 (수심은 자동 유지)
+        const floor = seabedHeight(m.position.x, m.position.z) + 0.2;
+        const ceil = waveYAt(m.position.x, m.position.z) - 0.32;
+        m.position.y = THREE.MathUtils.clamp(m.position.y + vy * delta, Math.min(floor, ceil), ceil);
+        // 수평 유영 — 피치는 여기가 전유 (mover의 수면 lean 0.3이 남아있으면 위에서 본 풍선이 된다 — 스샷 실측)
+        m.rotation.x = 0.08 + (vy !== 0 ? -vy * 0.28 : 0);
+        p.pet.wrap.rotation.x = Math.sin(p.pet.t * 3.4) * 0.05;   // 스트로크 바운스 (applySwimPose 덮어쓰기 보상)
+        dive.bubbleAt -= delta;
+        if (dive.bubbleAt <= 0) {   // 🫧 입에서 새는 기포
+            dive.bubbleAt = 0.55 + Math.random() * 0.4;
+            const bub = new THREE.Sprite(new THREE.SpriteMaterial({ map: blobTex, color: 0xd8f2ff, transparent: true, opacity: 0.7, depthWrite: false }));
+            bub.scale.setScalar(0.03 + Math.random() * 0.035);
+            bub.position.set(m.position.x, m.position.y + 0.12, m.position.z);
+            scene.add(bub);
+            hugBurst.push({ spr: bub, vx: (Math.random() - 0.5) * 0.06, vy: 0.35, vz: (Math.random() - 0.5) * 0.06, t: 0.1 });
+        }
+        // 카메라도 물속으로 — 궤도는 자유, y만 수면 아래로 캡
+        const camCeil = waveYAt(camera.position.x, camera.position.z) - 0.26;
+        if (camera.position.y > camCeil) camera.position.y = camCeil;
+        updateSeaFloor(delta);   // 해저 청크·채집물·보물 (수중에서만 산다)
+    } else if (dive.phase === 'up') {
+        const ceil = waveYAt(m.position.x, m.position.z);
+        m.position.y = Math.min(ceil - 0.1, m.position.y + delta * 2.6);
+        m.rotation.x = -0.3;   // 코 들고 부상 (수면 복귀 후 lean은 updatePlayer가 되쓴다)
+        p.pet.wrap.rotation.x = 0;
+        if (m.position.y >= ceil - 0.12) endDive();   // 수면 도착 — 평소 수영으로
     } else if (dive.phase === 'under') {
         dive.bubbleAt -= delta;
         if (dive.bubbleAt <= 0) {   // 🫧 기포 — dig 퍼프 패턴 (파이어&포겟)
@@ -13338,6 +13475,309 @@ function updateDive(delta) {
             endDive(dive.force ? SEAFOOD.find((t) => t.id === dive.force) : rollSeafood(zone));
         }
     }
+}
+// ---- 🌊 해저 바닥: 수중(딥 다이브)에서만 사는 청크 스트리밍 — 무인도 문법(프레임당 1작업·
+// dispose는 지오메트리만). 모래 사구 메시 + 시드 드레싱(바위·켈프·산호는 셸프 수심별) +
+// 해저 보물 ✕(72h 재보급) + 난파선 1척(고정 시드 좌표) + 물고기 떼 인스턴싱. 수면 위 비용 0. ----
+const SEA_CHUNK = 24;
+const seaChunks = new Map();
+const seaQueue = [];
+const seaQueued = new Set();
+let seaSpawns = [];      // 바닥에 보이는 채집물 { t, x, z, mesh }
+let seaSpawnAt = 0;
+let dugSeabed = {};
+try { dugSeabed = JSON.parse(localStorage.getItem('world-seabed-dug') || '{}') || {}; } catch (e) { dugSeabed = {}; }
+const seabedDug = (k) => !!dugSeabed[k] && Date.now() - dugSeabed[k] < 72 * 3600 * 1000;
+const WRECK_AT = { x: 31.5, z: -18.5 };   // 난파선 — 먼바다 고정 POI (심연 방향)
+const seaSandMat = new THREE.MeshLambertMaterial({ color: 0xcfc09a, map: sandTex });
+function seaChunkInfo(cx, cz) {   // 시드 결정적 (아발란치 rngT — 시드 3계명)
+    const seed = (((cx * 92837111) ^ (cz * 68943481)) >>> 0) % 2147483645 + 1;
+    const rng = seededRand((Math.imul(seed, 2654435761) >>> 0) % 2147483645 + 1);
+    return { seed, rocks: Math.floor(rng() * 4), kelp: rng() < 0.5 ? 1 + Math.floor(rng() * 2) : 0, coral: rng() < 0.4 ? 1 + Math.floor(rng() * 2) : 0, treasure: rng() < 0.16, tx: (cx + 0.25 + rng() * 0.5) * SEA_CHUNK, tz: (cz + 0.25 + rng() * 0.5) * SEA_CHUNK };
+}
+function loadSeaChunk(key, cx, cz) {
+    if (seaChunks.has(key)) return;
+    const info = seaChunkInfo(cx, cz);
+    const rng = seededRand(info.seed + 733);
+    const group = new THREE.Group();
+    // 바닥: 사구 변위 그리드
+    const geo = new THREE.PlaneGeometry(SEA_CHUNK, SEA_CHUNK, 10, 10);
+    geo.rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+        const wx = pos.getX(i) + (cx + 0.5) * SEA_CHUNK, wz = pos.getZ(i) + (cz + 0.5) * SEA_CHUNK;
+        pos.setY(i, seabedHeight(wx, wz));
+    }
+    geo.computeVertexNormals();
+    const floor = new THREE.Mesh(geo, seaSandMat);
+    floor.position.set((cx + 0.5) * SEA_CHUNK, 0, (cz + 0.5) * SEA_CHUNK);
+    floor.receiveShadow = false;
+    group.add(floor);
+    // 드레싱 — grad(인덱스드)와 rocks(폴리헤드론=논인덱스드)는 버킷 분리 (무인도 문법 —
+    // 섞으면 mergeGeometries가 null을 리턴하고 new Mesh(null)이 rAF 루프를 즉사시킨다)
+    const grad = [], rocks = [];
+    const spot = () => {
+        const x = (cx + 0.1 + rng() * 0.8) * SEA_CHUNK, z = (cz + 0.1 + rng() * 0.8) * SEA_CHUNK;
+        if (islandOf(x, z) >= 0) return null;   // 섬 밑 제외
+        return { x, z, y: seabedHeight(x, z) };
+    };
+    for (let i = 0; i < info.rocks; i++) {
+        const sp = spot();
+        if (!sp) continue;
+        const rock = new THREE.IcosahedronGeometry(0.16 + rng() * 0.22, 0);
+        rock.scale(1, 0.7, 1);
+        rock.rotateY(rng() * Math.PI);
+        rock.translate(sp.x, sp.y + 0.08, sp.z);
+        rocks.push(bakeGrad(rock, 0x8a94a0, 0x525c68, { curve: 1 }));
+    }
+    for (let i = 0; i < info.kelp; i++) {   // 켈프 다발 — 길쭉 잎 3~5장이 흔들리듯 기울어 서있다
+        const sp = spot();
+        if (!sp) continue;
+        const blades = 3 + Math.floor(rng() * 3);
+        for (let b = 0; b < blades; b++) {
+            const h = 0.9 + rng() * 1.4;
+            const blade = new THREE.ConeGeometry(0.055, h, 5);
+            blade.scale(1, 1, 0.3);
+            blade.translate(0, h / 2, 0);
+            blade.rotateZ((rng() - 0.5) * 0.5);
+            blade.rotateY(rng() * Math.PI * 2);
+            blade.translate(sp.x + (rng() - 0.5) * 0.4, sp.y, sp.z + (rng() - 0.5) * 0.4);
+            grad.push(bakeGrad(blade, 0x3f7d3a, 0x1e4a20, { curve: 1.15 }));
+        }
+    }
+    const shelfHere = -seabedHeight((cx + 0.5) * SEA_CHUNK, (cz + 0.5) * SEA_CHUNK);
+    if (shelfHere < 3.2) for (let i = 0; i < info.coral; i++) {   // 산호는 얕은 셸프에서만
+        const sp = spot();
+        if (!sp) continue;
+        const col = rng() < 0.5 ? [0xff8a7a, 0xd0503f] : [0xffb46a, 0xd9803a];
+        for (let br = 0; br < 4; br++) {   // 가지 산호
+            const branch = new THREE.CylinderGeometry(0.02, 0.035, 0.24 + rng() * 0.2, 6);
+            branch.rotateZ((rng() - 0.5) * 1.1);
+            branch.rotateY(rng() * Math.PI * 2);
+            branch.translate(sp.x + (rng() - 0.5) * 0.18, sp.y + 0.14, sp.z + (rng() - 0.5) * 0.18);
+            grad.push(bakeGrad(branch, col[0], col[1], { curve: 1.2 }));
+        }
+        const fan = new THREE.SphereGeometry(0.16, 8, 5, 0, Math.PI);   // 부채 산호
+        fan.scale(1, 0.9, 0.12);
+        fan.rotateY(rng() * Math.PI * 2);
+        fan.translate(sp.x + 0.3, sp.y + 0.16, sp.z);
+        grad.push(bakeGrad(fan, 0xc98ad8, 0x8a4a9a, { curve: 1.1 }));
+    }
+    if (grad.length) {
+        const mg = mergeGeometries(grad, false);
+        if (mg) group.add(new THREE.Mesh(mg, gradMat));
+    }
+    if (rocks.length) {
+        const mr = mergeGeometries(rocks, false);
+        if (mr) group.add(new THREE.Mesh(mr, gradMat));
+    }
+    // ⛏️ 해저 보물 ✕ (섬 밑·발굴済 제외)
+    let treasure = null;
+    if (info.treasure && !seabedDug(key) && islandOf(info.tx, info.tz) < 0) {
+        treasure = new THREE.Group();
+        const ty = seabedHeight(info.tx, info.tz);
+        const mound = new THREE.Mesh(new THREE.SphereGeometry(0.18, 9, 6), M(0xd9c898));
+        mound.scale.y = 0.3;
+        mound.position.set(info.tx, ty + 0.02, info.tz);
+        treasure.add(mound);
+        for (const rot of [0.8, -0.8]) {
+            const plank = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.018, 0.08), M(0x5c4630));
+            plank.rotation.y = rot;
+            plank.position.set(info.tx, ty + 0.06, info.tz);
+            treasure.add(plank);
+        }
+        group.add(treasure);
+    }
+    // 🚢 난파선 — 이 청크에 고정 좌표가 들어오면
+    if (WRECK_AT.x >= cx * SEA_CHUNK && WRECK_AT.x < (cx + 1) * SEA_CHUNK && WRECK_AT.z >= cz * SEA_CHUNK && WRECK_AT.z < (cz + 1) * SEA_CHUNK) {
+        const wy = seabedHeight(WRECK_AT.x, WRECK_AT.z);
+        const hullGeo = new THREE.CylinderGeometry(0.65, 0.85, 2.6, 10, 1, false, 0, Math.PI);
+        hullGeo.rotateZ(Math.PI / 2);
+        hullGeo.rotateX(-0.28);
+        hullGeo.translate(WRECK_AT.x, wy + 0.32, WRECK_AT.z);
+        const hull = new THREE.Mesh(bakeGrad(hullGeo, 0x6a5138, 0x3c2c1c, { curve: 1 }), gradMat);
+        group.add(hull);
+        const mastGeo = new THREE.CylinderGeometry(0.05, 0.07, 1.9, 7);
+        mastGeo.rotateZ(0.9);
+        mastGeo.translate(WRECK_AT.x - 0.5, wy + 0.9, WRECK_AT.z + 0.3);
+        group.add(new THREE.Mesh(bakeGrad(mastGeo, 0x5c4630, 0x35281a, { curve: 1 }), gradMat));
+        const chest = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.22), M(0x8a5a30));
+        chest.position.set(WRECK_AT.x + 0.9, wy + 0.1, WRECK_AT.z - 0.5);
+        chest.rotation.y = 0.7;
+        group.add(chest);
+    }
+    stage.add(group);
+    seaChunks.set(key, { group, treasure, tx: info.tx, tz: info.tz });
+}
+function unloadSeaChunk(key) {
+    const e = seaChunks.get(key);
+    if (!e) return;
+    e.group.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
+    stage.remove(e.group);
+    seaChunks.delete(key);
+}
+function clearSeaFloor() {   // 부상/수면 복귀 — 전부 내리고 채집물도 정리
+    for (const key of [...seaChunks.keys()]) unloadSeaChunk(key);
+    seaQueue.length = 0;
+    seaQueued.clear();
+    for (const sp of seaSpawns) { sp.mesh.traverse((o) => { if (o.isMesh) o.geometry.dispose(); }); fruitLayer.remove(sp.mesh); }
+    seaSpawns = [];
+    if (seaFishMesh) seaFishMesh.visible = false;
+}
+let seaTickT = 0;
+function updateSeaFloor(delta) {
+    seaTickT += delta;
+    if (seaTickT >= 0.8) {   // 청크 스캔 — 카메라 주변
+        seaTickT = 0;
+        const tx = camera.position.x, tz = camera.position.z;
+        const want = new Set();
+        for (let cx = Math.floor((tx - 26) / SEA_CHUNK); cx <= Math.floor((tx + 26) / SEA_CHUNK); cx++) {
+            for (let cz = Math.floor((tz - 26) / SEA_CHUNK); cz <= Math.floor((tz + 26) / SEA_CHUNK); cz++) {
+                const key = `${cx},${cz}`;
+                want.add(key);
+                if (!seaChunks.has(key) && !seaQueued.has(key)) { seaQueued.add(key); seaQueue.push({ op: 'load', key, cx, cz }); }
+            }
+        }
+        for (const key of seaChunks.keys()) {
+            if (!want.has(key) && !seaQueued.has(key)) { seaQueued.add(key); seaQueue.push({ op: 'unload', key }); }
+        }
+    }
+    const job = seaQueue.shift();   // 프레임당 1작업 (발열 §1)
+    if (job) {
+        seaQueued.delete(job.key);
+        if (job.op === 'load') { const [cx, cz] = job.key.split(',').map(Number); loadSeaChunk(job.key, cx, cz); }
+        else unloadSeaChunk(job.key);
+    }
+    // 채집물: 펫 주변 12m 내 4개 유지 (존 풀)
+    const p = dive && dive.p;
+    if (!p) return;
+    seaSpawnAt -= delta;
+    if (seaSpawnAt <= 0) {
+        seaSpawnAt = 2.6;
+        seaSpawns = seaSpawns.filter((sp) => {
+            if (Math.hypot(sp.x - p.mover.position.x, sp.z - p.mover.position.z) < 15) return true;
+            sp.mesh.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
+            fruitLayer.remove(sp.mesh);
+            return false;
+        });
+        if (seaSpawns.length < 4) {
+            const a = Math.random() * Math.PI * 2, dd = 2.5 + Math.random() * 4.5;
+            const x = p.mover.position.x + Math.cos(a) * dd, z = p.mover.position.z + Math.sin(a) * dd;
+            if (islandOf(x, z) < 0 && Math.hypot(x, z) < EXPLORE_R - 3) {
+                const pool = SEAFOOD.filter((t) => t.zone === diveZoneAt(x, z));
+                const total = pool.reduce((q, t) => q + t.w, 0);
+                let r = Math.random() * total, type = pool[0];
+                for (const t of pool) { r -= t.w; if (r <= 0) { type = t; break; } }
+                const mesh = makeSeafoodMesh(type.id, 1.5);
+                mesh.position.set(x, seabedHeight(x, z) + 0.1, z);
+                mesh.rotation.y = Math.random() * Math.PI * 2;
+                fruitLayer.add(mesh);
+                seaSpawns.push({ t: type, x, z, mesh });
+            }
+        }
+    }
+    updateSeaFish(delta, p);
+}
+// 🐟 물고기 떼 — InstancedMesh 하나(10마리), 표류 중심 주위 원형 유영
+let seaFishMesh = null;
+let seaFishT = 0;
+const _fishM4 = new THREE.Matrix4();
+function updateSeaFish(delta, p) {
+    if (!seaFishMesh) {
+        const body = new THREE.SphereGeometry(0.055, 8, 6);
+        body.scale(1.6, 0.8, 0.55);
+        const tail = new THREE.ConeGeometry(0.04, 0.07, 4);
+        tail.rotateZ(Math.PI / 2);
+        tail.scale(1, 1, 0.3);
+        tail.translate(0.11, 0, 0);
+        const geo = mergeGeometries([bakeGrad(body, 0x9ab8cf, 0x5a7a94, { curve: 1.2 }), bakeGrad(tail, 0x88a8c2, 0x4a6a84, { curve: 1 })], false);
+        seaFishMesh = new THREE.InstancedMesh(geo, gradMat, 10);
+        seaFishMesh.frustumCulled = false;
+        scene.add(seaFishMesh);
+    }
+    seaFishMesh.visible = true;
+    seaFishT += delta * 0.55;
+    const cx = p.mover.position.x + Math.sin(seaFishT * 0.3) * 4;
+    const cz = p.mover.position.z + Math.cos(seaFishT * 0.22) * 4;
+    const cy = Math.min(waveYAt(cx, cz) - 0.7, seabedHeight(cx, cz) + 1.1);
+    for (let i = 0; i < 10; i++) {
+        const a = seaFishT + (i / 10) * Math.PI * 2;
+        const r = 0.8 + (i % 3) * 0.28;
+        const fx = cx + Math.cos(a) * r, fz = cz + Math.sin(a) * r, fy = cy + Math.sin(a * 2 + i) * 0.14;
+        _fishM4.makeRotationY(-a);
+        _fishM4.setPosition(fx, fy, fz);
+        seaFishMesh.setMatrixAt(i, _fishM4);
+    }
+    seaFishMesh.instanceMatrix.needsUpdate = true;
+}
+function collectNearbySeafood() {   // deep 중 ⌘ — 바닥의 실물 수거
+    const p = dive && dive.p;
+    if (!p) return false;
+    let best = null, bd = 0.95;
+    for (const sp of seaSpawns) {
+        const d = Math.hypot(sp.x - p.mover.position.x, sp.z - p.mover.position.z);
+        if (d < bd) { bd = d; best = sp; }
+    }
+    if (!best) return false;
+    seaSpawns.splice(seaSpawns.indexOf(best), 1);
+    best.mesh.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
+    fruitLayer.remove(best.mesh);
+    recordSeafoodCatch(p, best.t);
+    return true;
+}
+function digNearbySeaTreasure() {   // deep 중 ⌘ — ✕ 발굴 (무인도 보상 테이블)
+    const p = dive && dive.p;
+    if (!p) return false;
+    for (const [key, e] of seaChunks) {
+        if (!e.treasure) continue;
+        if (Math.hypot(e.tx - p.mover.position.x, e.tz - p.mover.position.z) > 1.05) continue;
+        dugSeabed[key] = Date.now();
+        try { localStorage.setItem('world-seabed-dug', JSON.stringify(dugSeabed)); } catch (err) {}
+        e.group.remove(e.treasure);
+        e.treasure.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
+        e.treasure = null;
+        triggerHugBurst(p.mover.position.x, p.mover.position.y + 0.2, p.mover.position.z);
+        fishFanfare();
+        const roll = Math.random();
+        const nextAcc = DIG_UNLOCK_ORDER.find((id) => !accUnlocked.has(id));
+        if (roll < 0.5) {
+            const counts = shellCounts();
+            counts.pearl = (counts.pearl || 0) + 1;
+            try { localStorage.setItem('world-shells', JSON.stringify(counts)); } catch (err) {}
+            showToast('🤿💛 해저 보물 — 진주조개가 나왔다!!');
+            logWorldEvent(`${petKo(p)}가 해저에 파묻힌 보물에서 진주조개를 찾았다 🤿🐚`);
+        } else if (roll < 0.72 && nextAcc) {
+            accUnlocked.add(nextAcc);
+            saveAccUnlocked();
+            const label = GLB_ACCESSORIES.find((a) => a.id === nextAcc)?.label || nextAcc;
+            showToast(`🤿🎁 해저 보물 — ${label} 코디가 열렸어요!`);
+            logWorldEvent(`해저 보물 상자에서 ${label} 코디를 찾았다 🤿🎁`);
+        } else {
+            showToast('🤿✨ 해저 보물 — 반짝이는 옛 동전이다');
+            logWorldEvent('해저 보물에서 반짝이는 옛 동전을 찾았다 🤿✨');
+        }
+        return true;
+    }
+    return false;
+}
+function recordSeafoodCatch(p, caught) {   // 도감 기록 + 연출 (수거·AI 공용 아님 — 주인 전용)
+    const counts = seafoodCounts();
+    const first = !counts[caught.id];
+    counts[caught.id] = (counts[caught.id] || 0) + 1;
+    try { localStorage.setItem('world-seafood', JSON.stringify(counts)); } catch (e) {}
+    const mesh = makeSeafoodMesh(caught.id, 1.5);
+    mesh.position.set(p.mover.position.x, p.mover.position.y + 0.42, p.mover.position.z);
+    fruitLayer.add(mesh);
+    shellFly.push({ mesh, t: 0, x: p.mover.position.x, z: p.mover.position.z });
+    if (caught.rarity >= 3) {
+        fishFanfare();
+        showToast(`🤿✨ ${caught.ko}다!! (★★★${first ? ' · 처음!' : ''})`);
+        maybeProactive(p, `방금 잠수해서 ${caught.ko}를 잡았다!! 대박이다!!`);
+    } else {
+        playBuffer(swishBuf, { vol: 0.35, rate: 1.5, filterFreq: 1600 });
+        showToast(`🤿 ${caught.ko} 잡았다!${first ? ' — 도감에 처음 올랐다 📖' : ''}`);
+    }
+    logWorldEvent(`${petKo(p)}가 잠수로 ${caught.ko}를 건져 올렸다 🤿${caught.rarity >= 3 ? ' ★★★' : ''}`);
 }
 let shellNextAt = 50;   // 첫 시도 50초 후 (시딩과 별개 — 3개까지 리필용)
 let shellGlintAt = 7;
@@ -15440,7 +15880,9 @@ function animate() {
     updateFerryPose();                       // 페리 벤치 앉기 — 다리 접기 (엔티티 뒤 덮어쓰기)
     updatePhoneCall(delta);                  // 📞 전화 안무 — 폰 위치·고개 기울임·옹알이 (엔티티 뒤)
     updateTrampoline(delta);                 // 🤸 트램펄린 바운스 — y 소유 + 앞구르기 포즈 (엔티티 뒤)
-    updateDive(delta);                       // 🤿 잠수 — 실루엣 블롭·버블·부상 롤 (엔티티 뒤)
+    updateUnderwater();                      // 🌊 카메라-수면 판정 → 안개·하늘 전환
+    syncDiveBtn();                           // 🤿/⬆️ 문맥 버튼
+    updateDive(delta);                       // 🤿 잠수 — AI 블롭 / 빙의 딥 다이브 (엔티티 뒤)
     updateFishing(delta);                    // 🎣 낚시 안무 — 엔티티 업데이트 뒤라 포즈 덮어쓰기 가능
     updateHeartFx(delta);
     updateFestiveFx(delta);
