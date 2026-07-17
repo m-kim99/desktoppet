@@ -43,7 +43,7 @@ const MOVED_DEFAULTS = {
     'tree-5':   [[11.19, 3.28]],
     'house-1':  [[2.7, 2.05]],      // 회전·배율 리뉴얼 — 저장된 옛 rotY가 새 기본 rotY를 가리면 안 된다
     'bowl-1':   [[0.95, 1.62]],
-    'radio-1':  [[2.2, 0.63]],
+    'radio-1':  [[2.2, 0.63], [2.3, 0.35]],
     'tree-3':   [[2.05, 5.2]],
     'coffee-1': [[-3.35, 2.18]],
     'vine-2':   [[-1.9, 1.3]],
@@ -2063,30 +2063,56 @@ function makeLamp() {
 }
 
 function makeRadio() {
+    // 레트로 라디오 리모델(동숲 문법): 투톤 바디 + 크림 페이스 패널 + 가로 그릴 슬랫 +
+    // 앰버 다이얼 창(빨간 바늘) + 노브 2 + 가죽 손잡이 + 크롬 안테나. 정적이라 병합 대상.
     const g = new THREE.Group();
     const stand = new THREE.Mesh(new RoundedBoxGeometry(0.3, 0.03, 0.16, 3, 0.012), M(0xb08a60, { map: woodTex }));
     stand.position.y = 0.015;
     g.add(stand);
-    const body = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.16, 0.11, 3, 0.03), M(0xef8a8a));
-    body.position.y = 0.12;
+    const body = GM(new RoundedBoxGeometry(0.27, 0.17, 0.115, 3, 0.035), 0xf2907e, 0xc95f52);   // 코랄 투톤
+    body.position.y = 0.125;
     g.add(body);
-    const speaker = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.112, 20), M(0x5a4a42));
-    speaker.rotation.x = Math.PI / 2;
-    speaker.position.set(-0.055, 0.12, 0.002);
-    g.add(speaker);
-    const knobMat = M(0xfff1cf);
-    for (const ky of [0.145, 0.095]) {
-        const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.115, 10), knobMat);
-        knob.rotation.x = Math.PI / 2;
-        knob.position.set(0.07, ky, 0.002);
-        g.add(knob);
+    const face = GM(new RoundedBoxGeometry(0.23, 0.125, 0.02, 2, 0.01), 0xfff3dd, 0xe8d4b2);   // 크림 페이스 패널
+    face.position.set(0, 0.125, 0.052);
+    g.add(face);
+    const grille = new THREE.Mesh(new RoundedBoxGeometry(0.105, 0.095, 0.012, 2, 0.008), M(0x6a564c));   // 그릴 베이스
+    grille.position.set(-0.048, 0.125, 0.062);
+    g.add(grille);
+    for (let i = 0; i < 4; i++) {   // 가로 슬랫 — 레트로 스피커의 시그니처
+        const slat = new THREE.Mesh(new THREE.BoxGeometry(0.088, 0.008, 0.008), M(0xfff3dd));
+        slat.position.set(-0.048, 0.093 + i * 0.021, 0.068);
+        g.add(slat);
     }
-    const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.24, 6), M(0x5a6a75));
-    antenna.position.set(-0.09, 0.28, -0.02);
-    antenna.rotation.z = 0.5;
+    const dial = new THREE.Mesh(new RoundedBoxGeometry(0.075, 0.045, 0.012, 2, 0.006), M(0xffd98a, { emissive: 0xcf9c40, emissiveIntensity: 0.35 }));   // 앰버 다이얼 창
+    dial.position.set(0.055, 0.155, 0.062);
+    g.add(dial);
+    const needle = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.036, 0.006), M(0xd8503c));
+    needle.position.set(0.065, 0.155, 0.068);
+    g.add(needle);
+    const knobMat = M(0xfff1cf);
+    for (const kx of [0.032, 0.082]) {   // 노브 2 — 다이얼 아래
+        const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.017, 0.02, 12), knobMat);
+        knob.rotation.x = Math.PI / 2;
+        knob.position.set(kx, 0.093, 0.062);
+        g.add(knob);
+        const notch = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.012, 0.006), M(0x8a6a52));
+        notch.position.set(kx, 0.097, 0.072);
+        g.add(notch);
+    }
+    const handle = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.011, 8, 16, Math.PI), M(0x8a5c40));   // 가죽 손잡이
+    handle.position.set(0, 0.21, 0);
+    g.add(handle);
+    for (const hx of [-0.055, 0.055]) {
+        const lug = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, 0.018, 8), M(0x8a5c40));
+        lug.position.set(hx, 0.208, 0);
+        g.add(lug);
+    }
+    const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.007, 0.26, 6), M(0x9aa8b5));   // 크롬 안테나
+    antenna.position.set(-0.1, 0.3, -0.03);
+    antenna.rotation.z = 0.48;
     g.add(antenna);
-    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 6), M(0x5a6a75));
-    tip.position.set(-0.147, 0.385, -0.02);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 6), M(0x9aa8b5));
+    tip.position.set(-0.16, 0.415, -0.03);
     g.add(tip);
     return g;
 }
@@ -13523,9 +13549,9 @@ function updateRoofFade(delta) {
         roofFadeMats = pr.obj.userData.roofFade.map((m) => m.material);
     }
     const d = Math.hypot(camera.position.x - HOUSE.x, (camera.position.y - 1.3) * 1.3, camera.position.z - HOUSE.z);
-    let target = 0.08 + 0.92 * THREE.MathUtils.smoothstep(d, 4.5, 7.5);   // 근접 구간을 넓게 — 확대하면 확실히 걷힌다
+    let target = THREE.MathUtils.smoothstep(d, 4.5, 7.5);   // 근접 = 완전 소멸 (사용자 지정 100%)
     for (const p of pets) {   // 🐥 누가 집 안에 있으면 카메라가 멀어도 걷는다 — 안의 동물이 항상 보이게
-        if (houseFloorY(p.mover.position.x, p.mover.position.z) !== null) { target = Math.min(target, 0.14); break; }
+        if (houseFloorY(p.mover.position.x, p.mover.position.z) !== null) { target = 0; break; }
     }
     if (Math.abs(target - roofFadeK) < 0.004) return;
     roofFadeK = THREE.MathUtils.lerp(roofFadeK, target, Math.min(1, delta * 6));
@@ -13537,6 +13563,11 @@ function updateRoofFade(delta) {
             m.needsUpdate = true;   // 블렌딩 on/off는 프로그램 재컴파일 필요 — 없으면 불투명 셰이더가 캐시된 채 opacity 무시 (실측)
         }
         m.depthWrite = roofFadeK > 0.55;
+    }
+    const show = roofFadeK > 0.02;   // 완전 소멸 구간 — 그리기 자체 생략 (visible은 클릭 레이캐스트에 무영향, r178)
+    const pr2 = PROPS.find((q) => q.type === 'house');
+    if (pr2 && pr2.obj && pr2.obj.userData.roofFade) {
+        for (const m of pr2.obj.userData.roofFade) if (m.visible !== show) m.visible = show;
     }
 }
 let autoReturnT = 0;

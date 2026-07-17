@@ -98,7 +98,7 @@ export const PROPS = [
     { type: 'lamp', x: -1.33, z: -4.19, rotY: 0, r: 0.18 },
         { type: 'lamp', x: -3.89, z: -1.89, rotY: 0, r: 0.18 },
         { type: 'lamp', x:  2.39, z:  3.76, rotY: 0, r: 0.18 },
-        { type: 'radio', x: 2.3, z: 0.35, rotY: 2.2, r: 0.24 },    // 집 마당 라디오 — 현관 옆
+        { type: 'radio', x: 2.85, z: 0.15, rotY: 1.9, r: 0.24 },    // 집 마당 라디오 — 포치 데크 밖 잔디 (데크 모서리 겹침 회피)
     { type: 'coffee',        x: -2.35, z:  1.0,  rotY: 2.1,   r: 0.5 },   // 광장 서쪽 — 링 안쪽 (도로 3.6 리뉴얼)  // NW 카페 거리 — 커피 부스 (Ctrl/⌘로 주문)
     { type: 'food', x: -3.11, z: 3.98, rotY: 2.73, r: 0.5 },   // NW 카페 거리 — 간식 부스 (Ctrl/⌘로 주문)
     // Satellite islands: a tree and a lamp at each bridgehead (otherwise open feature ground)
