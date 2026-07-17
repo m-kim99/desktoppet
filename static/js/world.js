@@ -1664,6 +1664,15 @@ function makeHouse() {
     const chimneyCap = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.07, 0.26, 2, 0.02), M(0xc4b6a0));
     chimneyCap.position.set(-0.72, wallH + 0.87, -0.46);
     g.add(chimneyCap);
+    // 🫥 카메라 근접 시 지붕 컷어웨이(심즈식) — 대상은 유니크 재질로 복제(공유 캐시 오염 금지),
+    // 병합·베이크에서 제외(userData.roofFade — 불투명도 변이는 자기 메시가 직접 그려야 한다).
+    // roofSnow는 snowCapMat 공유(전 세계 눈모자)라 제외 — 겨울 근접 한정 눈이불 잔상은 수용.
+    const roofFadeMeshes = [roof, finial, chimney, chimneyCap, ...g.children.filter((o) => o.geometry && o.geometry.type === 'BoxGeometry' && Math.abs(o.position.y - (wallH + 0.02)) < 0.001)];
+    for (const m of roofFadeMeshes) {
+        m.material = m.material.clone();
+        m.userData.roofFade = true;
+    }
+    g.userData.roofFade = roofFadeMeshes;
     // ---- floor-1 furniture: sofa (sit here!), low table + reading lamp, rug, bookshelf ----
     const sofa = new THREE.Group();
     const sofaBase = new THREE.Mesh(new RoundedBoxGeometry(0.4, 0.14, 0.78, 3, 0.04), M(0x7aa6dc));
@@ -1693,7 +1702,7 @@ function makeHouse() {
         leg.position.set(lx2, 0.03, lz2);
         sofa.add(leg);
     }
-    sofa.position.set(-0.884, 0.05, 0.26);
+    sofa.position.set(-1.02, 0.05, 0.26);   // 왼벽 밀착 (1.2× 확대로 벌어진 뒷공간 제거)
     g.add(sofa);
     const table = new THREE.Group();
     const top = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.04, 20), wood);
@@ -1751,7 +1760,7 @@ function makeHouse() {
         leafBall.position.set(0.02 + (i - 1) * 0.022, 0.82 + (i % 2) * 0.02, 0.12 + (i - 1) * 0.014);
         shelf.add(leafBall);
     }
-    shelf.position.set(-1.014, 0.05, 0.676);
+    shelf.position.set(-1.11, 0.05, 0.676);   // 왼벽 밀착
     g.add(shelf);
     // 벽 장식: 그림 두 점 + 벽시계 — "사는 집"의 마감
     const artFrame1 = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.22, 0.03), woodDark);
@@ -1794,7 +1803,7 @@ function makeHouse() {
         pillow.rotation.y = px < 0 ? 0.08 : -0.08;
         bed.add(pillow);
     }
-    bed.position.set(-0.585, 0.78, -0.65);
+    bed.position.set(-0.95, 0.78, -0.65);   // 다락 왼벽 밀착
     g.add(bed);
     const artFrame2 = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.28, 0.03), woodDark);   // 침대맡 그림
     artFrame2.position.set(-0.95, 1.3, -0.99);
@@ -4637,7 +4646,7 @@ function mergePropGroup(root) {
     const buckets = new Map();      // 재질 인스턴스 + attribute 시그니처 → 메시 목록
     root.traverse((o) => {
         if (!o.isMesh || !o.visible || skip.has(o)) return;
-        if (o.userData && (o.userData.keyIdx != null || o.userData.plotIdx != null)) return;
+        if (o.userData && (o.userData.keyIdx != null || o.userData.plotIdx != null || o.userData.roofFade)) return;   // roofFade = 근접 컷어웨이 변이 대상
         if (Array.isArray(o.material)) return;   // 멀티 재질은 그대로 둔다 (현재 빌더엔 없음)
         const sig = Object.keys(o.geometry.attributes).sort().join(',') + (o.geometry.index ? '+i' : '');
         const key = o.material.uuid + '|' + sig;
@@ -4684,7 +4693,7 @@ function worldBake() {
     const buckets = new Map();
     const collect = (o) => {
         if (!o.isMesh || o.isInstancedMesh || !o.visible || skip.has(o)) return;
-        if (o.userData && (o.userData.keyIdx != null || o.userData.plotIdx != null)) return;
+        if (o.userData && (o.userData.keyIdx != null || o.userData.plotIdx != null || o.userData.roofFade)) return;   // 지붕 컷어웨이 변이 대상
         if (Array.isArray(o.material)) return;
         const sig = Object.keys(o.geometry.attributes).sort().join(',') + (o.geometry.index ? '+i' : '');
         const key = o.material.uuid + '|' + sig;
@@ -4843,27 +4852,27 @@ const HOUSE_DERIVED = { cols: [], beds: [], light: null };
         PROPS.push(entry);
         HOUSE_DERIVED.cols.push({ entry, lx, lz });
     };
-    fCol(-0.884, 0.26, 0.34);    // sofa (리모델 좌표 — makeHouse와 1:1)
+    fCol(-1.02, 0.26, 0.34);     // sofa (리모델 좌표 — makeHouse와 1:1, 벽 밀착)
     fCol(0, 0.195, 0.28);        // table
-    fCol(-1.014, 0.676, 0.2);    // bookshelf
-    fCol(-0.585, -0.65, 0.36);   // loft bed
+    fCol(-1.11, 0.676, 0.2);     // bookshelf
+    fCol(-0.95, -0.65, 0.36);    // loft bed
     fCol(0.065, -0.806, 0.12);   // nightstand
-    const sofaW = houseWorld(-0.884, 0.26), sofaA = houseWorld(-0.364, 0.754);
+    const sofaW = houseWorld(-1.02, 0.26), sofaA = houseWorld(-0.364, 0.754);
     const sofa = {
         id: 'sofa', mode: 'sit', occupant: null, sway: 0, shelter: true,   // 비 피신 폴백 자리
         lie: { x: sofaW.x, z: sofaW.z, y: (HOUSE.floorY + 0.21) * HOUSE_K, rotY: HOUSE.rotY + Math.PI / 2, tilt: -0.35 },
         approach: { x: sofaA.x, z: sofaA.z },
     };
     BEDS.push(sofa);
-    HOUSE_DERIVED.beds.push({ entry: sofa, lx: -0.884, lz: 0.26, alx: -0.364, alz: 0.754 });
-    const bedW = houseWorld(-0.585, -0.65), bedA = houseWorld(0.39, -0.585);
+    HOUSE_DERIVED.beds.push({ entry: sofa, lx: -1.02, lz: 0.26, alx: -0.364, alz: 0.754 });
+    const bedW = houseWorld(-0.95, -0.65), bedA = houseWorld(0.39, -0.585);
     const loftbed = {
         id: 'loftbed', mode: 'sleep', occupant: null, sway: 0,
         lie: { x: bedW.x, z: bedW.z, y: (HOUSE.loftY + 0.2) * HOUSE_K, rotY: HOUSE.rotY, tilt: -1.2 },
         approach: { x: bedA.x, z: bedA.z },
     };
     BEDS.push(loftbed);
-    HOUSE_DERIVED.beds.push({ entry: loftbed, lx: -0.585, lz: -0.65, alx: 0.39, alz: -0.585 });
+    HOUSE_DERIVED.beds.push({ entry: loftbed, lx: -0.95, lz: -0.65, alx: 0.39, alz: -0.585 });
     const lampW = houseWorld(0, 0.195);
     const indoor = new THREE.PointLight(0xffd9a0, 0, 3.0, 2);   // 커진 거실 — 도달 2.4→3.0, 펜던트 높이에서
     indoor.position.set(lampW.x, (HOUSE.floorY + 1.0) * HOUSE_K, lampW.z);
@@ -7258,6 +7267,21 @@ if (statsOn) window.__worldDev = {
     trampGo: (name) => startAiTramp(pets.find((q) => q.name === (name || 'puppy'))),
     house: (x, z) => ({ floor: houseFloorY(x, z), blocked: houseBlocked(x, z) }),   // 하우스 보행 E2E
     houseW: (lx, lz) => houseWorld(lx, lz),
+    roofState: () => ({ k: +roofFadeK.toFixed(2) }),
+    roofDiag2: () => {   // 씬 전체 콘 수색 — 불투명 지붕 사본 찾기
+        const out = [];
+        scene.traverse((o) => {
+            if (o.isMesh && o.geometry && o.geometry.type === 'ConeGeometry' && o.geometry.parameters && o.geometry.parameters.radius > 2) {
+                out.push({ vis: o.visible, op: o.material.opacity, tr: !!o.material.transparent, tag: !!(o.userData && o.userData.roofFade), parent: o.parent === scene ? 'scene' : (o.parent && o.parent.type) });
+            }
+        });
+        return out;
+    },
+    roofDiag: () => {
+        const pr = PROPS.find((q) => q.type === 'house');
+        const list = pr && pr.obj && pr.obj.userData.roofFade;
+        return list ? list.map((m) => ({ vis: m.visible, op: +m.material.opacity.toFixed(2), tr: m.material.transparent, inGroup: !!m.parent, geo: m.geometry.type })) : null;
+    },
     fruitState: () => ({
         bearing: fruitBearing.map((e) => ({ id: e.pr.layoutId, t: e.type, x: +e.pr.x.toFixed(2), z: +e.pr.z.toFixed(2), hanging: e.group && e.anchors ? e.anchors.length : 0 })),
         ground: groundFruits.map((g) => ({ t: g.type, x: +g.x.toFixed(2), z: +g.z.toFixed(2), settled: g.settled, age: g.at ? Date.now() - g.at : 0, wilting: g.wilting !== undefined })),
@@ -13437,6 +13461,31 @@ function recallVehicle(type, quiet = false) {
     } else logWorldEvent(`밤사이 ${ko}가 스스로 집 앞으로 돌아와 있었다 🌙`);
     return true;
 }
+// 🫥 지붕 컷어웨이: 카메라가 집에 가까우면 지붕·페시아·굴뚝이 스르륵 투명해져 내부가 보인다
+// (심즈식 — 업계 표준은 컷어웨이/디더 페이드/실내 별도 씬 3갈래, 여긴 거리 기반 알파 페이드).
+// transparent 플래그는 임계 교차 때만 뒤집혀 셰이더 재컴파일 스파이크 없음 (발열 §1).
+let roofFadeMats = null;
+let roofFadeK = 1;
+function updateRoofFade(delta) {
+    if (!roofFadeMats) {
+        const pr = PROPS.find((q) => q.type === 'house');
+        if (!pr || !pr.obj || !pr.obj.userData.roofFade) return;
+        roofFadeMats = pr.obj.userData.roofFade.map((m) => m.material);
+    }
+    const d = Math.hypot(camera.position.x - HOUSE.x, (camera.position.y - 1.3) * 1.3, camera.position.z - HOUSE.z);
+    const target = 0.08 + 0.92 * THREE.MathUtils.smoothstep(d, 4.5, 7.5);   // 근접 구간을 넓게 — 확대하면 확실히 걷힌다
+    if (Math.abs(target - roofFadeK) < 0.004) return;
+    roofFadeK = THREE.MathUtils.lerp(roofFadeK, target, Math.min(1, delta * 6));
+    for (const m of roofFadeMats) {
+        m.opacity = roofFadeK;
+        const tr = roofFadeK < 0.995;
+        if (m.transparent !== tr) {
+            m.transparent = tr;
+            m.needsUpdate = true;   // 블렌딩 on/off는 프로그램 재컴파일 필요 — 없으면 불투명 셰이더가 캐시된 채 opacity 무시 (실측)
+        }
+        m.depthWrite = roofFadeK > 0.55;
+    }
+}
 let autoReturnT = 0;
 function checkAutoReturn(force = false) {
     const IDLE_MS = 2 * 3600 * 1000;   // 2시간 미사용
@@ -14969,6 +15018,7 @@ function animate() {
     updateFerryHop(delta);                   // 절친 갑판 승선 아크
     updateStreaming(delta);                  // 🌊 무인도 스트리밍 — 1Hz 스캔 + 프레임당 1작업
     updateWorldMap(delta);                   // 🗺️ 지도 — 열려 있을 때만 2Hz 리드로우
+    updateRoofFade(delta);                   // 🫥 집 근접 지붕 컷어웨이
     autoReturnT += delta;
     if (autoReturnT >= 300) { autoReturnT = 0; checkAutoReturn(); }   // 🌙 밤사이 자동 귀항 (5분 틱)
     updateShells(delta);                     // 🐚 조개 스폰/반짝/줍기 연출
