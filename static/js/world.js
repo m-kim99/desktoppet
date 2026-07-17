@@ -6148,6 +6148,13 @@ function updateWander(p, delta) {
             // …또는 열기구를 타러 계류장으로 — 혼자 하늘 한 바퀴 (낮, 쿨다운, 열기구가 집에 있을 때).
             // 첫 쿨다운은 시드만 — 앱 켜자마자 열기구가 떠나버리면 주인이 탈 틈이 없다 (E2E에서 실측).
             if (!p.nextBalloonAt) p.nextBalloonAt = Date.now() + 240000 + Math.random() * 480000;
+            if (!p.nextSubAt) p.nextSubAt = Date.now() + 360000 + Math.random() * 600000;   // 🟡 첫 쿨다운 시드 (앱 시작 직후 출항 방지)
+            if (!subRide && !aiSubWalk && SUB.mode === 'docked' && !isSleepTime(currentHour())
+                && Date.now() > p.nextSubAt && Math.random() < 0.04) {
+                p.nextSubAt = Date.now() + 600000 + Math.random() * 600000;
+                startAiSub(p);
+                return;
+            }
             else if (!isSleepTime(currentHour()) && !balloonRide && !aiBalloonWalk && BALLOON.mode === 'docked'
                 && Date.now() > p.nextBalloonAt && Math.random() < 0.05) {
                 p.nextBalloonAt = Date.now() + 420000 + Math.random() * 420000;
@@ -7040,6 +7047,8 @@ function petStatusLine(p) {
     else if (carDrive && carDrive.passenger === p) parts.push('스포츠카 조수석에 타는 중');
     if (boatRide && boatRide.driver === p) parts.push('보트에서 노 젓는 중');
     else if (boatRide && boatRide.passenger === p) parts.push('보트 뱃머리에 타는 중');
+    if (subRide && subRide.p === p) parts.push(SUB.mode === 'manual' ? '노랑호를 직접 조종해 해저를 누비는 중' : '노랑호 타고 해저 관광 중');
+    else if (subRide && subRide.friend === p) parts.push('노랑호 조수석에서 해저 구경 중');
     else if (ferryRide && (ferryRide.p === p || ferryRide.friend === p)) parts.push(FERRY.mode === 'dwell' ? '통통호 타고 모래섬 잔교에 정박 중 ⛴️' : '통통호 타고 바다 항해 중 ⛴️');
     else if (balloonRide && balloonRide.p === p) parts.push('열기구 타고 하늘 산책 중 🎈');
     else if (balloonRide && balloonRide.friend === p) parts.push('열기구에 절친과 동승 중 🎈');
@@ -7362,6 +7371,28 @@ if (statsOn) window.__worldDev = {
     },
     seabedAt: (x, z) => +seabedHeight(x, z).toFixed(2),
     callFriend: () => startPhoneCall(),   // 📞 친구 부르기 (E2E)
+    subState: () => ({
+        mode: SUB.mode, x: +SUB.x.toFixed(1), y: +SUB.y.toFixed(2), z: +SUB.z.toFixed(1),
+        ride: subRide ? { isAI: subRide.isAI, manual: subRide.manual, friend: !!subRide.friend, u: +(subRide.u || 0).toFixed(3) } : null,
+        stops: subRide && subRide.route ? subRide.route.stops.map((q) => q.kind + (q.visited ? '✓' : '')) : [],
+    }),
+    subEnter: () => enterSub(possessed),
+    subAiStart: () => { const q = pets.find((o) => o !== possessed); if (q) startAiSub(q); return !!aiSubWalk; },
+    subWarp: (u) => { if (subRide) subRide.u = u; },   // E2E — 투어 빨리감기
+    subWarpToStop: (i) => {   // E2E — i번째 정지점 직전으로 (곡선 샘플링으로 u 역산)
+        if (!subRide || !subRide.route || !subRide.route.stops[i]) return false;
+        const stop = subRide.route.stops[i];
+        let bu = 0, bd = Infinity;
+        for (let s = 0; s <= 400; s++) {
+            const pt = subRide.route.curve.getPointAt(s / 400);
+            const d = Math.hypot(pt.x - stop.x, pt.z - stop.z);
+            if (d < bd) { bd = d; bu = s / 400; }
+        }
+        subRide.u = Math.max(0, bu - 0.012);
+        return true;
+    },
+    subHome: () => ({ x: +SUB_HOME.x.toFixed(1), z: +SUB_HOME.z.toFixed(1) }),
+    subRouteTry: () => { const r = makeSubRoute(); return { stops: r.stops.map((q) => q.kind), len: +r.len.toFixed(1), diag: subRouteDiag.slice(0, 10) }; },
     handState: () => (handHold ? { y: +handHold.partner.mover.position.y.toFixed(2), swim: handHold.partner.swimming, state: handHold.partner.ai.state } : null),
     seaMapInfo: () => ({ found: Object.keys(seaFound).length, wreck: !!seaFound.wreck, seaMode: camUnderwater && mapOpen, ventsFound: Object.values(seaFound).filter((f) => f.k === 'v').length, forestsFound: Object.values(seaFound).filter((f) => f.k === 'f').length }),
     mapToggle: (f) => toggleWorldMap(f),
@@ -7767,8 +7798,8 @@ function syncDiveBtn() {   // 🤿 문맥 버튼: 바다 수영=🤿, 잠수 중
             diveBtn.title = diving ? '수면으로 올라가기 — 평소처럼 수영' : '잠수 — 물속 세계로';
         }
     }
-    if (touchDiveBtns) {   // 📱 딥 다이브 = 🦘 자리에 🔼🔽 스왑 (마크 모바일 문법)
-        const deepNow = diving && dive.phase === 'deep';
+    if (touchDiveBtns) {   // 📱 딥 다이브·노랑호 수동 = 🦘 자리에 🔼🔽 스왑 (마크 모바일 문법)
+        const deepNow = (diving && dive.phase === 'deep') || !!(subRide && !subRide.isAI && subRide.p === possessed && SUB.mode === 'manual');
         const dDisp = deepNow ? 'flex' : 'none';
         if (touchDiveBtns.up.style.display !== dDisp) {
             touchDiveBtns.up.style.display = dDisp;
@@ -7863,10 +7894,12 @@ function positionBuildRing(p) {
 }
 function canPlace(p, x, z) {
     const pr = effR(p);
-    if (p.type === 'boat') {   // 🚣 보트: 열린 물 (선석·잔교·통통호·비행기와 간섭 금지)
+    if (p.type === 'boat' || p.type === 'sub') {   // 🚣🟡 보트·노랑호: 열린 물 (선석·잔교·통통호·비행기와 간섭 금지)
         if (islandOf(x, z) >= 0 || onBridge(x, z) || Math.hypot(x, z) > EXPLORE_R) return false;
         if (Math.hypot(x - FERRY.x, z - FERRY.z) < 1.6 || window.__nearFerryPier(x, z, 1.1)) return false;
         if (Math.hypot(x - PLANE.x, z - PLANE.z) < 1.6) return false;
+        if (p.type === 'sub' && Math.hypot(x - BOAT.x, z - BOAT.z) < 1.5) return false;
+        if (p.type === 'boat' && Math.hypot(x - SUB.x, z - SUB.z) < 1.5) return false;
         return true;
     }
     if (p.type === 'plane') {   // 🛩️ 비행기: 뭍이든 물이든 (수륙양용)
@@ -7939,7 +7972,7 @@ function pickMovable(e) {
     raycaster.setFromCamera(pointerNdc, camera);
     let best = null, bestD = Infinity;
     for (const q of PROPS) {
-        if (!q.obj || !(MOVABLE_TYPES.has(q.type) || q.type === 'car' || q.type === 'boat' || q.type === 'plane' || q.type === 'balloon')) continue;   // 🔨 운송기도 이동 (페리는 노선 시설이라 고정)
+        if (!q.obj || !(MOVABLE_TYPES.has(q.type) || q.type === 'car' || q.type === 'boat' || q.type === 'plane' || q.type === 'balloon' || q.type === 'sub')) continue;   // 🔨 운송기도 이동 (페리는 노선 시설이라 고정)
         const hits = raycaster.intersectObject(q.obj, true);
         if (hits.length && hits[0].distance < bestD) { best = q; bestD = hits[0].distance; }
     }
@@ -8080,7 +8113,7 @@ function saveLayoutSoon() { buildDirty = true; clearTimeout(saveLayoutTimer); sa
 function saveLayout() {
     const out = {};
     for (const q of PROPS) {
-        if (!q.layoutId || !(MOVABLE_TYPES.has(q.type) || q.type === 'car' || q.type === 'boat' || q.type === 'plane' || q.type === 'balloon')) continue;
+        if (!q.layoutId || !(MOVABLE_TYPES.has(q.type) || q.type === 'car' || q.type === 'boat' || q.type === 'plane' || q.type === 'balloon' || q.type === 'sub')) continue;
         out[q.layoutId] = {
             x: +q.x.toFixed(3), z: +q.z.toFixed(3),
             rotY: +(((q.type === 'car' ? CAR.heading : q.type === 'boat' ? BOAT.heading : q.type === 'plane' ? PLANE.heading : q.rotY) || 0)).toFixed(3),
@@ -10044,6 +10077,7 @@ function releasePossession() {
     if (planeRide) exitPlane(true); // 강제 하기 — 공중이면 비상 착륙 후 내려준다
     if (balloonRide && !balloonRide.isAI) exitBalloonForce(); // 라이더는 계류장으로, 빈 열기구는 자율 귀환
     if (ferryRide && !ferryRide.isAI && (ferryRide.p === p || ferryRide.friend === p)) exitFerryForce(); // 본섬 잔교로
+    if (subRide && !subRide.isAI && (subRide.p === p || subRide.friend === p)) exitSubForce(); // 🟡 물로 하차, 빈 배 귀항
     cancelPhoneCall();   // 통화 중이었으면 끊는다
     releaseHandHold();
     running = false;
@@ -10064,6 +10098,7 @@ function doJump() {
     if (planeRide) return;   // 🛩️ 탑승 중 Space 무시 — 고도는 W/S
     if (balloonRide && (balloonRide.p === possessed || balloonRide.friend === possessed)) return;   // 🎈 바구니에서 점프 금지
     if (ferryRide && (ferryRide.p === possessed || ferryRide.friend === possessed)) return;   // ⛴️ 갑판에서 점프 금지
+    if (subRide && (subRide.p === possessed || subRide.friend === possessed)) return;   // 🟡 좌석에서 점프 금지
     if (possessed.tramp) { possessed.tramp.boost = true; return; }   // 🤸 바운스 중 Space = 다음 발사 부스트
     if (fishing && (fishing.state === 'bite' || fishing.state === 'wait')) { fishingIntercept(); return; }   // Space도 챔질
     if (fishing && fishing.state !== 'idle') return;   // 시전·파이팅 중 점프 잠금
@@ -10099,6 +10134,7 @@ function doInteract() {
     // streetlamp — in that priority order.
     if (!possessed) return;
     if (fishingIntercept()) return;   // 🎣 입질 챔질 / 성급 걷어들이기 / 연출 중 잠금
+    if (subRide && (subRide.p === possessed || subRide.friend === possessed)) { requestSubExit(); return; }
     if (ferryRide && (ferryRide.p === possessed || ferryRide.friend === possessed)) { requestFerryExit(); return; }
     if (balloonRide && (balloonRide.p === possessed || balloonRide.friend === possessed)) { requestBalloonExit(); return; }
     if (planeRide) {
@@ -10111,6 +10147,7 @@ function doInteract() {
         const pos = possessed.mover.position;
         if (Math.hypot(pos.x - BOAT.x, pos.z - BOAT.z) < 1.15) { enterBoat(); return; }   // 헤엄쳐 와서 승선
         if (Math.hypot(pos.x - PLANE.x, pos.z - PLANE.z) < 1.35 && PLANE.mode === 'parked') { enterPlane(); return; }   // 물에 뜬 비행기도 승선
+        if (SUB.mode === 'docked' && !subRide && Math.hypot(pos.x - SUB.x, pos.z - SUB.z) < 1.35) { enterSub(possessed); return; }   // 🟡 헤엄쳐 와서 노랑호 승선
         const spot = nearestClimbSpot(pos);
         if (spot && !seaHop) {
             seaHop = { fx: pos.x, fy: pos.y, fz: pos.z, tx: spot.tx, tz: spot.tz, ty: spot.ty, t: 0 };
@@ -10146,6 +10183,11 @@ function doInteract() {
     if (BALLOON.mode === 'docked' && !balloonRide
         && Math.hypot(possessed.mover.position.x - BALLOON.x, possessed.mover.position.z - BALLOON.z) < 1.35) {
         enterBalloon(possessed);   // 🎈 계류장 열기구 — 바구니로 (절친이 곁에 있으면 함께)
+        return;
+    }
+    if (SUB.mode === 'docked' && !subRide
+        && Math.hypot(possessed.mover.position.x - SUB.x, possessed.mover.position.z - SUB.z) < 1.5) {
+        enterSub(possessed);   // 🟡 물가에 계류된 노랑호 — 뭍에서 폴짝 (손잡던 절친은 조수석)
         return;
     }
     if ((FERRY.mode === 'docked' || FERRY.mode === 'dwell') && !(ferryRide && ferryRide.p && ferryRide.friend)
@@ -10401,6 +10443,26 @@ function updatePlayer(delta) {
             : (IS_TOUCH ? `🛩️ ${petKo(p)} 활주 중 — 스틱 가속·방향 (전속력=이륙!) · ✋ 내리기 · ✕ 해제`
                 : `🛩️ ${petKo(p)} 활주 중 — ↑ 가속 (전속력=이륙!) · ←→ 방향 · Ctrl/⌘ 내리기 · Esc 해제`);
         if (controlHint.textContent !== flyHint) controlHint.textContent = flyHint;
+        return;
+    }
+    if (subRide && !subRide.isAI && (subRide.p === p || subRide.friend === p)) {
+        // 🟡 노랑호: 투어 중 조작 입력 = 핸들 잡기 (그 뒤론 보트 조종 + W/S 수심 — stepSubManual이 updateSub에서 돈다)
+        const drive = subRide.p === p;
+        if (drive && SUB.mode === 'tour') {
+            const inputNow = heldKeys.has('ArrowUp') || heldKeys.has('ArrowDown') || heldKeys.has('ArrowLeft') || heldKeys.has('ArrowRight')
+                || heldKeys.has('KeyW') || heldKeys.has('KeyS') || touchMove.active;
+            if (inputNow) {
+                SUB.mode = 'manual';
+                subRide.manual = true;
+                SUB.vel = subRide.route ? subRide.route.speed : 0.9;
+                showToast('🕹️ 핸들을 잡았다 — 이제 노랑호는 내 마음대로!');
+                logWorldEvent(`${petKo(p)}가 노랑호 핸들을 잡았다 🕹️`);
+            }
+        }
+        const subHint = SUB.mode === 'manual'
+            ? (IS_TOUCH ? `🟡 ${petKo(p)} 노랑호 조종 중${subRide.friend ? ' 👥' : ''} — 스틱 항행 · 🔼🔽 수심 · ✋ 부상·하차` : `🟡 ${petKo(p)} 노랑호 조종 중${subRide.friend ? ' 👥' : ''} — ↑↓ 추진 · ←→ 방향 · W/S 수심 · ⌘ 부상·하차`)
+            : `🟡 ${petKo(p)} 노랑호 관광 중${subRide.friend ? ' 👥' : ''} — 명소를 돌아요 · ${IS_TOUCH ? '스틱' : '조작'}하면 핸들 잡기 · ${IS_TOUCH ? '✋' : '⌘'} 부상·하차`;
+        if (controlHint.textContent !== subHint) controlHint.textContent = subHint;
         return;
     }
     if (boatRide) {
@@ -12679,6 +12741,620 @@ function updateFerryPose() {   // 벤치 앉기 — 다리 앞접기 (엔티티 
     }
 }
 
+// ---- 🟡 잠수정 "노랑호" (해저 관광): 모래섬 서쪽 물가 계류 → ⌘ 탑승(손잡던 절친은 조수석)
+// → 출항마다 새로 뽑는 해저 투어(난파선·열수구·켈프숲 + 경치 포인트, 명소 관람 정차, 심연
+// 피날레 50%) → 조작 입력 = 그 순간부터 수동("핸들 잡기") → ⌘ = 부상 후 하차, 빈 배 자율
+// 귀항. 열기구의 스플라인·자율탑승·하이재킹 문법 + 페리의 정차 + 보트의 물 조종 + 딥 다이브의
+// 수중 렌더/발견 연동. y는 매 프레임 [해저+0.6, 수면−0.42] 클램프 — 항로 y 사전검증 불필요. ----
+const SUB_HOME = { x: -6.4, z: 13.9 };   // 모래섬 북서 물가 1.2m 밖 (동쪽 잔교=페리, 남해변=비행기)
+const SUB = { x: SUB_HOME.x, z: SUB_HOME.z, y: 0, heading: -0.99, vel: 0, mode: 'docked' };   // docked|tour|manual|surface|return
+const subCollider = { type: 'sub', layoutId: 'sub-1', x: SUB_HOME.x, z: SUB_HOME.z, rotY: -0.99, r: 0.55, def: { x: SUB_HOME.x, z: SUB_HOME.z, rotY: -0.99 } };
+PROPS.push(subCollider);
+{   // 저장된 계류 위치 자기적용 (열린 물만 — 보트 문법)
+    const saved = savedLayout['sub-1'];
+    if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.z) && islandOf(saved.x, saved.z) < 0 && !onBridge(saved.x, saved.z) && Math.hypot(saved.x, saved.z) < EXPLORE_R) {
+        SUB_HOME.x = saved.x; SUB_HOME.z = saved.z;
+        SUB.x = saved.x; SUB.z = saved.z;
+        if (Number.isFinite(saved.rotY)) { SUB.heading = saved.rotY; subCollider.rotY = saved.rotY; }
+        subCollider.x = saved.x; subCollider.z = saved.z;
+        subCollider.def.x = saved.x; subCollider.def.z = saved.z; subCollider.def.rotY = SUB.heading;
+    }
+}
+const subGlassMat = new THREE.MeshStandardMaterial({ color: 0xbfe0ec, transparent: true, opacity: 0.32, roughness: 0.12, metalness: 0, depthWrite: false, side: THREE.DoubleSide });
+const subLensMat = new THREE.MeshStandardMaterial({ color: 0xfff2c8, emissive: 0xffe9a8, emissiveIntensity: 0 });
+function makeSub() {
+    const g = new THREE.Group();
+    const yellow = [], white = [], dark = [], seats = [];
+    // 선체: 통통한 캡슐 (앞 +z) — 노랑 몸통 + 흰 배띠
+    const hull = new THREE.CylinderGeometry(0.34, 0.34, 1.05, 16);
+    hull.rotateX(Math.PI / 2);
+    yellow.push(hull);
+    const nose = new THREE.SphereGeometry(0.34, 16, 10);
+    nose.scale(1, 1, 0.72);
+    nose.translate(0, 0, 0.52);
+    yellow.push(nose);
+    const tail = new THREE.SphereGeometry(0.34, 16, 10);
+    tail.scale(1, 1, 0.86);
+    tail.translate(0, 0, -0.52);
+    yellow.push(tail);
+    const band = new THREE.CylinderGeometry(0.348, 0.348, 0.34, 16, 1, true);   // 흰 허리띠
+    band.rotateX(Math.PI / 2);
+    band.translate(0, -0.06, 0.1);
+    white.push(band);
+    // 꼬리: 방향타 + 수평 안정판 + 프로펠러 가드 링
+    const fin = new THREE.BoxGeometry(0.035, 0.34, 0.3);
+    fin.translate(0, 0.22, -0.86);
+    yellow.push(fin);
+    const stab = new THREE.BoxGeometry(0.56, 0.03, 0.22);
+    stab.translate(0, 0, -0.84);
+    yellow.push(stab);
+    const guard = new THREE.TorusGeometry(0.15, 0.022, 8, 18);
+    guard.translate(0, 0, -1.02);
+    dark.push(guard);
+    // 현창 3개 (양현) — 림 + 유리
+    const glass = [];
+    for (const side of [-1, 1]) for (let i = 0; i < 3; i++) {
+        const pz = 0.3 - i * 0.3;
+        const rim = new THREE.TorusGeometry(0.075, 0.018, 8, 14);
+        rim.rotateY(Math.PI / 2);
+        rim.translate(side * 0.335, 0.02, pz);
+        dark.push(rim);
+        const gl = new THREE.CircleGeometry(0.07, 12);
+        gl.rotateY(side * Math.PI / 2);
+        gl.translate(side * 0.34, 0.02, pz);
+        glass.push(gl);
+    }
+    // 좌석 2 + 미니 조향휠 (운전석 좌/앞) — 캐노피 아래로 보인다
+    for (const sx of [-0.13, 0.13]) {
+        const seat = new THREE.BoxGeometry(0.16, 0.05, 0.18);
+        seat.translate(sx, 0.12, -0.02);
+        seats.push(seat);
+        const back = new THREE.BoxGeometry(0.16, 0.14, 0.03);
+        back.translate(sx, 0.2, -0.12);
+        seats.push(back);
+    }
+    const wheelCol = new THREE.CylinderGeometry(0.012, 0.014, 0.14, 6);
+    wheelCol.rotateX(0.7);
+    wheelCol.translate(-0.13, 0.2, 0.16);
+    seats.push(wheelCol);
+    const wheel = new THREE.TorusGeometry(0.05, 0.011, 6, 12);
+    wheel.rotateX(0.7 + Math.PI / 2);
+    wheel.translate(-0.13, 0.26, 0.2);
+    seats.push(wheel);
+    // 이마 전조등 + 바닥 스키드
+    const lampHouse = new THREE.CylinderGeometry(0.06, 0.07, 0.08, 10);
+    lampHouse.rotateX(Math.PI / 2);
+    lampHouse.translate(0, 0.16, 0.78);
+    dark.push(lampHouse);
+    for (const sx of [-0.16, 0.16]) {
+        const skid = new THREE.BoxGeometry(0.05, 0.04, 0.7);
+        skid.translate(sx, -0.36, -0.05);
+        dark.push(skid);
+    }
+    const addMerged = (list, mat) => { if (list.length) { const mg = mergeGeometries(list, false); if (mg) { const m = new THREE.Mesh(mg, mat); m.castShadow = true; g.add(m); } } };
+    addMerged(yellow, M(0xf2c53d));
+    addMerged(white, M(0xf6f1e4));
+    addMerged(dark, M(0x3d4148));
+    addMerged(seats, M(0x8a5a30));
+    addMerged(glass, subGlassMat);
+    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.05, 10), subLensMat);
+    lens.position.set(0, 0.16, 0.825);
+    g.add(lens);
+    // 캐노피 — 힌지 그룹 (탑승 때 뒤로 스르륵 열린다)
+    const canopyGrp = new THREE.Group();
+    canopyGrp.position.set(0, 0.3, -0.34);   // 힌지 = 캐노피 뒤 가장자리
+    const canGeo = new THREE.SphereGeometry(0.26, 14, 9, 0, Math.PI * 2, 0, Math.PI / 2);
+    canGeo.scale(1.12, 1.5, 1.75);   // 펫 머리(좌석+키 ≈0.6)가 유리 안에 들어오는 높이 — 낮으면 머리가 뚫고 나온다 (스샷 실측)
+    canGeo.translate(0, -0.015, 0.4);
+    const canopy = new THREE.Mesh(canGeo, subGlassMat);
+    canopyGrp.add(canopy);
+    g.add(canopyGrp);
+    // 프로펠러 (회전은 updateSub)
+    const propGrp = new THREE.Group();
+    propGrp.position.set(0, 0, -1.02);
+    const blades = [];
+    for (let i = 0; i < 3; i++) {
+        const bl = new THREE.BoxGeometry(0.035, 0.12, 0.014);
+        bl.translate(0, 0.075, 0);
+        bl.rotateZ((i / 3) * Math.PI * 2);
+        blades.push(bl);
+    }
+    const hub = new THREE.CylinderGeometry(0.03, 0.035, 0.06, 8);
+    hub.rotateX(Math.PI / 2);
+    blades.push(hub);
+    propGrp.add(new THREE.Mesh(mergeGeometries(blades, false), M(0xc9b18a)));
+    g.add(propGrp);
+    g.userData = { canopyGrp, propGrp };
+    return g;
+}
+const subGroup = makeSub();
+subCollider.obj = subGroup;
+subGroup.position.set(SUB.x, 0, SUB.z);
+subGroup.rotation.y = SUB.heading;
+stage.add(subGroup);
+const subLight = new THREE.SpotLight(0xffe9b0, 0, 9, 0.5, 0.45, 1.2);   // 전조등 — 켤 때만 scene.add (발열 §1)
+const subLightTarget = new THREE.Object3D();
+let subLightOn = false;
+let subRide = null;    // { p, friend, isAI, t, manual, route, dwellT, dwellStop, pingAt, canopyT }
+let aiSubWalk = null;  // 절친이 물가로 걸어가는 중 { p, ownArrive }
+function subWaveY() { return waveYAt(SUB.x, SUB.z) + 0.06; }
+function subSubmerged() { return SUB.mode !== 'docked' && SUB.y < waveYAt(SUB.x, SUB.z) - 0.45; }
+function subUnderCam() { return !!(subRide && !subRide.isAI && subSubmerged()); }   // 수중 렌더 신호 (updateUnderwater가 읽는다)
+const subRouteDiag = [];   // 항로 검증 진단 (E2E)
+function subPoiPool() {   // 시드 순수 스캔 — 투어 후보 명소 (경계 안 66m)
+    const pois = [{ x: WRECK_AT.x, z: WRECK_AT.z, kind: 'wreck', ko: '난파선' }];
+    for (let cx = -3; cx <= 3; cx++) for (let cz = -3; cz <= 3; cz++) {
+        const inf = seaChunkInfo(cx, cz);
+        if (inf.vent && islandOf(inf.vx, inf.vz) < 0 && seabedHeight(inf.vx, inf.vz) < -2.6 && Math.hypot(inf.vx, inf.vz) < 66) pois.push({ x: inf.vx, z: inf.vz, kind: 'vent', ko: '열수구' });
+        if (inf.kelpForest && islandOf(inf.kfx, inf.kfz) < 0 && seabedHeight(inf.kfx, inf.kfz) < -1.6 && Math.hypot(inf.kfx, inf.kfz) < 66) pois.push({ x: inf.kfx, z: inf.kfz, kind: 'forest', ko: '켈프 숲' });
+    }
+    return pois;
+}
+function makeSubRoute() {
+    const pois = subPoiPool();
+    for (let i = pois.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pois[i], pois[j]] = [pois[j], pois[i]]; }
+    const picks = pois.slice(0, 1 + Math.floor(Math.random() * 2));   // 명소 1~2 보장 (난파선은 풀에 항상 있다)
+    const openSpot = () => {   // 경치 포인트 — 열린 바다 모래벌판
+        for (let t = 0; t < 12; t++) {
+            const a = Math.random() * Math.PI * 2, rr = 26 + Math.random() * 26;
+            const x = Math.cos(a) * rr, z = Math.sin(a) * rr;
+            if (islandOf(x, z) < 0 && seabedHeight(x, z) < -2.2) return { x, z, kind: 'scenic', ko: '모래 벌판' };
+        }
+        return null;
+    };
+    const sc = openSpot();
+    if (sc) picks.push(sc);
+    if (Math.random() < 0.5) {   // 🌑 심연 피날레 — 경계 절벽을 스치면 바닥이 사라진다
+        const a = Math.random() * Math.PI * 2;
+        picks.push({ x: Math.cos(a) * 69, z: Math.sin(a) * 69, kind: 'abyss', ko: '심연 절벽' });
+    }
+    const order = [];   // 최근접 이웃 한붓 (열기구 문법)
+    let cur = SUB_HOME;
+    const rest = [...picks];
+    while (rest.length) {
+        let bi = 0, bd = Infinity;
+        rest.forEach((q, i) => { const d = Math.hypot(q.x - cur.x, q.z - cur.z); if (d < bd) { bd = d; bi = i; } });
+        cur = rest.splice(bi, 1)[0];
+        order.push(cur);
+    }
+    if (Math.random() < 0.5) order.reverse();
+    const deepBias = Math.random() < 0.4;   // 수심 프로파일 랜덤 — 바닥 스치기 vs 중층 크루즈
+    // 출항 게이트: 계류장이 섬 1.2m 밖이라 폐곡선이 출·귀항에서 섬 완충지대를 스친다 —
+    // 열린 바다 쪽 경유점 2개(±수직 오프셋)로 드나드는 길을 강제 (넛지로는 홈 인접을 못 고친다, 실측)
+    let nis = ISLANDS[0], nd2 = Infinity;
+    for (const isl of ISLANDS) { const d = Math.hypot(SUB_HOME.x - isl.x, SUB_HOME.z - isl.z); if (d < nd2) { nd2 = d; nis = isl; } }
+    const outX = (SUB_HOME.x - nis.x) / (nd2 || 1), outZ = (SUB_HOME.z - nis.z) / (nd2 || 1);
+    const gate = (side) => new THREE.Vector3(
+        SUB_HOME.x + outX * 4.4 - outZ * side * 1.3,
+        -1.7,
+        SUB_HOME.z + outZ * 4.4 + outX * side * 1.3
+    );
+    const pts = [new THREE.Vector3(SUB_HOME.x, waveYAt(SUB_HOME.x, SUB_HOME.z) - 0.5, SUB_HOME.z), gate(1)];
+    const stops = [];
+    for (const q of order) {
+        const a = Math.random() * Math.PI * 2, rr = Math.random() * 1.4;
+        const px2 = q.x + Math.cos(a) * rr, pz2 = q.z + Math.sin(a) * rr;
+        const sb = seabedHeight(px2, pz2);
+        const y = q.kind === 'abyss' ? -3.4 : THREE.MathUtils.clamp(sb + (q.kind === 'scenic' && !deepBias ? 2.2 : 1.15), sb + 0.7, -0.8);
+        pts.push(new THREE.Vector3(px2, y, pz2));
+        stops.push({ x: px2, z: pz2, kind: q.kind, ko: q.ko, idx: pts.length - 1, visited: false });
+    }
+    pts.push(gate(-1));   // 귀항 게이트 — 반대편으로 들어온다
+    // 🧭 군도 둘레 아크: 중앙 클러스터(모든 코어 섬 존이 반경 17 안)를 지나는 구간은 R18 원둘레를
+    // 감아 돌게 구축 단계에서 보장 — 사후 두더지잡기 검증은 큰 섬 횡단에서 수렴 실패(폴백 50% 실측)
+    {
+        const R = 18;
+        const arcized = [pts[0], pts[1]];
+        for (let i = 1; i < pts.length - 1; i++) {
+            const a = arcized[arcized.length - 1], b = pts[i + 1];
+            const abx = b.x - a.x, abz = b.z - a.z;
+            const t = THREE.MathUtils.clamp(-(a.x * abx + a.z * abz) / ((abx * abx + abz * abz) || 1), 0, 1);
+            const nearD = Math.hypot(a.x + abx * t, a.z + abz * t);
+            if (nearD < R && Math.hypot(a.x, a.z) > R - 1 && Math.hypot(b.x, b.z) > R - 1) {
+                let aA = Math.atan2(a.z, a.x);
+                let dA = Math.atan2(b.z, b.x) - aA;
+                while (dA > Math.PI) dA -= Math.PI * 2;
+                while (dA < -Math.PI) dA += Math.PI * 2;
+                const steps = Math.ceil(Math.abs(dA) / 0.65);
+                for (let k = 1; k < steps; k++) {
+                    const ang = aA + dA * (k / steps);
+                    arcized.push(new THREE.Vector3(Math.cos(ang) * R, -2.2, Math.sin(ang) * R));
+                }
+            }
+            arcized.push(b);
+        }
+        pts.length = 0;
+        pts.push(...arcized);
+    }
+    subRouteDiag.length = 0;
+    for (let attempt = 0; attempt < 14; attempt++) {   // 수평 검증 — 무인도 링을 가로지르는 폐곡선이라 위반이 여럿일 수 있다
+        const curve = new THREE.CatmullRomCurve3(pts, true, 'centripetal');
+        let bad = null;
+        for (let s = 0; s <= 220 && !bad; s++) {
+            const pt = curve.getPointAt(s / 220);
+            if (Math.hypot(pt.x - SUB_HOME.x, pt.z - SUB_HOME.z) < 2.4) continue;   // 선석 인접은 정당한 근접
+            for (const isl of ISLANDS) if (Math.hypot(pt.x - isl.x, pt.z - isl.z) < isl.r + 0.6) { bad = { pt, isl }; break; }
+        }
+        if (!bad) return { curve, len: curve.getLength(), speed: THREE.MathUtils.clamp(curve.getLength() / 120, 0.9, 1.6), stops };
+        subRouteDiag.push({ isl: [+bad.isl.x.toFixed(1), +bad.isl.z.toFixed(1), +bad.isl.r.toFixed(1)], pt: [+bad.pt.x.toFixed(1), +bad.pt.z.toFixed(1)] });
+        let ni = 1, nd = Infinity;
+        for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i].x - bad.pt.x, pts[i].z - bad.pt.z); if (d < nd) { nd = d; ni = i; } }
+        if (nd < 1.4) {   // 정지점 자체가 섬 완충지대 안 — 그 점만 섬 밖으로 넛지
+            const dx = pts[ni].x - bad.isl.x, dz = pts[ni].z - bad.isl.z, L = Math.hypot(dx, dz) || 1;
+            pts[ni].x = bad.isl.x + (dx / L) * (bad.isl.r + 3.6);
+            pts[ni].z = bad.isl.z + (dz / L) * (bad.isl.r + 3.6);
+        } else {   // 경로가 스침 — 위반 각도 ±0.5rad 아크 2점으로 섬을 감아 돈다 (단일 점은 큰 섬 관통 세그먼트에서 곡선이 되사그라진다 — 실측)
+            const baseA = Math.atan2(bad.pt.z - bad.isl.z, bad.pt.x - bad.isl.x);
+            const mkArc = (da) => {
+                const wp = new THREE.Vector3(
+                    bad.isl.x + Math.cos(baseA + da) * (bad.isl.r + 3.4), -2.0,
+                    bad.isl.z + Math.sin(baseA + da) * (bad.isl.r + 3.4)
+                );
+                for (const isl2 of ISLANDS) {   // 이웃 섬 존이면(협수로) 수로 정중앙으로
+                    if (isl2 === bad.isl) continue;
+                    if (Math.hypot(wp.x - isl2.x, wp.z - isl2.z) < isl2.r + 1.2) {
+                        const abx = isl2.x - bad.isl.x, abz = isl2.z - bad.isl.z;
+                        const dAB = Math.hypot(abx, abz) || 1;
+                        const t = (bad.isl.r + (dAB - bad.isl.r - isl2.r) / 2) / dAB;
+                        wp.x = bad.isl.x + abx * t;
+                        wp.z = bad.isl.z + abz * t;
+                        break;
+                    }
+                }
+                return wp;
+            };
+            let si = 0, sd = Infinity;   // 위반 구간 = 우회거리(a→pt→b − a→b) 최소 세그먼트 (중점 기준은 긴 세그먼트에서 오배치 — 실측)
+            for (let i = 0; i < pts.length; i++) {
+                const a = pts[i], b = pts[(i + 1) % pts.length];
+                const ab = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+                const detour = Math.hypot(a.x - bad.pt.x, a.z - bad.pt.z) + Math.hypot(b.x - bad.pt.x, b.z - bad.pt.z) - ab;
+                if (detour < sd) { sd = detour; si = i; }
+            }
+            const segA = pts[si];
+            const w1 = mkArc(0.5), w2 = mkArc(-0.5);
+            const first = Math.hypot(w1.x - segA.x, w1.z - segA.z) <= Math.hypot(w2.x - segA.x, w2.z - segA.z) ? w1 : w2;
+            const second = first === w1 ? w2 : w1;
+            const fresh = [first, second].filter((wp) => !pts.some((q) => Math.hypot(q.x - wp.x, q.z - wp.z) < 0.6));   // 중복 삽입 가드 — 같은 점이 쌓이면 곡선이 안 바뀐다
+            if (!fresh.length) break;   // 더 꽂을 게 없다 — 폴백으로
+            pts.splice(si + 1, 0, ...fresh);
+        }
+    }
+    // 폴백 — 계류장 서쪽 열린 바다 작은 링
+    const fp = [];
+    for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        fp.push(new THREE.Vector3(SUB_HOME.x - 7 + Math.cos(a) * 5.5, -2.4, SUB_HOME.z + 3 + Math.sin(a) * 5.5));
+    }
+    const curve = new THREE.CatmullRomCurve3(fp, true, 'centripetal');
+    return { curve, len: curve.getLength(), speed: 1.1, stops: [] };
+}
+function subBallast(n, up) {   // 밸러스트 기포 버스트 — 잠항 "퐁—" / 부상 "푸샤—"
+    for (let i = 0; i < n; i++) {
+        const bub = new THREE.Sprite(new THREE.SpriteMaterial({ map: blobTex, color: 0xd8f2ff, transparent: true, opacity: 0.7, depthWrite: false }));
+        bub.scale.setScalar(0.035 + Math.random() * 0.05);
+        bub.position.set(SUB.x + (Math.random() - 0.5) * 0.5, SUB.y + 0.1, SUB.z + (Math.random() - 0.5) * 0.8);
+        scene.add(bub);
+        hugBurst.push({ spr: bub, vx: (Math.random() - 0.5) * 0.15, vy: up ? 0.5 : 0.3, vz: (Math.random() - 0.5) * 0.15, t: 0.1 });
+    }
+}
+function subPing(near) {   // 소나 핑 — 사인 단음 하강 (명소 접근 시 간격 단축)
+    if (audioCtx.state !== 'running') return;
+    const o = audioCtx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(near ? 1080 : 880, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(near ? 640 : 520, audioCtx.currentTime + 0.16);
+    const gn = audioCtx.createGain();
+    gn.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    gn.gain.exponentialRampToValueAtTime(0.055 * attAtPoint(SUB.x, SUB.z), audioCtx.currentTime + 0.015);
+    gn.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.3);
+    o.connect(gn);
+    gn.connect(sfxMaster);
+    o.start();
+    o.stop(audioCtx.currentTime + 0.32);
+}
+function enterSub(rider, isAI = false) {
+    if (subRide || SUB.mode !== 'docked' || !rider) return false;
+    let friend = null;
+    if (!isAI) {
+        const q = pets.find((o) => o !== rider);
+        if (q && !q.bed && !q.dip && !q.pet.sleeping
+            && ((handHold && handHold.partner === q) || (Math.hypot(q.mover.position.x - SUB.x, q.mover.position.z - SUB.z) < 2.1 && (q.ai.state === 'idle' || q.ai.state === 'walk')))) {
+            if (handHold) handHold = null;   // 손 → 조수석 (스냅 없음, 차/보트 문법)
+            if (aiFishing && aiFishing.p === q) endAiFishing();
+            releaseAI(q);
+            q.ai.state = 'held';
+            friend = q;
+        }
+    }
+    subRide = { p: rider, friend, isAI, t: 0, u: 0, manual: false, route: null, dwellT: 0, dwellStop: null, pingAt: 1.2, canopyT: 0 };
+    rider.swimming = false;
+    if (!isAI) running = false;
+    vehicleLastUse.sub = Date.now();
+    SUB.mode = 'tour';
+    SUB.vel = 0;
+    subCollider.r = 0;
+    playBuffer(splashBuf, { vol: 0.4, rate: 0.8, filterFreq: 1600 });
+    spawnSplash(SUB.x, subWaveY() + 0.1, SUB.z);
+    subBallast(10, false);
+    logWorldEvent(`${petKo(rider)}가 노랑호에 올라탔다 — 퐁— 해저 관광 출발${friend ? ' (절친은 조수석!)' : ''} 🟡`);
+    if (!isAI) showToast('🟡 노랑호 출항! 해저 명소를 돌아요 — 조작하면 핸들을 잡습니다 (⌘ = 부상·하차)');
+    return true;
+}
+function subDismountInto(q, side) {   // 수면 하차 — 잠수정 옆 바다로 (열기구 저공 하차 문법)
+    if (!q) return;
+    const rgX = Math.cos(SUB.heading), rgZ = -Math.sin(SUB.heading);
+    const dx = SUB.x + rgX * side * 0.9, dz = SUB.z + rgZ * side * 0.9;
+    q.mover.position.set(dx, waveYAt(dx, dz) + 0.02 - q.height * 0.45, dz);
+    q.swimming = 'sea';
+    q.mover.rotation.x = 0;
+    q.mover.rotation.z = 0;
+    if (q.ai.state === 'held') releaseAI(q);
+    spawnSplash(dx, waveYAt(dx, dz) + q.height * 0.42, dz);
+}
+function exitSubForce() {   // Esc/빙의 해제 — 라이더는 계류장 곁 물로, 빈 배는 자율 귀항
+    const r = subRide;
+    if (!r) return;
+    clearSeaFloor();
+    for (const [q, side] of [[r.p, -1], [r.friend, 1]]) subDismountInto(q, side);
+    if (r.isAI && r.p) releaseAI(r.p, 2);
+    subRide = null;
+    SUB.mode = Math.hypot(SUB.x - SUB_HOME.x, SUB.z - SUB_HOME.z) < 2 ? 'docked' : 'return';
+    if (SUB.mode === 'docked') { SUB.x = SUB_HOME.x; SUB.z = SUB_HOME.z; subCollider.x = SUB.x; subCollider.z = SUB.z; subCollider.r = 0.55; }
+}
+function requestSubExit() {   // ⌘ — 수면으로 부상해 하차
+    if (!subRide) return;
+    if (SUB.mode === 'surface') return;
+    SUB.mode = 'surface';
+    subBallast(14, true);
+    showToast('🟡 푸샤— 수면으로 부상합니다');
+}
+function startAiSub(p) {
+    if (subRide || aiSubWalk || SUB.mode !== 'docked') return;
+    if (p === possessed || p.bed || p.dip || p.pet.sleeping) return;
+    releaseAI(p);
+    p.ai.state = 'goto';
+    // 계류장에서 가장 가까운 모래섬 물가로 걷는다
+    const sandIsl = ISLANDS.find((il) => il.kind === 'sand') || ISLANDS[0];
+    const dx = SUB_HOME.x - sandIsl.x, dz = SUB_HOME.z - sandIsl.z, L = Math.hypot(dx, dz) || 1;
+    const tx = sandIsl.x + (dx / L) * (sandIsl.r - 0.7), tz = sandIsl.z + (dz / L) * (sandIsl.r - 0.7);
+    p.ai.target = { x: tx, z: tz };
+    p.ai.waypoints = buildRoute(p.mover.position, { x: tx, z: tz });
+    p.ai.stall = 0;
+    const walk = { p };
+    walk.ownArrive = () => {
+        if (aiSubWalk !== walk) return;
+        aiSubWalk = null;
+        if (subRide || SUB.mode !== 'docked' || p === possessed || p.bed || p.dip) { releaseAI(p); return; }
+        enterSub(p, true);   // ai.state 'busy' 유지 — 소유권 표식 (열기구 문법)
+    };
+    p.ai.onArrive = walk.ownArrive;
+    aiSubWalk = walk;
+    logWorldEvent(`${petKo(p)}가 노랑호를 타러 물가로 나섰다 🟡`);
+}
+function stepSubManual(delta, driver) {   // 🕹️ 수동 — 보트 조종 + W/S 수심 (딥 다이브 문법)
+    let acc = 0;
+    if (heldKeys.has('ArrowUp')) acc += 1.6;
+    if (heldKeys.has('ArrowDown')) acc -= 1.1;
+    if (touchMove.active) acc += 1.6 * Math.max(0, touchMove.z) - 1.1 * Math.max(0, -touchMove.z);
+    let steer = (heldKeys.has('ArrowLeft') ? 1 : 0) - (heldKeys.has('ArrowRight') ? 1 : 0);
+    if (touchMove.active) steer = THREE.MathUtils.clamp(steer - touchMove.x, -1, 1);
+    const maxV = 2.1;
+    SUB.vel += acc * delta;
+    SUB.vel *= Math.pow(0.45, delta);
+    SUB.vel = THREE.MathUtils.clamp(SUB.vel, -maxV * 0.35, maxV);
+    SUB.heading += steer * delta * 1.5 * THREE.MathUtils.clamp(Math.abs(SUB.vel) / maxV + 0.25, 0, 1) * Math.sign(SUB.vel || 1);
+    const nx = SUB.x + Math.sin(SUB.heading) * SUB.vel * delta;
+    const nz = SUB.z + Math.cos(SUB.heading) * SUB.vel * delta;
+    if (islandOf(nx, nz) < 0 && Math.hypot(nx, nz) < EXPLORE_R - 0.5) { SUB.x = nx; SUB.z = nz; }
+    else SUB.vel = 0;   // 섬 스커트·경계에 닿으면 멈춘다
+    let vy = 0;
+    if (heldKeys.has('KeyW')) vy += 1.1;
+    if (heldKeys.has('KeyS')) vy -= 1.1;
+    const sb = seabedHeight(SUB.x, SUB.z);
+    const prevY = SUB.y;
+    SUB.y = THREE.MathUtils.clamp(SUB.y + vy * delta, sb + 0.6, waveYAt(SUB.x, SUB.z) - 0.42);
+    if (vy !== 0 && Math.abs(SUB.y - prevY) > 0.001 && Math.random() < 0.25) subBallast(1, vy > 0);
+}
+function updateSub(delta) {
+    const ud = subGroup.userData;
+    if (aiSubWalk && (aiSubWalk.p.ai.onArrive !== aiSubWalk.ownArrive || aiSubWalk.p.ai.state !== 'goto')) aiSubWalk = null;
+    const r = subRide;
+    // 캐노피 — 라이더 있으면 첫 1.1초 열렸다 닫힘, 정박+무인이면 닫힘
+    if (r) {
+        r.canopyT += delta;
+        const open = r.canopyT < 0.55 ? r.canopyT / 0.55 : Math.max(0, 1 - (r.canopyT - 0.55) / 0.55);
+        ud.canopyGrp.rotation.x = -0.85 * (r.canopyT < 1.1 ? open * open * (3 - 2 * open) : 0);
+    } else ud.canopyGrp.rotation.x = 0;
+    if (SUB.mode === 'docked') {
+        SUB.y = subWaveY();
+        subGroup.position.set(SUB.x, SUB.y, SUB.z);
+        subGroup.rotation.set(Math.sin(wxTime.value * 1.05) * 0.02, SUB.heading, Math.sin(wxTime.value * 0.85) * 0.025);
+        ud.propGrp.rotation.z += delta * 0.4;   // 나른한 아이들 회전
+        if (subLightOn) { scene.remove(subLight); scene.remove(subLightTarget); subLightOn = false; subLensMat.emissiveIntensity = 0; }
+        return;
+    }
+    if (!r) {   // 빈 배 — return 귀항 or 표류 방지
+        if (SUB.mode !== 'return') SUB.mode = 'return';
+    } else {
+        // AI 라이더: 주인이 빙의하면 하이재킹(수동 권한), 디렉터가 뺏으면 빈 귀항, 밤이면 마무리
+        if (r.isAI && r.p) {
+            if (r.p === possessed) { r.isAI = false; showToast('🕹️ 노랑호를 넘겨받았어요 — 조작하면 핸들을 잡습니다'); }
+            else if (r.p.ai.state !== 'busy') { r.p = null; SUB.mode = 'surface'; }   // 디렉터가 뺏음 — 빈 부상·귀항
+            else if (isSleepTime(currentHour()) && SUB.mode === 'tour') SUB.mode = 'surface';
+        }
+        r.t += delta;
+    }
+    const submerged = subSubmerged();
+    // ---- 모드별 이동 ----
+    if (SUB.mode === 'tour' && r) {
+        if (!r.route) {
+            r.route = makeSubRoute();
+            if (!r.isAI && r.route.stops.length) {
+                const names = r.route.stops.map((s) => s.ko).join(' → ');
+                showToast(`🗺️ 오늘의 항로: ${names}`);
+            }
+        }
+        if (r.dwellT > 0) {   // 관람 정차 — 명소 앞 호버링 (페리 dwell의 수중판)
+            r.dwellT -= delta;
+            SUB.y += Math.sin(wxTime.value * 1.3) * 0.0022;
+            if (r.dwellStop) {   // 명소 쪽으로 뱃머리 돌리기
+                const th = Math.atan2(r.dwellStop.x - SUB.x, r.dwellStop.z - SUB.z);
+                let diff = th - SUB.heading;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                SUB.heading += THREE.MathUtils.clamp(diff, -delta * 0.7, delta * 0.7);
+            }
+        } else {
+            r.u += (r.route.speed * delta) / r.route.len;
+            if (r.u >= 1) {
+                r.u = 0;
+                if (r.isAI) SUB.mode = 'surface';
+                else { r.route = makeSubRoute(); showToast('🟡 한 바퀴! 새 항로로 계속 관광해요 (⌘ = 부상·하차)'); }
+            }
+            const pt = r.route.curve.getPointAt(r.u);
+            const sb = seabedHeight(pt.x, pt.z);
+            SUB.x = pt.x; SUB.z = pt.z;
+            SUB.y = THREE.MathUtils.clamp(pt.y, sb + 0.6, waveYAt(pt.x, pt.z) - 0.42);   // y는 런타임 클램프가 안전망
+            const tan = r.route.curve.getTangentAt(r.u);
+            const th = Math.atan2(tan.x, tan.z);
+            let diff = th - SUB.heading;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            SUB.heading += THREE.MathUtils.clamp(diff, -delta * 1.1, delta * 1.1);
+            SUB.vel = r.route.speed;
+            for (const stop of r.route.stops) {   // 정차 판정
+                if (stop.visited) continue;
+                if (Math.hypot(SUB.x - stop.x, SUB.z - stop.z) < 2.3) {
+                    stop.visited = true;
+                    if (stop.kind !== 'scenic' && stop.kind !== 'abyss') { r.dwellT = 8; r.dwellStop = stop; }
+                    if (!r.isAI) {
+                        if (stop.kind === 'abyss') showToast('🌑 심연 절벽 — 바닥이 어둠 속으로 사라져요…');
+                        else if (stop.kind !== 'scenic') showToast(`🟡 ${stop.ko} 앞 관람 정차 — 천천히 구경하세요`);
+                        if (Math.random() < 0.5) maybeProactive(null, `노랑호를 타고 ${stop.ko} 앞을 지나는 중이다!`);
+                    }
+                }
+            }
+        }
+    } else if (SUB.mode === 'manual' && r) {
+        const driver = !r.isAI && r.p === possessed ? possessed : r.p;
+        if (driver) stepSubManual(delta, driver);
+    } else if (SUB.mode === 'surface') {
+        SUB.y = Math.min(subWaveY(), SUB.y + delta * 1.6);
+        SUB.vel = 0;
+        if (SUB.y >= subWaveY() - 0.02) {
+            spawnSplash(SUB.x, subWaveY() + 0.12, SUB.z);
+            playBuffer(splashBuf, { vol: 0.45, rate: 0.9, filterFreq: 1800 });
+            if (r) {
+                clearSeaFloor();
+                const wasAI = r.isAI, pAI = r.p;
+                if (wasAI) {   // AI 투어 종료 — 물가로 폴짝, 소감 한마디
+                    if (pAI) {
+                        subDismountInto(pAI, -1);
+                        releaseAI(pAI, 2);
+                        logWorldEvent(`${petKo(pAI)}가 노랑호 관광을 마치고 물가로 폴짝 🟡`);
+                        maybeProactive(pAI, '노랑호 타고 혼자 해저 관광하고 왔다! 물속 세상 구경 실컷 했다!');
+                    }
+                } else {
+                    for (const [q, side] of [[r.p, -1], [r.friend, 1]]) subDismountInto(q, side);
+                    showToast('🟡 첨벙! 빈 노랑호는 혼자 계류장으로 돌아가요');
+                    logWorldEvent('노랑호에서 바다로 퐁당 내렸다 — 빈 잠수정은 집으로');
+                }
+                subRide = null;
+            }
+            SUB.mode = 'return';
+        }
+    } else if (SUB.mode === 'return') {   // 빈 배 수면 귀항
+        SUB.y = Math.min(subWaveY(), SUB.y + delta * 1.4);
+        const dx = SUB_HOME.x - SUB.x, dz = SUB_HOME.z - SUB.z;
+        const d = Math.hypot(dx, dz);
+        if (d > 0.15) {
+            const step = Math.min(d, 1.7 * delta);
+            SUB.x += (dx / d) * step;
+            SUB.z += (dz / d) * step;
+            const th = Math.atan2(dx, dz);
+            let diff = th - SUB.heading;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            SUB.heading += THREE.MathUtils.clamp(diff, -delta, delta);
+        } else {
+            SUB.mode = 'docked';
+            SUB.x = SUB_HOME.x; SUB.z = SUB_HOME.z;
+            subCollider.x = SUB.x; subCollider.z = SUB.z;
+            subCollider.r = 0.55;
+            logWorldEvent('노랑호가 계류장에 사뿐히 돌아왔다 🟡');
+        }
+    }
+    subCollider.x = SUB.x;
+    subCollider.z = SUB.z;
+    // ---- 자세·프로펠러·기포 ----
+    const pitch = SUB.mode === 'surface' ? -0.12 : THREE.MathUtils.clamp((heldKeys.has('KeyS') && SUB.mode === 'manual' ? 0.14 : 0) - (heldKeys.has('KeyW') && SUB.mode === 'manual' ? 0.14 : 0), -0.2, 0.2);
+    subGroup.position.set(SUB.x, SUB.y, SUB.z);
+    subGroup.rotation.set(Math.sin(wxTime.value * 0.8) * 0.012 + pitch, SUB.heading, Math.sin(wxTime.value * 0.65) * 0.015);
+    ud.propGrp.rotation.z += delta * (1.5 + Math.abs(SUB.vel) * 5);
+    if (r && submerged && Math.random() < delta * 3.2) {   // 꽁무니 기포 트레일
+        const bub = new THREE.Sprite(new THREE.SpriteMaterial({ map: blobTex, color: 0xd8f2ff, transparent: true, opacity: 0.6, depthWrite: false }));
+        bub.scale.setScalar(0.025 + Math.random() * 0.03);
+        const bx = SUB.x - Math.sin(SUB.heading) * 1.05, bz = SUB.z - Math.cos(SUB.heading) * 1.05;
+        bub.position.set(bx, SUB.y + (Math.random() - 0.5) * 0.1, bz);
+        scene.add(bub);
+        hugBurst.push({ spr: bub, vx: 0, vy: 0.3, vz: 0, t: 0.1 });
+    }
+    // ---- 소나 핑 (주인 라이드 + 잠항 중) ----
+    if (r && !r.isAI && submerged) {
+        r.pingAt -= delta;
+        if (r.pingAt <= 0) {
+            let near = false;
+            if (r.route) for (const stop of r.route.stops) if (!stop.visited && Math.hypot(SUB.x - stop.x, SUB.z - stop.z) < 13) { near = true; break; }
+            subPing(near);
+            r.pingAt = near ? 1.0 : 2.6;
+        }
+    }
+    // ---- 전조등: 밤이거나 깊으면 (라이트 scene.add/remove 규율) ----
+    const wantLight = !!r && submerged && (isNightTime() || SUB.y < waveYAt(SUB.x, SUB.z) - 2.1);
+    if (wantLight !== subLightOn) {
+        subLightOn = wantLight;
+        if (wantLight) { scene.add(subLight); scene.add(subLightTarget); subLight.target = subLightTarget; subLensMat.emissiveIntensity = 0.9; }
+        else { scene.remove(subLight); scene.remove(subLightTarget); subLensMat.emissiveIntensity = 0; }
+    }
+    if (subLightOn) {
+        const fx = Math.sin(SUB.heading), fz = Math.cos(SUB.heading);
+        subLight.position.set(SUB.x + fx * 0.8, SUB.y + 0.16, SUB.z + fz * 0.8);
+        subLight.intensity = 2.4;
+        subLightTarget.position.set(SUB.x + fx * 6.5, SUB.y - 1.6, SUB.z + fz * 6.5);
+    }
+    // ---- 좌석 동기화 (운전석 좌 = 조종 펫, 조수석 우 = 절친) ----
+    if (r) {
+        const rgX = Math.cos(SUB.heading), rgZ = -Math.sin(SUB.heading);
+        const fx = Math.sin(SUB.heading), fz = Math.cos(SUB.heading);
+        const seat = (q, side) => {
+            if (!q) return;
+            q.mover.position.set(SUB.x + rgX * side * 0.13 + fx * -0.02, SUB.y + 0.05, SUB.z + rgZ * side * 0.13 + fz * -0.02);
+            q.mover.rotation.y = SUB.heading;
+            q.mover.rotation.x = 0;
+            q.mover.rotation.z = 0;
+            q.pet.walking = false;
+            q.swimming = false;
+        };
+        seat(r.p, -1);
+        seat(r.friend, 1);
+    }
+    // ---- 수중 컨텍스트: 청크 스트리밍 + 카메라 수면 캡 (딥 다이브 문법) ----
+    if (r && !r.isAI && submerged) {
+        const camCeil = waveYAt(camera.position.x, camera.position.z) - 0.26;
+        if (camera.position.y > camCeil) camera.position.y = camCeil;
+        const camFloor = seabedHeight(camera.position.x, camera.position.z) + 0.35;
+        if (camera.position.y < camFloor) camera.position.y = camFloor;
+        updateSeaFloor(delta);
+    }
+}
+function updateSubPose() {   // 좌석 앉기 — 다리 앞접기 (페리 벤치 문법, 엔티티 뒤 덮어쓰기)
+    if (!subRide) return;
+    for (const q of [subRide.p, subRide.friend]) {
+        if (!q) continue;
+        for (const f of q.pet.feet) f.rotation.x = -1.35;
+    }
+}
+
 // ---- 🐚 조개줍기: 휴양지 모래섬 마른 모래에 조개가 드물게 씻겨온다 — 동시 최대 3개,
 // 스폰 롤 2~4분(65%)이라 평균 1~2개. 조종 펫이 곁에서 ⌘ = 줍기(둥실 떠오르며 반짝).
 // 진주조개는 레어(가중 8) — 팡파르 + 선제대화. 컬렉션은 localStorage 'world-shells'. ----
@@ -13353,8 +14029,8 @@ function ensureUnderPlane() {
 function updateUnderwater() {
     ensureUnderPlane();
     const wy = OCEAN_LEVEL + tideOffset() + 0.02;
-    // 얕은 셸프 잠수는 팔로우캠이 수면께에 떠서 카메라 판정이 플랩한다 — 딥 다이브 중엔 수중 확정
-    const now = camera.position.y < wy - 0.04 || !!(dive && !dive.isAI && dive.phase === 'deep');
+    // 얕은 셸프 잠수는 팔로우캠이 수면께에 떠서 카메라 판정이 플랩한다 — 딥 다이브·노랑호 잠항 중엔 수중 확정
+    const now = camera.position.y < wy - 0.04 || !!(dive && !dive.isAI && dive.phase === 'deep') || subUnderCam();
     underPlane.position.y = wy + 0.01;
     if (now === camUnderwater) return;
     camUnderwater = now;
@@ -13846,8 +14522,8 @@ function updateSeaFloor(delta) {
         if (job.op === 'load') { const [cx, cz] = job.key.split(',').map(Number); loadSeaChunk(job.key, cx, cz); }
         else unloadSeaChunk(job.key);
     }
-    // 채집물: 펫 주변 12m 내 4개 유지 (존 풀)
-    const p = dive && dive.p;
+    // 채집물: 펫 주변 12m 내 4개 유지 (존 풀) — 잠수 또는 노랑호 탑승(주인)이 수중 컨텍스트
+    const p = (dive && dive.p) || (subRide && !subRide.isAI && subSubmerged() && subRide.p) || null;
     if (!p) return;
     if (!seaFound.wreck && Math.hypot(p.mover.position.x - WRECK_AT.x, p.mover.position.z - WRECK_AT.z) < 9) {
         recordSeaFind('wreck', WRECK_AT.x, WRECK_AT.z, 'w');   // 🚢 난파선 발견 — 지도에 영구 표시
@@ -14426,7 +15102,7 @@ function refreshIsletChunks() {
 // 0.5초 간격 캔버스 리드로우 — 닫으면 비용 0 (발열 §1). ----
 // ---- 🧲 탈것 회수: 지도에서 아이콘 탭 → "원위치로 회수" + 수면 시간대 자동 귀항 (2시간
 // 미사용 + 홈에서 12m 이상 = 밤사이 스스로 돌아옴). 페리·열기구는 자가 귀환이라 제외. ----
-const vehicleLastUse = { boat: Date.now(), plane: Date.now() };
+const vehicleLastUse = { boat: Date.now(), plane: Date.now(), sub: Date.now() };
 function recallVehicle(type, quiet = false) {
     if (type === 'boat') {
         if (boatRide) { if (!quiet) showToast('🚣 지금 타는 중이에요'); return false; }
@@ -14436,6 +15112,16 @@ function recallVehicle(type, quiet = false) {
         BOAT.vel = 0;
         boatCollider.x = BOAT.x;
         boatCollider.z = BOAT.z;
+    } else if (type === 'sub') {
+        if (subRide) { if (!quiet) showToast('🟡 지금 타는 중이에요'); return false; }
+        SUB.x = subCollider.def.x;
+        SUB.z = subCollider.def.z;
+        SUB.heading = subCollider.def.rotY;
+        SUB.mode = 'docked';
+        SUB.vel = 0;
+        subCollider.x = SUB.x;
+        subCollider.z = SUB.z;
+        subCollider.r = 0.55;
     } else if (type === 'plane') {
         if (planeRide) { if (!quiet) showToast('🛩️ 지금 타는 중이에요'); return false; }
         PLANE.x = planeCollider.def.x;
@@ -14451,7 +15137,7 @@ function recallVehicle(type, quiet = false) {
     } else return false;
     vehicleLastUse[type] = Date.now();
     saveLayout();
-    const ko = type === 'boat' ? '나룻배' : '경비행기';
+    const ko = type === 'boat' ? '나룻배' : type === 'sub' ? '노랑호' : '경비행기';
     if (!quiet) {
         showToast(`🧲 ${ko}를 원위치로 회수했어요`);
         logWorldEvent(`멀리 있던 ${ko}를 집 앞으로 회수했다 🧲`);
@@ -14535,7 +15221,7 @@ function updateRoofFade(delta) {
 let autoReturnT = 0;
 function checkAutoReturn(force = false) {
     const IDLE_MS = 2 * 3600 * 1000;   // 2시간 미사용
-    for (const [type, st, def] of [['boat', BOAT, boatCollider.def], ['plane', PLANE, planeCollider.def]]) {
+    for (const [type, st, def] of [['boat', BOAT, boatCollider.def], ['plane', PLANE, planeCollider.def], ['sub', SUB, subCollider.def]]) {
         const far = Math.hypot(st.x - def.x, st.z - def.z) > 12;
         const idle = Date.now() - vehicleLastUse[type] > IDLE_MS;
         if (far && (force || (idle && isSleepTime(currentHour())))) recallVehicle(type, true);
@@ -14572,7 +15258,7 @@ mapPanel.addEventListener('pointerup', (e) => {   // 🧲 탈것 아이콘 탭 �
     const my = (e.clientY - rect.top) * (mapPanel.height / rect.height);
     const hit = mapIconPts.find((q) => Math.hypot(q.sx - mx, q.sy - my) < 20);
     if (!hit) { mapMenu.style.display = 'none'; return; }
-    mapMenuBtn.textContent = `🧲 ${hit.type === 'boat' ? '나룻배' : '경비행기'} 원위치로 회수`;
+    mapMenuBtn.textContent = `🧲 ${hit.type === 'boat' ? '나룻배' : hit.type === 'sub' ? '노랑호' : '경비행기'} 원위치로 회수`;
     mapMenuBtn.onclick = () => { mapMenu.style.display = 'none'; recallVehicle(hit.type); drawWorldMap(); };
     mapMenu.style.left = `${Math.min(e.clientX + 6, window.innerWidth - 190)}px`;
     mapMenu.style.top = `${Math.min(e.clientY, window.innerHeight - 56)}px`;
@@ -14745,6 +15431,27 @@ function drawWorldMap() {
     };
     mark('🚣', BOAT.x, BOAT.z, 'boat');
     mark('🛩️', PLANE.x, PLANE.z, 'plane');
+    {   // 🟡 노랑호 — 잠수함 이모지가 없어 캡슐을 직접 그린다
+        const d = Math.hypot(SUB.x, SUB.z);
+        const lim = viewR - 4;
+        const k = d > lim ? lim / d : 1;
+        const sx = px(SUB.x * k), sy = py(SUB.z * k);
+        c.globalAlpha = k < 1 ? 0.65 : 1;
+        c.fillStyle = '#f2c53d';
+        c.strokeStyle = 'rgba(0,0,0,0.45)';
+        c.lineWidth = 1.6;
+        c.beginPath();
+        if (c.roundRect) c.roundRect(sx - 9, sy - 4.5, 18, 9, 4.5);
+        else c.rect(sx - 9, sy - 4.5, 18, 9);
+        c.fill();
+        c.stroke();
+        c.beginPath();
+        c.arc(sx + 2, sy - 5, 2.6, Math.PI, 0);
+        c.fillStyle = '#bfe0ec';
+        c.fill();
+        c.globalAlpha = 1;
+        mapIconPts.push({ type: 'sub', sx, sy });
+    }
     mark('⛴️', FERRY.x, FERRY.z);
     mark('🎈', BALLOON.x, BALLOON.z);
     drawPetMarkers(c, px, py);
@@ -16184,6 +16891,7 @@ function animate() {
     updateBoatHop(delta);                    // 절친 승선 아크 — 물가에서 뱃머리로 폴짝
     updateFerry(delta);                      // ⛴️ 통통호 — 정박/항해/정차 서비스
     updateFerryHop(delta);                   // 절친 갑판 승선 아크
+    updateSub(delta);                        // 🟡 노랑호 — 계류/투어/수동/부상/귀항 + 수중 컨텍스트
     updateStreaming(delta);                  // 🌊 무인도 스트리밍 — 1Hz 스캔 + 프레임당 1작업
     updateWorldMap(delta);                   // 🗺️ 지도 — 열려 있을 때만 2Hz 리드로우
     updateRoofFade(delta);                   // 🫥 집 근접 지붕 컷어웨이
@@ -16199,6 +16907,7 @@ function animate() {
     updatePlaneHop(delta);                   // 절친 뒷좌석 승선 아크
     updatePlanePose();                       // 비행 맞바람 — 귀·날개 눕기 (엔티티 뒤 덮어쓰기)
     updateFerryPose();                       // 페리 벤치 앉기 — 다리 접기 (엔티티 뒤 덮어쓰기)
+    updateSubPose();                         // 노랑호 좌석 앉기 (엔티티 뒤 덮어쓰기)
     updatePhoneCall(delta);                  // 📞 전화 안무 — 폰 위치·고개 기울임·옹알이 (엔티티 뒤)
     updateTrampoline(delta);                 // 🤸 트램펄린 바운스 — y 소유 + 앞구르기 포즈 (엔티티 뒤)
     updateUnderwater();                      // 🌊 카메라-수면 판정 → 안개·하늘 전환
