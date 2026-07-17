@@ -1671,7 +1671,9 @@ function makeHouse() {
     for (const m of roofFadeMeshes) {
         m.material = m.material.clone();
         m.userData.roofFade = true;
+        m.userData.noShadow = true;   // 🌞 심즈식: 지붕은 그림자를 안 드리운다 — 실내가 어둡던 원인 (빌드 루프가 이 태그를 존중)
     }
+    roofSnow.userData.noShadow = true;
     g.userData.roofFade = roofFadeMeshes;
     // ---- floor-1 furniture: sofa (sit here!), low table + reading lamp, rug, bookshelf ----
     const sofa = new THREE.Group();
@@ -1777,8 +1779,11 @@ function makeHouse() {
     const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.42, 6), M(0x5a6a75));
     cord.position.set(0, wallH - 0.21, 0.195);
     g.add(cord);
-    const pendant = new THREE.Mesh(new THREE.SphereGeometry(0.075, 14, 12), lampGlobeMat);
+    const pendant = new THREE.Mesh(new THREE.SphereGeometry(0.075, 14, 12), lampGlobeMat.clone());   // 유니크 — 수동 토글이 발광을 직접 몬다
     pendant.position.set(0, wallH - 0.46, 0.195);
+    pendant.userData.pendant = true;
+    cord.userData.pendant = true;
+    g.userData.pendant = pendant;
     g.add(pendant);
     // ---- loft furniture: bed (sleep here!) + nightstand — 다락 침실 ----
     const bed = new THREE.Group();
@@ -4348,6 +4353,7 @@ const PROP_CLICKS = {
     flowerbasket: () => onBasketClick(),
     sandcastle: () => petSandPlay(),
     trampoline: () => petTramp(),
+    house: (pr, hit) => { if (hit && pendantHit([hit])) toggleHouseLight(); },
     fruitbasket: () => openFruitBasket(),
 };
 // 호버 프롬프트: 클릭형은 "· 클릭", 몸이 필요한 것은 ⌘ 안내, 나머지는 이름표만.
@@ -4747,7 +4753,7 @@ for (const p of PROPS) {
     obj.position.set(p.x, terrainHeight(p.x, p.z), p.z);
     obj.rotation.y = p.rotY || 0;
     if (p.scale) obj.scale.setScalar(p.scale);   // layout data may size a prop (kit variants etc.)
-    obj.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    obj.traverse(o => { if (o.isMesh) { o.castShadow = !(o.userData && o.userData.noShadow); o.receiveShadow = true; } });
     stage.add(obj);
     if (BLOB_SIZE[p.type] || p.type === 'house') {
         const blob = new THREE.Mesh(blobGeo, blobMat);
@@ -4876,9 +4882,7 @@ const HOUSE_DERIVED = { cols: [], beds: [], light: null };
     const lampW = houseWorld(0, 0.195);
     const indoor = new THREE.PointLight(0xffd9a0, 0, 3.0, 2);   // 커진 거실 — 도달 2.4→3.0, 펜던트 높이에서
     indoor.position.set(lampW.x, (HOUSE.floorY + 1.0) * HOUSE_K, lampW.z);
-    scene.add(indoor);
-    lamps.push({ light: indoor });
-    HOUSE_DERIVED.light = indoor;
+    HOUSE_DERIVED.light = indoor;   // 가로등 자동(lamps) 대신 applyHouseLight가 소유 — 우클릭 수동 토글 + 밤 자동
 }
 function refreshHouseDerived() {
     for (const c of HOUSE_DERIVED.cols) {
@@ -6507,6 +6511,10 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     if (fishing && fishing.state !== 'idle' && fishingIntercept()) return;
     // 🛩️ 탑승 중엔 비행기 메뉴가 펫 메뉴보다 우선 — 조종사 머리가 가장 큰 클릭 타깃이라
     // 펫 루프가 먼저면 "친구 태우기"를 열기 어렵다 (기체 주변 1.5m 반경 판정, 공중 제외)
+    if (e.button === 2) {   // 💡 천장 전구 우클릭 = 전등 토글
+        const hp = PROPS.find((q) => q.type === 'house');
+        if (hp && hp.obj && pendantHit(raycaster.intersectObject(hp.obj, true))) return void toggleHouseLight();
+    }
     if (e.button === 2 && planeRide && !planeRide.passenger && PLANE.mode !== 'fly'
         && raycaster.ray.distanceToPoint(planeGroup.position) < 1.5) {
         showPlaneMenu(e.clientX, e.clientY);
@@ -7268,6 +7276,7 @@ if (statsOn) window.__worldDev = {
     house: (x, z) => ({ floor: houseFloorY(x, z), blocked: houseBlocked(x, z) }),   // 하우스 보행 E2E
     houseW: (lx, lz) => houseWorld(lx, lz),
     roofState: () => ({ k: +roofFadeK.toFixed(2) }),
+    houseLight: (toggle) => { if (toggle) toggleHouseLight(); return { on: houseLightOn, manual: houseLightManual, parented: !!(HOUSE_DERIVED.light && HOUSE_DERIVED.light.parent) }; },
     roofDiag2: () => {   // 씬 전체 콘 수색 — 불투명 지붕 사본 찾기
         const out = [];
         scene.traverse((o) => {
@@ -13464,6 +13473,47 @@ function recallVehicle(type, quiet = false) {
 // 🫥 지붕 컷어웨이: 카메라가 집에 가까우면 지붕·페시아·굴뚝이 스르륵 투명해져 내부가 보인다
 // (심즈식 — 업계 표준은 컷어웨이/디더 페이드/실내 별도 씬 3갈래, 여긴 거리 기반 알파 페이드).
 // transparent 플래그는 임계 교차 때만 뒤집혀 셰이더 재컴파일 스파이크 없음 (발열 §1).
+// 💡 집 전등: 천장 펜던트 클릭/우클릭 = 켜기/끄기 (수동이 밤 자동을 덮는다, 영속). 꺼진
+// 라이트는 scene.remove (발열 §1 — 포워드 셰이더는 라이트 수만큼 전 픽셀 과금).
+let houseLightManual = null;
+try { const v = localStorage.getItem('world-houselight'); houseLightManual = v === null ? null : v === '1'; } catch (e) {}
+let houseLightOn = null;
+let houseLightPollAt = 0;
+function isNightTime() { const h = currentHour(); return h >= 18.5 || h < 6; }
+function applyHouseLight() {
+    const want = houseLightManual === null ? isNightTime() : houseLightManual;
+    if (want === houseLightOn) return;
+    houseLightOn = want;
+    const light = HOUSE_DERIVED.light;
+    if (light) {
+        if (want) { scene.add(light); light.intensity = 1.15; }
+        else scene.remove(light);
+    }
+    const pr = PROPS.find((q) => q.type === 'house');
+    const globe = pr && pr.obj && pr.obj.userData.pendant;
+    if (globe) {
+        globe.material.emissiveIntensity = want ? 0.95 : 0.06;
+        globe.material.needsUpdate = false;   // emissiveIntensity는 유니폼 — 재컴파일 불필요
+    }
+}
+function toggleHouseLight() {
+    const cur = houseLightOn === null ? isNightTime() : houseLightOn;
+    houseLightManual = !cur;
+    try { localStorage.setItem('world-houselight', houseLightManual ? '1' : '0'); } catch (e) {}
+    applyHouseLight();
+    showToast(houseLightManual ? '💡 전등 켰다' : '💡 전등 껐다');
+    logWorldEvent(houseLightManual ? '거실 전등을 켰다 💡' : '거실 전등을 껐다 🌙');
+}
+function pendantHit(hits) {
+    for (const h of hits.slice(0, 5)) {
+        let o = h.object;
+        while (o) {
+            if (o.userData && o.userData.pendant) return true;
+            o = o.parent;
+        }
+    }
+    return false;
+}
 let roofFadeMats = null;
 let roofFadeK = 1;
 function updateRoofFade(delta) {
@@ -15006,6 +15056,7 @@ function animate() {
     updateFireflies(delta);
     if (Date.now() > mailPollAt) { mailPollAt = Date.now() + 20000; updateMailFlag(); }
     if (Date.now() > dockBadgeAt) { dockBadgeAt = Date.now() + 10000; syncDockBadges(); }
+    if (Date.now() > houseLightPollAt) { houseLightPollAt = Date.now() + 30000; applyHouseLight(); }   // 💡 밤 자동 전환 감시
     // 텃밭 성장 티커: gardenStageHash는 만들어졌는데 비교하는 코드가 없었다 — 씨앗이 자라도
     // (다시 클릭하기 전엔) 화면에 안 나타나던 원인. 10초마다 단계 변화를 감지해 다시 그린다.
     if (Date.now() > gardenPollAt) {
@@ -15074,6 +15125,7 @@ worldBake();   // 씬이 전부 지어진 뒤 첫 베이크 — 이후엔 공사
 renderer.setAnimationLoop(animate);
 
 refreshFruit();   // 🍎 과일 초기 매달기 — 레이아웃·소품이 다 선 뒤 1회
+applyHouseLight();   // 💡 전등 초기 상태 (수동 저장 > 밤 자동)
 loadGroundFruits();   // 낙과 복원 (시들 시간 지난 건 조용히 흙으로)
 // ---- 🔄 버전 워치독: 폰 PWA/홈화면 웹뷰는 오래 살아서 새 배포를 모른다 — 화면에 복귀할 때
 // world.js의 ETag를 HEAD로 재확인해 바뀌었으면 토스트 후 자동 새로고침. 데스크톱/테스트 서버처럼
