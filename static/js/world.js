@@ -4930,7 +4930,7 @@ function refreshHouseDerived() {
 // friend takes the passenger seat), arrow keys drive at 3× walking speed, Ctrl/⌘ again hops out.
 // Bridges count as road, so you can drive to the satellite islands (wheels overhang, who cares).
 // The collider entry moves with the car so wandering pets steer around it, parked or not.
-const CAR = { x: 2.44, z: -1.64, heading: 1.05, vel: 0 };   // 광장 남동쪽 길가 — 커진 집 풋프린트 밖으로 (리뉴얼)
+const CAR = { x: 2.5, z: -1.15, heading: 0.267, vel: 0 };   // 광장 남동쪽 길가 (사용자 확정 배치)
 {   // 🔨 저장된 주차 위치 — 차는 PROPS 루프 밖에서 만들어져 여기서 따로 적용한다
     let o = savedLayout['car-1'];
     if (o && Math.hypot(o.x - 2.5, o.z + 1.35) < 0.06) { o = null; delete savedLayout['car-1']; }   // 옛 기본 주차 그대로면 새 기본값 추종 (리뉴얼)

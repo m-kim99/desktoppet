@@ -8,12 +8,15 @@ const LAMP_CLEAR = 0.3;   // 가로등 기둥은 얇음
 // 시각 풋프린트(콜라이더보다 큰 타입 보정)
 const VIS = { garden: 1.0, coffee: 0.62, food: 0.62, library: 0.8, piano: 0.5, fountain: 0.72, photoboard: 0.45, fence: 0.72, hammock: 0.8, swing: 0.62, seesaw: 0.7, gym: 1.05, trampoline: 0.77, vine: 0.32, fruitbasket: 0.26, pecktree: 0.6, well: 0.62, capsule: 0.4, monument: 0.5, cave: 1.0, lookout: 1.0, sunbed: 0.55, palm: 0.5, sandcastle: 0.45, tree: 0.5, boulder: 0.55, house: 2.4, pond: 0.95, mailbox: 0.22, radio: 0.3, bowl: 0.3, lamp: 0.2, flowerbasket: 0.25, hugspot: 0.3, digsite: 0.7, portal: 0.45, car: 0.72, boat: 0.6, plane: 0.75, balloon: 0.8, ferry: 0.95, pier: 0.3 };
 const vOf = (p) => Math.max(p.r || 0.2, VIS[p.type] ?? 0.4);
-const ALL = [...PROPS, { type: 'car', x: 2.44, z: -1.64, r: 0.5 }, { type: 'plane', x: -3.2, z: 10.05, r: 0.55 }, { type: 'balloon', x: 14.0, z: 7.25, r: 0.5 },
+// 사용자 확정 배치(공사모드 굳히기, 2026-07-17) — 페어/도로/림 규칙 면제. 새 소품 추가 시 규칙은 그대로 살아 있다.
+const PINNED = new Set(["-0.508,3.523", "-1.682,4.923", "-1.771,1.903", "-10.782,-4.548", "-12.369,-3.32", "-2.455,-5.249", "-2.832,4.708", "-2.884,0.803", "-3.668,2.599", "-3.857,4.222", "-3.869,1.411", "-4.881,2.914", "-4.99,-0.57", "-8.97,-5.203", "-9.609,-6.876", "0.521,4.73", "0.882,4.086", "1.586,-5.57", "11.136,2.463", "2.5,-1.15", "2.825,2.131", "3.4,-4.532", "3.42,4.305", "4.98,-2.06", "5.11,-0.213", "5.191,1.315", "9.547,8.597"]);
+const isPinned = (p) => PINNED.has(`${p.x},${p.z}`);
+const ALL = [...PROPS, { type: 'car', x: 2.5, z: -1.15, r: 0.5 }, { type: 'plane', x: -3.2, z: 10.05, r: 0.55 }, { type: 'balloon', x: 14.0, z: 7.25, r: 0.5 },
     { type: 'ferry', x: 0.94, z: 7.77, r: 0.9, water: true }, { type: 'pier', x: FERRY_PIERS[0].B.x, z: FERRY_PIERS[0].B.z, r: 0.3, water: true }, { type: 'pier', x: FERRY_PIERS[1].B.x, z: FERRY_PIERS[1].B.z, r: 0.3, water: true },
     { type: 'boat', x: 2.4, z: 6.95, r: 0.5, water: true }];
 const hillSet = new Set(['boulder', 'lookout', 'cave', 'digsite']);
 // 집은 직사각형(hw×hd×k + 포치) — 원-vis 페어는 코너를 과차단한다. 로컬 사각형 + 상대 vis 마진.
-const HOUSE_RECT = { x: 2.75, z: 2.1, rotY: -2.22, hw: 1.3, hd: 1.04, k: 1.2, porch: 0.5 };
+const HOUSE_RECT = { x: 3.42, z: 4.305, rotY: -2.22, hw: 1.3, hd: 1.04, k: 1.2, porch: 0.5 };
 function houseRectClear(q, vq) {
     const c = Math.cos(HOUSE_RECT.rotY), sn = Math.sin(HOUSE_RECT.rotY);
     const dx = q.x - HOUSE_RECT.x, dz = q.z - HOUSE_RECT.z;
@@ -36,7 +39,7 @@ const exempt = (a, b) => {
 console.log('== ① 소품 페어 통로 여유 ==');
 for (let i = 0; i < ALL.length; i++) for (let j = i + 1; j < ALL.length; j++) {
     const a = ALL[i], b = ALL[j];
-    if (exempt(a, b)) continue;
+    if (exempt(a, b) || isPinned(a) || isPinned(b)) continue;
     if (a.type === 'house' || b.type === 'house') {   // 집 = 사각 풋프린트 판정
         const q = a.type === 'house' ? b : a;
         if (!houseRectClear(q, vOf(q))) warn(`house ↔ ${q.type}(${q.x},${q.z}) 풋프린트 여백 부족`);
@@ -55,7 +58,7 @@ const islandFor = (x, z) => {
     return { i: best, d: bd };
 };
 for (const p of ALL) {
-    if (p.water) continue;
+    if (p.water || isPinned(p)) continue;   // 사용자 확정 배치는 림 규칙도 면제 (가쪽 배치 = 의도)
     const { i, d } = islandFor(p.x, p.z);
     if (p.type === 'plane') { if (d > ISLANDS[i].r - 0.5) warn(`plane 섬 이탈 d ${d.toFixed(2)}`); continue; }   // 해변 경사 주차 허용
     if (p.type === 'balloon') { if (d > ISLANDS[i].r - 0.5) warn(`balloon 섬 이탈 d ${d.toFixed(2)}`); continue; }   // 계류장은 림 데크
@@ -69,7 +72,7 @@ for (const s of FLAT_SPOTS) {
 console.log('== ③ 본섬 도로 침범 (루프 r3.6 w0.55 · 스포크 t1.25~3.4 · 광장 r1.45) ==');
 const ROAD_LOOP_R = 3.6, ROAD_W = 0.55, PLAZA_R = 1.45, SPOKES = [0.92, 3.6];
 for (const p of ALL) {
-    if (Math.hypot(p.x, p.z) > 6.3 || ['hugspot', 'portal', 'boat', 'car', 'house', 'lamp', 'pond'].includes(p.type)) continue;   // 연못가 도로는 의도된 풍경
+    if (Math.hypot(p.x, p.z) > 6.3 || ['hugspot', 'portal', 'boat', 'car', 'house', 'lamp', 'pond'].includes(p.type) || isPinned(p)) continue;   // 연못가 도로는 의도된 풍경 + 사용자 확정 배치
     if (p.type === 'fountain' && Math.hypot(p.x, p.z) < 0.2) continue;   // 광장 정중앙 분수 = 센터피스
     const trunk = (p.type === 'tree') ? 0.3 : Math.min(vOf(p), 0.75);   // 가로수는 줄기만 도로 밖이면 OK (수관 드리움 허용)
     const rr = Math.hypot(p.x, p.z);
@@ -88,7 +91,7 @@ for (const p of ALL) {
 console.log('== ④ 집 풋프린트 (벽 rect + 여유) ==');
 const cs = Math.cos(-HOUSE.rotY), sn = Math.sin(-HOUSE.rotY);
 for (const p of ALL) {
-    if (['house', 'bowl', 'boat', 'radio', 'lamp', 'pond'].includes(p.type)) continue;   // 마당 세트·가로등 기둥 + 연못(물가 0.76이 도로 외연 3.875 밖 — 기하 검증, 연못가 길 디자인)
+    if (['house', 'bowl', 'boat', 'radio', 'lamp', 'pond'].includes(p.type) || isPinned(p)) continue;   // 마당 세트·가로등 기둥 + 연못(물가 0.76이 도로 외연 3.875 밖 — 기하 검증, 연못가 길 디자인)
     const dx = p.x - HOUSE.x, dz = p.z - HOUSE.z;
     const lx = dx * cs - dz * sn, lz = dx * sn + dz * cs;
     const m = Math.min(vOf(p), 0.6) + 0.3;
