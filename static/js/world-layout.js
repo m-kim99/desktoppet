@@ -62,7 +62,7 @@ export const HOUSE = { x: 2.75, z: 2.1, rotY: -2.22, hw: 1.3, hd: 1.04, floorY: 
 export const FLAT_SPOTS = [
     { x: 0.0, z: 0.0, r: 1.7 },     // central plaza (hug point / monument to come)
     { x: 2.75, z: 2.1, r: 2.5, follow: 'house-1' },   // house pad — k=1.2 확대분 (2.05→2.5)
-    { x: -2.6, z: -2.9, r: 0.95 },  // pond basin (연못은 이동 불가 — 지형 함몰)
+    { x: -3.44, z: -3.44, r: 0.95, follow: 'pond-1' },  // pond basin — 공사모드 이동 가능해짐 (패드는 다음 로드부터 따라감)
     { x: 11.7, z: 8.2, r: 1.0, follow: 'swing-1' },   // NE island swing pad (level ground under the A-frame legs)
     { x: 13.15, z: 4.6, r: 1.0, follow: 'seesaw-1' }, // NE island seesaw pad (level ground under the fulcrum + plank)
     { x: 8.9, z: 6.8, r: 1.15, follow: 'gym-1' },    // NE island gym pad — 매트/아령이 구릉에 뚫리지 않게 (그네·시소 패드와 같은 원리)
@@ -89,7 +89,7 @@ export const PROPS = [
     { type: 'house', x:  2.75, z:  2.1, rotY: -2.22, r: 0 },   // walls/rooms block precisely (houseBlocked) — 현관=섬 중앙향
         { type: 'bowl',  x:  0.75, z:  1.7,  rotY: 0.0,  r: 0.28 },   // 집 앞마당 밥그릇 — 새 현관 앞
     { type: 'fence', x: -5.13, z:  1.52, rotY: 1.05, r: 0.5 },    // W 림 울타리 조각
-    { type: 'pond',  x: -2.6, z: -2.9, rotY: 0.0,  r: 0.72 },
+    { type: 'pond',  x: -3.44, z: -3.44, rotY: 0.0,  r: 0.72 },   // 남서 림 물가 (사용자 지정 — 가쪽으로)
     { type: 'sunbed',  x:  5.53, z: -0.4,  rotY: -1.35, r: 0.42 },   // E 물가 쉼터
     { type: 'hammock', x: -0.19, z: -5.4,  rotY: 0.35,  r: 0.55 },   // S 림 쉼터
     { type: 'lamp', x:  1.65, z:  3.92, rotY: 0, r: 0.18 },
@@ -137,7 +137,7 @@ export const PROPS = [
     { type: 'digsite', x: 8.52, z: -8.17, rotY: 0.3, r: 0 },
     // 워프 포탈 한 쌍 (모험의 섬 5단계): 광장가 ↔ 모험의 섬. rotY 방향이 출구(내려서는 쪽).
     // 라우팅이 좌표를 참조하므로 이동 불가, r 0 = 비차단 (링을 그냥 지나 걷는다).
-    { type: 'portal', x: 4.3,  z: -1.5,  rotY: -1.24, r: 0 },
+    { type: 'portal', x: 4.98, z: -2.06, rotY: -1.24, r: 0 },   // 동남 림 (사용자 지정 — 가쪽으로)
     { type: 'portal', x: 9.3,  z: -6.39, rotY: -0.93, r: 0 },
     // 본섬 N 뜰: 텃밭(⑫) + 광장 북서가 스트리트 피아노(⑪) + 광장 서가 사진 게시판(⑭)
     { type: 'garden',     x: -1.11, z: 4.88, rotY: 0.55,  r: 0.72 },

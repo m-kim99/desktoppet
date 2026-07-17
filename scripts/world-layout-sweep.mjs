@@ -88,7 +88,7 @@ for (const p of ALL) {
 console.log('== ④ 집 풋프린트 (벽 rect + 여유) ==');
 const cs = Math.cos(-HOUSE.rotY), sn = Math.sin(-HOUSE.rotY);
 for (const p of ALL) {
-    if (['house', 'bowl', 'boat', 'radio', 'lamp'].includes(p.type)) continue;   // 마당 세트·가로등 기둥
+    if (['house', 'bowl', 'boat', 'radio', 'lamp', 'pond'].includes(p.type)) continue;   // 마당 세트·가로등 기둥 + 연못(물가 0.76이 도로 외연 3.875 밖 — 기하 검증, 연못가 길 디자인)
     const dx = p.x - HOUSE.x, dz = p.z - HOUSE.z;
     const lx = dx * cs - dz * sn, lz = dx * sn + dz * cs;
     const m = Math.min(vOf(p), 0.6) + 0.3;

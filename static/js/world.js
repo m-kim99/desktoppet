@@ -27,7 +27,7 @@ const savedLayout = await (async () => {
     try { return JSON.parse(localStorage.getItem('world-layout')) || {}; } catch (err) { return {}; }
 })();
 // 이동 가능한 타입 (연못=지형 함몰이라 고정, furniture=집 내부 파생이라 집을 따라감)
-const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'vine', 'fruitbasket', 'library', 'flowerbasket']);
+const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'vine', 'fruitbasket', 'library', 'flowerbasket', 'pond', 'portal']);
 // 섬 정의 지문 — 섬을 옮기거나 크기를 바꾸면 값이 달라진다(재발 방지: 저장 배치의 "섬 이사" 자동 감지).
 // 'v2|' 접두 = 배치 리뉴얼 세대: 섬 기하가 그대로여도 접두를 올리면 위성섬 소품이 전부 새 기본값으로
 // 리셋된다. 좌표 테이블(MOVED_DEFAULTS)은 클라이언트별 사본(서버 파일/localStorage 오리진들)의
@@ -51,6 +51,8 @@ const MOVED_DEFAULTS = {
     'photoboard-1': [[-1.95, -0.73]],
     'mailbox-1': [[0.38, 3.9]],
     'tree-7':   [[1.35, -3.5]],
+    'pond-1':   [[-2.6, -2.9]],
+    'portal-1': [[4.3, -1.5]],
     'lamp-1':   [[1.3, 3.09]],
     'lamp-2':   [[3.34, 0.24]],
     'lamp-3':   [[2.0, -2.68]],
@@ -7004,7 +7006,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호' };
+const PROP_KO = { tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -7025,7 +7027,7 @@ function describeSpot(x, z) {
     if (idx === 3) return '모험의 섬';
     return '바다';
 }
-const BED_KO = { sunbed: '선베드', hammock: '해먹', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', sofa: '소파', loftbed: '2층 침대' };
+const BED_KO = { sunbed: '선베드', hammock: '해먹', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', sofa: '소파', loftbed: '2층 침대' };
 function petStatusLine(p) {
     const pos = p.mover.position;
     const parts = [`위치: ${describeSpot(pos.x, pos.z)}`];
@@ -7770,7 +7772,7 @@ document.body.appendChild(dockUI);
 // 배치는 서버(/api/world_layout)+localStorage에 저장되고 다음 접속 때 씬을 짓기 전에 적용된다
 // (파일 상단 savedLayout). 지형 평탄화 패드는 섬 메시에 구워져 있어 리로드 후에야 새 위치를
 // 따라간다 — 그때까지 잔디가 살짝 울퉁불퉁할 수 있는 게 유일한 시각적 타협점.
-const PROP_LABELS = { tree: '나무', bowl: '밥그릇', fence: '울타리', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', house: '집', car: '자동차' };
+const PROP_LABELS = { tree: '나무', bowl: '밥그릇', fence: '울타리', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', house: '집', car: '자동차' };
 const buildRingMat = new THREE.MeshBasicMaterial({ color: 0x66d9ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
 const buildRing = new THREE.Mesh(new THREE.RingGeometry(0.82, 1.0, 40), buildRingMat);
 buildRing.rotation.x = -Math.PI / 2;
