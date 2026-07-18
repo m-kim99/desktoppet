@@ -11284,9 +11284,9 @@ function stepCar(acc, steer, delta, driver, landOnly) {
     const rX = Math.cos(CAR.heading), rZ = -Math.sin(CAR.heading);
     const seatPet = (q, side) => {
         q.mover.position.set(
-            CAR.x + rX * side * 0.17 - Math.sin(CAR.heading) * 0.06,
-            cy + 0.165,   // 엉덩이가 콕핏 욕조(0.15)에 닿는 높이 — 0.22는 '차 위에 서 있는' 실루엣 (스샷 실측)
-            CAR.z + rZ * side * 0.17 - Math.cos(CAR.heading) * 0.06
+            CAR.x + rX * side * 0.17 - Math.sin(CAR.heading) * 0.13,
+            cy + 0.13,   // 등받이에 붙고(뒤 0.13) 엉덩이 욕조에 폭(아래 0.13) — 0.06/0.165는 윈드실드에 닿고 서 있는 실루엣 (스샷 실측 2회)
+            CAR.z + rZ * side * 0.17 - Math.cos(CAR.heading) * 0.13
         );
         q.mover.rotation.y = CAR.heading;
         q.mover.rotation.x = 0;
