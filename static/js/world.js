@@ -13332,7 +13332,7 @@ function updateSub(delta) {
         const fx = Math.sin(SUB.heading), fz = Math.cos(SUB.heading);
         const seat = (q, side) => {
             if (!q) return;
-            q.mover.position.set(SUB.x + rgX * side * 0.16 * SUB_K + fx * -0.02 * SUB_K, SUB.y + 0.14 * SUB_K, SUB.z + rgZ * side * 0.16 * SUB_K + fz * -0.02 * SUB_K);   // 상체가 돔 유리 안에 보이는 높이 (낮으면 선체에 파묻힘 — 스샷 실측)
+            q.mover.position.set(SUB.x + rgX * side * 0.14 * SUB_K + fx * -0.02 * SUB_K, SUB.y + 0.24 * SUB_K, SUB.z + rgZ * side * 0.14 * SUB_K + fz * -0.02 * SUB_K);   // 몸통 2/3가 선체 위 돔 안에 — 낮으면 "낀" 실루엣, 넓으면(0.16) 유리 밖으로 어깨가 삐진다 (스샷 실측 2회)
             q.mover.rotation.y = SUB.heading;
             q.mover.rotation.x = 0;
             q.mover.rotation.z = 0;
