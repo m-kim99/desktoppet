@@ -5,6 +5,15 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Fixed (🎄 홀리데이 모자 회수 + 메뉴 대칭)
+- 홀리데이 "모자 마법"이 씌우기만 하고 안 벗겨 영구 착용되던 것 — **마무리 폴짝 정점(96%)에서
+  ✨과 함께 뿅 벗김** + 완료 지점 안전망. 우리가 씌운 것만 회수(hatMagic 표식) — 🧳으로
+  직접 쓴 산타모자는 그대로 둔다. 데스크톱 펫 홀리데이도 동일 적용(공유 엔티티).
+- 메뉴 우측 여백 — min-width 잔재(150px)가 그리드(128px)보다 넓어 비대칭 — **폭은 그리드가
+  결정**(width:max-content) + 행 중앙 정렬. E2E 폭 어서션 155px로 조임, 홀리데이 모자
+  뿅→벗김 검사 추가 — 24종 ALL PASS + 스모크 10/10.
+
+
 ### Fixed (🎬 조종 유지 — 진범은 updatePlayer 감시자)
 - 직전 수정에도 포옹 걷기에서 조종이 풀리던 진짜 원인: **updatePlayer 첫 줄 감시자**
   (`ai.state !== 'player' → releasePossession`)가 gotoAsync 다음 프레임에 발동 — 아래에

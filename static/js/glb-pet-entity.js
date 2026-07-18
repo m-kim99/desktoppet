@@ -487,7 +487,12 @@ export function updateGlbPetEntity(pet, delta) {
                 if (!a.spark && p >= 0.06) {                     // 모자 마법: 반짝이 커버 속에 착용
                     a.spark = true;
                     pet.floatEmoji && pet.floatEmoji('✨', { top: 16, size: 24, duration: 900 });
-                    if (!pet.accessory) { try { setGlbPetAccessory(pet, 'santa-hat'); } catch (e) {} }
+                    if (!pet.accessory) { try { setGlbPetAccessory(pet, 'santa-hat'); a.hatMagic = true; } catch (e) {} }   // 우리가 씌운 것만 표식 — 원래 쓰고 있던 코디는 안 건드린다
+                }
+                if (a.hatMagic && !a.hatOff && p >= 0.96) {      // 마법 해제: 마무리 폴짝 정점에서 뿅 사라짐 (안 벗기면 영구 착용 — 사용자 리포트)
+                    a.hatOff = true;
+                    pet.floatEmoji && pet.floatEmoji('✨', { top: 16, size: 22, duration: 700 });
+                    try { setGlbPetAccessory(pet, null); } catch (e) {}
                 }
                 if (p < 0.16) {                                  // 준비 박자: 살짝 움츠렸다 펴기
                     const k = Ease.inOutSine(p / 0.16);
@@ -706,6 +711,9 @@ export function updateGlbPetEntity(pet, delta) {
         }
         pet.wrap.scale.y = 1;      // squash/스텝을 쓰는 모션이 어떤 값으로 끝나도 원상복구
         pet.wrap.position.x = 0;
+        if (pet.action.hatMagic && !pet.action.hatOff && pet.accessory && pet.accessory.id === 'santa-hat') {   // 홀리데이 모자 회수 안전망
+            try { setGlbPetAccessory(pet, null); } catch (e) {}
+        }
         pet.action = null;   // done → fall through to idle
         pet.wrap.rotation.y = Math.PI;   // undo any spin (happy)
     }

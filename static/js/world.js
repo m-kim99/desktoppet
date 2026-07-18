@@ -6391,7 +6391,7 @@ motionMenu.id = 'world-motion-menu';
 // 📱 터치는 행 간격·글자를 손가락 기준으로 키운다(44px 탭 타깃 가이드라인 근처).
 const menuPad = IS_TOUCH ? '12px 14px' : '7px 12px';
 const menuFont = IS_TOUCH ? 15 : 13;
-motionMenu.style.cssText = `position:fixed; display:none; z-index:100; background:rgba(30,32,40,0.92); border-radius:10px; padding:6px; box-shadow:0 6px 24px rgba(0,0,0,0.35); min-width:${IS_TOUCH ? 170 : 150}px; font-family:sans-serif;`;   // 그리드 개편으로 자체 컴팩트 — max-height/스크롤 제거 (230px가 소셜 행을 잘랐다, 스샷 실측)
+motionMenu.style.cssText = 'position:fixed; display:none; z-index:100; background:rgba(30,32,40,0.92); border-radius:10px; padding:6px; box-shadow:0 6px 24px rgba(0,0,0,0.35); font-family:sans-serif; width:max-content;';   // 폭은 그리드가 결정(min-width 잔재가 우측 여백을 만들었다) · max-height 제거(소셜 행 잘림) — 둘 다 스샷 실측
 document.body.appendChild(motionMenu);
 let menuPet = null;
 // 🎮 control entry pinned above the motions: possess this pet (or release it) for keyboard control.
@@ -6445,7 +6445,7 @@ function menuGridCell(emoji, label, onTap) {
     return cell;
 }
 const motionGrid = document.createElement('div');
-motionGrid.style.cssText = `display:grid; grid-template-columns:repeat(3, ${MENU_CELL}px); gap:4px; padding:2px 0;`;   // 3열 — 4열은 폭이 넓어 펫을 가렸다 (사용자 피드백)
+motionGrid.style.cssText = `display:grid; grid-template-columns:repeat(3, ${MENU_CELL}px); gap:4px; padding:2px 0; justify-content:center;`;   // 3열 — 4열은 폭이 넓어 펫을 가렸다 (사용자 피드백)
 for (const m of GLB_MOTIONS) {
     const cell = menuGridCell(MOTION_EMOJI[m.id] || '✨', m.label, () => { const p = menuPet; hideMenu(); if (p) playWorldMotion(p, m.id); });
     cell.dataset.mid = m.id;
@@ -6454,7 +6454,7 @@ for (const m of GLB_MOTIONS) {
 motionMenu.appendChild(motionGrid);
 // 놀이·소셜 한 줄 — 🙈 숨바꼭질(누구든) · 📞 부르기 · 📍 가기 (조종 중 전용, showMenu가 토글)
 const socialRow = document.createElement('div');
-socialRow.style.cssText = 'display:flex; align-items:center; gap:4px; border-top:1px solid rgba(255,255,255,0.12); margin-top:4px; padding-top:5px;';
+socialRow.style.cssText = 'display:flex; align-items:center; justify-content:center; gap:4px; border-top:1px solid rgba(255,255,255,0.12); margin-top:4px; padding-top:5px;';
 socialRow.appendChild(menuGridCell('🙈', '숨바꼭질', () => { const p = menuPet; hideMenu(); if (p) worldHideSeek(p); }));
 const callCell = menuGridCell('📞', '친구 부르기', () => { hideMenu(); startPhoneCall(); });
 const gotoCell = menuGridCell('📍', '친구한테 가기', () => { hideMenu(); teleportToFriend(); });
@@ -7402,6 +7402,7 @@ if (statsOn) window.__worldDev = {
     ctrl: () => (possessed ? { name: possessed.name, ai: possessed.ai.state } : null),   // ⚠️ who는 열기구 훅이 선점
     ctrlBorrow: () => { if (!possessed) return; possessed.ai.target = { x: possessed.mover.position.x + 1.2, z: possessed.mover.position.z }; possessed.ai.waypoints = null; possessed.ai.onArrive = null; possessed.ai.stall = 0; possessed.ai.state = 'goto'; },   // E2E — 디렉터 대여 재현 (진짜 gotoAsync처럼 target 필수)
     ctrlReturn: () => { if (possessed) releaseAI(possessed); },
+    motion: (id) => { if (possessed) playWorldMotion(possessed, id); },
     invClick: (id) => { const slot = invPanel.querySelector(`[data-aid="${id}"]`); if (slot) slot.click(); return !!slot; },
     subRouteTry: () => { const r = makeSubRoute(); return { stops: r.stops.map((q) => q.kind), len: +r.len.toFixed(1), diag: subRouteDiag.slice(0, 10) }; },
     handState: () => (handHold ? { y: +handHold.partner.mover.position.y.toFixed(2), swim: handHold.partner.swimming, state: handHold.partner.ai.state } : null),
