@@ -7400,6 +7400,8 @@ if (statsOn) window.__worldDev = {
     subHome: () => ({ x: +SUB_HOME.x.toFixed(1), z: +SUB_HOME.z.toFixed(1) }),
     inv: () => ({ unlocked: [...accUnlocked], wearing: possessed && possessed.pet.accessory ? possessed.pet.accessory.id : null, open: invPanel.style.display === 'block', btn: invBtn.style.display }),
     ctrl: () => (possessed ? { name: possessed.name, ai: possessed.ai.state } : null),   // ⚠️ who는 열기구 훅이 선점
+    ctrlBorrow: () => { if (!possessed) return; possessed.ai.target = { x: possessed.mover.position.x + 1.2, z: possessed.mover.position.z }; possessed.ai.waypoints = null; possessed.ai.onArrive = null; possessed.ai.stall = 0; possessed.ai.state = 'goto'; },   // E2E — 디렉터 대여 재현 (진짜 gotoAsync처럼 target 필수)
+    ctrlReturn: () => { if (possessed) releaseAI(possessed); },
     invClick: (id) => { const slot = invPanel.querySelector(`[data-aid="${id}"]`); if (slot) slot.click(); return !!slot; },
     subRouteTry: () => { const r = makeSubRoute(); return { stops: r.stops.map((q) => q.kind), len: +r.len.toFixed(1), diag: subRouteDiag.slice(0, 10) }; },
     handState: () => (handHold ? { y: +handHold.partner.mover.position.y.toFixed(2), swim: handHold.partner.swimming, state: handHold.partner.ai.state } : null),
@@ -10463,7 +10465,12 @@ function nearestPropDist(p, type) {
 function updatePlayer(delta) {
     if (!possessed) return;
     const p = possessed;
-    if (p.ai.state !== 'player') { releasePossession(); return; }   // something reclaimed it — let go
+    if (p.ai.state === 'goto' || p.ai.state === 'busy') {   // 🎬 디렉터(안무·⌘ 동작)가 잠깐 빌려 몬다 — 조종·카메라 유지, 끝나면 releaseAI가 'player'로 돌려준다
+        const cHint = `🎬 ${petKo(p)} 안무 중 — 끝나면 바로 조종으로 돌아와요`;
+        if (controlHint.textContent !== cHint) controlHint.textContent = cHint;
+        return;
+    }
+    if (p.ai.state !== 'player') { releasePossession(); return; }   // held 등 — 진짜로 뺏긴 경우만 놓는다
     if (seaHop) {
         // Climbing back up the cliff: a short arc from the water onto the rim.
         seaHop.t += delta;
@@ -10619,11 +10626,6 @@ function updatePlayer(delta) {
         p.swimming = false;
         const tHint = `🤸 ${petKo(p)} 통통 중 — ${IS_TOUCH ? '🦘' : 'Space'} = 더 높이 · 걸어 나가면 끝`;
         if (controlHint.textContent !== tHint) controlHint.textContent = tHint;
-        return;
-    }
-    if (p.ai.state === 'goto' || p.ai.state === 'busy') {   // 🎬 모션 디렉터가 잠깐 몬다 — 조종·카메라 유지, 끝나면 releaseAI가 돌려준다
-        const cHint = `🎬 ${petKo(p)} 안무 중 — 끝나면 바로 조종으로 돌아와요`;
-        if (controlHint.textContent !== cHint) controlHint.textContent = cHint;
         return;
     }
     const sup = playerSupportY(p, p.mover.position.x, p.mover.position.z);

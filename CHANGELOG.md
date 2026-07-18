@@ -5,6 +5,14 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Fixed (🎬 조종 유지 — 진범은 updatePlayer 감시자)
+- 직전 수정에도 포옹 걷기에서 조종이 풀리던 진짜 원인: **updatePlayer 첫 줄 감시자**
+  (`ai.state !== 'player' → releasePossession`)가 gotoAsync 다음 프레임에 발동 — 아래에
+  넣었던 양보 브랜치는 도달 불가였다(E2E는 솔로 폴백만 타서 못 잡음). 감시자를 "goto/busy =
+  디렉터 대여(유지+힌트+카메라 추종), 그 외만 해제"로 교체. ⌘ 상호작용(피아노·운동·독서
+  등)도 같은 규칙으로 조종 유지가 된다. E2E에 감시자 직접 재현(ctrlBorrow/ctrlReturn —
+  대여 중 유지·releaseAI 후 player 복귀) 추가, 22종 ALL PASS.
+
 ### Fixed (🎛️ 메뉴 3열 + 🎬 모션 중 조종 유지)
 - 우클릭 메뉴 4열(~190px)이 펫을 가림 — **3열(162px, 이전 목록 폭과 동급)** + 놀이·소셜
   라벨 텍스트 제거(폭 원흉).
