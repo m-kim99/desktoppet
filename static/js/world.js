@@ -7491,15 +7491,16 @@ if (statsOn) window.__worldDev = {
     fruitTidyGo: (name) => startAiTidy(pets.find((q) => q.name === (name || 'puppy'))),
     fruitTick: () => { fruitTickT = 60; return true; },
     diveState: () => (dive ? { phase: dive.phase, t: +dive.t.toFixed(2), ai: !!dive.isAI, y: dive.p ? +dive.p.mover.position.y.toFixed(2) : null } : null),
-    seaState: () => ({ under: camUnderwater, chunks: seaChunks.size, spawns: seaSpawns.map((q) => ({ t: q.t.id, x: +q.x.toFixed(1), z: +q.z.toFixed(1) })), treasures: [...seaChunks.entries()].filter(([k, e]) => e.treasure).map(([k, e]) => ({ key: k, x: +e.tx.toFixed(1), z: +e.tz.toFixed(1) })), fogNear: +scene.fog.near.toFixed(1), vents: [...seaChunks.values()].reduce((n, e) => n + ((e.vents && e.vents.length) || 0), 0), forests: [...seaChunks.values()].filter((e) => e.forest).length }),
+    seaState: () => ({ under: camUnderwater, chunks: seaChunks.size, spawns: seaSpawns.map((q) => ({ t: q.t.id, x: +q.x.toFixed(1), z: +q.z.toFixed(1) })), treasures: [...seaChunks.entries()].filter(([k, e]) => e.treasure).map(([k, e]) => ({ key: k, x: +e.tx.toFixed(1), z: +e.tz.toFixed(1) })), fogNear: +scene.fog.near.toFixed(1), vents: [...seaChunks.values()].reduce((n, e) => n + ((e.vents && e.vents.length) || 0), 0), forests: [...seaChunks.values()].filter((e) => e.forest).length, jellies: [...seaChunks.values()].reduce((n, e) => n + ((e.jellies && e.jellies.length) || 0), 0), jellyY: (() => { for (const e of seaChunks.values()) if (e.jellies && e.jellies.length) return +e.jellies[0].y.toFixed(2); return null; })() }),
     seaPoiScan: () => {   // E2E — 경계 안 첫 열수구/켈프숲 청크 좌표 (시드 순수 평가)
-        const out = { vent: null, forest: null };
-        for (let r = 0; r < 5 && (!out.vent || !out.forest); r++) {   // 중앙 군도는 셸프(수심 게이트)라 넓게 훑는다
+        const out = { vent: null, forest: null, jelly: null };
+        for (let r = 0; r < 5 && (!out.vent || !out.forest || !out.jelly); r++) {   // 중앙 군도는 셸프(수심 게이트)라 넓게 훑는다
             for (let cx = -r; cx <= r && (!out.vent || !out.forest); cx++) for (let cz = -r; cz <= r; cz++) {
                 if (Math.max(Math.abs(cx), Math.abs(cz)) !== r) continue;
                 const inf = seaChunkInfo(cx, cz);
                 if (!out.vent && inf.vent && islandOf(inf.vx, inf.vz) < 0 && seabedHeight(inf.vx, inf.vz) < -2.6 && Math.hypot(inf.vx, inf.vz) < 68) out.vent = { x: +inf.vx.toFixed(1), z: +inf.vz.toFixed(1) };
                 if (!out.forest && inf.kelpForest && islandOf(inf.kfx, inf.kfz) < 0 && seabedHeight(inf.kfx, inf.kfz) < -1.6 && Math.hypot(inf.kfx, inf.kfz) < 68) out.forest = { x: +inf.kfx.toFixed(1), z: +inf.kfz.toFixed(1) };
+                if (!out.jelly && inf.jelly && islandOf(inf.jx, inf.jz) < 0 && seabedHeight(inf.jx, inf.jz) < -2.2 && Math.hypot(inf.jx, inf.jz) < 68) out.jelly = { x: +inf.jx.toFixed(1), z: +inf.jz.toFixed(1) };
             }
         }
         return out;
@@ -14582,6 +14583,64 @@ ventBubMat.onBeforeCompile = (sh) => {
                 + 'transformed.z += cos(uWxT * 1.55 + aPhase * 7.0) * 0.05 * bT;')
             .replace('gl_PointSize = size;', 'gl_PointSize = size * aSize * (0.55 + bT * 0.3);');
 };
+// 🪼 해파리 재질 — 반투명 은은 발광 (분홍/청록 2색, 전 스팟 공유 = 누수 없음). 촉수는 켈프 스웨이 셰이더.
+function jellySwayMat(base) {
+    const m = base.clone();
+    m.onBeforeCompile = (sh) => {
+        sh.uniforms.uWxT = wxTime;
+        sh.vertexShader = 'uniform float uWxT;\nattribute float aBend;\nattribute float aPh;\n' + sh.vertexShader.replace(
+            '#include <begin_vertex>',
+            '#include <begin_vertex>\n'
+            + 'transformed.x += sin(uWxT * 1.3 + aPh) * 0.05 * aBend;\n'
+            + 'transformed.z += cos(uWxT * 1.05 + aPh * 1.6) * 0.04 * aBend;'
+        );
+    };
+    return m;
+}
+const jellyBellMats = [
+    new THREE.MeshStandardMaterial({ color: 0xf3bede, emissive: 0xff9ed2, emissiveIntensity: 0.5, transparent: true, opacity: 0.5, roughness: 0.4, depthWrite: false, side: THREE.DoubleSide }),
+    new THREE.MeshStandardMaterial({ color: 0xb8e6ea, emissive: 0x8fdce6, emissiveIntensity: 0.5, transparent: true, opacity: 0.5, roughness: 0.4, depthWrite: false, side: THREE.DoubleSide }),
+];
+const jellyTentMats = [
+    jellySwayMat(new THREE.MeshStandardMaterial({ color: 0xf6cfe6, emissive: 0xff9ed2, emissiveIntensity: 0.35, transparent: true, opacity: 0.42, roughness: 0.5, depthWrite: false })),
+    jellySwayMat(new THREE.MeshStandardMaterial({ color: 0xcdeef2, emissive: 0x8fdce6, emissiveIntensity: 0.35, transparent: true, opacity: 0.42, roughness: 0.5, depthWrite: false })),
+];
+function makeJelly(color) {   // 벨(랩 프로파일 — 립 살짝 말림) + 심지 + 구슬 촉수 세트
+    const grp = new THREE.Group();
+    const prof = [new THREE.Vector2(0.001, 0.105)];
+    for (let i = 1; i <= 8; i++) {
+        const t = i / 8;   // 납작 버섯 돔 — 고깔(sin 0.52 линей)은 파티모자처럼 보인다 (스샷 실측)
+        prof.push(new THREE.Vector2(Math.pow(Math.sin(t * Math.PI * 0.5), 0.72) * 0.15, 0.105 - Math.pow(t, 1.15) * 0.115));
+    }
+    prof.push(new THREE.Vector2(0.128, -0.014));   // 립 안쪽 말림
+    const bell = new THREE.Mesh(new THREE.LatheGeometry(prof, 18), jellyBellMats[color]);
+    grp.add(bell);
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), jellyBellMats[color]);   // 속 심지 — 겹침이 빛을 응축
+    core.scale.y = 0.6;
+    core.position.y = 0.03;
+    grp.add(core);
+    const tents = [];
+    const addStrand = (r0, len, ang, dist) => {
+        const t2 = new THREE.CylinderGeometry(r0 * 0.4, r0, len, 5);
+        t2.translate(0, -len / 2, 0);   // 원점=부착점
+        const pos = t2.attributes.position;
+        const bend = new Float32Array(pos.count), ph = new Float32Array(pos.count);
+        for (let i = 0; i < pos.count; i++) {
+            bend[i] = THREE.MathUtils.clamp(-pos.getY(i) / len, 0, 1);   // 끝일수록 살랑
+            ph[i] = ang * 2.7;
+        }
+        t2.setAttribute('aBend', new THREE.Float32BufferAttribute(bend, 1));
+        t2.setAttribute('aPh', new THREE.Float32BufferAttribute(ph, 1));
+        t2.translate(Math.cos(ang) * dist, 0.005, Math.sin(ang) * dist);
+        tents.push(t2);
+    };
+    for (let i = 0; i < 8; i++) addStrand(0.006, 0.26 + (i % 3) * 0.05, (i / 8) * Math.PI * 2, 0.1);   // 가장자리 가는 촉수
+    for (let i = 0; i < 3; i++) addStrand(0.016, 0.19, (i / 3) * Math.PI * 2 + 0.5, 0.03);             // 중심 구강완 리본
+    const tm = new THREE.Mesh(mergeGeometries(tents, false), jellyTentMats[color]);
+    grp.add(tm);
+    grp.userData.bell = bell;
+    return grp;
+}
 function kelpBladeGeo(bx, bz, by, h, lean, phase) {   // 잎 하나 — aBend/aPh 어트리뷰트 포함 (seaKelpMat 전용)
     const blade = new THREE.ConeGeometry(0.05 + h * 0.014, h, 5);
     blade.scale(1, 1, 0.3);
@@ -14614,6 +14673,13 @@ function seaChunkInfo(cx, cz) {   // 시드 결정적 (아발란치 rngT — 시
     base.kelpForest = !ventRoll && forestRoll;   // 한 청크에 하나만 — 읽히는 해저
     base.kfx = kfx;
     base.kfz = kfz;
+    const jellyRoll = rng() < 0.06, jx = (cx + 0.2 + rng() * 0.6) * SEA_CHUNK, jz = (cz + 0.2 + rng() * 0.6) * SEA_CHUNK;
+    const jn = 2 + Math.floor(rng() * 2), jc = rng() < 0.55 ? 0 : 1;   // 무리 2~3 · 색(분홍/청록)
+    base.jelly = jellyRoll;
+    base.jx = jx;
+    base.jz = jz;
+    base.jn = jn;
+    base.jc = jc;
     return base;
 }
 function loadSeaChunk(key, cx, cz) {
@@ -14771,9 +14837,23 @@ function loadSeaChunk(key, cx, cz) {
         chest.rotation.y = 0.7;
         group.add(chest);
     }
+    const jellies = [];
+    if (info.jelly && islandOf(info.jx, info.jz) < 0 && seabedHeight(info.jx, info.jz) < -2.2) {   // 🪼 해파리 무리 — 물고기 떼보다 레어 (6%/청크·깊은 물만)
+        const jr = seededRand(info.seed + 1201);
+        for (let i = 0; i < info.jn; i++) {
+            const grp = makeJelly(info.jc);
+            const jx2 = info.jx + (jr() - 0.5) * 2.2, jz2 = info.jz + (jr() - 0.5) * 2.2;
+            const sb = seabedHeight(jx2, jz2);
+            const jy = THREE.MathUtils.clamp(sb + 1.4 + jr() * 1.2, sb + 1.0, waveYAt(jx2, jz2) - 1.0);
+            grp.position.set(jx2, jy, jz2);
+            grp.rotation.y = jr() * Math.PI * 2;
+            group.add(grp);
+            jellies.push({ grp, x: jx2, z: jz2, y: jy, vy: 0, ph: jr() * Math.PI * 2, drift: jr() * Math.PI * 2 });
+        }
+    }
     stage.add(group);
     seaChunks.set(key, {
-        group, treasure, tx: info.tx, tz: info.tz, vents,
+        group, treasure, tx: info.tx, tz: info.tz, vents, jellies,
         forest: (info.kelpForest && islandOf(info.kfx, info.kfz) < 0 && seabedHeight(info.kfx, info.kfz) < -1.6)
             ? { x: info.kfx, z: info.kfz } : null,   // 좌표째 — 발견 판정·지도 아이콘용
     });
@@ -14809,6 +14889,26 @@ function updateSeaFloor(delta) {
         }
         for (const key of seaChunks.keys()) {
             if (!want.has(key) && !seaQueued.has(key)) { seaQueued.add(key); seaQueue.push({ op: 'unload', key }); }
+        }
+    }
+    for (const e of seaChunks.values()) {   // 🪼 해파리 펄스 — 수축(위로 분사)…글라이드(살랑 침강), 전형 메두사 사이클
+        if (!e.jellies || !e.jellies.length) continue;
+        for (const j of e.jellies) {
+            const cyc = (wxTime.value * 0.85 + j.ph) % (Math.PI * 2);
+            const pulse = Math.pow(Math.max(0, Math.sin(cyc)), 1.7);   // 반주기 수축·반주기 휴지
+            const bell = j.grp.userData.bell;
+            bell.scale.set(1 - pulse * 0.2, 1 + pulse * 0.28, 1 - pulse * 0.2);
+            j.vy += pulse * 0.55 * delta;                 // 수축 = 위로 분사
+            j.vy = (j.vy - 0.055 * delta) * Math.pow(0.25, delta);   // 중력 + 물 저항
+            j.y += j.vy * delta;
+            const sb = seabedHeight(j.x, j.z);
+            j.y = THREE.MathUtils.clamp(j.y, sb + 0.9, waveYAt(j.x, j.z) - 0.9);
+            j.grp.position.set(
+                j.x + Math.sin(wxTime.value * 0.12 + j.drift) * 0.5,
+                j.y,
+                j.z + Math.cos(wxTime.value * 0.1 + j.drift * 1.7) * 0.5
+            );
+            j.grp.rotation.y += delta * 0.06;
         }
     }
     const job = seaQueue.shift();   // 프레임당 1작업 (발열 §1)
