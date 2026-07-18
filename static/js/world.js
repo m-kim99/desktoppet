@@ -6391,7 +6391,7 @@ motionMenu.id = 'world-motion-menu';
 // 📱 터치는 행 간격·글자를 손가락 기준으로 키운다(44px 탭 타깃 가이드라인 근처).
 const menuPad = IS_TOUCH ? '12px 14px' : '7px 12px';
 const menuFont = IS_TOUCH ? 15 : 13;
-motionMenu.style.cssText = `position:fixed; display:none; z-index:100; background:rgba(30,32,40,0.92); border-radius:10px; padding:6px; box-shadow:0 6px 24px rgba(0,0,0,0.35); max-height:${IS_TOUCH ? 'min(340px, 55vh)' : '230px'}; overflow-y:auto; min-width:${IS_TOUCH ? 170 : 150}px; font-family:sans-serif;`;
+motionMenu.style.cssText = `position:fixed; display:none; z-index:100; background:rgba(30,32,40,0.92); border-radius:10px; padding:6px; box-shadow:0 6px 24px rgba(0,0,0,0.35); min-width:${IS_TOUCH ? 170 : 150}px; font-family:sans-serif;`;   // 그리드 개편으로 자체 컴팩트 — max-height/스크롤 제거 (230px가 소셜 행을 잘랐다, 스샷 실측)
 document.body.appendChild(motionMenu);
 let menuPet = null;
 // 🎮 control entry pinned above the motions: possess this pet (or release it) for keyboard control.
@@ -6407,66 +6407,70 @@ controlItem.onclick = () => {
     else possessPet(p);
 };
 motionMenu.appendChild(controlItem);
+// ---- 모션 14행 → 이모지 그리드 (동숲 리액션 팔레트 문법): 스크롤 소멸, 한눈 선택.
+// 데탑 = title 네이티브 툴팁, 터치 = 길게 누르면 라벨 팁(짧은 탭 = 실행). 코디는 독 🧳로 이사. ----
+const MOTION_EMOJI = { wave: '👋', happy: '😊', dance: '💃', cheer: '📣', celebrate: '🎉', hug: '🤗', heart: '💗', holiday: '🎄', play: '⚽', think: '🤔', eat: '🍽️', dig: '⛏️', stretch: '🧘', sleep: '😴' };
+const menuTip = document.createElement('div');
+menuTip.style.cssText = 'position:fixed; display:none; z-index:130; background:rgba(20,22,28,0.95); color:#fff; font-size:12px; font-family:sans-serif; padding:5px 9px; border-radius:7px; pointer-events:none; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.4);';
+document.body.appendChild(menuTip);
+let menuTipT = null;
+function showMenuTip(el, label) {
+    const r = el.getBoundingClientRect();
+    menuTip.textContent = label;
+    menuTip.style.display = 'block';
+    menuTip.style.left = `${Math.max(6, Math.min(r.left + r.width / 2 - 40, window.innerWidth - 110))}px`;
+    menuTip.style.top = `${Math.max(6, r.top - 30)}px`;
+    clearTimeout(menuTipT);
+    menuTipT = setTimeout(() => { menuTip.style.display = 'none'; }, 1100);
+}
+const MENU_CELL = IS_TOUCH ? 48 : 40;
+function menuGridCell(emoji, label, onTap) {
+    const cell = document.createElement('div');
+    cell.textContent = emoji;
+    cell.title = label;
+    cell.dataset.mlabel = label;
+    cell.style.cssText = `width:${MENU_CELL}px; height:${MENU_CELL}px; display:flex; align-items:center; justify-content:center; font-size:${IS_TOUCH ? 24 : 20}px; border-radius:9px; cursor:pointer; user-select:none; -webkit-user-select:none;`;
+    cell.onmouseenter = () => { cell.style.background = 'rgba(255,255,255,0.14)'; };
+    cell.onmouseleave = () => { cell.style.background = 'transparent'; };
+    let lpT = null, lpFired = false;
+    cell.addEventListener('pointerdown', () => {
+        lpFired = false;
+        if (IS_TOUCH) lpT = setTimeout(() => { lpFired = true; showMenuTip(cell, label); }, 480);   // 📱 길게 = 라벨 확인
+    });
+    const lpClear = () => clearTimeout(lpT);
+    cell.addEventListener('pointerup', lpClear);
+    cell.addEventListener('pointercancel', lpClear);
+    cell.addEventListener('pointerleave', lpClear);
+    cell.onclick = () => { if (lpFired) { lpFired = false; return; } onTap(); };   // 길게 누른 손가락은 실행 안 함
+    return cell;
+}
+const motionGrid = document.createElement('div');
+motionGrid.style.cssText = `display:grid; grid-template-columns:repeat(4, ${MENU_CELL}px); gap:4px; padding:2px 0;`;
 for (const m of GLB_MOTIONS) {
-    const item = document.createElement('div');
-    item.textContent = m.label;
-    item.style.cssText = `padding:${menuPad}; font-size:${menuFont}px; color:#fff; border-radius:7px; cursor:pointer; white-space:nowrap;`;
-    item.onmouseenter = () => { item.style.background = 'rgba(255,255,255,0.14)'; };
-    item.onmouseleave = () => { item.style.background = 'transparent'; };
-    item.onclick = () => { const p = menuPet; hideMenu(); if (p) playWorldMotion(p, m.id); };
-    motionMenu.appendChild(item);
+    const cell = menuGridCell(MOTION_EMOJI[m.id] || '✨', m.label, () => { const p = menuPet; hideMenu(); if (p) playWorldMotion(p, m.id); });
+    cell.dataset.mid = m.id;
+    motionGrid.appendChild(cell);
 }
-// 놀이: 숨바꼭질 — 조종 중이면 주인이 숨고 (다른 펫이 술래), 아니면 클릭한 펫이 술래.
-const hideSeekItem = document.createElement('div');
-hideSeekItem.textContent = '🙈 숨바꼭질';
-hideSeekItem.style.cssText = `padding:${menuPad}; font-size:${menuFont}px; color:#9be7ff; border-radius:7px; cursor:pointer; white-space:nowrap;`;
-hideSeekItem.onmouseenter = () => { hideSeekItem.style.background = 'rgba(255,255,255,0.14)'; };
-hideSeekItem.onmouseleave = () => { hideSeekItem.style.background = 'transparent'; };
-hideSeekItem.onclick = () => { const p = menuPet; hideMenu(); if (p) worldHideSeek(p); };
-motionMenu.appendChild(hideSeekItem);
-// 📞/📍 소셜 항목 — 조종 중인 펫 메뉴에서만 (showMenu가 표시 토글)
-const callItem = document.createElement('div');
-callItem.textContent = '📞 친구 부르기';
-callItem.style.cssText = `padding:${menuPad}; font-size:${menuFont}px; color:#9be7ff; border-radius:7px; cursor:pointer; white-space:nowrap;`;
-callItem.onmouseenter = () => { callItem.style.background = 'rgba(255,255,255,0.14)'; };
-callItem.onmouseleave = () => { callItem.style.background = 'transparent'; };
-callItem.onclick = () => { hideMenu(); startPhoneCall(); };
-motionMenu.appendChild(callItem);
-const gotoFriendItem = document.createElement('div');
-gotoFriendItem.textContent = '📍 친구한테 가기';
-gotoFriendItem.style.cssText = `padding:${menuPad}; font-size:${menuFont}px; color:#9be7ff; border-radius:7px; cursor:pointer; white-space:nowrap;`;
-gotoFriendItem.onmouseenter = () => { gotoFriendItem.style.background = 'rgba(255,255,255,0.14)'; };
-gotoFriendItem.onmouseleave = () => { gotoFriendItem.style.background = 'transparent'; };
-gotoFriendItem.onclick = () => { hideMenu(); teleportToFriend(); };
-motionMenu.appendChild(gotoFriendItem);
-// 코디 items below the motions (divider above the first); labels refresh per open in showMenu.
-const accessoryItems = [];
-for (let i = 0; i < GLB_ACCESSORIES.length; i++) {
-    const a = GLB_ACCESSORIES[i];
-    const item = document.createElement('div');
-    item.style.cssText = `padding:${menuPad}; font-size:${menuFont}px; color:#ffd7e0; border-radius:7px; cursor:pointer; white-space:nowrap;` + (i === 0 ? 'border-top:1px solid rgba(255,255,255,0.12); margin-top:4px;' : '');
-    item.onmouseenter = () => { item.style.background = 'rgba(255,255,255,0.14)'; };
-    item.onmouseleave = () => { item.style.background = 'transparent'; };
-    item.onclick = () => {
-        const p = menuPet;
-        hideMenu();
-        if (!p) return;
-        if (!accUnlocked.has(a.id)) { showToast('🔒 모험의 섬 보물찾기에서 발견하면 열려요'); return; }
-        setGlbPetAccessory(p.pet, (p.pet.accessory && p.pet.accessory.id === a.id) ? null : a.id);
-    };
-    motionMenu.appendChild(item);
-    accessoryItems.push({ el: item, acc: a });
-}
+motionMenu.appendChild(motionGrid);
+// 놀이·소셜 한 줄 — 🙈 숨바꼭질(누구든) · 📞 부르기 · 📍 가기 (조종 중 전용, showMenu가 토글)
+const socialRow = document.createElement('div');
+socialRow.style.cssText = 'display:flex; align-items:center; gap:4px; border-top:1px solid rgba(255,255,255,0.12); margin-top:4px; padding-top:5px;';
+const socialLabel = document.createElement('span');
+socialLabel.textContent = '놀이·소셜';
+socialLabel.style.cssText = 'font-size:10.5px; color:rgba(255,255,255,0.55); font-family:sans-serif; padding:0 4px 0 2px; white-space:nowrap;';
+socialRow.appendChild(socialLabel);
+socialRow.appendChild(menuGridCell('🙈', '숨바꼭질', () => { const p = menuPet; hideMenu(); if (p) worldHideSeek(p); }));
+const callCell = menuGridCell('📞', '친구 부르기', () => { hideMenu(); startPhoneCall(); });
+const gotoCell = menuGridCell('📍', '친구한테 가기', () => { hideMenu(); teleportToFriend(); });
+socialRow.appendChild(callCell);
+socialRow.appendChild(gotoCell);
+motionMenu.appendChild(socialRow);
 function showMenu(x, y, p) {
     menuPet = p;
     controlItem.textContent = (p === possessed) ? '🎮 조종 해제 (Esc)' : '🎮 조종하기';
-    const social = (p === possessed && pets.length >= 2) ? 'block' : 'none';   // 📞/📍는 조종 중 메뉴 전용
-    callItem.style.display = social;
-    gotoFriendItem.style.display = social;
-    for (const { el, acc } of accessoryItems) {
-        el.textContent = !accUnlocked.has(acc.id) ? '🔒 ???'
-            : (p.pet.accessory && p.pet.accessory.id === acc.id) ? `${acc.label} 벗기` : acc.label;
-    }
+    const social = (p === possessed && pets.length >= 2) ? 'flex' : 'none';   // 📞/📍는 조종 중 메뉴 전용
+    callCell.style.display = social;
+    gotoCell.style.display = social;
     motionMenu.style.display = 'block';
     // Open to the RIGHT of the click point (the click lands on the pet — an offset keeps the
     // menu from covering the character; clamped to the window edge). 하드코딩 치수 대신 실측:
@@ -7392,6 +7396,8 @@ if (statsOn) window.__worldDev = {
         return true;
     },
     subHome: () => ({ x: +SUB_HOME.x.toFixed(1), z: +SUB_HOME.z.toFixed(1) }),
+    inv: () => ({ unlocked: [...accUnlocked], wearing: possessed && possessed.pet.accessory ? possessed.pet.accessory.id : null, open: invPanel.style.display === 'block', btn: invBtn.style.display }),
+    invClick: (id) => { const slot = invPanel.querySelector(`[data-aid="${id}"]`); if (slot) slot.click(); return !!slot; },
     subRouteTry: () => { const r = makeSubRoute(); return { stops: r.stops.map((q) => q.kind), len: +r.len.toFixed(1), diag: subRouteDiag.slice(0, 10) }; },
     handState: () => (handHold ? { y: +handHold.partner.mover.position.y.toFixed(2), swim: handHold.partner.swimming, state: handHold.partner.ai.state } : null),
     seaMapInfo: () => ({ found: Object.keys(seaFound).length, wreck: !!seaFound.wreck, seaMode: camUnderwater && mapOpen, ventsFound: Object.values(seaFound).filter((f) => f.k === 'v').length, forestsFound: Object.values(seaFound).filter((f) => f.k === 'f').length }),
@@ -7798,6 +7804,11 @@ function syncDiveBtn() {   // 🤿 문맥 버튼: 바다 수영=🤿, 잠수 중
             diveBtn.title = diving ? '수면으로 올라가기 — 평소처럼 수영' : '잠수 — 물속 세계로';
         }
     }
+    const invDisp = possessed ? 'flex' : 'none';   // 🧳 가방 — 조종 중에만
+    if (invBtn.style.display !== invDisp) {
+        invBtn.style.display = invDisp;
+        if (!possessed) hideInvPanel();
+    }
     if (touchDiveBtns) {   // 📱 딥 다이브·노랑호 수동 = 🦘 자리에 🔼🔽 스왑 (마크 모바일 문법)
         const deepNow = (diving && dive.phase === 'deep') || !!(subRide && !subRide.isAI && subRide.p === possessed && SUB.mode === 'manual');
         const dDisp = deepNow ? 'flex' : 'none';
@@ -7809,6 +7820,62 @@ function syncDiveBtn() {   // 🤿 문맥 버튼: 바다 수영=🤿, 잠수 중
         }
     }
 }
+// ---- 🧳 인벤토리 (마크식 가방): 조종 중에만 뜨는 독 버튼 — 그 펫의 소지품 패널.
+// 지금은 '👒 코디' 섹션뿐이지만 섹션 단위로 자라는 구조 (나중에 아이템·수집품 섹션 추가). ----
+const invBtn = dockBtn('🧳', '가방 — 코디 착용/해제 (조종 중)');
+const invPanel = document.createElement('div');
+invPanel.style.cssText = `position:fixed; right:calc(${IS_TOUCH ? 74 : 66}px + env(safe-area-inset-right, 0px)); bottom:calc(70px + env(safe-area-inset-bottom, 0px)); display:none; z-index:96; background:rgba(30,32,40,0.94); border-radius:14px; padding:12px 14px; box-shadow:0 8px 26px rgba(0,0,0,0.4); font-family:sans-serif;`;
+invPanel.addEventListener('pointerdown', (e) => e.stopPropagation());
+document.body.appendChild(invPanel);
+const INV_SLOT = IS_TOUCH ? 54 : 48;
+function renderInvPanel() {
+    if (!possessed) return;
+    invPanel.textContent = '';
+    const title = document.createElement('div');
+    title.textContent = `${petKo(possessed)}의 가방 🧳`;
+    title.style.cssText = 'color:#ffd54f; font-size:13px; font-weight:700; margin-bottom:8px;';
+    invPanel.appendChild(title);
+    // 섹션: 👒 코디 (확장 지점 — 새 섹션은 헤더+슬롯 그리드 한 쌍을 더 붙이면 된다)
+    const head = document.createElement('div');
+    head.textContent = '👒 코디';
+    head.style.cssText = 'color:rgba(255,255,255,0.6); font-size:11px; margin-bottom:5px;';
+    invPanel.appendChild(head);
+    const grid = document.createElement('div');
+    grid.style.cssText = `display:grid; grid-template-columns:repeat(3, ${INV_SLOT}px); gap:6px;`;
+    for (const a of GLB_ACCESSORIES) {
+        const slot = document.createElement('div');
+        const unlocked = accUnlocked.has(a.id);
+        const worn = !!(possessed.pet.accessory && possessed.pet.accessory.id === a.id);
+        slot.textContent = unlocked ? a.label.split(' ')[0] : '🔒';   // 라벨 첫 토큰 = 이모지
+        slot.dataset.aid = a.id;
+        slot.title = unlocked ? `${a.label}${worn ? ' — 벗기' : ' — 입기'}` : '??? (모험의 섬 보물찾기)';
+        slot.style.cssText = `width:${INV_SLOT}px; height:${INV_SLOT}px; display:flex; align-items:center; justify-content:center; font-size:${IS_TOUCH ? 24 : 21}px; border-radius:10px; cursor:pointer; background:rgba(255,255,255,${unlocked ? '0.08' : '0.04'}); border:2px solid ${worn ? '#ffd54f' : 'transparent'}; ${unlocked ? '' : 'opacity:0.55;'} position:relative; user-select:none; -webkit-user-select:none;`;
+        if (worn) {
+            const badge = document.createElement('div');
+            badge.textContent = '✓';
+            badge.style.cssText = 'position:absolute; right:2px; top:0; font-size:11px; color:#ffd54f;';
+            slot.appendChild(badge);
+        }
+        slot.onclick = () => {
+            if (!possessed) return;
+            if (!accUnlocked.has(a.id)) { showToast('🔒 모험의 섬 보물찾기에서 발견하면 열려요'); return; }
+            setGlbPetAccessory(possessed.pet, (possessed.pet.accessory && possessed.pet.accessory.id === a.id) ? null : a.id);
+            renderInvPanel();   // 착용 표시 갱신
+        };
+        grid.appendChild(slot);
+    }
+    invPanel.appendChild(grid);
+    const hint = document.createElement('div');
+    hint.textContent = '탭 = 입기/벗기 · 🔒 = 보물찾기로 해금';
+    hint.style.cssText = 'color:rgba(255,255,255,0.45); font-size:10px; margin-top:7px;';
+    invPanel.appendChild(hint);
+}
+function hideInvPanel() { invPanel.style.display = 'none'; }
+invBtn.onclick = () => {
+    if (invPanel.style.display === 'block') { hideInvPanel(); return; }
+    renderInvPanel();
+    invPanel.style.display = 'block';
+};
 const dexBtn = dockBtn('🐟', '물고기 도감 — 잡은 어종 컬렉션');
 dexBtn.onclick = () => toggleFishdex();
 bindZoomBtn(dockBtn('＋', '확대 (키보드 + 키)'), -1);
@@ -7853,7 +7920,7 @@ collDrawer.badge.style.background = '#ff5f6b';
 const toolDrawer = dockDrawer('⚙️', '도구 — 날씨·공사·절전', [weatherBtn, buildBtn, ecoBtn]);
 toolDrawer.badge.style.background = '#5ede8a';
 const zoomBtns = [...dockUI.children].filter((b) => b.textContent === '＋' || b.textContent === '－');
-for (const el of [shotBtn, chickBtn, puppyBtn, fishBtn, diveBtn, collDrawer.row, toolDrawer.row, ...zoomBtns]) dockUI.appendChild(el);   // 상주 순서 재배열 (appendChild = 이동)
+for (const el of [shotBtn, chickBtn, puppyBtn, fishBtn, diveBtn, invBtn, collDrawer.row, toolDrawer.row, ...zoomBtns]) dockUI.appendChild(el);   // 상주 순서 재배열 (appendChild = 이동)
 const dexSeenN = () => { try { return Object.keys(JSON.parse(localStorage.getItem('world-fishdex') || '{}')).length; } catch (e) { return 0; } };
 function syncDockBadges() {
     toolDrawer.badge.style.display = (buildMode || ecoMode) ? 'block' : 'none';
@@ -7868,6 +7935,7 @@ dexBtn.addEventListener('click', () => {   // 도감을 열면 "새 어종" 배�
 const syncFishBtn = () => { fishBtn.style.display = possessed ? 'flex' : 'none'; };   // 🎣 = 빙의 중만 (문맥 버튼)
 fishBtn.style.display = 'none';
 diveBtn.style.display = 'none';
+invBtn.style.display = 'none';   // 🧳 조종 중에만 (syncDiveBtn이 관리)
 let dockBadgeAt = 0;
 window.__syncDockBadges = syncDockBadges;   // eco/build 토글의 즉시 배지 갱신 (eval 순서 안전한 간접 참조)
 syncDockBadges();
