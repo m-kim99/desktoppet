@@ -11276,7 +11276,7 @@ function stepCar(acc, steer, delta, driver, landOnly) {
     const seatPet = (q, side) => {
         q.mover.position.set(
             CAR.x + rX * side * 0.17 - Math.sin(CAR.heading) * 0.06,
-            cy + 0.22,
+            cy + 0.165,   // 엉덩이가 콕핏 욕조(0.15)에 닿는 높이 — 0.22는 '차 위에 서 있는' 실루엣 (스샷 실측)
             CAR.z + rZ * side * 0.17 - Math.cos(CAR.heading) * 0.06
         );
         q.mover.rotation.y = CAR.heading;
@@ -13558,6 +13558,13 @@ function updateSub(delta) {
 function updateSubPose() {   // 좌석 앉기 — 다리 앞접기 (페리 벤치 문법, 엔티티 뒤 덮어쓰기)
     if (!subRide) return;
     for (const q of [subRide.p, subRide.friend]) {
+        if (!q) continue;
+        for (const f of q.pet.feet) f.rotation.x = -1.35;
+    }
+}
+function updateCarPose() {   // 🏎️ 좌석 앉기 — 다리 앞으로 쫙 (같은 벤치 문법 — '서 있는' 실루엣 수정, 사용자 리포트)
+    if (!carDrive) return;
+    for (const q of [carDrive.driver, carDrive.passenger]) {
         if (!q) continue;
         for (const f of q.pet.feet) f.rotation.x = -1.35;
     }
@@ -17128,6 +17135,7 @@ function animate() {
     updatePlanePose();                       // 비행 맞바람 — 귀·날개 눕기 (엔티티 뒤 덮어쓰기)
     updateFerryPose();                       // 페리 벤치 앉기 — 다리 접기 (엔티티 뒤 덮어쓰기)
     updateSubPose();                         // 노랑호 좌석 앉기 (엔티티 뒤 덮어쓰기)
+    updateCarPose();                         // 스포츠카 좌석 앉기 — 다리 앞접기
     updatePhoneCall(delta);                  // 📞 전화 안무 — 폰 위치·고개 기울임·옹알이 (엔티티 뒤)
     updateTrampoline(delta);                 // 🤸 트램펄린 바운스 — y 소유 + 앞구르기 포즈 (엔티티 뒤)
     updateUnderwater();                      // 🌊 카메라-수면 판정 → 안개·하늘 전환
