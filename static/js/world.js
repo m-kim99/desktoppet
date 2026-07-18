@@ -6544,17 +6544,26 @@ motionMenu.appendChild(motionGrid);
 const socialRow = document.createElement('div');
 socialRow.style.cssText = 'display:flex; align-items:center; justify-content:center; gap:4px; border-top:1px solid rgba(255,255,255,0.12); margin-top:4px; padding-top:5px;';
 socialRow.appendChild(menuGridCell('🙈', '숨바꼭질', () => { const p = menuPet; hideMenu(); if (p) worldHideSeek(p); }));
-const callCell = menuGridCell('📞', '친구 부르기', () => { hideMenu(); startPhoneCall(); });
-const gotoCell = menuGridCell('📍', '친구한테 가기', () => { hideMenu(); teleportToFriend(); });
-socialRow.appendChild(callCell);
-socialRow.appendChild(gotoCell);
+// 📞/📍 — 항상 표시. 미조종 상태면 우클릭한 펫을 조종하며 실행 (예전 '조종 중 전용' 숨김은
+// 앱 시작 직후 🙈 한 칸만 남는 반쪽 행을 만들었다 — 사용자 리포트)
+socialRow.appendChild(menuGridCell('📞', '친구 부르기', () => {
+    const p = menuPet;
+    hideMenu();
+    if (!p) return;
+    if (p !== possessed) possessPet(p);
+    startPhoneCall();
+}));
+socialRow.appendChild(menuGridCell('📍', '친구한테 가기', () => {
+    const p = menuPet;
+    hideMenu();
+    if (!p) return;
+    if (p !== possessed) possessPet(p);
+    teleportToFriend();
+}));
 motionMenu.appendChild(socialRow);
 function showMenu(x, y, p) {
     menuPet = p;
     controlItem.textContent = (p === possessed) ? '🎮 조종 해제 (Esc)' : '🎮 조종하기';
-    const social = (p === possessed && pets.length >= 2) ? 'flex' : 'none';   // 📞/📍는 조종 중 메뉴 전용
-    callCell.style.display = social;
-    gotoCell.style.display = social;
     motionMenu.style.display = 'block';
     // Open to the RIGHT of the click point (the click lands on the pet — an offset keeps the
     // menu from covering the character; clamped to the window edge). 하드코딩 치수 대신 실측:
