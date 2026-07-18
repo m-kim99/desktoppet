@@ -6445,7 +6445,7 @@ function menuGridCell(emoji, label, onTap) {
     return cell;
 }
 const motionGrid = document.createElement('div');
-motionGrid.style.cssText = `display:grid; grid-template-columns:repeat(4, ${MENU_CELL}px); gap:4px; padding:2px 0;`;
+motionGrid.style.cssText = `display:grid; grid-template-columns:repeat(3, ${MENU_CELL}px); gap:4px; padding:2px 0;`;   // 3열 — 4열은 폭이 넓어 펫을 가렸다 (사용자 피드백)
 for (const m of GLB_MOTIONS) {
     const cell = menuGridCell(MOTION_EMOJI[m.id] || '✨', m.label, () => { const p = menuPet; hideMenu(); if (p) playWorldMotion(p, m.id); });
     cell.dataset.mid = m.id;
@@ -6455,10 +6455,6 @@ motionMenu.appendChild(motionGrid);
 // 놀이·소셜 한 줄 — 🙈 숨바꼭질(누구든) · 📞 부르기 · 📍 가기 (조종 중 전용, showMenu가 토글)
 const socialRow = document.createElement('div');
 socialRow.style.cssText = 'display:flex; align-items:center; gap:4px; border-top:1px solid rgba(255,255,255,0.12); margin-top:4px; padding-top:5px;';
-const socialLabel = document.createElement('span');
-socialLabel.textContent = '놀이·소셜';
-socialLabel.style.cssText = 'font-size:10.5px; color:rgba(255,255,255,0.55); font-family:sans-serif; padding:0 4px 0 2px; white-space:nowrap;';
-socialRow.appendChild(socialLabel);
 socialRow.appendChild(menuGridCell('🙈', '숨바꼭질', () => { const p = menuPet; hideMenu(); if (p) worldHideSeek(p); }));
 const callCell = menuGridCell('📞', '친구 부르기', () => { hideMenu(); startPhoneCall(); });
 const gotoCell = menuGridCell('📍', '친구한테 가기', () => { hideMenu(); teleportToFriend(); });
@@ -6633,6 +6629,11 @@ let duoBusy = false;
 
 function releaseAI(p, wait = 1.5) {
     if (p.ai.state === 'player') return;   // a director letting go of a pet the player took over
+    if (p === possessed) {   // 🎬 디렉터가 조종 펫을 놓아줄 땐 idle이 아니라 주인에게 돌려준다 (모션 중 조종 유지)
+        p.ai.state = 'player';
+        p.ai.target = null; p.ai.waypoints = null; p.ai.onArrive = null;
+        return;
+    }
     p.ai.state = 'idle'; p.ai.wait = wait + Math.random();
     p.ai.target = null; p.ai.waypoints = null; p.ai.onArrive = null;
 }
@@ -6667,14 +6668,15 @@ function playWorldMotion(p, id) {
     if (p.ai.state === 'goto' || p.ai.state === 'busy' || p.ai.state === 'held') return;   // choreography/hand-hold owns it
     if (id === 'sleep') { p.pet.sleeping = true; releaseAI(p, 4); return; }
     p.pet.sleeping = false; p.pet.autoSleeping = false;
+    const busyRide = p === possessed && (carDrive || boatRide || planeRide || balloonRide || ferryRide || subRide || dive || p.tramp);
     if (id === 'holiday') {
-        if (p === possessed) releasePossession();          // 듀오 안무는 AI에게 맡긴다
-        worldHoliday(p);
+        if (busyRide) { p.pet.action = { id: 'holiday', t: 0 }; return; }   // 좌석/잠수 중엔 제자리 솔로
+        worldHoliday(p);   // 조종 유지 — 디렉터가 잠깐 몰고 releaseAI가 주인에게 돌려준다 (카메라도 계속 추종)
         return;
     }
     if (id === 'hug' || id === 'play') {
-        if (p === possessed) releasePossession();          // hand the pet back to its AI for the duo
-        (id === 'hug' ? worldHug : worldPlay)(p);
+        if (busyRide) { p.pet.action = id === 'hug' ? { id: 'hug', t: 0, role: 'solo', dir: 1 } : { id: 'play', t: 0 }; return; }
+        (id === 'hug' ? worldHug : worldPlay)(p);   // 조종 유지 — 위와 동일
         return;
     }
     if (id === 'wave') petVoice(p);                       // 인사엔 목소리도 함께
@@ -7397,6 +7399,7 @@ if (statsOn) window.__worldDev = {
     },
     subHome: () => ({ x: +SUB_HOME.x.toFixed(1), z: +SUB_HOME.z.toFixed(1) }),
     inv: () => ({ unlocked: [...accUnlocked], wearing: possessed && possessed.pet.accessory ? possessed.pet.accessory.id : null, open: invPanel.style.display === 'block', btn: invBtn.style.display }),
+    ctrl: () => (possessed ? { name: possessed.name, ai: possessed.ai.state } : null),   // ⚠️ who는 열기구 훅이 선점
     invClick: (id) => { const slot = invPanel.querySelector(`[data-aid="${id}"]`); if (slot) slot.click(); return !!slot; },
     subRouteTry: () => { const r = makeSubRoute(); return { stops: r.stops.map((q) => q.kind), len: +r.len.toFixed(1), diag: subRouteDiag.slice(0, 10) }; },
     handState: () => (handHold ? { y: +handHold.partner.mover.position.y.toFixed(2), swim: handHold.partner.swimming, state: handHold.partner.ai.state } : null),
@@ -10616,6 +10619,11 @@ function updatePlayer(delta) {
         p.swimming = false;
         const tHint = `🤸 ${petKo(p)} 통통 중 — ${IS_TOUCH ? '🦘' : 'Space'} = 더 높이 · 걸어 나가면 끝`;
         if (controlHint.textContent !== tHint) controlHint.textContent = tHint;
+        return;
+    }
+    if (p.ai.state === 'goto' || p.ai.state === 'busy') {   // 🎬 모션 디렉터가 잠깐 몬다 — 조종·카메라 유지, 끝나면 releaseAI가 돌려준다
+        const cHint = `🎬 ${petKo(p)} 안무 중 — 끝나면 바로 조종으로 돌아와요`;
+        if (controlHint.textContent !== cHint) controlHint.textContent = cHint;
         return;
     }
     const sup = playerSupportY(p, p.mover.position.x, p.mover.position.z);
