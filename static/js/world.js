@@ -7408,6 +7408,7 @@ if (statsOn) window.__worldDev = {
     callFriend: () => { startPhoneCall(); return !!phoneCall; },
     shellState: () => ({ alive: shells.length, spots: shells.map((sh) => ({ t: sh.t.id, x: +sh.x.toFixed(2), z: +sh.z.toFixed(2), il: sh.islet || null })), counts: shellCounts() }),
     shellSpawn: () => trySpawnShell(true),
+    shellPickNearest: () => { const sh = nearestShell(0.85); if (sh) { pickShell(sh); return true; } return false; },   // E2E — 모래섬 ⌘ 선점 지대(야자·비행기·모래놀이) 우회, 근접+픽업 경로는 그대로
     shellDiag: () => {   // 스폰 링 가용률 분해 — 배치 튜닝용
         const SAND = ISLANDS[4];
         const out = { ok: 0, wet: 0, plane: 0, blockers: {}, shellsNow: shells.length, nextAt: Math.round(shellNextAt) };
@@ -14673,7 +14674,7 @@ function seaChunkInfo(cx, cz) {   // 시드 결정적 (아발란치 rngT — 시
     base.kelpForest = !ventRoll && forestRoll;   // 한 청크에 하나만 — 읽히는 해저
     base.kfx = kfx;
     base.kfz = kfz;
-    const jellyRoll = rng() < 0.06, jx = (cx + 0.2 + rng() * 0.6) * SEA_CHUNK, jz = (cz + 0.2 + rng() * 0.6) * SEA_CHUNK;
+    const jellyRoll = rng() < 0.18, jx = (cx + 0.2 + rng() * 0.6) * SEA_CHUNK, jz = (cz + 0.2 + rng() * 0.6) * SEA_CHUNK;   // 심해 ~1/3 청크에 무리 (6%는 한참 수영해도 안 보임 — 사용자 실측. 게이트 상향=부분집합 보존)
     const jn = 2 + Math.floor(rng() * 2), jc = rng() < 0.55 ? 0 : 1;   // 무리 2~3 · 색(분홍/청록)
     base.jelly = jellyRoll;
     base.jx = jx;
@@ -15124,39 +15125,84 @@ let shellSeeded = false;   // 로드 직후 1~2개 즉시 — 레이아웃·소�
 function shellCounts() {
     try { return JSON.parse(localStorage.getItem('world-shells') || '{}'); } catch (e) { return {}; }
 }
-function makeShellMesh(t) {
+function makeShellMesh(t) {   // 🐚 고퀄 리모델: 종별 시그니처 — 가리비=방사 리브·소라=진짜 나선·분홍조개=성장 융기·진주=자개 속살+발광 알
     const g = new THREE.Group();
-    if (t.id === 'conch') {   // 소라: 통통한 몸 + 뾰족 나선 팁
-        const body = new THREE.Mesh(new THREE.SphereGeometry(0.045, 9, 7), M(t.col));
-        body.scale.set(1, 0.75, 0.8);
-        body.position.y = 0.032;
-        g.add(body);
-        const tip = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.06, 8), M(0xc89070));
-        tip.rotation.z = -1.25;
-        tip.position.set(0.055, 0.035, 0);
-        g.add(tip);
-    } else if (t.id === 'pearl') {   // 진주조개: 벌어진 두 껍데기 + 진주알
-        for (const [ry, py] of [[0, 0.012], [-2.5, 0.05]]) {
-            const half = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), M(t.col));
-            half.scale.set(1, 0.42, 0.9);
-            half.rotation.x = ry;
-            half.position.y = py;
-            g.add(half);
+    const parts = [];
+    const ribFan = (baseCol, rimCol, ribN, sx) => {   // 부채 껍데기 + 방사 리브 (가리비·진주 공용)
+        const fan = new THREE.SphereGeometry(0.052, 12, 8);
+        fan.scale(sx, 0.26, 0.92);
+        parts.push(bakeGrad(fan, rimCol, baseCol, { curve: 1 }));
+        for (let k = 0; k < ribN; k++) {
+            const a = (k / (ribN - 1) - 0.5) * 1.5;
+            const rib = new THREE.SphereGeometry(0.011, 6, 5);
+            rib.scale(0.55, 0.7, 3.6);
+            rib.rotateY(-a);
+            rib.translate(Math.sin(a) * 0.026 * sx / 1, 0.011, Math.cos(a) * 0.026 - 0.014);
+            parts.push(bakeGrad(rib, rimCol, baseCol, { curve: 1 }));
         }
-        const bead = new THREE.Mesh(new THREE.SphereGeometry(0.018, 10, 8), M(0xffffff));
-        bead.position.y = 0.032;
+        for (const ex of [-1, 1]) {   // 힌지 귀
+            const ear = new THREE.BoxGeometry(0.016, 0.01, 0.012);
+            ear.translate(ex * 0.014, 0.006, -0.048);
+            parts.push(bakeGrad(ear, baseCol, baseCol, { curve: 1 }));
+        }
+    };
+    if (t.id === 'conch') {   // 소라 — 옆으로 누운 진짜 나선: 와류 스택 + 벌어진 입술 + 뾰족 팁
+        let r = 0.034, px = -0.02, py = 0.03;
+        for (let k = 0; k < 5; k++) {
+            const whorl = new THREE.SphereGeometry(r, 10, 8);
+            whorl.scale(1, 0.88, 0.94);
+            whorl.translate(px, py, 0);
+            parts.push(bakeGrad(whorl, 0xf0d0b0, t.col, { curve: 1.1 }));
+            px += r * 0.92;
+            py += r * 0.18;
+            r *= 0.62;
+        }
+        const tip = new THREE.ConeGeometry(0.013, 0.035, 7);
+        tip.rotateZ(-Math.PI / 2);
+        tip.translate(px + 0.012, py, 0);
+        parts.push(bakeGrad(tip, 0xc89070, 0xa87454, { curve: 1 }));
+        const lip = new THREE.TorusGeometry(0.03, 0.009, 7, 14, Math.PI * 1.25);   // 벌어진 입술
+        lip.rotateY(Math.PI / 2);
+        lip.rotateX(0.35);
+        lip.translate(-0.043, 0.026, 0.008);
+        parts.push(bakeGrad(lip, 0xffe8d8, 0xe8b898, { curve: 1 }));
+    } else if (t.id === 'pearl') {   // 진주조개 — 자개 속살 두 껍데기 + 은은히 빛나는 알
+        ribFan(0xd8cfc0, 0xfaf4e8, 5, 1);
+        const upper = new THREE.SphereGeometry(0.05, 12, 8);   // 위 껍데기 — 자개빛 안쪽이 보이게 젖혀짐
+        upper.scale(0.96, 0.24, 0.9);
+        upper.rotateX(-2.45);
+        upper.translate(0, 0.052, -0.032);
+        parts.push(bakeGrad(upper, 0xe6eef2, 0xcfc2dc, { curve: 1 }));   // 자개 — 은백~라벤더
+        const m = new THREE.Mesh(mergeGeometries(parts, false), gradMat);
+        m.castShadow = true;
+        g.add(m);
+        const bead = new THREE.Mesh(new THREE.SphereGeometry(0.019, 12, 10),
+            new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff4e0, emissiveIntensity: 0.3, roughness: 0.25 }));
+        bead.position.set(0, 0.026, 0.004);
         g.add(bead);
-    } else {   // 가리비/분홍조개: 눌린 부채 껍데기 (기울여 모래에 반쯤 얹힌 느낌)
-        const shell = new THREE.Mesh(new THREE.SphereGeometry(0.052, 10, 7), M(t.col));
-        shell.scale.set(1, 0.3, 0.88);
-        shell.position.y = 0.02;
-        shell.rotation.z = 0.25;
-        g.add(shell);
-        const hinge = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 6), M(0xc89070));
-        hinge.position.set(-0.045, 0.018, 0);
-        g.add(hinge);
+        g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+        return g;
+    } else if (t.id === 'scallop') {   // 가리비 — 방사 리브 부채
+        ribFan(t.col, 0xfaf0e0, 7, 1);
+    } else {   // 분홍조개 — 볼록 새조개: 성장 융기 링 + 힌지 혹
+        const dome = new THREE.SphereGeometry(0.05, 12, 9);
+        dome.scale(1, 0.42, 0.9);
+        parts.push(bakeGrad(dome, 0xffe2ea, t.col, { curve: 1.1 }));
+        for (let k = 0; k < 3; k++) {   // 성장 융기 — 동심 링
+            const ring = new THREE.TorusGeometry(0.018 + k * 0.013, 0.0035, 6, 16);
+            ring.rotateX(Math.PI / 2);
+            ring.scale(1, 1, 0.42 / (0.36 + k * 0.02));
+            ring.translate(0, 0.021 - k * 0.0055, 0);
+            parts.push(bakeGrad(ring, 0xffd0dc, 0xe8a8ba, { curve: 1 }));
+        }
+        const hinge = new THREE.SphereGeometry(0.014, 8, 6);
+        hinge.translate(0, 0.014, -0.042);
+        parts.push(bakeGrad(hinge, 0xc89070, 0xa87454, { curve: 1 }));
     }
-    g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    const m = new THREE.Mesh(mergeGeometries(parts, false), gradMat);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    g.add(m);
     return g;
 }
 function trySpawnShell(force = false) {
