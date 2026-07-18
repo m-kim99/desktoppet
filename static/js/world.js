@@ -10360,12 +10360,17 @@ function doInteract() {
             seaHop = { fx: pos.x, fy: pos.y, fz: pos.z, tx: spot.tx, tz: spot.tz, ty: spot.ty, t: 0 };
             return;
         }
-        if (dive && dive.p === possessed) {   // 🤿 잠수 중 ⌘: 수거 > 보물 발굴 > 부상
+        if (dive && dive.p === possessed) {   // 🤿 잠수 중 ⌘: 수거 > 보물 발굴 — 허탕이어도 부상하지 않는다
             if (dive.phase === 'deep') {
                 if (collectNearbySeafood()) return;
                 if (digNearbySeaTreasure()) return;
-                dive.phase = 'up';
-                dive.t = 0;
+                // 폴백 부상 제거 — 해삼 주우려다 판정(0.95m) 빗나가면 수면으로 튀던 사고 (사용자 리포트).
+                // 부상은 ⬆️ 버튼 / 천장에서 W 꾹으로 충분. 허탕 피드백은 기포 한 방울.
+                const bub = new THREE.Sprite(new THREE.SpriteMaterial({ map: blobTex, color: 0xd8f2ff, transparent: true, opacity: 0.7, depthWrite: false }));
+                bub.scale.setScalar(0.05);
+                bub.position.set(possessed.mover.position.x, possessed.mover.position.y + 0.15, possessed.mover.position.z);
+                scene.add(bub);
+                hugBurst.push({ spr: bub, vx: 0, vy: 0.4, vz: 0, t: 0.1 });
                 return;
             }
             return;
@@ -10752,7 +10757,7 @@ function updatePlayer(delta) {
     // water splashes and switches to swimming. On the surface the pet bobs with the waves.
     if (dive && dive.p === p && !dive.isAI) {   // 🤿 딥 다이브 — updateDive가 y를 소유
         p.swimming = 'sea';
-        const dHint = `🤿 ${petKo(p)} 잠수 중${handHold ? ' 🤝' : ''} — ${IS_TOUCH ? '조이스틱 유영 · 🔼🔽 수심 · ✋ 줍기 · ⬆️' : '방향키 유영 · W/S 수심 · ⌘'} 부상`;
+        const dHint = `🤿 ${petKo(p)} 잠수 중${handHold ? ' 🤝' : ''} — ${IS_TOUCH ? '조이스틱 유영 · 🔼🔽 수심 · ✋ 줍기 · ⬆️ 부상' : '방향키 유영 · W/S 수심 · ⌘ 줍기·발굴 · W 꾹/⬆️ 부상'}`;
         if (controlHint.textContent !== dHint) controlHint.textContent = dHint;
         return;
     }
@@ -14460,6 +14465,10 @@ function updateDive(delta) {
         const floor = seabedHeight(m.position.x, m.position.z) + 0.2;
         const ceil = waveYAt(m.position.x, m.position.z) - 0.32;
         m.position.y = THREE.MathUtils.clamp(m.position.y + vy * delta, Math.min(floor, ceil), ceil);
+        if (vy > 0 && m.position.y >= ceil - 0.02) {   // 천장에서 W 꾹 = 부상 (짧은 드웰 — 스치기 오탈출 방지)
+            dive.upHold = (dive.upHold || 0) + delta;
+            if (dive.upHold > 0.25) { dive.phase = 'up'; dive.t = 0; return; }
+        } else dive.upHold = 0;
         // 수평 유영 — 피치는 여기가 전유 (mover의 수면 lean 0.3이 남아있으면 위에서 본 풍선이 된다 — 스샷 실측)
         m.rotation.x = 0.08 + (vy !== 0 ? -vy * 0.28 : 0);
         p.pet.wrap.rotation.x = Math.sin(p.pet.t * 3.4) * 0.05;   // 스트로크 바운스 (applySwimPose 덮어쓰기 보상)
