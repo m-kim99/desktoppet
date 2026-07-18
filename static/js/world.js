@@ -38,6 +38,7 @@ try {   // 부트 1회 — 서버 값이 로컬을 덮는다 (아래 모든 리�
         const kv = (await r.json()).kv || {};
         for (const k of WORLD_SYNC_KEYS) {
             if (typeof kv[k] === 'string') { try { localStorage.setItem(k, kv[k]); } catch (e) {} }
+            else worldSync(k);   // 서버가 빈 키 = 이 기기 값을 올린다 (첫 이주 시드 — 없으면 빈약한 기기가 먼저 쓰는 순간 풍부한 쪽이 덮인다)
         }
     }
 } catch (e) { /* 백엔드 없는 정적 서빙 — 로컬 캐시로 진행 */ }
