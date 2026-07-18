@@ -13816,6 +13816,7 @@ try {   // 부트 1회 — 서버 상태가 있으면 로컬을 덮는다 (loadG
             try { localStorage.setItem('world-fruit-picked', JSON.stringify(fruitPicked)); } catch (e) {}
             try { localStorage.setItem('world-fruit-basket', JSON.stringify(basketCounts)); } catch (e) {}
         }
+        if (!st || (!st.picked && !st.basket && !st.ground)) saveFruitServer();   // 첫 이주 시드 — 서버가 비면 이 기기 값을 올린다 (KV와 동일 원칙: 없으면 '다음 행동'까지 수확 기록이 안 올라간다)
     }
 } catch (e) { /* 백엔드 없는 정적 서빙 — 로컬 캐시로 진행 */ }
 const saveFruitPicked = () => { try { localStorage.setItem('world-fruit-picked', JSON.stringify(fruitPicked)); } catch (e) {} saveFruitServer(); };
