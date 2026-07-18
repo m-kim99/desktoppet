@@ -12032,6 +12032,48 @@ async def world_flower_add(request: Request):
     return {"ok": True, "flower": flower, "total": len(flowers)}
 
 
+# ---- 월드 상태 KV (도감·조개·해금·발견·펫 이어하기 등): 폰·데탑 공유 범용 저장소.
+WORLD_KV_FILE = _world_file("world_kv.json")
+_WORLD_KV_KEY_RE = re.compile(r"^[\w-]{1,64}$")
+
+
+@app.get("/api/world_kv")
+async def world_kv_get():
+    try:
+        with open(WORLD_KV_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        kv = data.get("kv") if isinstance(data, dict) else None
+        return {"kv": kv if isinstance(kv, dict) else {}}
+    except Exception:
+        return {"kv": {}}
+
+
+@app.post("/api/world_kv")
+async def world_kv_set(request: Request):
+    data = await request.json()
+    key = data.get("key")
+    value = data.get("value")
+    if not isinstance(key, str) or not _WORLD_KV_KEY_RE.match(key):
+        return JSONResponse({"error": "bad key"}, status_code=400)
+    if not isinstance(value, str) or len(value) > 300_000:
+        return JSONResponse({"error": "value must be a string ≤ 300KB"}, status_code=400)
+    try:
+        try:
+            with open(WORLD_KV_FILE, "r", encoding="utf-8") as f:
+                data0 = json.load(f)
+            kv = data0.get("kv") if isinstance(data0, dict) else {}
+            if not isinstance(kv, dict):
+                kv = {}
+        except Exception:
+            kv = {}
+        kv[key] = value
+        with open(WORLD_KV_FILE, "w", encoding="utf-8") as f:
+            json.dump({"kv": kv}, f, ensure_ascii=False)
+        return {"ok": True}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 # ---- 과일 상태 (바구니·낙과·재성장): 폰·데탑 공유 — localStorage는 기기별이라 갈렸다.
 WORLD_FRUIT_FILE = _world_file("world_fruit.json")
 

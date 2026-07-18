@@ -26,6 +26,35 @@ const savedLayout = await (async () => {
     } catch (err) {}
     try { return JSON.parse(localStorage.getItem('world-layout')) || {}; } catch (err) { return {}; }
 })();
+// 🔄 월드 상태 KV 동기 (/api/world_kv — 폰·데탑 공유): 진행도·수집·월드 상태는 서버가 진실.
+// localStorage는 기기별이라 도감·조개·해금·발견이 접속 기기마다 갈렸다 (사용자 리포트 — 과일과 동일 원인).
+// 기기 유지: world-eco(성능)·world-layout(전용 API)·world-fruit-*(전용 API)·world-last-seen(기기별 리캡).
+const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked',
+    'world-sea-found', 'world-seabed-dug', 'world-islet-dug', 'world-discover', 'world-houselight', 'world-pets',
+    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-dex-seen-n'];
+try {   // 부트 1회 — 서버 값이 로컬을 덮는다 (아래 모든 리더보다 먼저 실행되는 게 핵심)
+    const r = await fetch('/api/world_kv', { signal: AbortSignal.timeout(1500) });
+    if (r.ok) {
+        const kv = (await r.json()).kv || {};
+        for (const k of WORLD_SYNC_KEYS) {
+            if (typeof kv[k] === 'string') { try { localStorage.setItem(k, kv[k]); } catch (e) {} }
+        }
+    }
+} catch (e) { /* 백엔드 없는 정적 서빙 — 로컬 캐시로 진행 */ }
+const worldSyncTimers = {};
+function worldSync(key) {   // 변경 키만 900ms 디바운스 POST — 원시 문자열 그대로 (스키마 무관)
+    clearTimeout(worldSyncTimers[key]);
+    worldSyncTimers[key] = setTimeout(() => {
+        let v = null;
+        try { v = localStorage.getItem(key); } catch (e) {}
+        if (v === null) return;
+        fetch('/api/world_kv', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key, value: v }),
+        }).catch(() => {});
+    }, 900);
+}
 // 이동 가능한 타입 (연못=지형 함몰이라 고정, furniture=집 내부 파생이라 집을 따라감)
 const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'vine', 'fruitbasket', 'library', 'flowerbasket', 'pond', 'portal']);
 // 섬 정의 지문 — 섬을 옮기거나 크기를 바꾸면 값이 달라진다(재발 방지: 저장 배치의 "섬 이사" 자동 감지).
@@ -2541,7 +2570,7 @@ try {
 } catch (e) {}
 accUnlocked.add('santa-hat');   // 산타모자는 언제나 — 이미 출시된 코디를 잠그지 않는다
 function saveAccUnlocked() {
-    try { localStorage.setItem('world-acc-unlocked', JSON.stringify([...accUnlocked])); } catch (e) {}
+    try { localStorage.setItem('world-acc-unlocked', JSON.stringify([...accUnlocked])); worldSync('world-acc-unlocked'); } catch (e) {}
 }
 let digState = null;   // { date, spot, dug }
 function refreshDigState() {
@@ -2550,7 +2579,7 @@ function refreshDigState() {
     try { digState = JSON.parse(localStorage.getItem('world-treasure')); } catch (e) { digState = null; }
     if (!digState || digState.date !== today) {
         digState = { date: today, spot: Math.floor(Math.random() * DIG_SPOTS_LOCAL.length), dug: false };
-        try { localStorage.setItem('world-treasure', JSON.stringify(digState)); } catch (e) {}
+        try { localStorage.setItem('world-treasure', JSON.stringify(digState)); worldSync('world-treasure'); } catch (e) {}
     }
 }
 function digSpotWorld() {
@@ -2618,7 +2647,7 @@ async function startDig(p) {
         }
         await sleepMs(2900);
         digState.dug = true;
-        try { localStorage.setItem('world-treasure', JSON.stringify(digState)); } catch (e) {}
+        try { localStorage.setItem('world-treasure', JSON.stringify(digState)); worldSync('world-treasure'); } catch (e) {}
         triggerHugBurst(w.x, y + 0.25, w.z);
         const next = DIG_UNLOCK_ORDER.find((id) => !accUnlocked.has(id));
         if (next) {
@@ -2811,7 +2840,7 @@ function openMailbox() {
     mailUI.panel.style.display = 'flex';
     fetchMail().then(() => {
         mailReadTs = Date.now();
-        try { localStorage.setItem('world-mail-read', String(mailReadTs)); } catch (e) {}
+        try { localStorage.setItem('world-mail-read', String(mailReadTs)); worldSync('world-mail-read'); } catch (e) {}
         updateMailFlag();
     });
 }
@@ -5581,8 +5610,8 @@ function updateSeasonBlend(delta) {
 function setManualSeason(id) {
     manualSeason = id;
     try {
-        if (id) localStorage.setItem('world-season', id);
-        else localStorage.removeItem('world-season');
+        if (id) { localStorage.setItem('world-season', id); worldSync('world-season'); }
+        else { localStorage.removeItem('world-season'); worldSync('world-season'); }
     } catch (e) {}
     const next = worldSeason();
     if (next === season) return;
@@ -6096,7 +6125,7 @@ function savePetState() {
                 swim: p.swimming || null,
             };
         }
-        localStorage.setItem('world-pets', JSON.stringify(out));
+        localStorage.setItem('world-pets', JSON.stringify(out)); worldSync('world-pets');
     } catch (e) {}
 }
 window.addEventListener('pagehide', savePetState);
@@ -7090,7 +7119,7 @@ function petKo(p) { return p.name === 'chick' ? '병아리' : '강아지'; }
 function logWorldEvent(text) {
     worldEvents.push({ t: Date.now(), text });
     if (worldEvents.length > 120) worldEvents.splice(0, worldEvents.length - 120);   // 하루치 — 그림일기가 먹는다
-    try { localStorage.setItem('world-events', JSON.stringify(worldEvents)); } catch (e) {}
+    try { localStorage.setItem('world-events', JSON.stringify(worldEvents)); worldSync('world-events'); } catch (e) {}
 }
 function recentEventsText() {
     const now = Date.now();
@@ -7855,7 +7884,7 @@ function maybeAutoDiary() {
     if (currentHour() < 22.05) return;
     const today = localDateStr();
     try { if (localStorage.getItem('world-diary-auto') === today) return; } catch (e) {}
-    try { localStorage.setItem('world-diary-auto', today); } catch (e) {}
+    try { localStorage.setItem('world-diary-auto', today); worldSync('world-diary-auto'); } catch (e) {}
     if (!todayEventsText() || !pets.length) return;
     (async () => {
         for (const p of pets) await writeDiary(p.name, false, true);   // 순차 — LLM 호출이 겹치지 않게
@@ -8036,7 +8065,7 @@ function syncDockBadges() {
     collDrawer.badge.style.display = dexSeenN() > seen ? 'block' : 'none';
 }
 dexBtn.addEventListener('click', () => {   // 도감을 열면 "새 어종" 배지 해소
-    try { localStorage.setItem('world-dex-seen-n', String(dexSeenN())); } catch (e) {}
+    try { localStorage.setItem('world-dex-seen-n', String(dexSeenN())); worldSync('world-dex-seen-n'); } catch (e) {}
     syncDockBadges();
 });
 const syncFishBtn = () => { fishBtn.style.display = possessed ? 'flex' : 'none'; };   // 🎣 = 빙의 중만 (문맥 버튼)
@@ -10440,7 +10469,7 @@ function cycleLampBrightness() {
     const steps = [0, 0.25, 0.5, 0.75, 1];
     const idx = steps.findIndex((s) => Math.abs(s - lampBrightness) < 0.125);
     lampBrightness = steps[(idx + 1) % steps.length];
-    try { localStorage.setItem('worldLampBrightness', String(lampBrightness)); } catch (err) {}
+    try { localStorage.setItem('worldLampBrightness', String(lampBrightness)); worldSync('worldLampBrightness'); } catch (err) {}
     updateDayNight(true);
     showToast(`💡 가로등 밝기 ${Math.round(lampBrightness * 100)}%`);
 }
@@ -14376,7 +14405,7 @@ function endDive(caught) {
     const counts = seafoodCounts();
     const first = !counts[caught.id];
     counts[caught.id] = (counts[caught.id] || 0) + 1;
-    try { localStorage.setItem('world-seafood', JSON.stringify(counts)); } catch (e) {}
+    try { localStorage.setItem('world-seafood', JSON.stringify(counts)); worldSync('world-seafood'); } catch (e) {}
     const mesh = makeSeafoodMesh(caught.id, 1.5);   // 머리 위로 둥실 (조개 줍기 연출 재사용)
     mesh.position.set(p.mover.position.x, p.mover.position.y + 0.42, p.mover.position.z);
     fruitLayer.add(mesh);
@@ -14487,7 +14516,7 @@ try { seaFound = JSON.parse(localStorage.getItem('world-sea-found') || '{}') || 
 function recordSeaFind(key, x, z, kind) {
     if (seaFound[key]) return;
     seaFound[key] = { x: +x.toFixed(1), z: +z.toFixed(1), k: kind };
-    try { localStorage.setItem('world-sea-found', JSON.stringify(seaFound)); } catch (e) {}
+    try { localStorage.setItem('world-sea-found', JSON.stringify(seaFound)); worldSync('world-sea-found'); } catch (e) {}
 }
 // ☀️ 커스틱 정적 굽기 — 수면이 모래에 드리우는 빛 그물을 텍스처에 굽는다 (승인된 발열 설계:
 // 런타임 0비용). 셀 가장자리를 물결 폐곡선으로 그리고, 타일 경계는 9-탭 랩으로 이음새 제거.
@@ -14901,7 +14930,7 @@ function digNearbySeaTreasure() {   // deep 중 ⌘ — ✕ 발굴 (무인도 �
         if (!e.treasure) continue;
         if (Math.hypot(e.tx - p.mover.position.x, e.tz - p.mover.position.z) > 1.05) continue;
         dugSeabed[key] = Date.now();
-        try { localStorage.setItem('world-seabed-dug', JSON.stringify(dugSeabed)); } catch (err) {}
+        try { localStorage.setItem('world-seabed-dug', JSON.stringify(dugSeabed)); worldSync('world-seabed-dug'); } catch (err) {}
         e.group.remove(e.treasure);
         e.treasure.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
         e.treasure = null;
@@ -14912,7 +14941,7 @@ function digNearbySeaTreasure() {   // deep 중 ⌘ — ✕ 발굴 (무인도 �
         if (roll < 0.5) {
             const counts = shellCounts();
             counts.pearl = (counts.pearl || 0) + 1;
-            try { localStorage.setItem('world-shells', JSON.stringify(counts)); } catch (err) {}
+            try { localStorage.setItem('world-shells', JSON.stringify(counts)); worldSync('world-shells'); } catch (err) {}
             showToast('🤿💛 해저 보물 — 진주조개가 나왔다!!');
             logWorldEvent(`${petKo(p)}가 해저에 파묻힌 보물에서 진주조개를 찾았다 🤿🐚`);
         } else if (roll < 0.72 && nextAcc) {
@@ -14933,7 +14962,7 @@ function recordSeafoodCatch(p, caught) {   // 도감 기록 + 연출 (수거·AI
     const counts = seafoodCounts();
     const first = !counts[caught.id];
     counts[caught.id] = (counts[caught.id] || 0) + 1;
-    try { localStorage.setItem('world-seafood', JSON.stringify(counts)); } catch (e) {}
+    try { localStorage.setItem('world-seafood', JSON.stringify(counts)); worldSync('world-seafood'); } catch (e) {}
     const mesh = makeSeafoodMesh(caught.id, 1.5);
     mesh.position.set(p.mover.position.x, p.mover.position.y + 0.42, p.mover.position.z);
     fruitLayer.add(mesh);
@@ -15032,7 +15061,7 @@ function pickShell(sh) {
     shellFly.push({ mesh: sh.mesh, t: 0, x: sh.x, z: sh.z });
     const counts = shellCounts();
     counts[sh.t.id] = (counts[sh.t.id] || 0) + 1;
-    try { localStorage.setItem('world-shells', JSON.stringify(counts)); } catch (e) {}
+    try { localStorage.setItem('world-shells', JSON.stringify(counts)); worldSync('world-shells'); } catch (e) {}
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
     const spr = glowSprite(sh.t.rare ? 0xfff1cf : 0x9be7ff, 0.14, 0.9);
     spr.position.set(sh.x, sh.mesh.position.y + 0.25, sh.z);
@@ -15448,7 +15477,7 @@ function applyHouseLight() {
 function toggleHouseLight() {
     const cur = houseLightOn === null ? isNightTime() : houseLightOn;
     houseLightManual = !cur;
-    try { localStorage.setItem('world-houselight', houseLightManual ? '1' : '0'); } catch (e) {}
+    try { localStorage.setItem('world-houselight', houseLightManual ? '1' : '0'); worldSync('world-houselight'); } catch (e) {}
     applyHouseLight();
     showToast(houseLightManual ? '💡 전등 켰다' : '💡 전등 껐다');
     logWorldEvent(houseLightManual ? '거실 전등을 켰다 💡' : '거실 전등을 껐다 🌙');
@@ -15763,7 +15792,7 @@ function updateStreaming(delta) {
             const il = idx >= 0 ? ISLANDS[idx] : null;
             if (il && il.islet && !discoveredIslets.has(il.key)) {
                 discoveredIslets.add(il.key);
-                try { localStorage.setItem('world-discover', JSON.stringify([...discoveredIslets])); } catch (e) {}
+                try { localStorage.setItem('world-discover', JSON.stringify([...discoveredIslets])); worldSync('world-discover'); } catch (e) {}
                 fishFanfare();
                 showToast(`🏝️ 새 섬 발견 — ${il.name}! ${THEME_EMOJI[il.theme] || ''} (${discoveredIslets.size}번째)`);
                 logWorldEvent(`수평선 너머 ${il.name}을 발견했다! ${THEME_EMOJI[il.theme] || '🏝️'} (${discoveredIslets.size}번째 무인도)`);
@@ -15806,7 +15835,7 @@ async function startIsletDig(p, e) {
         }
         await sleepMs(2900);
         dugIslets[e.islet.key] = Date.now();
-        try { localStorage.setItem('world-islet-dug', JSON.stringify(dugIslets)); } catch (err) {}
+        try { localStorage.setItem('world-islet-dug', JSON.stringify(dugIslets)); worldSync('world-islet-dug'); } catch (err) {}
         if (e.dress.markGroup) {   // ✕ 표식 걷어내기 (버킷에 병합 안 했으니 단독 제거 가능)
             e.dress.group.remove(e.dress.markGroup);
             e.dress.markGroup.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
@@ -15831,7 +15860,7 @@ async function startIsletDig(p, e) {
         if (roll < 0.5) {
             const counts = shellCounts();
             counts.pearl = (counts.pearl || 0) + 1;
-            try { localStorage.setItem('world-shells', JSON.stringify(counts)); } catch (err) {}
+            try { localStorage.setItem('world-shells', JSON.stringify(counts)); worldSync('world-shells'); } catch (err) {}
             showToast(`⛏️💛 ${e.islet.name}의 보물 — 진주조개가 나왔다!!`);
             logWorldEvent(`${e.islet.name}에 파묻힌 보물 상자에서 진주조개를 찾았다 ⛏️🐚`);
             maybeProactive(p, `무인도 "${e.islet.name}"에서 보물 상자를 파냈다! 안에서 진주조개가 나왔다!`);
@@ -16004,7 +16033,7 @@ function fishdexRecord(sp, len) {
     rec.n += 1;
     rec.max = Math.max(rec.max, len);
     dex[sp.id] = rec;
-    try { localStorage.setItem('world-fishdex', JSON.stringify(dex)); } catch (e) {}
+    try { localStorage.setItem('world-fishdex', JSON.stringify(dex)); worldSync('world-fishdex'); } catch (e) {}
     return first;
 }
 function fishFanfare() {   // 잡았다! 차임 — 5도 상승 두 음
