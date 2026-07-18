@@ -16006,28 +16006,83 @@ function makeFishMesh(sp, sizeK) {
             leg.position.set(s * 0.07, -0.03, -0.05);
             g.add(leg);
         }
-    } else {   // oval/sleek/round — lathe 몸통 + 꼬리·등지느러미 + 눈
-        const prof = [];
+    } else {   // oval/sleek/round — 비대칭 유선형 + 포크 꼬리 + 지느러미 세트 (스쿨피시급 문법)
         const L = sp.body === 'sleek' ? 0.24 : sp.body === 'round' ? 0.15 : 0.19;   // 반길이
         const W = sp.body === 'sleek' ? 0.05 : sp.body === 'round' ? 0.085 : 0.062; // 최대 반폭
-        for (let i = 0; i <= 7; i++) {
-            const t = i / 7;
-            prof.push(new THREE.Vector2(Math.max(0.001, Math.sin(t * Math.PI) ** (sp.body === 'round' ? 0.75 : 1.15) * W), (t - 0.5) * 2 * L));
+        const prof = [];
+        for (let i = 0; i <= 9; i++) {
+            const t = i / 9;
+            const u = Math.pow(t, 0.82);   // 배가 앞쪽 1/3에 오는 비대칭 — 대칭 방추는 어뢰처럼 보인다
+            prof.push(new THREE.Vector2(Math.max(0.001, Math.sin(u * Math.PI) ** (sp.body === 'round' ? 0.72 : 1.1) * W), (t - 0.5) * 2 * L));
         }
-        const bodyGeo = new THREE.LatheGeometry(prof, 12);
-        bodyGeo.rotateX(Math.PI / 2);   // 머리 +z
+        const bodyGeo = new THREE.LatheGeometry(prof, 14);
+        bodyGeo.rotateX(-Math.PI / 2);   // 머리 +z (프로파일 t=0이 꼬리 쪽이 되게 뒤집는다)
         const body = new THREE.Mesh(bakeGrad(bodyGeo, sp.back, sp.belly), gradMat);
-        body.scale.y = 0.82;            // 살짝 눌린 물고기 단면
+        body.scale.y = 0.85;
         g.add(body);
-        const tailGeo = new THREE.ConeGeometry(0.05, 0.09, 3);
-        tailGeo.rotateX(-Math.PI / 2);
-        tailGeo.scale(0.4, 1, 1);
-        const tail = new THREE.Mesh(bakeGrad(tailGeo, sp.back, sp.back), gradMat);
-        tail.position.set(0, 0, -L - 0.035);
-        g.add(tail);
-        const fin = new THREE.Mesh(bakeGrad(new THREE.ConeGeometry(0.04, 0.055, 3).scale(0.35, 1, 1), sp.back, sp.back), gradMat);
-        fin.position.set(0, W * 0.82 + 0.015, 0.02);
-        g.add(fin);
+        const finB = (geo) => new THREE.Mesh(bakeGrad(geo, sp.back, sp.belly), gradMat);
+        // 포크 꼬리 2엽 — 금붕어는 길게 나풀, 라운드는 작은 부채
+        const lobeL = sp.id === 'goldfish' ? 0.115 : sp.body === 'round' ? 0.06 : 0.085;
+        const lobeSpread = sp.id === 'goldfish' ? 0.62 : 0.5;
+        for (const ty of [1, -1]) {
+            const lobe = new THREE.ConeGeometry(sp.id === 'goldfish' ? 0.034 : 0.028, lobeL, 5);
+            lobe.scale(0.24, 1, 1);
+            lobe.rotateX(-Math.PI / 2 - ty * lobeSpread);
+            lobe.translate(0, ty * 0.012, -L - lobeL * 0.38);
+            g.add(finB(lobe));
+        }
+        // 등지느러미 — 뒤로 누운 낫
+        const dorsal = new THREE.ConeGeometry(0.032, sp.body === 'sleek' ? 0.06 : 0.05, 5);
+        dorsal.scale(0.22, 1, 1);
+        dorsal.rotateX(-0.5);   // 낫 — 꼬리 쪽으로 눕는다
+        dorsal.translate(0, W * 0.82 + 0.02, -L * 0.05);
+        g.add(finB(dorsal));
+        // 가슴지느러미 한 쌍 + (라운드 제외) 배지느러미
+        for (const side of [1, -1]) {
+            const pec = new THREE.ConeGeometry(0.02, 0.05, 5);
+            pec.scale(0.24, 1, 1);
+            pec.rotateZ(side * 1.15);
+            pec.rotateY(side * 0.5);
+            pec.translate(side * W * 0.72, -0.008, L * 0.3);
+            g.add(finB(pec));
+        }
+        if (sp.body !== 'round') {
+            const anal = new THREE.ConeGeometry(0.02, 0.04, 5);
+            anal.scale(0.22, 1, 1);
+            anal.rotateX(Math.PI + 0.5);
+            anal.translate(0, -W * 0.7 - 0.01, -L * 0.35);
+            g.add(finB(anal));
+        }
+        if (sp.id === 'mackerel') {   // 고등어 시그니처 — 꼬리 앞 핀렛 3개
+            for (let k = 0; k < 3; k++) {
+                const finlet = new THREE.ConeGeometry(0.01, 0.02, 4);
+                finlet.scale(0.3, 1, 1);
+                finlet.rotateX(-0.6);
+                finlet.translate(0, W * 0.55 + 0.008, -L * (0.55 + k * 0.16));
+                g.add(finB(finlet));
+            }
+        }
+        if (sp.id === 'salmon') {   // 연어 기름지느러미 — 꼬리 앞 작은 혹
+            const adi = new THREE.SphereGeometry(0.014, 6, 5);
+            adi.scale(0.5, 1, 0.7);
+            adi.translate(0, W * 0.68 + 0.008, -L * 0.62);
+            g.add(finB(adi));
+        }
+        if (sp.id === 'koi') {   // 잉어 — 등 반점 + 짧은 수염 한 쌍
+            for (const [px2, pz2, pr2] of [[0.02, 0.28, 0.032], [-0.025, -0.12, 0.026]]) {
+                const patch = new THREE.SphereGeometry(pr2, 8, 6);
+                patch.scale(1.15, 0.32, 1.3);
+                patch.translate(px2, W * 0.78, L * pz2);
+                g.add(new THREE.Mesh(bakeGrad(patch, sp.belly, sp.belly, { curve: 1 }), gradMat));
+            }
+            for (const sx of [-1, 1]) {
+                const barb = new THREE.CylinderGeometry(0.0025, 0.004, 0.035, 5);
+                barb.rotateX(1.1);
+                barb.rotateY(sx * 0.5);
+                barb.translate(sx * W * 0.4, -0.012, L * 0.92);
+                g.add(new THREE.Mesh(bakeGrad(barb, sp.belly, sp.belly, { curve: 1 }), gradMat));
+            }
+        }
         if (sp.body === 'round' && !sp.lure) {   // 복어 가시
             for (let i = 0; i < 9; i++) {
                 const a = (i / 9) * Math.PI * 2;
@@ -16055,11 +16110,15 @@ function makeFishMesh(sp, sizeK) {
                 g.add(wk);
             }
         }
-        const eyeM = M(0x2b2b33);
+        const eyeM = M(0x24262b);
+        const glintM = M(0xf6f8fa);
         for (const s of [-1, 1]) {
-            const eye = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 6), eyeM);
-            eye.position.set(s * W * 0.62, 0.02, L * 0.62);
+            const eye = new THREE.Mesh(new THREE.SphereGeometry(0.013, 8, 6), eyeM);
+            eye.position.set(s * W * 0.62, 0.018, L * 0.6);
             g.add(eye);
+            const glint = new THREE.Mesh(new THREE.SphereGeometry(0.0045, 6, 5), glintM);
+            glint.position.set(s * W * 0.7, 0.026, L * 0.63);
+            g.add(glint);
         }
     }
     g.scale.setScalar(sizeK);
