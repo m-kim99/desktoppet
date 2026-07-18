@@ -6573,13 +6573,7 @@ motionMenu.appendChild(motionGrid);
 // 놀이·소셜 한 줄 — 🙈 숨바꼭질(누구든) · 📞 부르기 · 📍 가기 (조종 중 전용, showMenu가 토글)
 const socialRow = document.createElement('div');
 socialRow.style.cssText = 'display:flex; align-items:center; justify-content:center; gap:4px; border-top:1px solid rgba(255,255,255,0.12); margin-top:4px; padding-top:5px;';
-const basketItem = document.createElement('div');
-basketItem.textContent = '🧺 바구니에 휙 담기';
-basketItem.style.cssText = `padding:${menuPad}; font-size:${menuFont}px; color:#ffd7a0; border-radius:7px; cursor:pointer; white-space:nowrap; border-top:1px solid rgba(255,255,255,0.12); margin-top:4px; text-align:center;`;
-basketItem.onmouseenter = () => { basketItem.style.background = 'rgba(255,255,255,0.14)'; };
-basketItem.onmouseleave = () => { basketItem.style.background = 'transparent'; };
-basketItem.onclick = () => { hideMenu(); startFruitThrow(); };
-motionMenu.appendChild(basketItem);
+// 🧺 '바구니에 담기'는 먹기 팝업(sipMenu)의 '과일 먹기' 바로 아래로 옮겼다 — 같은 묶음.
 socialRow.appendChild(menuGridCell('🙈', '숨바꼭질', () => { const p = menuPet; hideMenu(); if (p) worldHideSeek(p); }));
 // 📞/📍 — 항상 표시. 미조종 상태면 우클릭한 펫을 조종하며 실행 (예전 '조종 중 전용' 숨김은
 // 앱 시작 직후 🙈 한 칸만 남는 반쪽 행을 만들었다 — 사용자 리포트)
@@ -6601,7 +6595,7 @@ motionMenu.appendChild(socialRow);
 function showMenu(x, y, p) {
     menuPet = p;
     controlItem.textContent = (p === possessed) ? '🎮 조종 해제 (Esc)' : '🎮 조종하기';
-    basketItem.style.display = (p === possessed && p.food && p.food.def && p.food.def.fruit) ? 'block' : 'none';   // 🧺 조종 + 과일 들었을 때만 (절친 자율 수거는 직접 배달)
+    // 🧺 바구니 담기 항목은 sipMenu로 이동 — showSipMenuAt이 과일 들었을 때만 추가한다.
     motionMenu.style.display = 'block';
     // Open to the RIGHT of the click point (the click lands on the pet — an offset keeps the
     // menu from covering the character; clamped to the window edge). 하드코딩 치수 대신 실측:
@@ -9832,6 +9826,7 @@ function showSipMenuAt(x, y, above = false) {
     const busy = (dr && dr.seq) || (fd && fd.seq);
     if (dr && !busy) addItem(`🥤 ${dr.def.name} 마시기`, () => { dr.seq = { count: 2 + Math.round(Math.random()), t: 0, played: -1 }; });
     if (fd && !busy) addItem(`${fd.def.fruit ? FRUITS[fd.def.fruit].emoji : '🍞'} ${fd.def.name} 먹기`, () => { fd.seq = { count: 2 + Math.round(Math.random()), t: 0, played: -1 }; });
+    if (fd && fd.def.fruit && !busy) addItem('🧺 바구니에 담기', () => { startFruitThrow(); });   // 과일 먹기와 같은 묶음(바로 아래) — 예전엔 모션 창에 따로 있었음
     if (!sipMenu.children.length) return;
     sipMenu.style.display = 'block';
     sipMenu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - 175))}px`;
