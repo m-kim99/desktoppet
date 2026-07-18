@@ -14882,17 +14882,53 @@ function updateSeaFloor(delta) {
 let seaFishMesh = null;
 let seaFishT = 0;
 const _fishM4 = new THREE.Matrix4();
+const _fishEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+const _fishQuat = new THREE.Quaternion();
+const _fishPos = new THREE.Vector3();
+const _fishScale = new THREE.Vector3(1, 1, 1);
+const SEA_FISH_N = 12;
 function updateSeaFish(delta, p) {
     if (!seaFishMesh) {
-        const body = new THREE.SphereGeometry(0.055, 8, 6);
-        body.scale(1.6, 0.8, 0.55);
-        const tail = new THREE.ConeGeometry(0.04, 0.07, 4);
-        tail.rotateZ(Math.PI / 2);
-        tail.scale(1, 1, 0.3);
-        tail.translate(0.11, 0, 0);
-        const geo = mergeGeometries([bakeGrad(body, 0x9ab8cf, 0x5a7a94, { curve: 1.2 }), bakeGrad(tail, 0x88a8c2, 0x4a6a84, { curve: 1 })], false);
-        seaFishMesh = new THREE.InstancedMesh(geo, gradMat, 10);
+        // 유선형 리모델: 몸통+포크 꼬리 2엽+등/가슴지느러미+눈 — 루미넌스 램프로 굽고(등 어둡고 배 밝게)
+        // 개체별 instanceColor 틴트를 곱한다 (흰~회색 베이크 × 틴트 = 음영 살아있는 색 변주 — 문서화된 패턴)
+        const parts = [];
+        const body = new THREE.SphereGeometry(0.055, 10, 8);
+        body.scale(1.75, 0.82, 0.55);
+        parts.push(bakeGrad(body, 0x9aa1ab, 0xf2f5f8, { curve: 1.25 }));
+        for (const ty of [1, -1]) {   // 포크 꼬리 — 위아래 두 엽
+            const lobe = new THREE.ConeGeometry(0.026, 0.075, 5);
+            lobe.scale(1, 1, 0.22);
+            lobe.rotateZ(Math.PI / 2 + ty * 0.5);
+            lobe.translate(0.115, ty * 0.014, 0);
+            parts.push(bakeGrad(lobe, 0x8d949e, 0xe8ecf0, { curve: 1 }));
+        }
+        const dorsal = new THREE.ConeGeometry(0.02, 0.05, 5);   // 등지느러미
+        dorsal.scale(1, 1, 0.2);
+        dorsal.rotateZ(-0.5);
+        dorsal.translate(0.01, 0.052, 0);
+        parts.push(bakeGrad(dorsal, 0x8d949e, 0xd8dde2, { curve: 1 }));
+        for (const side of [1, -1]) {   // 가슴지느러미 — 살짝 벌어진 한 쌍
+            const pec = new THREE.ConeGeometry(0.016, 0.04, 5);
+            pec.scale(1, 1, 0.22);
+            pec.rotateX(side * 1.0);
+            pec.rotateZ(1.25);
+            pec.translate(-0.02, -0.02, side * 0.028);
+            parts.push(bakeGrad(pec, 0x9aa1ab, 0xe8ecf0, { curve: 1 }));
+        }
+        for (const side of [1, -1]) {   // 눈 — 진한 점 (틴트 곱해도 어둡게 유지)
+            const eye = new THREE.SphereGeometry(0.0085, 6, 5);
+            eye.translate(-0.062, 0.012, side * 0.026);
+            parts.push(bakeGrad(eye, 0x14161a, 0x14161a, { curve: 1 }));
+        }
+        seaFishMesh = new THREE.InstancedMesh(mergeGeometries(parts, false), gradMat, SEA_FISH_N);
         seaFishMesh.frustumCulled = false;
+        const tints = [0x7fa8c8, 0x6fb8c8, 0x9fb2c8, 0x86c2b2];   // 은청·청록 계열 — 같은 떼의 자연 변주
+        const c = new THREE.Color();
+        for (let i = 0; i < SEA_FISH_N; i++) {
+            c.setHex(tints[i % tints.length]).offsetHSL(0, 0, (i % 5) * 0.015 - 0.03);
+            seaFishMesh.setColorAt(i, c);
+        }
+        if (seaFishMesh.instanceColor) seaFishMesh.instanceColor.needsUpdate = true;
         scene.add(seaFishMesh);
     }
     seaFishMesh.visible = true;
@@ -14900,12 +14936,15 @@ function updateSeaFish(delta, p) {
     const cx = p.mover.position.x + Math.sin(seaFishT * 0.3) * 4;
     const cz = p.mover.position.z + Math.cos(seaFishT * 0.22) * 4;
     const cy = Math.min(waveYAt(cx, cz) - 0.7, seabedHeight(cx, cz) + 1.1);
-    for (let i = 0; i < 10; i++) {
-        const a = seaFishT + (i / 10) * Math.PI * 2;
-        const r = 0.8 + (i % 3) * 0.28;
+    for (let i = 0; i < SEA_FISH_N; i++) {
+        const a = seaFishT + (i / SEA_FISH_N) * Math.PI * 2;
+        const r = 0.8 + (i % 3) * 0.3;
         const fx = cx + Math.cos(a) * r, fz = cz + Math.sin(a) * r, fy = cy + Math.sin(a * 2 + i) * 0.14;
-        _fishM4.makeRotationY(-a);
-        _fishM4.setPosition(fx, fy, fz);
+        _fishEuler.set(Math.cos(a * 2 + i) * 0.12, -a, Math.sin(a * 2 + i * 1.7) * 0.16);   // 보브 피치 + 선회 뱅킹
+        _fishQuat.setFromEuler(_fishEuler);
+        _fishScale.setScalar(0.92 + (i % 4) * 0.06);   // 개체 체격 변주
+        _fishPos.set(fx, fy, fz);
+        _fishM4.compose(_fishPos, _fishQuat, _fishScale);
         seaFishMesh.setMatrixAt(i, _fishM4);
     }
     seaFishMesh.instanceMatrix.needsUpdate = true;
