@@ -4944,37 +4944,124 @@ const CAR = { x: 2.5, z: -1.15, heading: 0.267, vel: 0 };   // 광장 남동쪽 
         if (Number.isFinite(o.rotY)) CAR.heading = o.rotY;
     }
 }
-const carCollider = { type: 'car', layoutId: 'car-1', x: CAR.x, z: CAR.z, rotY: 0, r: 0.55, def: { x: 0, z: 0, rotY: 1.05 } };
+const carCollider = { type: 'car', layoutId: 'car-1', x: CAR.x, z: CAR.z, rotY: 0, r: 0.55, def: { x: CAR.x, z: CAR.z, rotY: CAR.heading } };   // def = 홈(저장 반영) — 옛 {0,0}은 분수 광장으로 회수되는 버그였다
 PROPS.push(carCollider);
 const carWheels = [];
+const carSteerGrps = [];   // 앞바퀴 조향 그룹
+let carOnWater = false;    // 🌊 호버카 — 뭍↔물 전환 감지
+let carSteerT = 0;
+let carWakeAt = 0;
+let carTailMat = null;     // 테일라이트 — 브레이크 점등
 let carDrive = null;    // { driver, passenger } while someone is at the wheel
 function makeCar() {
+    // 🏎️ 오픈카 리모델: 차 조형의 8할은 옆 실루엣 — 노즈→후드 스웁→윈드실드→오픈 콕핏 파임→
+    // 리어데크→테일을 2D Shape로 그려 폭 방향 베벨 압출 (박스 3개로는 못 내는 라인).
+    // 지붕 없음(오픈 콕핏) — 탄 펫이 통째로 보인다 (사용자 지정).
     const g = new THREE.Group();
-    const bodyMat = M(0xe8484f);
-    const body = new THREE.Mesh(new RoundedBoxGeometry(0.55, 0.16, 1.05, 4, 0.05), bodyMat);
-    body.position.y = 0.17;
-    g.add(body);
-    const hood = new THREE.Mesh(new RoundedBoxGeometry(0.5, 0.07, 0.34, 3, 0.03), bodyMat);
-    hood.position.set(0, 0.245, 0.32);
-    g.add(hood);
-    const cabin = new THREE.Mesh(new RoundedBoxGeometry(0.44, 0.15, 0.5, 4, 0.05), M(0xbfe3f2, { transparent: true, opacity: 0.75 }));
-    cabin.position.set(0, 0.3, -0.06);
-    g.add(cabin);
-    const spoiler = new THREE.Mesh(new RoundedBoxGeometry(0.52, 0.03, 0.12, 2, 0.012), bodyMat);
-    spoiler.position.set(0, 0.32, -0.5);
-    g.add(spoiler);
-    for (const [fx, fz] of [[-0.17, 0.53], [0.17, 0.53]]) {
-        const light = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), M(0xfff1cf, { emissive: 0xffe9a0, emissiveIntensity: 0.5 }));
-        light.position.set(fx, 0.2, fz);
+    const prof = new THREE.Shape();
+    prof.moveTo(0.56, 0.05);                                  // 노즈 아래
+    prof.lineTo(0.56, 0.115);                                 // 노즈 얼굴
+    prof.quadraticCurveTo(0.42, 0.19, 0.20, 0.21);            // 후드 스웁
+    prof.lineTo(0.115, 0.215);                                // 카울
+    prof.quadraticCurveTo(0.05, 0.20, 0.03, 0.145);           // 콕핏 앞 파임
+    prof.lineTo(-0.27, 0.145);                                // 콕핏 바닥선
+    prof.quadraticCurveTo(-0.33, 0.15, -0.36, 0.215);         // 리어데크 상승
+    prof.lineTo(-0.50, 0.21);                                 // 데크
+    prof.quadraticCurveTo(-0.545, 0.19, -0.545, 0.12);        // 테일 라운드
+    prof.lineTo(-0.545, 0.05);                                // 테일 아래
+    prof.lineTo(0.56, 0.05);
+    const mkShell = (width, grow) => {
+        const geo = new THREE.ExtrudeGeometry(prof, { depth: width, bevelEnabled: true, bevelThickness: 0.045, bevelSize: 0.04, bevelSegments: 3, steps: 1 });
+        if (grow) geo.scale(grow, grow, 1);                   // 스트라이프 쉘 — 수직면까지 전방향 이격 (y만 올리면 노즈 얼굴에서 z-파이팅, 스샷 실측)
+        geo.rotateY(-Math.PI / 2);                            // 프로파일 x → 월드 z (노즈=+z)
+        geo.translate(width / 2, 0.003 * (grow ? 1 : 0), 0);
+        return geo;
+    };
+    g.add(new THREE.Mesh(bakeGrad(mkShell(0.40), 0xff6058, 0xbe3440, { curve: 1.1 }), gradMat));   // 바디 투톤
+    const stripe = new THREE.Mesh(mkShell(0.085, 1.018), M(0xf6f1e4));   // 흰 레이싱 스트라이프 — 실루엣을 따라 통째로
+    g.add(stripe);
+    // 낮은 윈드실드 (지붕 없음)
+    const shield = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.115, 0.016), M(0xbfe3f2, { transparent: true, opacity: 0.55 }));
+    shield.position.set(0, 0.275, 0.075);
+    shield.rotation.x = -0.42;
+    g.add(shield);
+    // 콕핏 내장: 어두운 욕조 + 시트백 2 + 미니 핸들 + 사이드미러 + 머플러 (한 버킷 병합)
+    const dark = [];
+    const tub = new THREE.BoxGeometry(0.34, 0.02, 0.42);
+    tub.translate(0, 0.15, -0.1);
+    dark.push(tub);
+    for (const sx of [-0.09, 0.09]) {
+        const back = new THREE.BoxGeometry(0.14, 0.11, 0.03);
+        back.translate(sx, 0.205, -0.255);
+        dark.push(back);
+    }
+    const wheelCol = new THREE.CylinderGeometry(0.008, 0.01, 0.09, 6);
+    wheelCol.rotateX(0.9);
+    wheelCol.translate(-0.09, 0.2, 0.02);
+    dark.push(wheelCol);
+    const rim = new THREE.TorusGeometry(0.035, 0.008, 6, 12);
+    rim.rotateX(0.9 + Math.PI / 2);
+    rim.translate(-0.09, 0.235, 0.045);
+    dark.push(rim);
+    for (const sx of [-0.21, 0.21]) {
+        const mir = new THREE.BoxGeometry(0.025, 0.035, 0.05);
+        mir.translate(sx, 0.235, 0.1);
+        dark.push(mir);
+    }
+    for (const sx of [-0.07, 0.07]) {
+        const muf = new THREE.CylinderGeometry(0.022, 0.026, 0.07, 8);
+        muf.rotateX(Math.PI / 2);
+        muf.translate(sx, 0.085, -0.575);
+        dark.push(muf);
+    }
+    g.add(new THREE.Mesh(mergeGeometries(dark, false), M(0x2c2f36)));
+    // 스포일러 (바디색)
+    const wingParts = [];
+    const wing = new THREE.BoxGeometry(0.46, 0.022, 0.1);
+    wing.translate(0, 0.275, -0.5);
+    wingParts.push(wing);
+    for (const sx of [-0.16, 0.16]) {
+        const post = new THREE.BoxGeometry(0.02, 0.05, 0.03);
+        post.translate(sx, 0.24, -0.49);
+        wingParts.push(post);
+    }
+    g.add(new THREE.Mesh(bakeGrad(mergeGeometries(wingParts, false), 0xff6058, 0xbe3440, { curve: 1 }), gradMat));
+    // 헤드라이트 (납작 렌즈) + 테일라이트 (브레이크 점등용 유니크 재질)
+    for (const fx of [-0.145, 0.145]) {
+        const light = new THREE.Mesh(new THREE.SphereGeometry(0.038, 10, 8), M(0xfff1cf, { emissive: 0xffe9a0, emissiveIntensity: 0.5 }));
+        light.scale.z = 0.45;
+        light.position.set(fx, 0.15, 0.585);
         g.add(light);
     }
-    for (const [sx, sz] of [[-0.28, 0.34], [0.28, 0.34], [-0.28, -0.34], [0.28, -0.34]]) {
-        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.07, 14), M(0x2e2e34));
-        wheel.rotation.z = Math.PI / 2;
-        wheel.position.set(sx, 0.1, sz);
-        g.add(wheel);
-        carWheels.push(wheel);
+    carTailMat = new THREE.MeshStandardMaterial({ color: 0xd23b30, emissive: 0xff2a1a, emissiveIntensity: 0.25, roughness: 0.6 });
+    for (const fx of [-0.15, 0.15]) {
+        const tl = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.035, 0.018), carTailMat);
+        tl.position.set(fx, 0.165, -0.585);
+        g.add(tl);
     }
+    // 번호판 "PET 1" 느낌 (흰 판)
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.045, 0.012), M(0xf6f1e4));
+    plate.position.set(0, 0.095, -0.588);
+    g.add(plate);
+    // 바퀴: 조향 그룹(앞) + 타이어 스핀 + 허브캡 — 휠아치 파임 대신 검은 스커트로 정리
+    const skirt = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.045, 1.06), M(0x2c2f36));
+    skirt.position.y = 0.055;
+    g.add(skirt);
+    for (const [sx, sz, front] of [[-0.25, 0.36, true], [0.25, 0.36, true], [-0.25, -0.36, false], [0.25, -0.36, false]]) {
+        const grp = new THREE.Group();
+        grp.position.set(sx, 0.105, sz);
+        const tire = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.105, 0.07, 16), M(0x24262b));
+        tire.rotation.z = Math.PI / 2;
+        grp.add(tire);
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.074, 10), M(0xc9cdd4));
+        cap.rotation.z = Math.PI / 2;
+        grp.add(cap);
+        g.add(grp);
+        carWheels.push(tire);
+        carWheels.push(cap);
+        if (front) carSteerGrps.push(grp);
+    }
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     return g;
 }
 const carGroup = makeCar();
@@ -4983,8 +5070,9 @@ carGroup.position.set(CAR.x, terrainHeight(CAR.x, CAR.z), CAR.z);
 carGroup.rotation.y = CAR.heading;
 carGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
 stage.add(carGroup);
-function carBlocked(nx, nz) {
-    if (islandOf(nx, nz) < 0 && !onBridge(nx, nz)) return true;    // stay on land or a bridge deck
+function carBlocked(nx, nz, landOnly) {
+    if (landOnly && islandOf(nx, nz) < 0 && !onBridge(nx, nz)) return true;   // AI 드라이브는 뭍 유지
+    if (Math.hypot(nx, nz) > EXPLORE_R - 0.6) return true;         // 🌊 호버카 — 세계 경계가 펜스 (물 위 주행 허용)
     if (houseFloorY(nx, nz) !== null || houseBlocked(nx, nz)) return true;
     for (const q of PROPS) {
         if (q === carCollider || q.r <= 0) continue;
@@ -7399,10 +7487,12 @@ if (statsOn) window.__worldDev = {
     },
     subHome: () => ({ x: +SUB_HOME.x.toFixed(1), z: +SUB_HOME.z.toFixed(1) }),
     inv: () => ({ unlocked: [...accUnlocked], wearing: possessed && possessed.pet.accessory ? possessed.pet.accessory.id : null, open: invPanel.style.display === 'block', btn: invBtn.style.display }),
-    ctrl: () => (possessed ? { name: possessed.name, ai: possessed.ai.state } : null),   // ⚠️ who는 열기구 훅이 선점
+    ctrl: () => (possessed ? { name: possessed.name, ai: possessed.ai.state, swim: possessed.swimming || false } : null),   // ⚠️ who는 열기구 훅이 선점
     ctrlBorrow: () => { if (!possessed) return; possessed.ai.target = { x: possessed.mover.position.x + 1.2, z: possessed.mover.position.z }; possessed.ai.waypoints = null; possessed.ai.onArrive = null; possessed.ai.stall = 0; possessed.ai.state = 'goto'; },   // E2E — 디렉터 대여 재현 (진짜 gotoAsync처럼 target 필수)
     ctrlReturn: () => { if (possessed) releaseAI(possessed); },
     motion: (id) => { if (possessed) playWorldMotion(possessed, id); },
+    carState: () => ({ x: +CAR.x.toFixed(1), z: +CAR.z.toFixed(1), vel: +CAR.vel.toFixed(2), water: carOnWater, y: +carGroup.position.y.toFixed(2) }),
+    carTp: (x, z, h) => { CAR.x = x; CAR.z = z; if (Number.isFinite(h)) CAR.heading = h; CAR.vel = 0; carCollider.x = x; carCollider.z = z; carGroup.position.set(x, world.groundHeightAt(x, z), z); carGroup.rotation.set(0, CAR.heading, 0); },
     invClick: (id) => { const slot = invPanel.querySelector(`[data-aid="${id}"]`); if (slot) slot.click(); return !!slot; },
     subRouteTry: () => { const r = makeSubRoute(); return { stops: r.stops.map((q) => q.kind), len: +r.len.toFixed(1), diag: subRouteDiag.slice(0, 10) }; },
     handState: () => (handHold ? { y: +handHold.partner.mover.position.y.toFixed(2), swim: handHold.partner.swimming, state: handHold.partner.ai.state } : null),
@@ -11105,6 +11195,7 @@ function enterCar() {
         passenger = friend;
     }
     carDrive = { driver, passenger };
+    vehicleLastUse.car = Date.now();
     running = false;
     logWorldEvent(`${petKo(driver)}가 스포츠카 드라이브를 시작했다${passenger ? ' (절친도 조수석에!)' : ''}`);
     startEngine();
@@ -11121,8 +11212,14 @@ function exitCar() {
         q.mover.position.z = CAR.z + rZ * side * 0.85;
         q.mover.rotation.x = 0;
         q.mover.rotation.z = 0;
-        q.swimming = false;
-        snapToLand(q);
+        if (islandOf(q.mover.position.x, q.mover.position.z) < 0 && !onBridge(q.mover.position.x, q.mover.position.z)) {   // 🌊 물 위 하차 = 퐁당 수영
+            q.swimming = 'sea';
+            q.mover.position.y = waveYAt(q.mover.position.x, q.mover.position.z) + 0.02 - q.height * 0.45;
+            spawnSplash(q.mover.position.x, waveYAt(q.mover.position.x, q.mover.position.z) + q.height * 0.42, q.mover.position.z);
+        } else {
+            q.swimming = false;
+            snapToLand(q);
+        }
     };
     hopOut(driver, -1);
     if (passenger) {
@@ -11131,7 +11228,7 @@ function exitCar() {
     }
 }
 // 차 물리 한 스텝 — 조종(updatePlayer)과 AI 드라이브(<drive> 태그, updateAutoDrive)가 공유한다.
-function stepCar(acc, steer, delta, driver) {
+function stepCar(acc, steer, delta, driver, landOnly) {
     const maxV = driver.speed * 4.5;                   // 걷기(×1.5)의 정확히 3배
     CAR.vel += acc * delta;
     CAR.vel *= Math.pow(0.3, delta);                   // rolling friction
@@ -11139,14 +11236,42 @@ function stepCar(acc, steer, delta, driver) {
     CAR.heading += steer * delta * 2.4 * THREE.MathUtils.clamp(CAR.vel / maxV, -1, 1);
     const nx = CAR.x + Math.sin(CAR.heading) * CAR.vel * delta;
     const nz = CAR.z + Math.cos(CAR.heading) * CAR.vel * delta;
-    if (!carBlocked(nx, nz)) { CAR.x = nx; CAR.z = nz; }
+    if (!carBlocked(nx, nz, landOnly)) { CAR.x = nx; CAR.z = nz; }
     else CAR.vel = 0;
     carCollider.x = CAR.x;
     carCollider.z = CAR.z;
-    const cy = world.groundHeightAt(CAR.x, CAR.z);     // bridge decks lift the car over the arch
+    const onWater = islandOf(CAR.x, CAR.z) < 0 && !onBridge(CAR.x, CAR.z);
+    const cy = onWater ? waveYAt(CAR.x, CAR.z) + 0.03 : world.groundHeightAt(CAR.x, CAR.z);   // 🌊 호버카 — 물 위는 파도에 뜬다
+    if (onWater !== carOnWater) {   // 뭍↔물 전환 — 퐁당/촤악
+        carOnWater = onWater;
+        spawnSplash(CAR.x, waveYAt(CAR.x, CAR.z) + 0.12, CAR.z);
+        playBuffer(splashBuf, { vol: Math.min(0.55, 0.3 + Math.abs(CAR.vel) * 0.06), rate: onWater ? 0.9 : 1.1, filterFreq: 1800 });
+    }
     carGroup.position.set(CAR.x, cy, CAR.z);
-    carGroup.rotation.y = CAR.heading;
-    for (const w of carWheels) w.rotation.x += CAR.vel * delta * 9;
+    carGroup.rotation.set(
+        (onWater ? Math.sin(wxTime.value * 1.15) * 0.018 : 0) - THREE.MathUtils.clamp(acc * 0.02, -0.045, 0.045),
+        CAR.heading,
+        (onWater ? Math.sin(wxTime.value * 0.9 + 1) * 0.02 : 0) + steer * -0.05 * THREE.MathUtils.clamp(Math.abs(CAR.vel) / maxV, 0, 1)
+    );
+    for (const w of carWheels) w.rotation.x += CAR.vel * delta * (onWater ? 3 : 9);   // 물 위에선 나른한 공회전
+    carSteerT += ((steer * 0.42) - carSteerT) * Math.min(1, delta * 10);   // 앞바퀴 조향 비주얼
+    for (const grp of carSteerGrps) grp.rotation.y = carSteerT;
+    if (carTailMat) carTailMat.emissiveIntensity = acc < -0.1 ? 1.0 : 0.25;   // 🔴 브레이크 점등
+    if (onWater && Math.abs(CAR.vel) > 1.1) {   // 물보라 웨이크 — 발차기 물방울 문법 (파이어&포겟)
+        carWakeAt -= delta;
+        if (carWakeAt <= 0) {
+            carWakeAt = 0.07;
+            const bx = -Math.sin(CAR.heading), bz = -Math.cos(CAR.heading);
+            const rX2 = Math.cos(CAR.heading), rZ2 = -Math.sin(CAR.heading);
+            for (const side of [-1, 1]) {
+                const m = new THREE.Mesh(crumbGeo, splashMat);
+                m.position.set(CAR.x + bx * 0.5 + rX2 * side * 0.22, cy + 0.06, CAR.z + bz * 0.5 + rZ2 * side * 0.22);
+                m.scale.setScalar(0.6 + Math.random() * 0.5);
+                scene.add(m);
+                crumbs.push({ m, vx: bx * 0.6 + rX2 * side * 0.9, vy: 0.6 + Math.random() * 0.4, vz: bz * 0.6 + rZ2 * side * 0.9, t: 0 });
+            }
+        }
+    }
     const rX = Math.cos(CAR.heading), rZ = -Math.sin(CAR.heading);
     const seatPet = (q, side) => {
         q.mover.position.set(
@@ -11174,7 +11299,7 @@ function updateAutoDrive(delta) {
     d.w = (d.w || 0) + delta;
     if (CAR.vel === 0 && d.lastVel === 0) d.steer *= -1;   // 두 프레임 연속 정지 = 막힘 → 핸들 반대로
     d.lastVel = CAR.vel;
-    stepCar(d.t > 1.3 ? 2.7 : -0.6, d.steer + Math.sin(d.w * 0.7) * 0.3, delta, carDrive.driver);
+    stepCar(d.t > 1.3 ? 2.7 : -0.6, d.steer + Math.sin(d.w * 0.7) * 0.3, delta, carDrive.driver, true);   // 🌊 절친 드라이브는 뭍 전용 (물 표류 방지)
     if (d.t <= 0) {
         const driver = carDrive.driver;
         exitCar();
@@ -15185,7 +15310,7 @@ function refreshIsletChunks() {
 // 0.5초 간격 캔버스 리드로우 — 닫으면 비용 0 (발열 §1). ----
 // ---- 🧲 탈것 회수: 지도에서 아이콘 탭 → "원위치로 회수" + 수면 시간대 자동 귀항 (2시간
 // 미사용 + 홈에서 12m 이상 = 밤사이 스스로 돌아옴). 페리·열기구는 자가 귀환이라 제외. ----
-const vehicleLastUse = { boat: Date.now(), plane: Date.now(), sub: Date.now() };
+const vehicleLastUse = { boat: Date.now(), plane: Date.now(), sub: Date.now(), car: Date.now() };
 function recallVehicle(type, quiet = false) {
     if (type === 'boat') {
         if (boatRide) { if (!quiet) showToast('🚣 지금 타는 중이에요'); return false; }
@@ -15195,6 +15320,17 @@ function recallVehicle(type, quiet = false) {
         BOAT.vel = 0;
         boatCollider.x = BOAT.x;
         boatCollider.z = BOAT.z;
+    } else if (type === 'car') {
+        if (carDrive) { if (!quiet) showToast('🚗 지금 타는 중이에요'); return false; }
+        CAR.x = carCollider.def.x;
+        CAR.z = carCollider.def.z;
+        CAR.heading = carCollider.def.rotY;
+        CAR.vel = 0;
+        carCollider.x = CAR.x;
+        carCollider.z = CAR.z;
+        carGroup.position.set(CAR.x, world.groundHeightAt(CAR.x, CAR.z), CAR.z);
+        carGroup.rotation.set(0, CAR.heading, 0);
+        carOnWater = false;
     } else if (type === 'sub') {
         if (subRide) { if (!quiet) showToast('🟡 지금 타는 중이에요'); return false; }
         SUB.x = subCollider.def.x;
@@ -15220,7 +15356,7 @@ function recallVehicle(type, quiet = false) {
     } else return false;
     vehicleLastUse[type] = Date.now();
     saveLayout();
-    const ko = type === 'boat' ? '나룻배' : type === 'sub' ? '노랑호' : '경비행기';
+    const ko = type === 'boat' ? '나룻배' : type === 'sub' ? '노랑호' : type === 'car' ? '스포츠카' : '경비행기';
     if (!quiet) {
         showToast(`🧲 ${ko}를 원위치로 회수했어요`);
         logWorldEvent(`멀리 있던 ${ko}를 집 앞으로 회수했다 🧲`);
@@ -15304,7 +15440,7 @@ function updateRoofFade(delta) {
 let autoReturnT = 0;
 function checkAutoReturn(force = false) {
     const IDLE_MS = 2 * 3600 * 1000;   // 2시간 미사용
-    for (const [type, st, def] of [['boat', BOAT, boatCollider.def], ['plane', PLANE, planeCollider.def], ['sub', SUB, subCollider.def]]) {
+    for (const [type, st, def] of [['boat', BOAT, boatCollider.def], ['plane', PLANE, planeCollider.def], ['sub', SUB, subCollider.def], ['car', CAR, carCollider.def]]) {
         const far = Math.hypot(st.x - def.x, st.z - def.z) > 12;
         const idle = Date.now() - vehicleLastUse[type] > IDLE_MS;
         if (far && (force || (idle && isSleepTime(currentHour())))) recallVehicle(type, true);
@@ -15341,7 +15477,7 @@ mapPanel.addEventListener('pointerup', (e) => {   // 🧲 탈것 아이콘 탭 �
     const my = (e.clientY - rect.top) * (mapPanel.height / rect.height);
     const hit = mapIconPts.find((q) => Math.hypot(q.sx - mx, q.sy - my) < 20);
     if (!hit) { mapMenu.style.display = 'none'; return; }
-    mapMenuBtn.textContent = `🧲 ${hit.type === 'boat' ? '나룻배' : hit.type === 'sub' ? '노랑호' : '경비행기'} 원위치로 회수`;
+    mapMenuBtn.textContent = `🧲 ${hit.type === 'boat' ? '나룻배' : hit.type === 'sub' ? '노랑호' : hit.type === 'car' ? '스포츠카' : '경비행기'} 원위치로 회수`;
     mapMenuBtn.onclick = () => { mapMenu.style.display = 'none'; recallVehicle(hit.type); drawWorldMap(); };
     mapMenu.style.left = `${Math.min(e.clientX + 6, window.innerWidth - 190)}px`;
     mapMenu.style.top = `${Math.min(e.clientY, window.innerHeight - 56)}px`;
@@ -15514,6 +15650,7 @@ function drawWorldMap() {
     };
     mark('🚣', BOAT.x, BOAT.z, 'boat');
     mark('🛩️', PLANE.x, PLANE.z, 'plane');
+    mark('🏎️', CAR.x, CAR.z, 'car');
     {   // 🟡 노랑호 — 잠수함 이모지가 없어 캡슐을 직접 그린다
         const d = Math.hypot(SUB.x, SUB.z);
         const lim = viewR - 4;
