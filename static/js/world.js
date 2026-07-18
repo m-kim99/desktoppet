@@ -6573,6 +6573,13 @@ motionMenu.appendChild(motionGrid);
 // 놀이·소셜 한 줄 — 🙈 숨바꼭질(누구든) · 📞 부르기 · 📍 가기 (조종 중 전용, showMenu가 토글)
 const socialRow = document.createElement('div');
 socialRow.style.cssText = 'display:flex; align-items:center; justify-content:center; gap:4px; border-top:1px solid rgba(255,255,255,0.12); margin-top:4px; padding-top:5px;';
+const basketItem = document.createElement('div');
+basketItem.textContent = '🧺 바구니에 휙 담기';
+basketItem.style.cssText = `padding:${menuPad}; font-size:${menuFont}px; color:#ffd7a0; border-radius:7px; cursor:pointer; white-space:nowrap; border-top:1px solid rgba(255,255,255,0.12); margin-top:4px; text-align:center;`;
+basketItem.onmouseenter = () => { basketItem.style.background = 'rgba(255,255,255,0.14)'; };
+basketItem.onmouseleave = () => { basketItem.style.background = 'transparent'; };
+basketItem.onclick = () => { hideMenu(); startFruitThrow(); };
+motionMenu.appendChild(basketItem);
 socialRow.appendChild(menuGridCell('🙈', '숨바꼭질', () => { const p = menuPet; hideMenu(); if (p) worldHideSeek(p); }));
 // 📞/📍 — 항상 표시. 미조종 상태면 우클릭한 펫을 조종하며 실행 (예전 '조종 중 전용' 숨김은
 // 앱 시작 직후 🙈 한 칸만 남는 반쪽 행을 만들었다 — 사용자 리포트)
@@ -6594,6 +6601,7 @@ motionMenu.appendChild(socialRow);
 function showMenu(x, y, p) {
     menuPet = p;
     controlItem.textContent = (p === possessed) ? '🎮 조종 해제 (Esc)' : '🎮 조종하기';
+    basketItem.style.display = (p === possessed && p.food && p.food.def && p.food.def.fruit) ? 'block' : 'none';   // 🧺 조종 + 과일 들었을 때만 (절친 자율 수거는 직접 배달)
     motionMenu.style.display = 'block';
     // Open to the RIGHT of the click point (the click lands on the pet — an offset keeps the
     // menu from covering the character; clamped to the window edge). 하드코딩 치수 대신 실측:
@@ -7475,6 +7483,8 @@ if (statsOn) window.__worldDev = {
     }),
     fruitHarvest: (id) => { const e = fruitBearing.find((q) => q.pr.layoutId === id); if (e) harvestFruit(e, possessed); return !!(e && e.shakeT); },
     fruitEat: () => { const f = possessed && possessed.food; if (f && !f.seq) f.seq = { count: 3, t: 0, played: -1 }; return !!f; },
+    fruitGive: (t) => { if (possessed) giveFruit(possessed, t || 'apple'); return !!(possessed && possessed.food); },
+    fruitThrowNow: () => { startFruitThrow(); return fruitThrows.length; },
     fruitAge: (id, ms) => { fruitPicked[id] = Date.now() - ms; saveFruitPicked(); fruitTickT = 60; return fruitPicked[id]; },
     basketOpen: () => { openFruitBasket(); return basketPanel && basketPanel.style.display !== 'none'; },
     fruitGo: (name, gift) => startAiFruit(pets.find((q) => q.name === (name || 'puppy')), { gift: gift === undefined ? true : !!gift }),
@@ -13995,6 +14005,57 @@ function depositFruit(p) {
     logWorldEvent(`${petKo(p)}가 바구니에 ${FRUITS[t].ko}를 담았다 🧺 (총 ${total}개)`);
     refreshBasketPanel();
 }
+// 🧺 원거리 휙 담기 (조종 전용): 바구니까지 안 가도 — 던지는 액션 + 과일이 큰 아크로 날아가
+// 바구니에 쏙. 절친 자율 수거/선물은 그대로 걸어서 배달한다 (사용자 지정).
+let fruitThrows = [];
+function startFruitThrow() {
+    const p = possessed;
+    const t = p && p.food && p.food.def && p.food.def.fruit;
+    if (!t) return;
+    const basket = PROPS.find((q) => q.type === 'fruitbasket');
+    if (!basket) { showToast('🧺 바구니가 없어요'); return; }
+    removeFood(p);
+    if (!p.pet.action) p.pet.action = { id: 'happy', t: 0 };   // 폴짝 던지기 제스처
+    petVoice(p);
+    const mesh = makeFruitMesh(t, 1.1);
+    const from = { x: p.mover.position.x, y: p.mover.position.y + p.height * 0.55, z: p.mover.position.z };
+    const to = { x: basket.x, y: terrainHeight(basket.x, basket.z) + 0.38, z: basket.z };
+    mesh.position.set(from.x, from.y, from.z);
+    fruitLayer.add(mesh);
+    const dist = Math.hypot(to.x - from.x, to.z - from.z);
+    fruitThrows.push({ mesh, from, to, t: 0, dur: Math.min(1.5, 0.55 + dist * 0.045), arc: Math.max(1.1, dist * 0.22), type: t });
+    playBuffer(swishBuf, { vol: 0.4, rate: 1.3, filterFreq: 1800 });
+    logWorldEvent(`${petKo(p)}가 ${FRUITS[t].ko}를 바구니로 휙 던졌다 ${FRUITS[t].emoji}`);
+}
+function updateFruitThrows(delta) {
+    for (let i = fruitThrows.length - 1; i >= 0; i--) {
+        const f = fruitThrows[i];
+        f.t += delta;
+        const k = Math.min(1, f.t / f.dur);
+        f.mesh.position.set(
+            THREE.MathUtils.lerp(f.from.x, f.to.x, k),
+            THREE.MathUtils.lerp(f.from.y, f.to.y, k) + Math.sin(k * Math.PI) * f.arc,
+            THREE.MathUtils.lerp(f.from.z, f.to.z, k)
+        );
+        f.mesh.rotation.x += delta * 7;
+        if (k >= 1) {   // 쏙 — 계정 처리 + 반짝
+            f.mesh.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
+            fruitLayer.remove(f.mesh);
+            fruitThrows.splice(i, 1);
+            basketCounts[f.type] = (basketCounts[f.type] || 0) + 1;
+            saveBasket();
+            basketVisualRefresh();
+            playBuffer(munchBuf, { vol: 0.4, rate: 0.6, filterFreq: 700 });
+            const total = Object.values(basketCounts).reduce((a, b) => a + b, 0);
+            showToast(`🧺 ${FRUITS[f.type].ko} 쏙! (${total}개)`);
+            const spr = glowSprite(0xfff1cf, 0.14, 0.9);
+            spr.position.set(f.to.x, f.to.y + 0.12, f.to.z);
+            scene.add(spr);
+            hugBurst.push({ spr, vx: 0, vy: 0.4, vz: 0, t: 0.35 });
+            refreshBasketPanel();
+        }
+    }
+}
 let basketContentGroup = null;
 function basketVisualRefresh() {   // 담긴 과일이 실제로 소복이 — 최근 8알만 메시로
     if (basketContentGroup) {
@@ -17461,6 +17522,7 @@ function animate() {
     updateFruits(delta);                     // 🍎 흔들림/낙과/재성장 틱
     updateAiFruit(delta);                    // 🍊 절친 자율 수확·선물
     updateAiTidy(delta);                     // 🧹 절친 청소부 — 방치 낙과를 바구니로
+    updateFruitThrows(delta);                // 🧺 원거리 휙 담기 아크
     updateBalloon(delta);                    // 🎈 열기구 — 계류 살랑임/스플라인 투어/귀환
     updateBalloonHop(delta);                 // 절친 승선 큰 아크 — 데크에서 바구니로
     updatePlaneIdle();                       // 🛩️ 주차 비행기 (물 위면 살랑임, 프로펠러 정지)
