@@ -7450,12 +7450,14 @@ if (statsOn) window.__worldDev = {
     fruitInject: (t, x, z, ageMs) => {   // E2E — 나이 조작된 낙과 주입
         const mesh = makeFruitMesh(t, 1);
         const gy = terrainHeight(x, z) + 0.005;
-        mesh.position.set(x, gy + 0.1, z);
+        const fy = layFruitMesh(mesh, t, gy);
+        mesh.position.set(x, fy, z);
         fruitLayer.add(mesh);
-        groundFruits.push({ type: t, x, z, y: gy + 0.1, vy: 0, mesh, settled: true, gy, bounced: true, at: Date.now() - (ageMs || 0) });
+        groundFruits.push({ type: t, x, z, y: fy, vy: 0, mesh, settled: true, gy, bounced: true, at: Date.now() - (ageMs || 0) });
         saveGroundFruits();
         return groundFruits.length;
     },
+    groundInfo: () => groundFruits.map((g) => ({ t: g.type, rx: +g.mesh.rotation.x.toFixed(2), dy: +(g.y - g.gy).toFixed(3) })),
     fruitTidyGo: (name) => startAiTidy(pets.find((q) => q.name === (name || 'puppy'))),
     fruitTick: () => { fruitTickT = 60; return true; },
     diveState: () => (dive ? { phase: dive.phase, t: +dive.t.toFixed(2), ai: !!dive.isAI, y: dive.p ? +dive.p.mover.position.y.toFixed(2) : null } : null),
@@ -13758,8 +13760,36 @@ let fruitPicked = {};
 try { fruitPicked = JSON.parse(localStorage.getItem('world-fruit-picked') || '{}') || {}; } catch (e) { fruitPicked = {}; }
 let basketCounts = {};
 try { basketCounts = JSON.parse(localStorage.getItem('world-fruit-basket') || '{}') || {}; } catch (e) { basketCounts = {}; }
-const saveFruitPicked = () => { try { localStorage.setItem('world-fruit-picked', JSON.stringify(fruitPicked)); } catch (e) {} };
-const saveBasket = () => { try { localStorage.setItem('world-fruit-basket', JSON.stringify(basketCounts)); } catch (e) {} };
+// 🔄 과일 상태 서버 동기 (/api/world_fruit — 폰·데탑 공유): localStorage는 기기별이라
+// 바구니·낙과·재성장이 접속 기기마다 갈렸다 (사용자 리포트). 서버가 진실, 로컬은 폴백 캐시.
+let fruitSyncTimer = null;
+function saveFruitServer() {
+    clearTimeout(fruitSyncTimer);
+    fruitSyncTimer = setTimeout(() => {
+        let ground = [];
+        try { ground = JSON.parse(localStorage.getItem('world-fruit-ground') || '[]') || []; } catch (e) {}
+        fetch('/api/world_fruit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ state: { picked: fruitPicked, basket: basketCounts, ground } }),
+        }).catch(() => {});
+    }, 900);
+}
+try {   // 부트 1회 — 서버 상태가 있으면 로컬을 덮는다 (loadGroundFruits보다 먼저)
+    const r = await fetch('/api/world_fruit', { signal: AbortSignal.timeout(1500) });
+    if (r.ok) {
+        const st = (await r.json()).state;
+        if (st && typeof st === 'object') {
+            if (st.picked && typeof st.picked === 'object') fruitPicked = st.picked;
+            if (st.basket && typeof st.basket === 'object') basketCounts = st.basket;
+            if (Array.isArray(st.ground)) { try { localStorage.setItem('world-fruit-ground', JSON.stringify(st.ground)); } catch (e) {} }
+            try { localStorage.setItem('world-fruit-picked', JSON.stringify(fruitPicked)); } catch (e) {}
+            try { localStorage.setItem('world-fruit-basket', JSON.stringify(basketCounts)); } catch (e) {}
+        }
+    }
+} catch (e) { /* 백엔드 없는 정적 서빙 — 로컬 캐시로 진행 */ }
+const saveFruitPicked = () => { try { localStorage.setItem('world-fruit-picked', JSON.stringify(fruitPicked)); } catch (e) {} saveFruitServer(); };
+const saveBasket = () => { try { localStorage.setItem('world-fruit-basket', JSON.stringify(basketCounts)); } catch (e) {} saveFruitServer(); };
 const FRUIT_REGROW_MS = 2 * 3600 * 1000;
 const fruitWeek = () => Math.floor(Date.now() / (7 * 86400000));
 function fruitTypeFor(pr) {
@@ -13790,9 +13820,17 @@ function fruitAnchors(pr) {   // 프롭 로컬 → 월드 (스윙 회전 관례:
 }
 const fruitBearing = [];   // { pr, type, group, shakeT }
 let groundFruits = [];     // { type, x, z, y, vy, mesh, settled, at, wilting }
+const FRUIT_LAY = { banana: 0.045, eggplant: 0.055 };   // 길쭉 과일 — 눕힌 몸통 반지름
+function layFruitMesh(mesh, type, gy) {   // 낙과 자세: 길쭉이는 옆으로 눕는다 (원점=꼭지·세로면 '꽂힘' — 사용자 리포트)
+    if (FRUIT_LAY[type] === undefined) return gy + 0.1;
+    mesh.rotation.order = 'YXZ';   // 야우 먼저(월드 업) → 눕히기 — XYZ면 눕는 방향이 안 섞인다
+    mesh.rotation.set(Math.PI / 2 * 0.96, Math.random() * Math.PI * 2, 0);
+    return gy + FRUIT_LAY[type];
+}
 const FRUIT_WILT_MS = 6 * 3600 * 1000;   // 낙과 6시간 방치 = 시들어 흙으로
 function saveGroundFruits() {
     try { localStorage.setItem('world-fruit-ground', JSON.stringify(groundFruits.filter((g) => g.settled).map((g) => ({ t: g.type, x: +g.x.toFixed(2), z: +g.z.toFixed(2), at: g.at })))); } catch (e) {}
+    saveFruitServer();
 }
 function loadGroundFruits() {   // 리로드 복원 — 시들 시간이 지난 건 조용히 흙으로
     let arr = [];
@@ -13802,9 +13840,10 @@ function loadGroundFruits() {   // 리로드 복원 — 시들 시간이 지난 
         if (Date.now() - (g.at || 0) > FRUIT_WILT_MS) continue;
         const mesh = makeFruitMesh(g.t, 1);
         const gy = terrainHeight(g.x, g.z) + 0.005;
-        mesh.position.set(g.x, gy + 0.1, g.z);
+        const fy = layFruitMesh(mesh, g.t, gy);
+        mesh.position.set(g.x, fy, g.z);
         fruitLayer.add(mesh);
-        groundFruits.push({ type: g.t, x: g.x, z: g.z, y: gy + 0.1, vy: 0, mesh, settled: true, gy, bounced: true, at: g.at || Date.now() });
+        groundFruits.push({ type: g.t, x: g.x, z: g.z, y: fy, vy: 0, mesh, settled: true, gy, bounced: true, at: g.at || Date.now() });
     }
 }
 function clearFruitGroup(e) {
@@ -13978,7 +14017,7 @@ function updateFruits(delta) {
                 gf.vy = 1.1 + Math.random() * 0.4;
                 playBuffer(munchBuf, { vol: 0.3, rate: 0.55 + Math.random() * 0.2, filterFreq: 600 });
             } else {
-                gf.y = gf.gy + 0.1;
+                gf.y = layFruitMesh(gf.mesh, gf.type, gf.gy);
                 gf.settled = true;
                 gf.at = gf.at || Date.now();
                 saveGroundFruits();
@@ -14083,9 +14122,10 @@ function updateAiFruit(delta) {
                     const mesh = makeFruitMesh(t, 1);
                     const fx = possessed ? possessed.mover.position.x + 0.28 : p.mover.position.x + 0.28;
                     const fz = possessed ? possessed.mover.position.z : p.mover.position.z;
-                    mesh.position.set(fx, terrainHeight(fx, fz) + 0.105, fz);
+                    const giftGy = terrainHeight(fx, fz) + 0.005;
+                    mesh.position.set(fx, layFruitMesh(mesh, t, giftGy), fz);
                     fruitLayer.add(mesh);
-                    groundFruits.push({ type: t, x: fx, z: fz, y: mesh.position.y, vy: 0, mesh, settled: true, gy: mesh.position.y - 0.1, bounced: true, at: Date.now() });
+                    groundFruits.push({ type: t, x: fx, z: fz, y: mesh.position.y, vy: 0, mesh, settled: true, gy: giftGy, bounced: true, at: Date.now() });
                     saveGroundFruits();
                     triggerHugBurst(fx, mesh.position.y + 0.3, fz);
                     playBuffer(swishBuf, { vol: 0.3, rate: 1.8, filterFreq: 1600 });

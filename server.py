@@ -12032,6 +12032,35 @@ async def world_flower_add(request: Request):
     return {"ok": True, "flower": flower, "total": len(flowers)}
 
 
+# ---- 과일 상태 (바구니·낙과·재성장): 폰·데탑 공유 — localStorage는 기기별이라 갈렸다.
+WORLD_FRUIT_FILE = _world_file("world_fruit.json")
+
+
+@app.get("/api/world_fruit")
+async def world_fruit_get():
+    try:
+        with open(WORLD_FRUIT_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        state = data.get("state") if isinstance(data, dict) else None
+        return {"state": state if isinstance(state, dict) else {}}
+    except Exception:
+        return {"state": {}}
+
+
+@app.post("/api/world_fruit")
+async def world_fruit_set(request: Request):
+    data = await request.json()
+    state = data.get("state")
+    if not isinstance(state, dict):
+        return JSONResponse({"error": "need state object"}, status_code=400)
+    try:
+        with open(WORLD_FRUIT_FILE, "w", encoding="utf-8") as f:
+            json.dump({"state": state}, f, ensure_ascii=False)
+        return {"ok": True}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 # ---- 사진 게시판 (⑭): screenshots/ 목록 (최신순) — 원본은 아래 /screenshots 마운트가 서빙.
 @app.get("/api/screenshots_list")
 async def world_screenshots_list():
