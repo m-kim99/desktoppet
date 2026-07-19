@@ -9470,13 +9470,30 @@ function makeFoodGeo(f, bites = 0) {
         for (const ez of [0.017, -0.017]) { const eye = new THREE.SphereGeometry(0.0045, 8, 6); eye.translate(0.04, 0.036, ez); add(eye, 0x4a3625, 0x2a1d12, { curve: 1 }); }
         topH = 0.045;
     } else if (f.id === 'gimbap') {                           // 위 꼭짓점부터 베어문다 — 흰밥 단면 + 속(참치)
-        const c = { cy: 0.044, ry: 0.05, ft: 0xfaf7f0, fb: 0xf0e8d8 };
-        const sph = b >= 2 ? [{ x: 0, y: 0.08, z: 0, r: 0.03 }, { x: 0, y: 0.058, z: 0, r: 0.022 }] : b >= 1 ? [{ x: 0, y: 0.088, z: 0, r: 0.022 }] : null;
-        const rice = new THREE.CylinderGeometry(0.05, 0.05, 0.03, 3, 5); rice.rotateX(Math.PI / 2); rice.rotateZ(Math.PI / 2); rice.translate(0, 0.044, 0);
-        addB(rice, 0xf9f5ec, 0xe7dfd0, { curve: 1 }, c, sph);
-        const ns = new THREE.Shape(); ns.moveTo(-0.0438, -0.0256); ns.lineTo(0.0438, -0.0256); ns.lineTo(0.0226, 0.016); ns.lineTo(-0.0226, 0.016); ns.closePath();
-        const nori = new THREE.ExtrudeGeometry(ns, { depth: 0.033, bevelEnabled: false }); nori.translate(0, 0.044, -0.0165); add(nori, 0x33322d, 0x201f1b, { curve: 1 });
-        if (b >= 2) { const t = new THREE.SphereGeometry(0.011, 10, 8); t.scale(1, 1, 0.7); t.translate(0, 0.05, 0.006); add(t, 0xe08a6a, 0xd0714f, { curve: 1 }); }
+        // 일러스트 비율의 정립 삼각형(꼭짓점 위) — 코너 라운딩 + 베벨 익스트루드로 둥근 모서리.
+        // 베어물기 = 꼭짓점을 물결(스캘럽) 모양으로 절단한 실루엣 + 참치 노출 (정점 카빙은 평면 익스트루드에 안 통함)
+        const apex = 0.088, byL = 0.007, bxR = 0.047, rnd = 0.016, rs = new THREE.Shape();
+        const hw = (y) => bxR * (apex - y) / (apex - byL);                          // 높이 y에서의 반폭
+        const ed = Math.hypot(bxR, apex - byL);                                     // 옆변 길이
+        const exu = -bxR / ed, eyu = (apex - byL) / ed;                             // 옆변 단위벡터(오른쪽 기준)
+        rs.moveTo(-bxR + rnd, byL);
+        rs.lineTo(bxR - rnd, byL); rs.quadraticCurveTo(bxR, byL, bxR + exu * rnd, byL + eyu * rnd);   // 오른쪽 아래 라운드 코너
+        if (!b) { rs.lineTo(0.0105, apex - 0.018); rs.quadraticCurveTo(0, apex, -0.0105, apex - 0.018); }   // 위 꼭짓점 라운드
+        else {
+            const yCut = b >= 2 ? 0.044 : 0.062, w = hw(yCut);
+            rs.lineTo(w, yCut);                                                     // 옆변을 따라 절단선까지
+            if (b >= 2) { rs.quadraticCurveTo(w * 0.5, yCut - 0.009, 0.001, yCut - 0.003); rs.quadraticCurveTo(-w * 0.5, yCut - 0.01, -w, yCut); }   // 두 입 자국
+            else rs.quadraticCurveTo(0, yCut - 0.016, -w, yCut);                    // 한 입 = 넓은 스캘럽 하나
+        }
+        rs.lineTo(-bxR - exu * rnd, byL + eyu * rnd); rs.quadraticCurveTo(-bxR, byL, -bxR + rnd, byL);   // 왼쪽 아래 라운드 코너
+        rs.closePath();
+        const rice = new THREE.ExtrudeGeometry(rs, { depth: 0.022, bevelEnabled: true, bevelThickness: 0.007, bevelSize: 0.006, bevelSegments: 3, curveSegments: 6 });
+        rice.translate(0, 0, -0.011);
+        add(rice, 0xf9f5ec, 0xe7dfd0, { curve: 1 });
+        // 김 — 일러스트처럼 하단 가운데 좁은 띠: 앞·뒤 패널 + 바닥 (ㄷ자 랩)
+        for (const zf of [1, -1]) { const np = new THREE.BoxGeometry(0.054, 0.032, 0.0018); np.translate(0, 0.018, 0.0185 * zf); add(np, 0x33322d, 0x201f1b, { curve: 1 }); }
+        const nb = new THREE.BoxGeometry(0.054, 0.0018, 0.038); nb.translate(0, 0.0022, 0); add(nb, 0x2a2925, 0x1c1b17, { curve: 1 });
+        if (b) { const t = new THREE.SphereGeometry(b >= 2 ? 0.012 : 0.009, 10, 8); t.scale(1.3, 0.8, 0.7); t.translate(0, (b >= 2 ? 0.044 : 0.062) - 0.007, 0); add(t, 0xe08a6a, 0xd0714f, { curve: 1 }); }
         topH = 0.075;
     } else if (f.id === 'churros') {                          // 끝부터 베어문다 — 짧아지고 단면에 폭신 도우
         const yL = 0.001, yTop = b >= 2 ? 0.048 : b >= 1 ? 0.076 : 0.099, sL = yTop - yL, scy = (yTop + yL) / 2;
