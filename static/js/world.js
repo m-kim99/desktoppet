@@ -9372,90 +9372,106 @@ function makeSeafoodMesh(id, scale = 1) {
     if (scale !== 1) mesh.scale.setScalar(scale);
     return mesh;
 }
+// 🍔 푸드 부스 9종 — 과일과 같은 규율: 전 파트 bakeGrad 정점색 → 병합 1드로우(gradMat).
+// 실루엣 우선 + 시그니처 디테일(케첩·머스터드·스프링클·지느러미…). 원점=바닥, +y로 쌓는다.
 function makeFoodMesh(f) {
-    const g = new THREE.Group();
-    if (f.id === 'toast') {
-        for (let i = 0; i < 2; i++) {
-            const slice = new THREE.Mesh(new RoundedBoxGeometry(0.075, 0.016, 0.075, 2, 0.008), M(i ? 0xf2d9a0 : 0xe0b878));
-            slice.position.set(i * 0.008, 0.012 + i * 0.018, i * -0.006);
-            g.add(slice);
+    const parts = [];
+    const add = (geo, top, bottom, opts) => { parts.push(bakeGrad(geo, top, bottom, opts || { curve: 1.1 })); };
+    let topH = 0.05;
+    if (f.id === 'toast') {                                   // 식빵 한 장 — 노릇한 크러스트 테두리 + 뽀얀 크럼 면 + 버터
+        const crust = new RoundedBoxGeometry(0.092, 0.088, 0.026, 4, 0.012); crust.translate(0, 0.046, 0);
+        add(crust, 0xdda662, 0xc2863d, { curve: 1.2 });
+        for (const fz of [0.0145, -0.0145]) { const face = new RoundedBoxGeometry(0.072, 0.066, 0.003, 3, 0.006); face.translate(0, 0.048, fz); add(face, 0xfce9ae, 0xf2d486, { curve: 1.05 }); }
+        const butter = new THREE.BoxGeometry(0.02, 0.02, 0.007); butter.rotateZ(0.25); butter.translate(0.01, 0.058, 0.02);
+        add(butter, 0xffeda8, 0xf7d778, { curve: 1 });
+        topH = 0.06;
+    } else if (f.id === 'omurice') {                          // 접시 + 달걀 오벌 돔 + 케첩 지그재그
+        const plate = new THREE.CylinderGeometry(0.058, 0.05, 0.009, 20); plate.translate(0, 0.0045, 0);
+        add(plate, 0xf4eee1, 0xe0d8c6, { curve: 1 });
+        const rim = new THREE.TorusGeometry(0.053, 0.005, 8, 22); rim.rotateX(Math.PI / 2); rim.translate(0, 0.009, 0);
+        add(rim, 0xf8f3e8, 0xe7dfcd, { curve: 1 });
+        const egg = new THREE.SphereGeometry(0.04, 18, 13); egg.scale(1.32, 0.72, 0.86); egg.translate(0, 0.031, 0);
+        add(egg, 0xffdf6b, 0xf1b330, { curve: 1.3 });
+        const kpts = [];   // 케첩 — 돔(타원체) 표면을 따라 길게 꼬불꼬불, 살짝 도드라지게 (rx≈0.0528 rz≈0.0344)
+        for (let i = 0; i <= 9; i++) { const t = i / 9; const x = -0.032 + t * 0.064; const z = 0.012 * Math.sin(t * Math.PI * 3.8); const ins = 1 - Math.pow(x / 0.0528, 2) - Math.pow(z / 0.0344, 2); const yy = 0.031 + 0.0288 * Math.sqrt(Math.max(0.03, ins)) + 0.0022; kpts.push(new THREE.Vector3(x, yy, z)); }
+        const ket = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(kpts), 28, 0.0034, 6);
+        add(ket, 0xef5847, 0xcd352b, { curve: 1 });
+        topH = 0.055;
+    } else if (f.id === 'burrito') {                          // 가로 또띠아 롤 + 접힌 자락 + 끝에 속
+        const roll = new THREE.CylinderGeometry(0.021, 0.021, 0.08, 16); roll.rotateZ(Math.PI / 2); roll.translate(0, 0.024, 0);
+        add(roll, 0xe6cb92, 0xc9a763, { curve: 1.1 });
+        for (const sx of [-0.04, 0.04]) { const cap = new THREE.SphereGeometry(0.021, 12, 10); cap.translate(sx, 0.024, 0); add(cap, 0xe1c187, 0xc39f5f, { curve: 1.1 }); }
+        const flap = new THREE.BoxGeometry(0.056, 0.0035, 0.02); flap.rotateZ(-0.05); flap.rotateX(0.22); flap.translate(-0.002, 0.0355, 0.0125);   // 롤 위에 눕혀 파묻듯 — 끝단만 슬쩍
+        add(flap, 0xe6cb92, 0xcdae72, { curve: 1 });
+        for (const gx of [-0.02, 0.014]) { const sear = new THREE.BoxGeometry(0.004, 0.003, 0.04); sear.rotateY(0.32); sear.translate(gx, 0.043, 0); add(sear, 0xac833c, 0x8f6b2c, { curve: 1 }); }   // 그릴 그을림 줄
+        for (const [gx, gz] of [[0.032, -0.005], [-0.034, 0.006]]) { const sp = new THREE.SphereGeometry(0.005, 7, 5); sp.scale(1.3, 0.5, 1); sp.translate(gx, 0.041, gz); add(sp, 0xb58c4a, 0x9a723a, { curve: 1 }); }
+        const fill = new THREE.SphereGeometry(0.014, 10, 8); fill.scale(0.65, 1, 1); fill.translate(0.05, 0.024, 0);
+        add(fill, 0x9ccf72, 0x6fa84c, { curve: 1 });
+        const bean = new THREE.SphereGeometry(0.006, 8, 6); bean.translate(0.049, 0.03, 0.008); add(bean, 0xdf7a4a, 0xc05730, { curve: 1 });
+        topH = 0.05;
+    } else if (f.id === 'hotdog') {                           // 소시지 형태를 크게 복사한 빵(캡슐, 빵색) 위에 소시지가 반쯤 파묻힘 + 머스터드 🌭
+        const bun = new THREE.CylinderGeometry(0.021, 0.021, 0.092, 16); bun.rotateZ(Math.PI / 2); bun.translate(0, 0.026, 0);
+        add(bun, 0xe9c187, 0xcf9f57, { curve: 1.14 });
+        for (const bx of [-0.046, 0.046]) { const bc = new THREE.SphereGeometry(0.021, 14, 11); bc.translate(bx, 0.026, 0); add(bc, 0xe9c187, 0xcf9f57, { curve: 1.14 }); }
+        const sau = new THREE.CylinderGeometry(0.0125, 0.0125, 0.1, 14); sau.rotateZ(Math.PI / 2); sau.translate(0, 0.045, 0);
+        add(sau, 0xda6150, 0xb5403a, { curve: 1.25 });
+        for (const sx of [-0.05, 0.05]) { const e = new THREE.SphereGeometry(0.0125, 12, 9); e.translate(sx, 0.045, 0); add(e, 0xda6150, 0xb5403a, { curve: 1.25 }); }
+        for (let i = 0; i < 4; i++) { const my = new THREE.TorusGeometry(0.011, 0.0026, 6, 9, Math.PI); my.rotateX(Math.PI / 2 - 0.5); my.rotateZ(0.6); my.translate(-0.031 + i * 0.021, 0.056, 0.004); add(my, 0xeeb833, 0xd0901f, { curve: 1 }); }
+        topH = 0.058;
+    } else if (f.id === 'donut') {                            // 세운 핑크 링(글레이즈) + 컬러 스프링클
+        const ring = new THREE.TorusGeometry(0.03, 0.015, 14, 24); ring.rotateX(0.5); ring.translate(0, 0.032, 0);
+        add(ring, 0xf6a9c0, 0xe07fa0, { curve: 1.15 });
+        const glaze = new THREE.TorusGeometry(0.03, 0.0135, 14, 24); glaze.scale(1, 1, 0.62); glaze.rotateX(0.5); glaze.translate(0, 0.034, 0.006);
+        add(glaze, 0xfcc4d6, 0xf3a6bf, { curve: 1 });
+        const spc = [0xe0473d, 0x5aa9e0, 0xe5a72c, 0x6bbf6a, 0xf3ece2];
+        for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; const s = new THREE.BoxGeometry(0.013, 0.004, 0.004); s.rotateZ(a + 0.6); s.translate(0.03 * Math.cos(a), 0.03 * Math.sin(a), 0.015); s.rotateX(0.5); s.translate(0, 0.032, 0); add(s, spc[i % 5], spc[i % 5], { curve: 1 }); }
+        topH = 0.04;
+    } else if (f.id === 'bungeo') {                           // 물고기빵 — 몸통 오벌 + 꼬리 + 등지느러미 + 눈
+        const body = new THREE.SphereGeometry(0.03, 16, 12); body.scale(1.75, 0.98, 0.6); body.translate(0.006, 0.03, 0);
+        add(body, 0xe9c079, 0xcf9a50, { curve: 1.2 });
+        const tail = new THREE.ConeGeometry(0.026, 0.032, 6); tail.scale(1, 1, 0.42); tail.rotateZ(Math.PI / 2); tail.translate(-0.052, 0.03, 0);
+        add(tail, 0xe3b872, 0xc9974c, { curve: 1.15 });
+        const dorsal = new THREE.ConeGeometry(0.011, 0.014, 4); dorsal.scale(2, 1, 0.5); dorsal.translate(0.004, 0.052, 0);
+        add(dorsal, 0xdcae68, 0xc0913f, { curve: 1.1 });
+        for (const zf of [1, -1]) for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) {   // 비늘 무늬 — 앞뒤 면에 ∩ 몇 줄(꼬리쪽으로 살짝 이동)
+            const sc = new THREE.TorusGeometry(0.0076, 0.0012, 5, 8, Math.PI); sc.translate(-0.02 + c * 0.016 + (r % 2) * 0.008, 0.024 + r * 0.009, 0.0166 * zf);
+            add(sc, 0xd4a656, 0xbb8c42, { curve: 1 });
         }
-        g.userData.topH = 0.05;
-    } else if (f.id === 'omurice') {
-        const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.05, 0.008, 16), M(0xf4f1ea));
-        plate.position.y = 0.004;
-        g.add(plate);
-        const egg = new THREE.Mesh(new THREE.SphereGeometry(0.04, 14, 10), M(0xffd54f));
-        egg.scale.set(1, 0.5, 0.72);
-        egg.position.y = 0.026;
-        g.add(egg);
-        const ketchup = new THREE.Mesh(new RoundedBoxGeometry(0.05, 0.006, 0.012, 1, 0.003), M(0xe8484f));
-        ketchup.position.y = 0.047;
-        g.add(ketchup);
-        g.userData.topH = 0.05;
-    } else if (f.id === 'burrito') {
-        const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.085, 10), M(0xe8cf9e));
-        roll.rotation.z = Math.PI / 2;
-        roll.position.y = 0.02;
-        g.add(roll);
-        const filling = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.012, 10), M(0x8fbf6a));
-        filling.rotation.z = Math.PI / 2;
-        filling.position.set(0.048, 0.02, 0);
-        g.add(filling);
-        g.userData.topH = 0.04;
-    } else if (f.id === 'hotdog') {
-        const bun = new THREE.Mesh(new RoundedBoxGeometry(0.032, 0.028, 0.085, 2, 0.013), M(0xe3b878));
-        bun.position.y = 0.016;
-        g.add(bun);
-        const sausage = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.09, 8), M(0xd1584e));
-        sausage.rotation.x = Math.PI / 2;
-        sausage.position.y = 0.033;
-        g.add(sausage);
-        g.userData.topH = 0.045;
-    } else if (f.id === 'donut') {
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.014, 8, 18), M(0xf5a3bb));
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.y = 0.015;
-        g.add(ring);
-        g.userData.topH = 0.03;
-    } else if (f.id === 'bungeo') {
-        const body = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), M(0xe3b878));
-        body.scale.set(0.65, 0.4, 1);
-        body.position.y = 0.02;
-        g.add(body);
-        const tail = new THREE.Mesh(new THREE.ConeGeometry(0.018, 0.03, 8), M(0xe3b878));
-        tail.rotation.x = -Math.PI / 2;
-        tail.position.set(0, 0.02, 0.055);
-        g.add(tail);
-        g.userData.topH = 0.04;
-    } else if (f.id === 'gimbap') {
-        const tri = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.042, 0.02, 3), M(0xffffff));
-        tri.rotation.x = Math.PI / 2;
-        tri.position.y = 0.035;
-        g.add(tri);
-        const nori = new THREE.Mesh(new RoundedBoxGeometry(0.045, 0.03, 0.024, 1, 0.004), M(0x2e2e34));
-        nori.position.y = 0.016;
-        g.add(nori);
-        g.userData.topH = 0.07;
-    } else if (f.id === 'churros') {
-        const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.1, 6), M(0xb07840));
-        stick.rotation.z = 0.25;
-        stick.position.y = 0.05;
-        g.add(stick);
-        g.userData.topH = 0.095;
-    } else {
-        const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.022, 0.032, 12), M(0xb07840));
-        cup.position.y = 0.016;
-        g.add(cup);
-        const swirl = new THREE.Mesh(new THREE.SphereGeometry(0.026, 12, 10), M(0xf5a3bb));
-        swirl.position.y = 0.045;
-        g.add(swirl);
-        const cherry = new THREE.Mesh(new THREE.SphereGeometry(0.009, 8, 6), M(0xe8484f));
-        cherry.position.y = 0.066;
-        g.add(cherry);
-        g.userData.topH = 0.07;
+        for (const ez of [0.017, -0.017]) { const eye = new THREE.SphereGeometry(0.0045, 8, 6); eye.translate(0.04, 0.036, ez); add(eye, 0x4a3625, 0x2a1d12, { curve: 1 }); }
+        topH = 0.045;
+    } else if (f.id === 'gimbap') {                           // 삼각김밥 — 밥 삼각(꼭짓점 위) + 아랫부분을 감싸는 김(사다리꼴, 안 안 보이게)
+        const rice = new THREE.CylinderGeometry(0.05, 0.05, 0.03, 3); rice.rotateX(Math.PI / 2); rice.rotateZ(Math.PI / 2); rice.translate(0, 0.044, 0);
+        add(rice, 0xf9f5ec, 0xe7dfd0, { curve: 1 });
+        const ns = new THREE.Shape();   // 삼각 아랫부분에 딱 맞는 사다리꼴 → 앞뒤+옆을 덮어 초기엔 속(우메보시)이 안 보인다
+        ns.moveTo(-0.0438, -0.0256); ns.lineTo(0.0438, -0.0256); ns.lineTo(0.0226, 0.016); ns.lineTo(-0.0226, 0.016); ns.closePath();
+        const nori = new THREE.ExtrudeGeometry(ns, { depth: 0.033, bevelEnabled: false }); nori.translate(0, 0.044, -0.0165);
+        add(nori, 0x33322d, 0x201f1b, { curve: 1 });
+        topH = 0.075;
+    } else if (f.id === 'churros') {                          // 츄러스 — 7각 리지 막대 + 설탕
+        const stick = new THREE.CylinderGeometry(0.0115, 0.0115, 0.098, 7); stick.rotateZ(0.28); stick.translate(0, 0.05, 0);
+        add(stick, 0xc68a48, 0x9c6630, { curve: 1.2 });
+        for (const ey of [0.002, 0.098]) { const e = new THREE.SphereGeometry(0.0115, 8, 6); e.rotateZ(0.28); e.translate(Math.sin(0.28) * (ey - 0.05) * -1 + 0, 0, 0); e.translate(0, ey, 0); add(e, 0xc68a48, 0x9c6630, { curve: 1.15 }); }
+        for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; const gr = new THREE.BoxGeometry(0.0016, 0.09, 0.0016); gr.translate(0.0106 * Math.cos(a), 0, 0.0106 * Math.sin(a)); gr.rotateZ(0.28); gr.translate(0, 0.05, 0); add(gr, 0x99632f, 0x7a4c20, { curve: 1 }); }   // 세로줄(리지) 무늬
+        for (let i = 0; i < 9; i++) { const sg = new THREE.SphereGeometry(0.0018, 5, 4); const yy = 0.012 + i * 0.01; sg.translate((i % 2 ? 0.009 : -0.009) - Math.sin(0.28) * (yy - 0.05), yy, (i % 3 - 1) * 0.006); add(sg, 0xf4e8ca, 0xe8d4a6, { curve: 1 }); }
+        topH = 0.095;
+    } else {                                                  // 컵케이크 — 주름컵 + 3단 크림 스월 + 체리
+        const cup = new THREE.CylinderGeometry(0.033, 0.023, 0.034, 16); cup.translate(0, 0.017, 0);
+        add(cup, 0xc08a44, 0x92652f, { curve: 1.1 });
+        const cupTop = new THREE.CylinderGeometry(0.034, 0.033, 0.004, 16); cupTop.translate(0, 0.036, 0); add(cupTop, 0xcf9a52, 0xa9773a, { curve: 1 });
+        const s1 = new THREE.SphereGeometry(0.031, 16, 12); s1.scale(1, 0.72, 1); s1.translate(0, 0.05, 0); add(s1, 0xf9b2c7, 0xe888a8, { curve: 1.25 });
+        const s2 = new THREE.SphereGeometry(0.023, 14, 11); s2.scale(1, 0.82, 1); s2.translate(0.004, 0.066, 0.003); add(s2, 0xfbbdd1, 0xef95b2, { curve: 1.25 });
+        const s3 = new THREE.SphereGeometry(0.015, 12, 10); s3.translate(-0.003, 0.08, 0); add(s3, 0xfdcad9, 0xf3a3c0, { curve: 1.25 });
+        const csp = [0xe0473d, 0x3f9ae0, 0xf2c81f, 0x54bf54, 0xffffff, 0xb85ad8];   // 크림 위 스프링클 — 더 크고 또렷하게, 크림 표면에 도드라지게
+        for (let i = 0; i < 11; i++) { const a = i * 2.4; const yy = 0.052 + (i % 4) * 0.008; const rr = 0.033 - (yy - 0.052) * 0.62; const sp = new THREE.BoxGeometry(0.012, 0.004, 0.004); sp.rotateZ(a * 1.6); sp.rotateY(a); sp.translate(Math.cos(a) * rr, yy, Math.sin(a) * rr); add(sp, csp[i % 6], csp[i % 6], { curve: 1 }); }
+        const cherry = new THREE.SphereGeometry(0.0095, 12, 10); cherry.translate(0, 0.094, 0); add(cherry, 0xe8514a, 0xc0342f, { curve: 1.2 });
+        topH = 0.08;
     }
-    return g;
+    const merged = mergeGeometries(parts.map((p) => (p.index ? p.toNonIndexed() : p)), false);
+    const mesh = new THREE.Mesh(merged, gradMat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.topH = topH;
+    return mesh;
 }
 
 function drawDrinkIcon(cv, d) {
@@ -9609,6 +9625,7 @@ function giveDrink(p, d) {
 function giveFood(p, f) {
     removeFood(p);
     const mesh = makeFoodMesh(f);
+    mesh.rotation.y = Math.PI;   // 과일과 동일 — 펫은 wrap -z를 향하므로 음식 앞면(+z: 케첩·눈·체리 등)이 시청자 쪽으로 오게 π 회전
     p.pet.wrap.add(mesh);
     const dims = p.pet.dims;
     const itemY = dims.y * 0.34;
