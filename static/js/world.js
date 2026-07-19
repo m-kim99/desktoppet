@@ -9382,12 +9382,36 @@ function makeFoodGeo(f, bites = 0) {
     const addB = (geo, top, bottom, opts, c, sph, sharp) => { const g = bakeGrad(geo, top, bottom, opts || { curve: 1.1 }); if (b && sph) fruitBiteDent(g, c, sph, sharp); parts.push(g); };
     const csFace = (r, seg, x, y, z, top, bottom) => { const cs = new THREE.CircleGeometry(r, seg); cs.rotateY(-Math.PI / 2); cs.translate(x, y, z); add(cs, top, bottom, { curve: 1 }); };   // 단면 원판(-x 향)
     let topH = 0.05;
-    if (f.id === 'toast') {                                   // 모서리를 베어문다 — 초승달 결손 + 뽀얀 크럼
-        const c = { cy: 0.046, ry: 0.05, ft: 0xfbf4e4, fb: 0xf2e6c8 };
-        const sph = b >= 2 ? [{ x: 0.024, y: 0.062, z: 0, r: 0.037 }, { x: 0.002, y: 0.03, z: 0, r: 0.032 }] : b >= 1 ? [{ x: 0.03, y: 0.068, z: 0, r: 0.034 }] : null;
-        const crust = new RoundedBoxGeometry(0.092, 0.088, 0.026, 6, 0.012); crust.translate(0, 0.046, 0);
-        addB(crust, 0xdda662, 0xc2863d, { curve: 1.2 }, c, sph);
-        for (const fz of [0.0145, -0.0145]) { const face = new RoundedBoxGeometry(0.072, 0.066, 0.003, 4, 0.006); face.translate(0, 0.048, fz); addB(face, 0xfce9ae, 0xf2d486, { curve: 1.05 }, c, sph); }
+    if (f.id === 'toast') {                                   // 우상단 모서리를 베어문다 — 이빨 자국 스캘럽 실루엣 + 크럼 단면색
+        const mk = (inset) => {                               // 라운드 사각 아웃라인 + 물기 스캘럽 (크러스트/속면 공용, inset로 축소)
+            const w = 0.046 - inset, y0 = 0.002 + inset, y1 = 0.09 - inset, cr2 = 0.012, sp = new THREE.Shape();
+            sp.moveTo(-w + cr2, y0);
+            sp.lineTo(w - cr2, y0); sp.quadraticCurveTo(w, y0, w, y0 + cr2);                       // 우하 코너
+            if (!b) { sp.lineTo(w, y1 - cr2); sp.quadraticCurveTo(w, y1, w - cr2, y1); }           // 온전 = 우상 코너 라운드
+            else if (b === 1) { sp.lineTo(w, 0.044); sp.quadraticCurveTo(0.014, 0.042, 0.012, 0.058); sp.quadraticCurveTo(-0.012, 0.06, -0.004, y1); }   // 한 입 = 스캘럽 2개
+            else { sp.lineTo(w, 0.018); sp.quadraticCurveTo(0.012, 0.012, 0.016, 0.036); sp.quadraticCurveTo(-0.016, 0.034, -0.006, 0.058); sp.quadraticCurveTo(-0.038, 0.056, -0.03, y1); }   // 두 입 = 스캘럽 3개
+            sp.lineTo(-w + cr2, y1); sp.quadraticCurveTo(-w, y1, -w, y1 - cr2);                    // 좌상 코너
+            sp.lineTo(-w, y0 + cr2); sp.quadraticCurveTo(-w, y0, -w + cr2, y0);                    // 좌하 코너
+            sp.closePath();
+            return sp;
+        };
+        const crust = new THREE.ExtrudeGeometry(mk(0), { depth: 0.02, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.003, bevelSegments: 2, curveSegments: 8 });
+        crust.translate(0, 0, -0.01);
+        const cg = bakeGrad(crust, 0xdda662, 0xc2863d, { curve: 1.2 });
+        if (b) {                                              // 베어문 자국 주변만 크럼(속살)색 — 단면이 빵 속처럼
+            const bite = b >= 2 ? { x: 0.014, y: 0.058, r: 0.056 } : { x: 0.022, y: 0.068, r: 0.036 };
+            const pos = cg.attributes.position, col = cg.attributes.color;
+            const ft = new THREE.Color(0xfbf4e4), fb = new THREE.Color(0xf2e6c8), cc = new THREE.Color();
+            for (let i = 0; i < pos.count; i++) {
+                const x = pos.getX(i), y = pos.getY(i);
+                if (Math.hypot(x - bite.x, y - bite.y) < bite.r) {
+                    cc.copy(fb).lerp(ft, THREE.MathUtils.clamp((y + 0.004) / 0.1, 0, 1));
+                    col.setXYZ(i, cc.r, cc.g, cc.b);
+                }
+            }
+        }
+        parts.push(cg);
+        for (const zf of [1, -1]) { const face = new THREE.ExtrudeGeometry(mk(0.0032), { depth: 0.0015, bevelEnabled: true, bevelThickness: 0.001, bevelSize: 0.0012, bevelSegments: 2, curveSegments: 8 }); face.translate(0, 0, zf > 0 ? 0.0115 : -0.013); add(face, 0xfce9ae, 0xf2d486, { curve: 1.05 }); }
         if (!b) { const butter = new THREE.BoxGeometry(0.02, 0.02, 0.007); butter.rotateZ(0.25); butter.translate(0.01, 0.058, 0.02); add(butter, 0xffeda8, 0xf7d778, { curve: 1 }); }
         topH = 0.06;
     } else if (f.id === 'omurice') {                          // 숟가락으로 뜬다 — 달걀돔 우묵하게 파이고 밥알 드러남
