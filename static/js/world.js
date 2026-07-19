@@ -9484,11 +9484,36 @@ function makeFoodGeo(f, bites = 0) {
         for (let i = 0; i < nspr; i++) { const a = b ? a0 + 0.3 + (arc - 0.6) * (i / Math.max(1, nspr - 1)) : (i / nspr) * full; const s = new THREE.BoxGeometry(0.013, 0.004, 0.004); s.rotateZ(a + 0.6); s.translate(0.03 * Math.cos(a), 0.03 * Math.sin(a), 0.015); s.rotateX(0.5); s.translate(0, 0.032, 0); add(s, spc[i % 5], spc[i % 5], { curve: 1 }); }
         topH = 0.04;
     } else if (f.id === 'bungeo') {                           // 꼬리부터 베어문다 — 꼬리 결손→머리 반쪽, 단면에 팥소
-        const headR = 0.0585, xL = b >= 2 ? 0.02 : b >= 1 ? -0.012 : -0.0465;
-        const sx = (headR - xL) / 2 / 0.03, cx = (headR + xL) / 2;
-        const body = new THREE.SphereGeometry(0.03, 16, 12); body.scale(sx, 0.98, 0.6); body.translate(cx, 0.03, 0); add(body, 0xe9c079, 0xcf9a50, { curve: 1.2 });
-        if (!b) { const tail = new THREE.ConeGeometry(0.026, 0.032, 6); tail.scale(1, 1, 0.42); tail.rotateZ(Math.PI / 2); tail.translate(-0.052, 0.03, 0); add(tail, 0xe3b872, 0xc9974c, { curve: 1.15 }); }
-        else { const cs = new THREE.CircleGeometry(0.028 * 0.6, 16); cs.scale(1, 1.5, 1); cs.rotateY(-Math.PI / 2); cs.translate(xL, 0.03, 0); add(cs, 0x7a4a30, 0x5f3722, { curve: 1 }); const bn = new THREE.SphereGeometry(0.013 * (b >= 2 ? 1.15 : 0.85), 12, 9); bn.scale(0.4, 1, 1); bn.translate(xL + 0.004, 0.03, 0); add(bn, 0x8a573a, 0x66402a, { curve: 1 }); }
+        const xL = b >= 2 ? 0.02 : b >= 1 ? -0.012 : -0.0465;
+        const body = new THREE.SphereGeometry(0.03, 28, 20); body.scale(1.75, 0.98, 0.6); body.translate(0.006, 0.03, 0);   // 몸통은 항상 원래 비율
+        const bg = bakeGrad(body, 0xe9c079, 0xcf9a50, { curve: 1.2 });
+        if (b) {                                              // 베어물기 = 평면 클리핑 — 단면은 도우 링 + 가운데 팥소
+            const pos = bg.attributes.position, col = bg.attributes.color;
+            const dough = new THREE.Color(0xf0dcb0), bean = new THREE.Color(0x6f4030);
+            for (let i = 0; i < pos.count; i++) {
+                if (pos.getX(i) < xL) {
+                    const y = pos.getY(i), z = pos.getZ(i);
+                    pos.setX(i, xL);
+                    const rr = Math.hypot((y - 0.03) / 0.0294, z / 0.018);
+                    const c2 = rr < 0.5 ? bean : dough;
+                    col.setXYZ(i, c2.r, c2.g, c2.b);
+                }
+            }
+            pos.needsUpdate = true; col.needsUpdate = true; bg.computeVertexNormals();
+        }
+        parts.push(bg);
+        if (b) { const bn = new THREE.SphereGeometry(0.0145, 12, 9); bn.scale(0.22, 1, 0.62); bn.translate(xL + 0.0008, 0.03, 0); add(bn, 0x7a4a33, 0x5f3722, { curve: 1 }); }   // 팥소 살짝 볼록
+        else {                                                // 꼬리 = 위아래로 벌어진 두 갈래 지느러미 (V 노치)
+            const ts = new THREE.Shape();
+            ts.moveTo(-0.04, 0.04);
+            ts.quadraticCurveTo(-0.062, 0.052, -0.079, 0.053);       // 위 갈래 tip
+            ts.quadraticCurveTo(-0.069, 0.039, -0.0635, 0.03);       // V 노치
+            ts.quadraticCurveTo(-0.069, 0.021, -0.079, 0.007);       // 아래 갈래 tip
+            ts.quadraticCurveTo(-0.062, 0.008, -0.04, 0.02);
+            ts.closePath();
+            const tail = new THREE.ExtrudeGeometry(ts, { depth: 0.006, bevelEnabled: true, bevelThickness: 0.002, bevelSize: 0.002, bevelSegments: 2, curveSegments: 6 });
+            tail.translate(0, 0, -0.003); add(tail, 0xe3b872, 0xc9974c, { curve: 1.15 });
+        }
         const dorsal = new THREE.ConeGeometry(0.011, 0.014, 4); dorsal.scale(2, 1, 0.5); dorsal.translate(0.004, 0.052, 0); if (0.004 > xL + 0.004) add(dorsal, 0xdcae68, 0xc0913f, { curve: 1.1 });
         for (const zf of [1, -1]) for (let r = 0; r < 2; r++) for (let cc = 0; cc < 3; cc++) { const scx = -0.02 + cc * 0.016 + (r % 2) * 0.008; if (scx > xL + 0.004) { const scl = new THREE.TorusGeometry(0.0076, 0.0012, 5, 8, Math.PI); scl.translate(scx, 0.024 + r * 0.009, 0.0166 * zf); add(scl, 0xd4a656, 0xbb8c42, { curve: 1 }); } }
         for (const ez of [0.017, -0.017]) { const eye = new THREE.SphereGeometry(0.0045, 8, 6); eye.translate(0.04, 0.036, ez); add(eye, 0x4a3625, 0x2a1d12, { curve: 1 }); }
