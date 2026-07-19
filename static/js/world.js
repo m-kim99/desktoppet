@@ -9055,6 +9055,7 @@ const FRUITS = {
 };
 const TREE_FRUIT_POOL = ['apple', 'orange', 'lemon', 'banana', 'strawberry', 'grape', 'peach'];   // 일반 나무 7그루 주간 셔플
 function fruitLathe(pts, top, bottom, opts, seg = 22) {   // 회전체 몸통 — 과일 프로파일의 주력
+    pts = pts.slice().reverse();   // 프로파일을 아래→위로: LatheGeometry는 아래→위라야 바깥 법선을 만든다(위→아래면 안팎이 반전돼 오목·베어문 자국 안 보임)
     if (seg > 22) for (let pass = 0; pass < 2; pass++) { const s = []; for (let i = 0; i < pts.length; i++) { s.push(pts[i]); if (i < pts.length - 1) s.push([(pts[i][0] + pts[i + 1][0]) / 2, (pts[i][1] + pts[i + 1][1]) / 2]); } pts = s; }   // 베어물 땐 세로 해상도↑ (dent가 매끈하게)
     const geo = new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), seg);
     return bakeGrad(geo, top, bottom, opts || { curve: 1.15 });
