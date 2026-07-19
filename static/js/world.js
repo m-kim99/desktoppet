@@ -9096,7 +9096,7 @@ function fruitBiteHoles(c, bites) {   // 입 쪽(앞 +z·위)부터 베어문다
     }
     return h;
 }
-function fruitBiteDent(geo, c, spheres) {   // 껍질을 안으로 오목하게 파고 그 면을 과육색으로 = 베어문 자국(통합·인덱스 유지)
+function fruitBiteDent(geo, c, spheres, sharp) {   // 껍질을 안으로 오목하게 파고 그 면을 과육색으로 = 베어문 자국(통합·인덱스 유지)
     const pos = geo.attributes.position, col = geo.attributes.color;
     const cT = new THREE.Color(c.ft), cB = new THREE.Color(c.fb), cc = new THREE.Color();
     for (let i = 0; i < pos.count; i++) {
@@ -9104,7 +9104,8 @@ function fruitBiteDent(geo, c, spheres) {   // 껍질을 안으로 오목하게 
         for (const s of spheres) {
             const d = Math.hypot(x - s.x, y - s.y, z - s.z);
             if (d < s.r) {
-                const push = s.r * 1.15 * (1 - d / s.r);   // 중심에서 깊고 가장자리에서 0 = 매끈한 사발
+                const fall = sharp ? Math.pow(1 - d / s.r, 0.4) : (1 - d / s.r);   // sharp: 안쪽은 평평, 테두리에서만 급격히 0 = 숟가락으로 뜬 뚜렷한 단면
+                const push = s.r * 1.15 * fall;
                 const dx = -x, dy = c.cy - y, dz = -z, dl = Math.hypot(dx, dy, dz) || 1;   // 과일 중심 쪽으로
                 pos.setXYZ(i, x + dx / dl * push, y + dy / dl * push, z + dz / dl * push);
                 const t = THREE.MathUtils.clamp((y - (c.cy - c.ry)) / (2 * c.ry), 0, 1);
@@ -9378,7 +9379,7 @@ function makeSeafoodMesh(id, scale = 1) {
 function makeFoodGeo(f, bites = 0) {
     const b = bites, parts = [];
     const add = (geo, top, bottom, opts) => { parts.push(bakeGrad(geo, top, bottom, opts || { curve: 1.1 })); };
-    const addB = (geo, top, bottom, opts, c, sph) => { const g = bakeGrad(geo, top, bottom, opts || { curve: 1.1 }); if (b && sph) fruitBiteDent(g, c, sph); parts.push(g); };
+    const addB = (geo, top, bottom, opts, c, sph, sharp) => { const g = bakeGrad(geo, top, bottom, opts || { curve: 1.1 }); if (b && sph) fruitBiteDent(g, c, sph, sharp); parts.push(g); };
     const csFace = (r, seg, x, y, z, top, bottom) => { const cs = new THREE.CircleGeometry(r, seg); cs.rotateY(-Math.PI / 2); cs.translate(x, y, z); add(cs, top, bottom, { curve: 1 }); };   // 단면 원판(-x 향)
     let topH = 0.05;
     if (f.id === 'toast') {                                   // 모서리를 베어문다 — 초승달 결손 + 뽀얀 크럼
@@ -9390,12 +9391,12 @@ function makeFoodGeo(f, bites = 0) {
         if (!b) { const butter = new THREE.BoxGeometry(0.02, 0.02, 0.007); butter.rotateZ(0.25); butter.translate(0.01, 0.058, 0.02); add(butter, 0xffeda8, 0xf7d778, { curve: 1 }); }
         topH = 0.06;
     } else if (f.id === 'omurice') {                          // 숟가락으로 뜬다 — 달걀돔 우묵하게 파이고 밥알 드러남
-        const c = { cy: 0.03, ry: 0.028, ft: 0xfaf7f0, fb: 0xf3ecdc };   // 파인 밥 단면 — 흰밥, 달걀 노랑과 뚜렷이 구분
-        const sph = b >= 2 ? [{ x: 0.004, y: 0.043, z: 0.013, r: 0.034 }, { x: 0.026, y: 0.035, z: 0.007, r: 0.023 }] : b >= 1 ? [{ x: 0.012, y: 0.045, z: 0.016, r: 0.029 }] : null;
+        const c = { cy: 0.03, ry: 0.028, ft: 0xefe3c6, fb: 0xe6d3a8 };
+        const sph = b >= 2 ? [{ x: -0.026, y: 0.05, z: 0.02, r: 0.021 }, { x: 0.008, y: 0.052, z: 0.022, r: 0.022 }, { x: 0.032, y: 0.046, z: 0.008, r: 0.02 }, { x: 0.008, y: 0.036, z: -0.016, r: 0.022 }] : b >= 1 ? [{ x: 0.016, y: 0.046, z: 0.014, r: 0.022 }] : null;
         const plate = new THREE.CylinderGeometry(0.058, 0.05, 0.009, 20); plate.translate(0, 0.0045, 0); add(plate, 0xf4eee1, 0xe0d8c6, { curve: 1 });
         const rim = new THREE.TorusGeometry(0.053, 0.005, 8, 22); rim.rotateX(Math.PI / 2); rim.translate(0, 0.009, 0); add(rim, 0xf8f3e8, 0xe7dfcd, { curve: 1 });
-        const egg = new THREE.SphereGeometry(0.04, 18, 13); egg.scale(1.32, 0.72, 0.86); egg.translate(0, 0.031, 0);
-        addB(egg, 0xffdf6b, 0xf1b330, { curve: 1.3 }, c, sph);
+        const egg = new THREE.SphereGeometry(0.04, 32, 24); egg.scale(1.32, 0.72, 0.86); egg.translate(0, 0.031, 0);
+        addB(egg, 0xffdf6b, 0xf1b330, { curve: 1.3 }, c, sph, true);
         if (b < 2) { const kp = []; for (let i = 0; i <= 9; i++) { const t = i / 9; const x = -0.032 + t * 0.064; const z = 0.012 * Math.sin(t * Math.PI * 3.8); const ins = 1 - Math.pow(x / 0.0528, 2) - Math.pow(z / 0.0344, 2); const yy = 0.031 + 0.0288 * Math.sqrt(Math.max(0.03, ins)) + 0.0022; kp.push(new THREE.Vector3(x, yy, z)); } const ket = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(kp), 28, 0.0034, 6); add(ket, 0xef5847, 0xcd352b, { curve: 1 }); }
         topH = 0.055;
     } else if (f.id === 'burrito') {                          // 한쪽 끝을 베어문다 — 짧아지고 단면에 또띠아 링+속
