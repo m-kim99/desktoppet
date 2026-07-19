@@ -9390,7 +9390,7 @@ function makeFoodGeo(f, bites = 0) {
         if (!b) { const butter = new THREE.BoxGeometry(0.02, 0.02, 0.007); butter.rotateZ(0.25); butter.translate(0.01, 0.058, 0.02); add(butter, 0xffeda8, 0xf7d778, { curve: 1 }); }
         topH = 0.06;
     } else if (f.id === 'omurice') {                          // 숟가락으로 뜬다 — 달걀돔 우묵하게 파이고 밥알 드러남
-        const c = { cy: 0.03, ry: 0.028, ft: 0xefe3c6, fb: 0xe0d2ac };   // 파인 밥 단면 — 일러스트 기준 밥색
+        const c = { cy: 0.03, ry: 0.028, ft: 0xfaf7f0, fb: 0xf3ecdc };   // 파인 밥 단면 — 흰밥, 달걀 노랑과 뚜렷이 구분
         const sph = b >= 2 ? [{ x: 0.004, y: 0.043, z: 0.013, r: 0.034 }, { x: 0.026, y: 0.035, z: 0.007, r: 0.023 }] : b >= 1 ? [{ x: 0.012, y: 0.045, z: 0.016, r: 0.029 }] : null;
         const plate = new THREE.CylinderGeometry(0.058, 0.05, 0.009, 20); plate.translate(0, 0.0045, 0); add(plate, 0xf4eee1, 0xe0d8c6, { curve: 1 });
         const rim = new THREE.TorusGeometry(0.053, 0.005, 8, 22); rim.rotateX(Math.PI / 2); rim.translate(0, 0.009, 0); add(rim, 0xf8f3e8, 0xe7dfcd, { curve: 1 });
@@ -9450,13 +9450,13 @@ function makeFoodGeo(f, bites = 0) {
         if (b >= 2) { const t = new THREE.SphereGeometry(0.011, 10, 8); t.scale(1, 1, 0.7); t.translate(0, 0.05, 0.006); add(t, 0xe08a6a, 0xd0714f, { curve: 1 }); }
         topH = 0.075;
     } else if (f.id === 'churros') {                          // 끝부터 베어문다 — 짧아지고 단면에 폭신 도우
-        const yTop = 0.099, yL = b >= 2 ? 0.052 : b >= 1 ? 0.024 : 0.001, sL = yTop - yL, scy = (yTop + yL) / 2;
+        const yL = 0.001, yTop = b >= 2 ? 0.048 : b >= 1 ? 0.076 : 0.099, sL = yTop - yL, scy = (yTop + yL) / 2;
         const stick = new THREE.CylinderGeometry(0.0115, 0.0115, sL, 7); stick.translate(0, scy - 0.05, 0); stick.rotateZ(0.28); stick.translate(0, 0.05, 0); add(stick, 0xc68a48, 0x9c6630, { curve: 1.2 });
-        const eTop = new THREE.SphereGeometry(0.0115, 8, 6); eTop.translate(0, yTop - 0.05, 0); eTop.rotateZ(0.28); eTop.translate(0, 0.05, 0); add(eTop, 0xc68a48, 0x9c6630, { curve: 1.15 });
-        if (!b) { const eBot = new THREE.SphereGeometry(0.0115, 8, 6); eBot.translate(0, yL - 0.05, 0); eBot.rotateZ(0.28); eBot.translate(0, 0.05, 0); add(eBot, 0xc68a48, 0x9c6630, { curve: 1.15 }); }
-        else { const cs = new THREE.CircleGeometry(0.0105, 12); cs.rotateX(Math.PI / 2); cs.rotateZ(0.28); cs.translate(0, yL - 0.05, 0); cs.rotateZ(0); cs.translate(Math.sin(0.28) * -(yL - 0.05), yL - 0.05 - (yL - 0.05) + 0, 0); const dg = new THREE.SphereGeometry(0.0105, 10, 8); dg.scale(1, 0.4, 1); const px = Math.sin(0.28) * -(yL - 0.05), py = Math.cos(0.28) * (yL - 0.05); dg.translate(px, py + 0.05, 0); add(dg, 0xf0dcae, 0xe2c488, { curve: 1 }); }
+        const eBot = new THREE.SphereGeometry(0.0115, 8, 6); eBot.translate(0, yL - 0.05, 0); eBot.rotateZ(0.28); eBot.translate(0, 0.05, 0); add(eBot, 0xc68a48, 0x9c6630, { curve: 1.15 });
+        if (!b) { const eTop = new THREE.SphereGeometry(0.0115, 8, 6); eTop.translate(0, yTop - 0.05, 0); eTop.rotateZ(0.28); eTop.translate(0, 0.05, 0); add(eTop, 0xc68a48, 0x9c6630, { curve: 1.15 }); }
+        else { const dg = new THREE.SphereGeometry(0.0105, 10, 8); dg.scale(1, 0.4, 1); dg.rotateZ(0.28); const px = Math.sin(0.28) * -(yTop - 0.05), py = Math.cos(0.28) * (yTop - 0.05); dg.translate(px, py + 0.05, 0); add(dg, 0xf0dcae, 0xe2c488, { curve: 1 }); }
         for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; const gr = new THREE.BoxGeometry(0.0016, sL * 0.94, 0.0016); gr.translate(0.0106 * Math.cos(a), scy - 0.05, 0.0106 * Math.sin(a)); gr.rotateZ(0.28); gr.translate(0, 0.05, 0); add(gr, 0x99632f, 0x7a4c20, { curve: 1 }); }
-        for (let i = 0; i < 9; i++) { const yy = 0.012 + i * 0.01; if (yy > yL + 0.006) { const sg = new THREE.SphereGeometry(0.0018, 5, 4); sg.translate((i % 2 ? 0.009 : -0.009) - Math.sin(0.28) * (yy - 0.05), yy, (i % 3 - 1) * 0.006); add(sg, 0xf4e8ca, 0xe8d4a6, { curve: 1 }); } }
+        for (let i = 0; i < 9; i++) { const yy = 0.012 + i * 0.01; if (yy < yTop - 0.006) { const sg = new THREE.SphereGeometry(0.0018, 5, 4); sg.translate((i % 2 ? 0.009 : -0.009) - Math.sin(0.28) * (yy - 0.05), yy, (i % 3 - 1) * 0.006); add(sg, 0xf4e8ca, 0xe8d4a6, { curve: 1 }); } }
         topH = 0.095;
     } else {                                                  // 컵케이크 — 위(체리·크림)부터 → 케이크
         const cup = new THREE.CylinderGeometry(0.033, 0.023, 0.034, 16); cup.translate(0, 0.017, 0); add(cup, 0xc08a44, 0x92652f, { curve: 1.1 });
