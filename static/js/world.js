@@ -9054,8 +9054,9 @@ const FRUITS = {
     coconut:    { emoji: '🥥', ko: '코코넛' },
 };
 const TREE_FRUIT_POOL = ['apple', 'orange', 'lemon', 'banana', 'strawberry', 'grape', 'peach'];   // 일반 나무 7그루 주간 셔플
-function fruitLathe(pts, top, bottom, opts) {   // 회전체 몸통 — 과일 프로파일의 주력
-    const geo = new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), 22);
+function fruitLathe(pts, top, bottom, opts, seg = 22) {   // 회전체 몸통 — 과일 프로파일의 주력
+    if (seg > 22) for (let pass = 0; pass < 2; pass++) { const s = []; for (let i = 0; i < pts.length; i++) { s.push(pts[i]); if (i < pts.length - 1) s.push([(pts[i][0] + pts[i + 1][0]) / 2, (pts[i][1] + pts[i + 1][1]) / 2]); } pts = s; }   // 베어물 땐 세로 해상도↑ (dent가 매끈하게)
+    const geo = new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), seg);
     return bakeGrad(geo, top, bottom, opts || { curve: 1.15 });
 }
 function fruitLeaf(g, x, y, z, rotZ, len = 0.034) {   // 잎사귀 — 납작 늘린 구
@@ -9072,121 +9073,140 @@ function fruitStem(g, x0, y0, x1, y1, r = 0.006) {   // 꼭지 — 두 점을 �
     stem.translate((x0 + x1) / 2, (y0 + y1) / 2, 0);
     g.push(bakeGrad(stem, 0x8a6a42, 0x6a4c2e, { curve: 1 }));
 }
-function makeFruitGeo(type) {
-    const g = [];
-    if (type === 'apple') {   // 위아래 옴폭한 Lathe + 꼭지 + 잎
-        g.push(fruitLathe([[0.001, -0.006], [0.03, -0.01], [0.052, -0.036], [0.054, -0.07], [0.04, -0.098], [0.018, -0.108], [0.001, -0.102]], 0xff5f4d, 0xc42a20));
-        fruitStem(g, 0, -0.004, -0.004, 0.022);
-        fruitLeaf(g, 0.02, 0.014, 0, -0.5);
-    } else if (type === 'orange') {   // 납작 구 + 진초록 꼭지점
-        const body = new THREE.SphereGeometry(0.052, 18, 14);
-        body.scale(1, 0.9, 1);
-        body.translate(0, -0.052, 0);
-        g.push(bakeGrad(body, 0xffa63c, 0xe0761c, { curve: 1.2 }));
-        const cap = new THREE.SphereGeometry(0.011, 8, 6);
-        cap.scale(1, 0.5, 1);
-        cap.translate(0, -0.004, 0);
-        g.push(bakeGrad(cap, 0x4f8f3c, 0x35672a, { curve: 1 }));
-        fruitLeaf(g, 0.016, 0.006, 0, -0.55, 0.026);
-    } else if (type === 'lemon') {   // 양끝 젖꼭지 Lathe (실루엣이 곧 정체성)
-        g.push(fruitLathe([[0.001, 0.004], [0.009, -0.002], [0.014, -0.012], [0.035, -0.028], [0.046, -0.052], [0.035, -0.076], [0.014, -0.092], [0.009, -0.102], [0.001, -0.108]], 0xffe45a, 0xe0aa2e));
-        const cap = new THREE.SphereGeometry(0.008, 7, 5);
-        cap.translate(0, 0.002, 0);
-        g.push(bakeGrad(cap, 0x74c455, 0x3f7a34, { curve: 1 }));
-    } else if (type === 'banana') {   // 토러스 아크 — 초승달처럼 아래로 매달린 곡선 + 갈색 양끝
-        const a0 = Math.PI * 1.28, arcLen = 2.15;   // 아크가 아래로 벌어지는 구간
-        const arc = new THREE.TorusGeometry(0.06, 0.02, 9, 14, arcLen);
-        arc.rotateZ(a0);
-        arc.translate(0, -0.028, 0);
-        g.push(bakeGrad(arc, 0xffdf66, 0xd9ab38, { curve: 1.1 }));
-        for (const a of [a0, a0 + arcLen]) {   // 양끝 꼭지 (아크 끝점 좌표)
-            const tip = new THREE.SphereGeometry(0.009, 7, 5);
-            tip.translate(Math.cos(a) * 0.06, -0.028 + Math.sin(a) * 0.06, 0);
-            g.push(bakeGrad(tip, 0x7a5a34, 0x51391e, { curve: 1 }));
-        }
-    } else if (type === 'strawberry') {   // 둥근 원뿔 Lathe + 흰 씨앗 8점 + 꽃받침
-        g.push(fruitLathe([[0.001, -0.01], [0.036, -0.018], [0.046, -0.045], [0.034, -0.075], [0.012, -0.095], [0.001, -0.099]], 0xff4a5e, 0xd42440));
-        for (let i = 0; i < 8; i++) {   // 씨앗 — 시그니처
-            const a = (i / 8) * Math.PI * 2 + (i % 2 ? 0.3 : 0);
-            const yy = -0.035 - (i % 3) * 0.02;
-            const rr = 0.041 * Math.sqrt(1 - Math.pow((yy + 0.05) / 0.05, 2) * 0.55);
-            const seed = new THREE.SphereGeometry(0.0042, 5, 4);
-            seed.translate(Math.cos(a) * rr, yy, Math.sin(a) * rr);
-            g.push(bakeGrad(seed, 0xfff2cf, 0xf0dca8, { curve: 1 }));
-        }
-        for (let i = 0; i < 5; i++) {   // 꽃받침 5장
-            const a = (i / 5) * Math.PI * 2;
-            const sep = new THREE.SphereGeometry(0.016, 7, 5);
-            sep.scale(1, 0.22, 0.42);
-            sep.rotateY(-a);
-            sep.translate(Math.cos(a) * 0.014, -0.008, Math.sin(a) * 0.014);
-            g.push(bakeGrad(sep, 0x5faa48, 0x3a7030, { curve: 1 }));
-        }
-        fruitStem(g, 0, -0.002, 0, 0.014, 0.004);
-    } else if (type === 'grape') {   // 알맹이 클러스터 — 뭉침 자체가 정체성
-        const balls = [[0, -0.026, 0], [0.024, -0.036, 0.008], [-0.024, -0.036, -0.006], [0.001, -0.043, 0.024], [-0.004, -0.045, -0.024], [0.017, -0.062, -0.013], [-0.018, -0.063, 0.012], [0.002, -0.075, 0.003], [0.0, -0.092, -0.002]];
-        for (const [x, y, z] of balls) {
-            const ball = new THREE.SphereGeometry(0.0205, 10, 8);
-            ball.translate(x, y, z);
-            g.push(bakeGrad(ball, 0x9a5ad8, 0x5f2f9a, { curve: 1.25 }));
-        }
-        fruitStem(g, 0, -0.01, 0.006, 0.016);
-        fruitLeaf(g, -0.014, 0.004, 0, 0.5, 0.024);
-    } else if (type === 'peach') {   // 구 + 세로 골(보조 구 오프셋) + 로지 그라디언트
-        const body = new THREE.SphereGeometry(0.05, 18, 14);
-        body.scale(1, 0.96, 1);
-        body.translate(0, -0.055, 0);
-        g.push(bakeGrad(body, 0xffc0a8, 0xf4785c, { curve: 1.35 }));
-        const lobe = new THREE.SphereGeometry(0.046, 14, 11);
-        lobe.translate(0.013, -0.057, 0.008);
-        g.push(bakeGrad(lobe, 0xffc9b2, 0xf4805f, { curve: 1.35 }));
-        fruitStem(g, 0, -0.012, -0.003, 0.012, 0.005);
-        fruitLeaf(g, 0.02, 0.006, 0, -0.55);
-    } else if (type === 'cherry') {   // 쌍 알 + 긴 꼭지 두 가닥이 한 점에서 만남
-        for (const [sx, sy] of [[-0.028, -0.075], [0.03, -0.062]]) {
-            const ball = new THREE.SphereGeometry(0.026, 12, 10);
-            ball.translate(sx, sy, 0);
-            g.push(bakeGrad(ball, 0xe83a54, 0x8f1428, { curve: 1.3 }));
-            fruitStem(g, sx, sy + 0.02, 0, 0.012, 0.0042);
-        }
-        fruitLeaf(g, 0.012, 0.014, 0, -0.4, 0.024);
-    } else if (type === 'tomato') {   // 납작 구 + 큼직한 별 꽃받침 — 꽃받침이 정체성
-        const body = new THREE.SphereGeometry(0.052, 18, 14);
-        body.scale(1, 0.82, 1);
-        body.translate(0, -0.048, 0);
-        g.push(bakeGrad(body, 0xff6242, 0xcc2e1e, { curve: 1.25 }));
-        for (let i = 0; i < 5; i++) {
-            const a = (i / 5) * Math.PI * 2;
-            const sep = new THREE.SphereGeometry(0.022, 7, 5);
-            sep.scale(1, 0.2, 0.34);
-            sep.rotateY(-a);
-            sep.translate(Math.cos(a) * 0.02, -0.008, Math.sin(a) * 0.02);
-            g.push(bakeGrad(sep, 0x4f8f3c, 0x2f5f26, { curve: 1 }));
-        }
-        fruitStem(g, 0, -0.004, 0, 0.012, 0.005);
-    } else if (type === 'eggplant') {   // 길쭉 물방울 + 초록 캡 + 휜 꼭지
-        g.push(fruitLathe([[0.001, -0.008], [0.02, -0.014], [0.028, -0.04], [0.034, -0.08], [0.042, -0.108], [0.036, -0.132], [0.018, -0.146], [0.001, -0.15]], 0x6a3d9e, 0x38175e, { curve: 1.3 }));
-        for (let i = 0; i < 4; i++) {   // 캡 4장
-            const a = (i / 4) * Math.PI * 2 + 0.4;
-            const sep = new THREE.SphereGeometry(0.02, 7, 5);
-            sep.scale(1, 0.24, 0.4);
-            sep.rotateY(-a);
-            sep.translate(Math.cos(a) * 0.014, -0.014, Math.sin(a) * 0.014);
-            g.push(bakeGrad(sep, 0x4f8f3c, 0x2f5f26, { curve: 1 }));
-        }
-        fruitStem(g, 0, -0.006, -0.014, 0.018, 0.006);
-    } else {   // coconut — 갈색 구 + 이마의 세 점 (그 얼굴)
-        const body = new THREE.SphereGeometry(0.049, 16, 12);
-        body.scale(1, 1.08, 1);
-        body.translate(0, -0.056, 0);
-        g.push(bakeGrad(body, 0x9a6b42, 0x5c3a22, { curve: 1.15 }));
-        for (const [dx, dy] of [[-0.016, -0.03], [0.016, -0.03], [0, -0.052]]) {   // 얼굴 점 3개 — 정면(+z)에
-            const dot = new THREE.SphereGeometry(0.0085, 6, 5);
-            dot.translate(dx, dy, 0.043);
-            g.push(bakeGrad(dot, 0x3a2412, 0x241408, { curve: 1 }));
+// ── 과일 베어물기: 실제 삼각형을 제거해 구멍을 뚫고(실루엣이 파인다) 안쪽 과육 셸을 드러낸다. ──
+// bites 0=온전(보존) · 1=한입 · 2=거의 안남음 · 3=완식(먹기 로직이 제거). 클러스터·바나나는 특수.
+const FBITE = {   // 과육 색(위/아래) + 몸통 중심 cy·반지름 rx/ry/rz (구멍 배치·과육공 계산 기준)
+    apple:      { cy: -0.055, rx: 0.052, ry: 0.052, rz: 0.052, ft: 0xfdf4dc, fb: 0xf1e4ba },
+    orange:     { cy: -0.052, rx: 0.052, ry: 0.047, rz: 0.052, ft: 0xffd39a, fb: 0xf3a860 },
+    lemon:      { cy: -0.052, rx: 0.046, ry: 0.056, rz: 0.046, ft: 0xfef3b6, fb: 0xf6e086 },
+    strawberry: { cy: -0.052, rx: 0.044, ry: 0.046, rz: 0.044, ft: 0xffd8de, fb: 0xf4a6b8 },
+    peach:      { cy: -0.055, rx: 0.050, ry: 0.048, rz: 0.050, ft: 0xffe2ba, fb: 0xf8b088, pit: true },
+    tomato:     { cy: -0.048, rx: 0.053, ry: 0.044, rz: 0.053, ft: 0xffb493, fb: 0xf07a54 },
+    eggplant:   { cy: -0.082, rx: 0.040, ry: 0.070, rz: 0.040, ft: 0xf5efda, fb: 0xe6d8b6 },
+    coconut:    { cy: -0.056, rx: 0.049, ry: 0.055, rz: 0.049, ft: 0xf9f4ec, fb: 0xe9ddca },
+};
+function fruitBiteHoles(c, bites) {   // 입 쪽(앞 +z·위)부터 베어문다
+    const m = Math.min(c.rx, c.rz);
+    const h = [{ x: 0.5 * c.rx, y: c.cy + 0.5 * c.ry, z: 0.62 * c.rz, r: 0.6 * m }];   // 1입: 앞위 한 입 (또렷하게)
+    if (bites >= 2) {   // 2입: 여러 입 겹쳐 크게 → 작은 잔여만 남는다
+        h[0].r = 0.62 * m;
+        h.push({ x: -0.5 * c.rx, y: c.cy + 0.2 * c.ry, z: 0.48 * c.rz, r: 0.68 * m });
+        h.push({ x: 0.14 * c.rx, y: c.cy - 0.44 * c.ry, z: 0.5 * c.rz, r: 0.62 * m });
+    }
+    return h;
+}
+function fruitBiteDent(geo, c, spheres) {   // 껍질을 안으로 오목하게 파고 그 면을 과육색으로 = 베어문 자국(통합·인덱스 유지)
+    const pos = geo.attributes.position, col = geo.attributes.color;
+    const cT = new THREE.Color(c.ft), cB = new THREE.Color(c.fb), cc = new THREE.Color();
+    for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+        for (const s of spheres) {
+            const d = Math.hypot(x - s.x, y - s.y, z - s.z);
+            if (d < s.r) {
+                const push = s.r * 1.15 * (1 - d / s.r);   // 중심에서 깊고 가장자리에서 0 = 매끈한 사발
+                const dx = -x, dy = c.cy - y, dz = -z, dl = Math.hypot(dx, dy, dz) || 1;   // 과일 중심 쪽으로
+                pos.setXYZ(i, x + dx / dl * push, y + dy / dl * push, z + dz / dl * push);
+                const t = THREE.MathUtils.clamp((y - (c.cy - c.ry)) / (2 * c.ry), 0, 1);
+                cc.copy(cB).lerp(cT, t);
+                col.setXYZ(i, cc.r, cc.g, cc.b);
+                break;
+            }
         }
     }
+    pos.needsUpdate = true; col.needsUpdate = true;
+    geo.computeVertexNormals();
+    return geo;
+}
+function makeFruitSpecialBitten(type, bites) {   // 클러스터·바나나는 파는 대신 개수/길이로 준다
+    const g = [];
+    if (type === 'grape') {   // 아래(입 쪽) 알부터 떼먹고 꼭지 쪽 위 알이 남는다
+        const balls = [[0, -0.026, 0], [0.024, -0.036, 0.008], [-0.024, -0.036, -0.006], [0.001, -0.043, 0.024], [-0.004, -0.045, -0.024], [0.017, -0.062, -0.013], [-0.018, -0.063, 0.012], [0.002, -0.075, 0.003], [0.0, -0.092, -0.002]];
+        const keep = bites === 1 ? balls.slice(0, 5) : balls.slice(0, 2);
+        for (const [x, y, z] of keep) { const b = new THREE.SphereGeometry(0.0205, 10, 8); b.translate(x, y, z); g.push(bakeGrad(b, 0x9a5ad8, 0x5f2f9a, { curve: 1.25 })); }
+        fruitStem(g, 0, -0.01, 0.006, 0.016);
+        fruitLeaf(g, -0.014, 0.004, 0, 0.5, 0.024);
+        return mergeGeometries(g, false);
+    }
+    if (type === 'cherry') {   // 한 알씩 — 먹은 자리는 씨(연갈색)만 남긴다
+        fruitLeaf(g, 0.012, 0.014, 0, -0.4, 0.024);
+        for (const [sx, sy] of [[-0.028, -0.075], [0.03, -0.062]]) fruitStem(g, sx, sy + 0.02, 0, 0.012, 0.0042);
+        const pit = (sx, sy, r) => { const p = new THREE.SphereGeometry(r, 8, 6); p.translate(sx, sy, 0); g.push(bakeGrad(p, 0xb79a68, 0x7c5f38, { curve: 1 })); };
+        if (bites === 1) { const b = new THREE.SphereGeometry(0.026, 12, 10); b.translate(0.03, -0.062, 0); g.push(bakeGrad(b, 0xe83a54, 0x8f1428, { curve: 1.3 })); pit(-0.028, -0.075, 0.011); }
+        else { pit(-0.028, -0.075, 0.010); pit(0.03, -0.062, 0.011); }
+        return mergeGeometries(g, false);
+    }
+    const a0 = Math.PI * 1.28, full = 2.15, arcLen = bites === 1 ? full * 0.62 : full * 0.3;   // banana — 끝에서부터
+    const arc = new THREE.TorusGeometry(0.06, 0.02, 9, 16, arcLen); arc.rotateZ(a0); arc.translate(0, -0.028, 0);
+    g.push(bakeGrad(arc, 0xffdf66, 0xd9ab38, { curve: 1.1 }));
+    const ts = a0; const tip = new THREE.SphereGeometry(0.009, 7, 5); tip.translate(Math.cos(ts) * 0.06, -0.028 + Math.sin(ts) * 0.06, 0); g.push(bakeGrad(tip, 0x7a5a34, 0x51391e, { curve: 1 }));
+    const te = a0 + arcLen; const cut = new THREE.SphereGeometry(0.021, 10, 8); cut.scale(1, 1, 0.55); cut.rotateZ(te); cut.translate(Math.cos(te) * 0.06, -0.028 + Math.sin(te) * 0.06, 0); g.push(bakeGrad(cut, 0xfbf1d2, 0xefe0ae, { curve: 1 }));   // 단면 크림색 속살
     return mergeGeometries(g, false);
+}
+function makeFruitGeo(type, bites = 0) {
+    if (bites && (type === 'grape' || type === 'cherry' || type === 'banana')) return makeFruitSpecialBitten(type, bites);
+    const S = bites ? 2 : 1;   // 베어물 땐 몸통을 고해상도로 — 카빙 단면이 매끈하게
+    const bodyG = [], crownG = [];   // bodyG=베어물 몸통·속살 · crownG=꼭지/잎/꽃받침(남는다)
+    if (type === 'apple') {
+        bodyG.push(fruitLathe([[0.001, -0.006], [0.03, -0.01], [0.052, -0.036], [0.054, -0.07], [0.04, -0.098], [0.018, -0.108], [0.001, -0.102]], 0xff5f4d, 0xc42a20, null, 22 * S));
+        fruitStem(crownG, 0, -0.004, -0.004, 0.022);
+        fruitLeaf(crownG, 0.02, 0.014, 0, -0.5);
+    } else if (type === 'orange') {
+        const body = new THREE.SphereGeometry(0.052, 18 * S, 14 * S); body.scale(1, 0.9, 1); body.translate(0, -0.052, 0);
+        bodyG.push(bakeGrad(body, 0xffa63c, 0xe0761c, { curve: 1.2 }));
+        const cap = new THREE.SphereGeometry(0.011, 8, 6); cap.scale(1, 0.5, 1); cap.translate(0, -0.004, 0);
+        crownG.push(bakeGrad(cap, 0x4f8f3c, 0x35672a, { curve: 1 }));
+        fruitLeaf(crownG, 0.016, 0.006, 0, -0.55, 0.026);
+    } else if (type === 'lemon') {
+        bodyG.push(fruitLathe([[0.001, 0.004], [0.009, -0.002], [0.014, -0.012], [0.035, -0.028], [0.046, -0.052], [0.035, -0.076], [0.014, -0.092], [0.009, -0.102], [0.001, -0.108]], 0xffe45a, 0xe0aa2e, null, 22 * S));
+        const cap = new THREE.SphereGeometry(0.008, 7, 5); cap.translate(0, 0.002, 0);
+        crownG.push(bakeGrad(cap, 0x74c455, 0x3f7a34, { curve: 1 }));
+    } else if (type === 'banana') {
+        const a0 = Math.PI * 1.28, arcLen = 2.15;
+        const arc = new THREE.TorusGeometry(0.06, 0.02, 9, 14 * S, arcLen); arc.rotateZ(a0); arc.translate(0, -0.028, 0);
+        bodyG.push(bakeGrad(arc, 0xffdf66, 0xd9ab38, { curve: 1.1 }));
+        for (const a of [a0, a0 + arcLen]) { const tip = new THREE.SphereGeometry(0.009, 7, 5); tip.translate(Math.cos(a) * 0.06, -0.028 + Math.sin(a) * 0.06, 0); bodyG.push(bakeGrad(tip, 0x7a5a34, 0x51391e, { curve: 1 })); }
+    } else if (type === 'strawberry') {
+        bodyG.push(fruitLathe([[0.001, -0.01], [0.036, -0.018], [0.046, -0.045], [0.034, -0.075], [0.012, -0.095], [0.001, -0.099]], 0xff4a5e, 0xd42440, null, 22 * S));
+        for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2 + (i % 2 ? 0.3 : 0); const yy = -0.035 - (i % 3) * 0.02; const rr = 0.041 * Math.sqrt(1 - Math.pow((yy + 0.05) / 0.05, 2) * 0.55); const seed = new THREE.SphereGeometry(0.0042, 5, 4); seed.translate(Math.cos(a) * rr, yy, Math.sin(a) * rr); bodyG.push(bakeGrad(seed, 0xfff2cf, 0xf0dca8, { curve: 1 })); }
+        for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; const sep = new THREE.SphereGeometry(0.016, 7, 5); sep.scale(1, 0.22, 0.42); sep.rotateY(-a); sep.translate(Math.cos(a) * 0.014, -0.008, Math.sin(a) * 0.014); crownG.push(bakeGrad(sep, 0x5faa48, 0x3a7030, { curve: 1 })); }
+        fruitStem(crownG, 0, -0.002, 0, 0.014, 0.004);
+    } else if (type === 'grape') {
+        const balls = [[0, -0.026, 0], [0.024, -0.036, 0.008], [-0.024, -0.036, -0.006], [0.001, -0.043, 0.024], [-0.004, -0.045, -0.024], [0.017, -0.062, -0.013], [-0.018, -0.063, 0.012], [0.002, -0.075, 0.003], [0.0, -0.092, -0.002]];
+        for (const [x, y, z] of balls) { const ball = new THREE.SphereGeometry(0.0205, 10, 8); ball.translate(x, y, z); bodyG.push(bakeGrad(ball, 0x9a5ad8, 0x5f2f9a, { curve: 1.25 })); }
+        fruitStem(crownG, 0, -0.01, 0.006, 0.016);
+        fruitLeaf(crownG, -0.014, 0.004, 0, 0.5, 0.024);
+    } else if (type === 'peach') {
+        const body = new THREE.SphereGeometry(0.05, 18 * S, 14 * S); body.scale(1, 0.96, 1); body.translate(0, -0.055, 0);
+        bodyG.push(bakeGrad(body, 0xffc0a8, 0xf4785c, { curve: 1.35 }));
+        const lobe = new THREE.SphereGeometry(0.046, 14 * S, 11 * S); lobe.translate(0.013, -0.057, 0.008);
+        bodyG.push(bakeGrad(lobe, 0xffc9b2, 0xf4805f, { curve: 1.35 }));
+        fruitStem(crownG, 0, -0.012, -0.003, 0.012, 0.005);
+        fruitLeaf(crownG, 0.02, 0.006, 0, -0.55);
+    } else if (type === 'cherry') {
+        for (const [sx, sy] of [[-0.028, -0.075], [0.03, -0.062]]) { const ball = new THREE.SphereGeometry(0.026, 12, 10); ball.translate(sx, sy, 0); bodyG.push(bakeGrad(ball, 0xe83a54, 0x8f1428, { curve: 1.3 })); fruitStem(crownG, sx, sy + 0.02, 0, 0.012, 0.0042); }
+        fruitLeaf(crownG, 0.012, 0.014, 0, -0.4, 0.024);
+    } else if (type === 'tomato') {
+        const body = new THREE.SphereGeometry(0.052, 18 * S, 14 * S); body.scale(1, 0.82, 1); body.translate(0, -0.048, 0);
+        bodyG.push(bakeGrad(body, 0xff6242, 0xcc2e1e, { curve: 1.25 }));
+        for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; const sep = new THREE.SphereGeometry(0.022, 7, 5); sep.scale(1, 0.2, 0.34); sep.rotateY(-a); sep.translate(Math.cos(a) * 0.02, -0.008, Math.sin(a) * 0.02); crownG.push(bakeGrad(sep, 0x4f8f3c, 0x2f5f26, { curve: 1 })); }
+        fruitStem(crownG, 0, -0.004, 0, 0.012, 0.005);
+    } else if (type === 'eggplant') {
+        bodyG.push(fruitLathe([[0.001, -0.008], [0.02, -0.014], [0.028, -0.04], [0.034, -0.08], [0.042, -0.108], [0.036, -0.132], [0.018, -0.146], [0.001, -0.15]], 0x6a3d9e, 0x38175e, { curve: 1.3 }, 22 * S));
+        for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + 0.4; const sep = new THREE.SphereGeometry(0.02, 7, 5); sep.scale(1, 0.24, 0.4); sep.rotateY(-a); sep.translate(Math.cos(a) * 0.014, -0.014, Math.sin(a) * 0.014); crownG.push(bakeGrad(sep, 0x4f8f3c, 0x2f5f26, { curve: 1 })); }
+        fruitStem(crownG, 0, -0.006, -0.014, 0.018, 0.006);
+    } else {
+        const body = new THREE.SphereGeometry(0.049, 16 * S, 12 * S); body.scale(1, 1.08, 1); body.translate(0, -0.056, 0);
+        bodyG.push(bakeGrad(body, 0x9a6b42, 0x5c3a22, { curve: 1.15 }));
+        for (const [dx, dy] of [[-0.016, -0.03], [0.016, -0.03], [0, -0.052]]) { const dot = new THREE.SphereGeometry(0.0085, 6, 5); dot.translate(dx, dy, 0.043); bodyG.push(bakeGrad(dot, 0x3a2412, 0x241408, { curve: 1 })); }
+    }
+    const bodyGeo = mergeGeometries(bodyG, false);
+    if (!bites) return mergeGeometries([bodyGeo, ...crownG], false);   // 온전 = 예전과 동일
+    const c = FBITE[type];
+    fruitBiteDent(bodyGeo, c, fruitBiteHoles(c, bites));   // 껍질을 오목하게 파고 과육색으로
+    if (bites >= 2) { bodyGeo.translate(0, -c.cy, 0); bodyGeo.scale(0.62, 0.62, 0.62); bodyGeo.translate(0, c.cy, 0); }   // 거의 안남음 = 작은 잔여(꼭지는 그대로)
+    const parts = [bodyGeo, ...crownG];
+    if (c.pit && bites >= 2) { const p = new THREE.SphereGeometry(1, 10, 8); p.scale(0.012, 0.016, 0.012); p.translate(0.003, c.cy, 0.006); parts.push(bakeGrad(p, 0x9a6a3e, 0x5f3f22, { curve: 1 })); }   // 복숭아 씨
+    return mergeGeometries(parts, false);
 }
 function makeFruitMesh(type, scale = 1) {
     const mesh = new THREE.Mesh(makeFruitGeo(type), gradMat);
@@ -9656,8 +9676,14 @@ function updateHeldPose(p, key, delta) {
                 it.gulps += 1;
                 playBuffer(sipBuf, { vol: 0.55, rate: 1.05 + Math.random() * 0.25, filterFreq: 620 });
             } else {
-                it.bites += 1;
-                it.mesh.scale.setScalar(Math.max(0.35, 1 - it.bites * 0.11));   // shrink per bite
+                // 과일: 한 번의 "먹기"가 정확히 한 입 단계만 진행 — 시퀀스 첫 씹기(idx 0)에서만 형상 교체.
+                // 나머지 씹기 비트는 우적우적 소리·머리 까딱임만(연출). 비과일(빵)은 종전대로 씹을 때마다 축소.
+                if (it.def && it.def.fruit) {
+                    if (idx === 0) { it.bites += 1; it.mesh.geometry.dispose(); it.mesh.geometry = makeFruitGeo(it.def.fruit, Math.min(2, it.bites)); }   // 1입→2입 한 단계씩
+                } else {
+                    it.bites += 1;
+                    it.mesh.scale.setScalar(Math.max(0.35, 1 - it.bites * 0.11));   // 비과일(빵 등)은 기존 축소
+                }
                 playBuffer(munchBuf, { vol: 0.55, rate: 0.85 + Math.random() * 0.3, filterFreq: 950 });
             }
         }
@@ -9666,7 +9692,7 @@ function updateHeldPose(p, key, delta) {
         p.pet.wrap.rotation.x += -0.16 * raise * (0.55 + 0.45 * Math.sin(phase * Math.PI));
         if (it.seq.t >= total) {
             it.seq = null;
-            const finished = isDrink ? it.gulps >= 8 : it.bites >= 6;
+            const finished = isDrink ? it.gulps >= 8 : ((it.def && it.def.fruit) ? it.bites >= 3 : it.bites >= 6);   // 과일=3입(1입·2입·소멸), 그 외 6입
             if (finished) {
                 const fr = !isDrink && it.def && it.def.fruit;
                 removeHeldItem(p, key);
@@ -13958,6 +13984,7 @@ function giveFruit(p, type) {   // 부스 음식 문법 (giveFood 미러) — 'f
     removeFood(p);
     const mesh = makeFruitMesh(type, 1.15);
     p.pet.wrap.add(mesh);
+    mesh.rotation.y = Math.PI;   // 펫은 wrap -z를 향한다(mouthLocal 주석) → 베어문 면·코코넛 얼굴(+z)이 펫 뒤로 감. π 돌려 시청자(펫 앞) 쪽으로.
     const dims = p.pet.dims;
     const itemY = dims.y * 0.34;
     const itemZ = -dims.z * 0.12;
