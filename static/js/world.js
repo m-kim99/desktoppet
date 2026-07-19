@@ -9404,7 +9404,35 @@ function makeFoodGeo(f, bites = 0) {
         const roll = new THREE.CylinderGeometry(0.021, 0.021, L, 16); roll.rotateZ(Math.PI / 2); roll.translate(cx, 0.024, 0); add(roll, 0xe6cb92, 0xc9a763, { curve: 1.1 });
         const capR = new THREE.SphereGeometry(0.021, 12, 10); capR.translate(0.04, 0.024, 0); add(capR, 0xe1c187, 0xc39f5f, { curve: 1.1 });
         if (!b) { const capL = new THREE.SphereGeometry(0.021, 12, 10); capL.translate(-0.04, 0.024, 0); add(capL, 0xe1c187, 0xc39f5f, { curve: 1.1 }); }
-        else { csFace(0.0205, 18, xL, 0.024, 0, 0xe6cb92, 0xd6b675); csFace(0.0155, 16, xL + 0.0006, 0.024, 0, 0xf2e6c8, 0xe6d3a0); csFace(0.0085, 14, xL + 0.0012, 0.023, 0.002, 0x8fbf6a, 0x6fa84c); const rd = new THREE.SphereGeometry(0.004, 7, 5); rd.translate(xL + 0.0014, 0.027, -0.004); add(rd, 0xdf7a4a, 0xc05730, { curve: 1 }); }
+        else {
+            csFace(0.0205, 18, xL, 0.024, 0, 0xe6cb92, 0xd6b675);
+            // 단면 속 — 알갱이 메시 대신 조밀 원판에 정점색으로 "그린" 텍스처: 밥 바탕 + 고기/야채 얼룩 + 밥알 스펙클
+            const face = new THREE.RingGeometry(0.0001, 0.0165, 28, 8);
+            face.rotateY(-Math.PI / 2); face.translate(xL - 0.0006, 0.024, 0);
+            const fp = face.attributes.position, fc = new Float32Array(fp.count * 3);
+            const cRice = new THREE.Color(0xf2e6c8), cMeat = new THREE.Color(0xc98a58), cVeg = new THREE.Color(0x8fbf6a), cTort = new THREE.Color(0xe6cb92), col = new THREE.Color();
+            for (let i = 0; i < fp.count; i++) {
+                const dy = fp.getY(i) - 0.024, dz = fp.getZ(i), r = Math.hypot(dy, dz), a = Math.atan2(dz, dy);
+                const nMeat = 0.5 + 0.5 * Math.sin(a * 3.1 + 1.2 + Math.sin(r * 480 + a) * 1.3) * Math.sin(r * 300 - a * 2.2);
+                const nVeg = 0.5 + 0.5 * Math.sin(a * 4.3 - 0.6 + Math.sin(r * 390 - a * 1.5) * 1.4) * Math.sin(r * 350 + a * 3.1);
+                const wMeat = THREE.MathUtils.smoothstep(nMeat, 0.5, 0.78), wVeg = THREE.MathUtils.smoothstep(nVeg, 0.56, 0.84);
+                const spec = Math.sin(a * 26 + r * 900) * Math.sin(r * 1300 - a * 7);
+                col.copy(cRice);
+                col.lerp(cMeat, wMeat * 0.85);
+                col.lerp(cVeg, wVeg * 0.8);
+                col.offsetHSL(0, 0, spec * 0.02);                                 // 밥알 스펙클
+                col.lerp(cTort, THREE.MathUtils.smoothstep(r, 0.0135, 0.0165));   // 가장자리 → 또띠아 안쪽 톤으로 부드럽게
+                col.multiplyScalar(0.95 + 0.05 * (r / 0.0165));                   // 중심부 살짝 어둡게 — 말린 속 깊이감
+                fc[i * 3] = col.r; fc[i * 3 + 1] = col.g; fc[i * 3 + 2] = col.b;
+                // 릴리프 — 얼룩(고기/야채)은 도톰하게, 밥알 스펙클은 잘게 융기, 가장자리는 또띠아와 플러시
+                const edge = 1 - THREE.MathUtils.smoothstep(r, 0.012, 0.0165);
+                const h = (0.0011 * Math.cos((r / 0.0165) * Math.PI * 0.5) + wMeat * 0.001 + wVeg * 0.0009 + spec * 0.00045) * edge;
+                fp.setX(i, fp.getX(i) - h);
+            }
+            face.setAttribute('color', new THREE.Float32BufferAttribute(fc, 3));
+            face.computeVertexNormals();
+            parts.push(face);
+        }
         if (!b) { const flap = new THREE.BoxGeometry(0.056, 0.0035, 0.02); flap.rotateZ(-0.05); flap.rotateX(0.22); flap.translate(-0.002, 0.0355, 0.0125); add(flap, 0xe6cb92, 0xcdae72, { curve: 1 }); }
         for (const gx of [-0.02, 0.014]) { if (gx > xL + 0.006) { const sear = new THREE.BoxGeometry(0.004, 0.003, 0.04); sear.rotateY(0.32); sear.translate(gx, 0.043, 0); add(sear, 0xac833c, 0x8f6b2c, { curve: 1 }); } }
         const fill = new THREE.SphereGeometry(0.014, 10, 8); fill.scale(0.65, 1, 1); fill.translate(0.05, 0.024, 0); add(fill, 0x9ccf72, 0x6fa84c, { curve: 1 });
@@ -17651,7 +17679,6 @@ if (location.search.includes('foodlab')) {
     camera.position.set(2.3, 18.8, 8.4);
     controls.target.set(2.3, 18.8, 0);
     controls.update();
-    controls.enabled = false;
     window.__foodlab = { camera, renderer, scene, controls };
 }
 
