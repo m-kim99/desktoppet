@@ -9205,7 +9205,6 @@ function makeFruitGeo(type, bites = 0) {
     if (!bites) return mergeGeometries([bodyGeo, ...crownG], false);   // 온전 = 예전과 동일
     const c = FBITE[type];
     fruitBiteDent(bodyGeo, c, fruitBiteHoles(c, bites));   // 껍질을 오목하게 파고 과육색으로
-    if (bites >= 2) { bodyGeo.translate(0, -c.cy, 0); bodyGeo.scale(0.62, 0.62, 0.62); bodyGeo.translate(0, c.cy, 0); }   // 거의 안남음 = 작은 잔여(꼭지는 그대로)
     const parts = [bodyGeo, ...crownG];
     if (c.pit && bites >= 2) { const p = new THREE.SphereGeometry(1, 10, 8); p.scale(0.012, 0.016, 0.012); p.translate(0.003, c.cy, 0.006); parts.push(bakeGrad(p, 0x9a6a3e, 0x5f3f22, { curve: 1 })); }   // 복숭아 씨
     return mergeGeometries(parts, false);
@@ -17739,6 +17738,16 @@ if (location.search.includes('foodlab')) {
                 m.position.set((bt - 1) * 1.15 + Math.floor(i / 5) * 4.6, 21.2 - (i % 5) * 1.25, 0);
                 scene.add(m);
             } catch (e) { console.error('foodlab', f.id, bt, e); }
+        }
+    });
+    ['apple', 'eggplant', 'tomato', 'lemon'].forEach((t, i) => {   // 꼭지 있는 과일 검수 행
+        for (let bt = 0; bt <= 2; bt++) {
+            try {
+                const m = new THREE.Mesh(makeFruitGeo(t, bt), gradMat);
+                m.scale.setScalar(9);
+                m.position.set((bt - 1) * 1.15 + 9.2, 21.2 - i * 1.25 + 0.5, 0);
+                scene.add(m);
+            } catch (e) { console.error('fruitlab', t, bt, e); }
         }
     });
     scene.background = new THREE.Color(0xe6eef4);
