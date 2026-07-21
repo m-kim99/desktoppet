@@ -1158,7 +1158,7 @@ const gradMatDS = new THREE.MeshStandardMaterial({ vertexColors: true, roughness
 const glassMat = new THREE.MeshStandardMaterial({ color: 0xdcecf5, transparent: true, opacity: 0.3, roughness: 0.12, metalness: 0, side: THREE.DoubleSide, depthWrite: false });
 // 비치는 음료(아이스티처럼 맑은 것)용 — bakeGrad 정점색 그대로 쓰되 반투명.
 const liquidMat = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.68, roughness: 0.18, metalness: 0, depthWrite: false });
-const liquidSoftMat = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.88, roughness: 0.22, metalness: 0, depthWrite: false });
+const liquidSoftMat = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.9, roughness: 0.22, metalness: 0, depthWrite: false });
 const GM = (geo, top, bottom, opts) => new THREE.Mesh(bakeGrad(geo, top, bottom, opts), gradMat);
 
 // ---- Stage: a floating meadow island — gently rolling vertex-colored grass over a rounded dirt
@@ -9655,8 +9655,8 @@ function drawDrinkIcon(cv, d) {
 // 초코가 구분된다), 아이스는 유리벽만 반투명 별도 메시라 수위가 그대로 비친다.
 function makeDrinkGeos(d, sips = 0) {
     const s = Math.max(0, Math.min(2, sips)), op = [], tr = [], ts = [];
-    const clear = d.id === 'icetea' || d.id === 'iced-ame';        // 맑은 음료 — 확실히 비친다
-    const soft = d.id === 'strawberry' || d.id === 'matcha';       // 라떼류 색 층 — 살짝만 비친다
+    const clear = d.id === 'icetea';                               // 맑은 홍차 — 확실히 비친다 (0.68)
+    const soft = d.id === 'iced-ame' || d.id === 'strawberry' || d.id === 'matcha';   // 살짝만 (0.9) — 색이 연해지지 않게
     const add = (geo, top, bot, opts) => { op.push(bakeGrad(geo, top, bot, opts || { curve: 1.1 })); };
     const addLiq = (geo, top, bot, opts) => { (clear ? tr : soft ? ts : op).push(bakeGrad(geo, top, bot, opts || { curve: 1.1 })); };
     const base = parseInt(d.color.slice(1), 16);
