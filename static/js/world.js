@@ -196,6 +196,57 @@ let starMat = null, starPts = null;
     starPts = new THREE.Points(g, starMat);
     scene.add(starPts);
 }
+// 🌌 대기 베일: y8.5 발광 링 디스크 — 우주에서 내려다보면 군도가 얇은 대기층 너머로 보이고
+// 세계 가장자리에 행성 림 글로우가 감긴다 ("여긴 대기권 밖"의 시각 증거). updateSpaceSky가 몬다.
+const atmoVeilMat = (() => {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 256;
+    const c = cv.getContext('2d');
+    const g = c.createRadialGradient(128, 128, 0, 128, 128, 128);
+    g.addColorStop(0, 'rgba(158,216,240,0)');
+    g.addColorStop(0.5, 'rgba(158,216,240,0.03)');
+    g.addColorStop(0.74, 'rgba(150,214,244,0.2)');
+    g.addColorStop(0.86, 'rgba(190,232,255,0.46)');
+    g.addColorStop(0.94, 'rgba(190,232,255,0.18)');
+    g.addColorStop(1, 'rgba(190,232,255,0)');
+    c.fillStyle = g;
+    c.fillRect(0, 0, 256, 256);
+    return new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide });
+})();
+const atmoVeil = new THREE.Mesh(new THREE.CircleGeometry(40, 48).rotateX(-Math.PI / 2), atmoVeilMat);
+atmoVeil.position.y = 8.5;
+atmoVeil.visible = false;
+scene.add(atmoVeil);
+// 🌌 은하수 밴드: 돔 안쪽 기울어진 실린더 띠 + 캔버스 베이크(빛 무리 + 미세 별, 이음매는 랩 드로우).
+// 우주에선 진하게(0.42), 지상 맑은 깊은 밤엔 은은하게(~0.13) — 별자리 놀이와 시너지.
+const milkyMat = (() => {
+    const cv = document.createElement('canvas');
+    cv.width = 512; cv.height = 128;
+    const c = cv.getContext('2d');
+    let seed = 20260721;
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    for (let i = 0; i < 70; i++) {
+        const x = rnd() * 512, y = 64 + (rnd() + rnd() - 1) * 34, r = 14 + rnd() * 30;
+        const col = rnd() < 0.3 ? '255,226,200' : '205,220,255';
+        for (const ox of [-512, 0, 512]) {   // 가로 타일링 — 실린더 랩 이음매 방지
+            const gg = c.createRadialGradient(x + ox, y, 0, x + ox, y, r);
+            gg.addColorStop(0, `rgba(${col},0.095)`);
+            gg.addColorStop(1, `rgba(${col},0)`);
+            c.fillStyle = gg;
+            c.beginPath(); c.arc(x + ox, y, r, 0, Math.PI * 2); c.fill();
+        }
+    }
+    for (let i = 0; i < 110; i++) {
+        const x = rnd() * 512, y = 64 + (rnd() + rnd() - 1) * 40;
+        c.fillStyle = `rgba(240,246,255,${0.25 + rnd() * 0.5})`;
+        c.fillRect(x, y, 1.3, 1.3);
+    }
+    return new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), side: THREE.BackSide, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false });
+})();
+const milkyMesh = new THREE.Mesh(new THREE.CylinderGeometry(38.2, 38.2, 15, 48, 1, true), milkyMat);
+milkyMesh.rotation.set(0.1, 0.9, 0.62);   // 하늘을 비스듬히 가로지르는 띠
+milkyMesh.visible = false;
+scene.add(milkyMesh);
 // 별자리(㉞) 렌더 상태 — updateDayNight가 별과 함께 페이드시키므로 여기(첫 호출 전)에 선언.
 const constelLineMat = new THREE.LineBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
 const constelObjs = [];   // { line, label }
@@ -403,6 +454,7 @@ const SKY_GLOOM = ['#6b7684', '#93a0ad', '#b8c2cc', '#ccd4da'].map((c) => new TH
 // 🚀 우주 램프: 천정 근흑 → 심남색 → 수평선은 밝은 대기 테두리(지구 가장자리 글로우) —
 // fog 색이 수평선 스톱을 따라가므로 발밑 세계가 "대기권에 감싸인" 그림이 공짜로 나온다.
 const SKY_SPACE = ['#04060e', '#0a1226', '#1d3054', '#9fd4ec'].map((c) => new THREE.Color(c));
+const SKY_SPACE_FOG = new THREE.Color('#6b93b8');   // 우주에서 내려다본 원경 안개 — 림 시안보다 깊은 대기 블루 (밝은 시안을 fog에 쓰면 세계가 하늘색에 잠긴다, 실측)
 let spaceF = 0;          // 카메라 고도 기반 우주 블렌드 0~1 — updateSpaceSky가 몰고 updateDayNight가 칠한다
 let spaceFPainted = 0;   // 마지막으로 리페인트한 값 (스로틀)
 const _gloomStop = new THREE.Color();
@@ -517,13 +569,18 @@ function updateDayNight(force = false) {
         if (spaceF > 0) _skyStop.lerp(SKY_SPACE[i], spaceF * 0.96);   // 🚀 고도가 날씨를 이긴다 — 구름 위는 우주
         grad.addColorStop(SKY_STOPS[i], `#${_skyStop.getHexString()}`);
     }
-    grad.addColorStop(1, `#${_skyStop.getHexString()}`);   // 수평선(0.52) 아래 반구는 수평선 색 고정 — 바다 너머가 새하얘지지 않게
+    if (spaceF > 0) {   // 🚀 우주에선 림(0.52) 아래도 어두운 우주 — 밝은 시안은 수평선의 얇은 대기 테두리로만.
+        // (돔이 카메라를 따라와 아래 반구가 시야의 대부분이 되므로, 수평선 색 고정을 그대로 두면 온 화면이 하늘색)
+        _gloomStop.copy(_skyStop).lerp(SKY_SPACE[0], spaceF);
+        grad.addColorStop(0.565, `#${_gloomStop.getHexString()}`);
+        grad.addColorStop(1, `#${_gloomStop.getHexString()}`);
+    } else grad.addColorStop(1, `#${_skyStop.getHexString()}`);   // 수평선(0.52) 아래 반구는 수평선 색 고정 — 바다 너머가 새하얘지지 않게
     skyCtx.fillStyle = grad;
     skyCtx.fillRect(0, 0, 1, 256);
     skyTex.needsUpdate = true;
     _skyStop.copy(SKY_NIGHT[3]).lerp(SKY_DAY[3], dayF).lerp(SKY_DUSK[3], glow * 0.8);
     if (wxF > 0) _skyStop.lerp(_gloomStop.copy(SKY_GLOOM[3]).multiplyScalar((0.3 + 0.7 * dayF) * (1 - 0.55 * stormF)), wxF * 0.8);
-    if (spaceF > 0) _skyStop.lerp(SKY_SPACE[3], spaceF * 0.96);   // 🚀 fog·배경도 대기 테두리 색으로
+    if (spaceF > 0) _skyStop.lerp(SKY_SPACE_FOG, spaceF * 0.96);   // 🚀 fog·배경은 깊은 대기 블루 — 원경 바다가 대기 속으로 가라앉는다
     if (camUnderwater) { /* 🤿 수중 안개는 updateUnderwater가 소유 */ } else {
     scene.fog.color.copy(_skyStop);
     scene.background.copy(_skyStop);
@@ -575,8 +632,8 @@ function updateDayNight(force = false) {
     cloudMat.emissiveIntensity = (0.12 + 0.23 * dayF) * (1 - 0.5 * wxF);
     const starBase = nightF * (0.35 + 0.55 * THREE.MathUtils.smoothstep(nightF, 0.6, 1)) * (1 - wxF);
     starMat.opacity = Math.max(starBase, spaceF * 0.95);   // 🚀 우주 진입 = 낮별 (fog:false라 그대로 뜬다)
-    constelLineMat.opacity = starMat.opacity * 0.9;   // 저장된 별자리는 별과 함께 뜨고 진다
-    for (const co of constelObjs) co.label.material.opacity = starMat.opacity * 0.8;
+    constelLineMat.opacity = starMat.opacity * 0.9 * (1 - spaceF);   // 별자리는 별과 함께 뜨고 진다 — 우주에선 숨김(별밭만 돔 추적이라 어긋남)
+    for (const co of constelObjs) co.label.material.opacity = starMat.opacity * 0.8 * (1 - spaceF);
 
     // The sea darkens after sunset, warms a touch at golden hour, grays under rain.
     if (seaMat) {
@@ -600,6 +657,17 @@ function updateSpaceSky() {
         spaceFPainted = spaceF;
         updateDayNight(true);
     }
+    // 🚀 돔·별밭·은하수가 카메라 고도를 따라온다 — 아포지 26에서도 하늘 껍질이 안 가까워진다 (스카이박스 추적 표준)
+    const lift = spaceF * camera.position.y;
+    skyDomeMesh.position.y = lift;
+    starPts.position.y = lift;
+    milkyMesh.position.y = lift;
+    starMat.size = 0.28 + spaceF * 0.16;   // 우주에선 별이 또렷하게
+    const veilK = spaceF * THREE.MathUtils.smoothstep(camera.position.y, 11, 15);   // 베일(y8.5)을 충분히 넘은 뒤에만 — 통과 순간 번쩍임 방지
+    atmoVeil.visible = veilK > 0.02;
+    if (atmoVeil.visible) atmoVeilMat.opacity = veilK * 0.5;
+    milkyMat.opacity = Math.max(spaceF * 0.5, THREE.MathUtils.clamp((starMat.opacity - 0.75) * 0.8, 0, 0.13));   // 우주 진하게 / 맑은 깊은 밤 은은하게 (별 페이드 재사용)
+    milkyMesh.visible = milkyMat.opacity > 0.015;
 }
 
 // Orbit camera: drag to circle the island, wheel to zoom; capped just above the horizon.
@@ -7454,7 +7522,18 @@ if (statsOn) window.__worldDev = {
     planeSummon: () => { summonPlanePassenger(); return !!planeHop; },   // 절친 뒷좌석 소환 (E2E)
     balloonState: () => ({ mode: BALLOON.mode, x: +BALLOON.x.toFixed(2), y: +BALLOON.y.toFixed(2), z: +BALLOON.z.toFixed(2), riding: !!balloonRide, rider: balloonRide && balloonRide.p ? balloonRide.p.name : null, friend: balloonRide && balloonRide.friend ? balloonRide.friend.name : null, lap: balloonRide ? balloonRide.lap : 0, pois: balloonRide && balloonRide.route ? balloonRide.route.names.length : 0 }),
     rocketState: () => ({ mode: ROCKET.mode, x: +ROCKET.x.toFixed(2), y: +ROCKET.y.toFixed(2), z: +ROCKET.z.toFixed(2), pitch: +ROCKET.pitch.toFixed(2), lap: +ROCKET.lapAcc.toFixed(2), burn: +ROCKET.burn.toFixed(2), spaceF: +spaceF.toFixed(2), riding: !!rocketRide, empty: !!(rocketRide && rocketRide.empty), friend: !!(rocketRide && rocketRide.friend), ai: !!(rocketRide && rocketRide.isAI), walk: !!aiRocketWalk, hop: !!rocketHop, light: rocketLightOn }),
-    rocketAiStart: () => { const q = pets.find((o) => o !== possessed); if (q) startAiRocket(q); return aiRocketWalk ? 'ok' : `fail(mode=${ROCKET.mode},ride=${!!rocketRide},st=${q && q.ai.state})`; },
+    rocketAiStart: () => {   // E2E 훅 — 부팅 직후 자율활동(물놀이·낚시 등)에 선점된 펫도 결정적으로 출발시킨다
+        const q = pets.find((o) => o !== possessed);
+        if (!q) return 'fail(nopet)';
+        if (q.bed) forceEndBed(q);
+        if (q.dip) endDip(q);
+        if (aiFishing && aiFishing.p === q) endAiFishing();
+        releaseAI(q);
+        q.ai.state = 'idle';
+        startAiRocket(q);
+        return aiRocketWalk ? 'ok' : `fail(mode=${ROCKET.mode},ride=${!!rocketRide},st=${q.ai.state})`;
+    },
+    spaceFx: () => ({ lift: +skyDomeMesh.position.y.toFixed(1), veil: atmoVeil.visible, milky: +milkyMat.opacity.toFixed(2), star: +starMat.size.toFixed(2), spd: +(ROCKET.spd || 0).toFixed(2) }),
     balloonSummon: () => { summonBalloonFriend(); return !!balloonHop; },   // 이륙 직후 절친 소환 (E2E)
     ferryState: () => ({ mode: FERRY.mode, x: +FERRY.x.toFixed(2), z: +FERRY.z.toFixed(2), u: +FERRY.u.toFixed(3), riding: !!ferryRide, rider: ferryRide && ferryRide.p ? ferryRide.p.name : null, friend: ferryRide && ferryRide.friend ? ferryRide.friend.name : null, dwellT: +FERRY.dwellT.toFixed(1) }),
     ferrySummon: () => { summonFerryFriend(); return !!ferryHop; },
@@ -10960,9 +11039,23 @@ function updatePlayer(delta) {
         return;
     }
     if (rocketRide && (rocketRide.p === possessed || rocketRide.friend === possessed)) {
+        // 🚀 궤도 유영 중 조작 입력 = 조종간 잡기 (노랑호 핸들 문법 — 그 뒤론 stepRocketManual이 updateRocket에서 돈다)
+        if (rocketRide.p === p && ROCKET.mode === 'space') {
+            const inputNow = heldKeys.has('ArrowUp') || heldKeys.has('ArrowDown') || heldKeys.has('ArrowLeft') || heldKeys.has('ArrowRight')
+                || heldKeys.has('KeyW') || heldKeys.has('KeyS') || touchMove.active;
+            if (inputNow) {
+                ROCKET.mode = 'manual';
+                ROCKET.spd = (Math.PI * 2 / 58) * ROCKET_ORBIT_R;   // 궤도 순항 속도를 이어받아 덜컥임 없이
+                showToast('🕹️ 조종간을 잡았다 — 우주는 이제 내 마음대로! (⌘ = 재진입)');
+                logWorldEvent(`${petKo(p)}가 별똥호 조종간을 잡았다 🕹️`);
+            }
+        }
         const rkHint = ROCKET.mode === 'count' || ROCKET.mode === 'ignite'
             ? '🚀 카운트다운! — Ctrl/⌘ 발사 취소'
-            : ROCKET.mode === 'space' ? `🌌 ${petKo(p)} 궤도 유영 중${rocketRide.friend ? ' 👥' : ''} — 자동 귀환 · 마우스로 경치 구경 · Esc 긴급 하차`
+            : ROCKET.mode === 'manual'
+                ? (IS_TOUCH ? `🚀 ${petKo(p)} 우주 조종 중${rocketRide.friend ? ' 👥' : ''} — 스틱 추진·방향 · ✋ 재진입`
+                    : `🚀 ${petKo(p)} 우주 조종 중${rocketRide.friend ? ' 👥' : ''} — ↑↓ 추진 · ←→ 방향 · W/S 고도 · ⌘ 재진입`)
+            : ROCKET.mode === 'space' ? `🌌 ${petKo(p)} 궤도 유영 중${rocketRide.friend ? ' 👥' : ''} — ${IS_TOUCH ? '스틱' : '조작'}하면 조종간 잡기 · ${IS_TOUCH ? '✋' : '⌘'} 재진입 · 마우스로 경치 구경`
             : ROCKET.mode === 'descent' || ROCKET.mode === 'retro' ? '🚀 재진입 — 역추진 착륙 중'
             : `🚀 ${petKo(p)} 상승 중${rocketRide.friend ? ' 👥' : ''} — 우주까지 자동 비행`;
         if (controlHint.textContent !== rkHint) controlHint.textContent = rkHint;
@@ -12811,14 +12904,14 @@ function updateBalloon(delta) {
 }
 
 // ---- 🚀 로켓 "별똥호" (우주 관광 라이드): 본섬 정남 앞바다 해상 발사 플랫폼. 잠수정의 캐노피
-// 좌석 + 열기구의 자동 투어 + 비행기의 승하차 문법. 시퀀스: parked → count(5s) → ignite(1.15s)
-// → ascent(수직 상승·중력턴) → space(아포지 15.2 궤도 1바퀴 ≈58s) → descent(나선 복귀) → retro
-// (역추진 수직착륙). "우주"는 고도가 아니라 연출 — spaceF(카메라 고도)가 하늘을 우주색으로
-// 물들이고 낮별을 띄운다(updateDayNight). 아포지 15.2는 실측 스택(구름 5·비 8.5·해 11.4·별돔
-// 39·하늘돔 42) 안의 스윗스팟 — y20 넘으면 돔이 가까워져 일루전이 깨진다. 착륙 Y는
+// 좌석·핸들 문법 + 열기구의 자동 투어·자율 탑승 + 비행기의 승하차 문법. 시퀀스: parked → count(5s)
+// → ignite(1.15s) → ascent(수직 상승·중력턴) → space(아포지 26 궤도 1바퀴 ≈58s, 무중력 유영,
+// 조작 입력 = manual 조종간 잡기) → descent(⌘ 또는 1바퀴 후 재진입) → retro(역추진 수직착륙).
+// "우주"는 고도가 아니라 연출 — spaceF(카메라 고도)가 하늘·안개·낮별·은하수·대기 베일을 몰고,
+// 하늘돔(42)·별밭(39)·은하수 밴드는 우주에서 카메라 고도를 따라와 껍질이 안 가까워진다. 착륙 Y는
 // ROCKET_PAD_DECK_Y 상수 고정(terrainHeight 샘플 금지 — 섬밖 유령선반 함정). 파티클은 전부
 // 셰이더 Points(uWxT 루프, CPU 갱신 0). 플랫폼 이사 = ROCKET_PAD 상수 + 프로브 재실행. ----
-const ROCKET_APOGEE = 15.2;
+const ROCKET_APOGEE = 26;   // 옛 15.2 제약(하늘돔 42·별밭 39가 원점 고정 — y20↑ 껍질 근접)은 updateSpaceSky의 돔 카메라 추적으로 해제. 26 = 지상이 ~70% 작게, 구름층(y5)을 한참 내려다본다
 const ROCKET_ORBIT_R = 9.5;         // 본섬 r6.2 밖 — 군도 전경이 눈 아래
 const ROCKET_HOME_A = Math.atan2(ROCKET_PAD.z, ROCKET_PAD.x);   // 궤도각 (x=cosA·R, z=sinA·R) — 패드가 궤도 원 위라 상승이 그대로 궤도에 얹힌다
 const ROCKET_PAD_UX = ROCKET_PAD.x / Math.hypot(ROCKET_PAD.x, ROCKET_PAD.z);   // 광장 반대(외해) 방향
@@ -13257,7 +13350,7 @@ function dismountRocket() {   // 착륙/취소 하차 — 조종 펫은 갑판, 
     if (r.friend) drop(r.friend, shoreSpot(-0.55));
     rocketRide = null;
 }
-function requestRocketExit() {   // ⌘: 카운트다운 = 취소, 비행 중 = 안내만 (Esc = 긴급)
+function requestRocketExit() {   // ⌘: 카운트다운 = 취소, 우주(자동·수동) = 재진입, 그 외 = 안내 (Esc = 긴급)
     if (!rocketRide) return;
     if (ROCKET.mode === 'count' || ROCKET.mode === 'ignite') {
         dismountRocket();
@@ -13266,7 +13359,13 @@ function requestRocketExit() {   // ⌘: 카운트다운 = 취소, 비행 중 = 
         logWorldEvent('별똥호 발사가 취소됐다');
         return;
     }
-    showToast('🌌 우주 비행 중이에요 — 착륙까지 함께해요! (Esc = 긴급 하차)');
+    if (ROCKET.mode === 'space' || ROCKET.mode === 'manual') {
+        ROCKET.mode = 'descent'; ROCKET.t = 0;
+        showToast('🚀 재진입 시작 — 발사대로 귀환합니다');
+        logWorldEvent('별똥호가 재진입을 시작했다');
+        return;
+    }
+    showToast('🚀 비행 중이에요 — 착륙까지 조금만! (Esc = 긴급 하차)');
 }
 function exitRocketForce() {   // Esc/빙의 해제 — 펫은 내려주고, 비행 중이던 로켓은 빈 채로 여정을 마친다
     const r = rocketRide;
@@ -13354,6 +13453,26 @@ function updateRocket(delta) {
             ROCKET.mode = 'descent'; ROCKET.t = 0;
             if (r && !r.empty && !r.isAI) showToast('🚀 궤도 한 바퀴 완주 — 재진입! 발사대로 돌아갑니다');
         }
+    } else if (ROCKET.mode === 'manual') {
+        // 🕹️ 조종간 잡기 (노랑호 수동 문법): ↑↓ 추진 · ←→ 방향 · W/S 고도 22~28 · ⌘=재진입.
+        // 우주 관성 — 입력을 놓으면 살살 눕는다. 잡은 뒤엔 ⌘를 누를 때까지 수동 유지.
+        let acc = 0;
+        if (heldKeys.has('ArrowUp')) acc += 1;
+        if (heldKeys.has('ArrowDown')) acc -= 0.7;
+        if (touchMove.active) acc += Math.max(0, touchMove.z) - 0.7 * Math.max(0, -touchMove.z);
+        let steer = (heldKeys.has('ArrowLeft') ? 1 : 0) - (heldKeys.has('ArrowRight') ? 1 : 0);
+        if (touchMove.active) steer = THREE.MathUtils.clamp(steer - touchMove.x, -1, 1);
+        const vert = (heldKeys.has('KeyW') ? 1 : 0) - (heldKeys.has('KeyS') ? 1 : 0);
+        ROCKET.spd = THREE.MathUtils.clamp((ROCKET.spd || 0) + acc * 2.4 * delta, -0.9, 2.6);
+        if (!acc) ROCKET.spd *= Math.pow(0.35, delta);
+        ROCKET.heading += steer * 1.15 * delta;
+        const nx = ROCKET.x + Math.sin(ROCKET.heading) * ROCKET.spd * delta;
+        const nz = ROCKET.z + Math.cos(ROCKET.heading) * ROCKET.spd * delta;
+        if (Math.hypot(nx, nz) < EXPLORE_R - 4) { ROCKET.x = nx; ROCKET.z = nz; }
+        else ROCKET.spd = 0;   // 우주 펜스 — 세계의 끝
+        ROCKET.y = THREE.MathUtils.clamp(ROCKET.y + vert * 1.6 * delta, 22, 28);
+        ROCKET.pitch = THREE.MathUtils.lerp(ROCKET.pitch, 0.9 - vert * 0.3, Math.min(1, delta * 1.6));
+        ROCKET.burn = 0.15 + Math.abs(ROCKET.spd) * 0.08 + Math.abs(vert) * 0.15;
     } else if (ROCKET.mode === 'descent') {
         ROCKET.burn = 0.15;
         const dx = ROCKET_PAD.x - ROCKET.x, dz = ROCKET_PAD.z - ROCKET.z;
@@ -13402,8 +13521,8 @@ function updateRocket(delta) {
         camera.position.x += (Math.random() - 0.5) * 0.02;
         camera.position.y += (Math.random() - 0.5) * 0.014;
     }
-    // 화염 3겹: 백열 코어 콘 + 주황 외염 콘 + 스파크 기둥 Points — 우주에선 전부 접고 청백 RCS 잔불만
-    const inSpace = ROCKET.mode === 'space';
+    // 화염 3겹: 백열 코어 콘 + 주황 외염 콘 + 스파크 기둥 Points — 우주(자동·수동)에선 전부 접고 청백 RCS 잔불만
+    const inSpace = ROCKET.mode === 'space' || ROCKET.mode === 'manual';
     const flameK = inSpace ? 0 : ROCKET.burn;
     const flick = 0.85 + Math.sin(ROCKET.t * 31) * 0.15;
     ud.flameMat.opacity = flameK * 0.95;
