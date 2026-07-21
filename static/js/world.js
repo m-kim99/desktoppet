@@ -9722,10 +9722,17 @@ function makeDrinkGeos(d, sips = 0) {
         const wellBot = new THREE.CylinderGeometry(0.0222, 0.0222, 0.002, 20); wellBot.translate(0, 0.0445, 0); add(wellBot, 0x6b5c44, 0x4a3f2e, { curve: 1 });
         const liq = new THREE.CylinderGeometry(lr, lr * 0.94, 0.005, 20); liq.translate(0, ly, 0); add(liq, shade(base, 20), base, { curve: 1.1 });
         if (d.id === 'americano') { const cr = new THREE.TorusGeometry(lr * 0.94, 0.0016, 6, 20); cr.rotateX(Math.PI / 2); cr.translate(0, ly + 0.0022, 0); add(cr, 0xa87a4e, 0x815734, { curve: 1 }); }
-        if (d.id === 'latte' && s < 2) {                      // 라떼아트 하트 — 수면 크기 따라 줄어든다
-            const hs = lr * 0.66;
-            for (const hx of [-0.42, 0.42]) { const lobe = new THREE.SphereGeometry(hs * 0.56, 10, 8); lobe.scale(1, 0.22, 1); lobe.translate(hx * hs * 1.5, ly + 0.0032, -hs * 0.34); add(lobe, 0xfdf8ee, 0xefe3cc, { curve: 1 }); }
-            const tip = new THREE.ConeGeometry(hs * 0.86, hs * 1.35, 12); tip.rotateX(Math.PI / 2); tip.scale(1, 0.22, 1); tip.translate(0, ly + 0.0032, hs * 0.52); add(tip, 0xfdf8ee, 0xefe3cc, { curve: 1 });
+        if (d.id === 'latte' && s < 2) {                      // 라떼아트 하트 — 베지에 한 덩어리(원+삼각 조합이 아니라 매끈한 실루엣)
+            const hp = new THREE.Shape();
+            hp.moveTo(0, -1);
+            hp.bezierCurveTo(-0.62, -0.36, -1.02, 0.24, -0.5, 0.72);
+            hp.bezierCurveTo(-0.2, 0.99, 0, 0.74, 0, 0.54);
+            hp.bezierCurveTo(0, 0.74, 0.2, 0.99, 0.5, 0.72);
+            hp.bezierCurveTo(1.02, 0.24, 0.62, -0.36, 0, -1);
+            const hs = lr * 0.44;
+            const heart = new THREE.ShapeGeometry(hp, 14);
+            heart.scale(hs, hs, hs); heart.rotateX(-Math.PI / 2); heart.translate(0, ly + 0.0028, hs * 0.08);
+            add(heart, 0xfdf8ee, 0xf3e9d6, { curve: 1 });
         }
         if (d.id === 'cappuccino') {                          // 우유 거품 — 림 위로 봉긋, 줄면 얇은 막
             const fh = s === 2 ? 0.16 : s === 1 ? 0.30 : 0.44;
