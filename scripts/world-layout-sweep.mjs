@@ -6,14 +6,15 @@ const warn = (s) => { console.log('  ✗ ' + s); bad++; };
 const CLEAR = 0.5;    // 두 소품 사이 펫이 지나갈 최소 여유
 const LAMP_CLEAR = 0.3;   // 가로등 기둥은 얇음
 // 시각 풋프린트(콜라이더보다 큰 타입 보정)
-const VIS = { garden: 1.0, coffee: 0.62, food: 0.62, library: 0.8, piano: 0.5, fountain: 0.72, photoboard: 0.45, fence: 0.72, hammock: 0.8, swing: 0.62, seesaw: 0.7, gym: 1.05, trampoline: 0.77, vine: 0.32, fruitbasket: 0.26, pecktree: 0.6, well: 0.62, capsule: 0.4, monument: 0.5, cave: 1.0, lookout: 1.0, sunbed: 0.55, palm: 0.5, sandcastle: 0.45, tree: 0.5, boulder: 0.55, house: 2.4, pond: 0.95, mailbox: 0.22, radio: 0.3, bowl: 0.3, lamp: 0.2, flowerbasket: 0.25, hugspot: 0.3, digsite: 0.7, portal: 0.45, car: 0.72, boat: 0.6, plane: 0.75, balloon: 0.8, ferry: 0.95, pier: 0.3 };
+const VIS = { garden: 1.0, coffee: 0.62, food: 0.62, library: 0.8, piano: 0.5, fountain: 0.72, photoboard: 0.45, fence: 0.72, hammock: 0.8, swing: 0.62, seesaw: 0.7, gym: 1.05, trampoline: 0.77, vine: 0.32, fruitbasket: 0.26, pecktree: 0.6, well: 0.62, capsule: 0.4, monument: 0.5, cave: 1.0, lookout: 1.0, sunbed: 0.55, palm: 0.5, sandcastle: 0.45, tree: 0.5, boulder: 0.55, house: 2.4, pond: 0.95, mailbox: 0.22, radio: 0.3, bowl: 0.3, lamp: 0.2, flowerbasket: 0.25, hugspot: 0.3, digsite: 0.7, portal: 0.45, car: 0.72, boat: 0.6, plane: 0.75, balloon: 0.8, ferry: 0.95, pier: 0.3, rocketpad: 2.05 };
 const vOf = (p) => Math.max(p.r || 0.2, VIS[p.type] ?? 0.4);
 // 사용자 확정 배치(공사모드 굳히기, 2026-07-17) — 페어/도로/림 규칙 면제. 새 소품 추가 시 규칙은 그대로 살아 있다.
 const PINNED = new Set(["-0.508,3.523", "-1.682,4.923", "-1.771,1.903", "-10.782,-4.548", "-12.369,-3.32", "-2.455,-5.249", "-2.832,4.708", "-2.884,0.803", "-3.668,2.599", "-3.857,4.222", "-3.869,1.411", "-4.881,2.914", "-4.99,-0.57", "-8.97,-5.203", "-9.609,-6.876", "0.521,4.73", "0.882,4.086", "1.586,-5.57", "11.136,2.463", "2.5,-1.15", "2.825,2.131", "3.4,-4.532", "3.42,4.305", "4.98,-2.06", "5.11,-0.213", "5.191,1.315", "9.547,8.597"]);
 const isPinned = (p) => PINNED.has(`${p.x},${p.z}`);
 const ALL = [...PROPS, { type: 'car', x: 2.5, z: -1.15, r: 0.5 }, { type: 'plane', x: -3.2, z: 10.05, r: 0.55 }, { type: 'balloon', x: 14.0, z: 7.25, r: 0.5 },
     { type: 'ferry', x: 0.94, z: 7.77, r: 0.9, water: true }, { type: 'pier', x: FERRY_PIERS[0].B.x, z: FERRY_PIERS[0].B.z, r: 0.3, water: true }, { type: 'pier', x: FERRY_PIERS[1].B.x, z: FERRY_PIERS[1].B.z, r: 0.3, water: true },
-    { type: 'boat', x: 2.4, z: 6.95, r: 0.5, water: true }];
+    { type: 'boat', x: 2.4, z: 6.95, r: 0.5, water: true },
+    { type: 'rocketpad', x: 2, z: -9.5, r: 2.05, water: true }];   // 🚀 발사 플랫폼 (world.js ROCKET_PAD와 동기 — 이사 시 둘 다)
 const hillSet = new Set(['boulder', 'lookout', 'cave', 'digsite']);
 // 집은 직사각형(hw×hd×k + 포치) — 원-vis 페어는 코너를 과차단한다. 로컬 사각형 + 상대 vis 마진.
 const HOUSE_RECT = { x: 3.42, z: 4.305, rotY: -2.22, hw: 1.3, hd: 1.04, k: 1.2, porch: 0.5 };
