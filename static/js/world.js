@@ -9700,22 +9700,26 @@ function makeDrinkGeos(d, sips = 0) {
         for (const [wx, wy, wz] of [[0.0225, 0.048, 0.012], [-0.0215, 0.031, -0.010], [0.0165, 0.020, 0.017]]) { const dr = new THREE.SphereGeometry(0.0022, 6, 5); dr.scale(1, 1.35, 0.6); dr.translate(wx, wy, wz); add(dr, 0xf6fcff, 0xd8ecf7, { curve: 1 }); }
         topH = 0.075;
     } else if (d.small) {                                     // ── 에스프레소: 받침 + 손잡이 + 크레마
-        const EL = [[0.0348, 0.0172], [0.0332, 0.0146], [0.0316, 0.0120]], [ly, lr] = EL[s];
+        const EL = [[0.0345, 0.0178], [0.0312, 0.0152], [0.0279, 0.0126]], [ly, lr] = EL[s];
         const saucer = new THREE.CylinderGeometry(0.031, 0.028, 0.005, 22); saucer.translate(0, 0.0025, 0); add(saucer, 0xf9f6ef, 0xe2dace, { curve: 1 });
         const sring = new THREE.TorusGeometry(0.0225, 0.0022, 6, 22); sring.rotateX(Math.PI / 2); sring.translate(0, 0.005, 0); add(sring, 0xf4f0e6, 0xdcd3c4, { curve: 1 });
-        const cup = new THREE.CylinderGeometry(0.0195, 0.0145, 0.03, 18); cup.translate(0, 0.021, 0); add(cup, 0xfdfcf9, 0xe9e2d6, { curve: 1.05 });
+        const cup = new THREE.CylinderGeometry(0.0195, 0.0145, 0.03, 18, 1, true); cup.translate(0, 0.021, 0); add(cup, 0xfdfcf9, 0xe9e2d6, { curve: 1.05 });
+        const cupBot = new THREE.CylinderGeometry(0.0146, 0.0146, 0.0025, 18); cupBot.translate(0, 0.00725, 0); add(cupBot, 0xf0eade, 0xdcd4c6, { curve: 1 });
         const hd = new THREE.TorusGeometry(0.0082, 0.0023, 6, 14, Math.PI * 1.25); hd.rotateY(Math.PI / 2); hd.rotateZ(-0.35); hd.translate(0.0205, 0.0225, 0); add(hd, 0xfdfcf9, 0xe9e2d6, { curve: 1 });
-        const well = new THREE.CylinderGeometry(0.0178, 0.0138, 0.0085, 18, 1, true); well.scale(-1, 1, 1); well.translate(0, 0.032, 0); add(well, 0x9c8b6e, 0x584c38, { curve: 1.45 });
+        const well = new THREE.CylinderGeometry(0.0195, 0.0142, 0.0105, 18, 1, true); well.scale(-1, 1, 1); well.translate(0, 0.03075, 0); add(well, 0x9c8b6e, 0x584c38, { curve: 1.45 });
+        const wellBot = new THREE.CylinderGeometry(0.0142, 0.0142, 0.0018, 18); wellBot.translate(0, 0.0246, 0); add(wellBot, 0x6b5c44, 0x4a3f2e, { curve: 1 });
         const liq = new THREE.CylinderGeometry(lr, lr * 0.93, 0.004, 18); liq.translate(0, ly, 0); add(liq, shade(base, 22), base, { curve: 1.1 });
         const crema = new THREE.TorusGeometry(lr * 0.93, 0.0017, 6, 18); crema.rotateX(Math.PI / 2); crema.translate(0, ly + 0.0018, 0); add(crema, 0xd6a04a, 0xa87428, { curve: 1 });
         topH = 0.042;
     } else {                                                  // ── 따뜻한 4종: 뚜껑 없는 컵 + 슬리브 + 우물 + 수면
         // 수면은 림 가까이 유지하고(낮은 각도에서도 보이게) 줄어드는 건 '반지름'으로 읽힌다
-        const HL = [[0.0568, 0.0252], [0.0542, 0.0216], [0.0516, 0.0180]], [ly, lr] = HL[s];
-        const cup = new THREE.CylinderGeometry(0.028, 0.021, 0.058, 20); cup.translate(0, 0.029, 0); add(cup, 0xfdfcf9, 0xe7e0d4, { curve: 1.05 });
+        const HL = [[0.0555, 0.0256], [0.0512, 0.0218], [0.0470, 0.0180]], [ly, lr] = HL[s];
+        const cup = new THREE.CylinderGeometry(0.028, 0.021, 0.058, 20, 1, true); cup.translate(0, 0.029, 0); add(cup, 0xfdfcf9, 0xe7e0d4, { curve: 1.05 });
+        const cupBot = new THREE.CylinderGeometry(0.0212, 0.0212, 0.003, 20); cupBot.translate(0, 0.0015, 0); add(cupBot, 0xf0eade, 0xdcd4c6, { curve: 1 });
         const slv = new THREE.CylinderGeometry(0.0263, 0.0243, 0.024, 20); slv.translate(0, 0.026, 0); add(slv, 0xc4915f, 0x9d6c3c, { curve: 1.15 });
         for (const ry of [0.0378, 0.0142]) { const rr2 = new THREE.TorusGeometry(0.0258, 0.0013, 5, 22); rr2.rotateX(Math.PI / 2); rr2.translate(0, ry, 0); add(rr2, 0xd6a273, 0xb07d46, { curve: 1 }); }
-        const well = new THREE.CylinderGeometry(0.0262, 0.0224, 0.011, 20, 1, true); well.scale(-1, 1, 1); well.translate(0, 0.0535, 0); add(well, 0x9c8b6e, 0x584c38, { curve: 1.45 });
+        const well = new THREE.CylinderGeometry(0.028, 0.0222, 0.0135, 20, 1, true); well.scale(-1, 1, 1); well.translate(0, 0.05125, 0); add(well, 0x9c8b6e, 0x584c38, { curve: 1.45 });
+        const wellBot = new THREE.CylinderGeometry(0.0222, 0.0222, 0.002, 20); wellBot.translate(0, 0.0445, 0); add(wellBot, 0x6b5c44, 0x4a3f2e, { curve: 1 });
         const liq = new THREE.CylinderGeometry(lr, lr * 0.94, 0.005, 20); liq.translate(0, ly, 0); add(liq, shade(base, 20), base, { curve: 1.1 });
         if (d.id === 'americano') { const cr = new THREE.TorusGeometry(lr * 0.94, 0.0016, 6, 20); cr.rotateX(Math.PI / 2); cr.translate(0, ly + 0.0022, 0); add(cr, 0xa87a4e, 0x815734, { curve: 1 }); }
         if (d.id === 'latte' && s < 2) {                      // 라떼아트 하트 — 수면 크기 따라 줄어든다
