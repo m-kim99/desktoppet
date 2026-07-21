@@ -1158,6 +1158,7 @@ const gradMatDS = new THREE.MeshStandardMaterial({ vertexColors: true, roughness
 const glassMat = new THREE.MeshStandardMaterial({ color: 0xdcecf5, transparent: true, opacity: 0.3, roughness: 0.12, metalness: 0, side: THREE.DoubleSide, depthWrite: false });
 // 비치는 음료(아이스티처럼 맑은 것)용 — bakeGrad 정점색 그대로 쓰되 반투명.
 const liquidMat = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.68, roughness: 0.18, metalness: 0, depthWrite: false });
+const liquidSoftMat = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.88, roughness: 0.22, metalness: 0, depthWrite: false });
 const GM = (geo, top, bottom, opts) => new THREE.Mesh(bakeGrad(geo, top, bottom, opts), gradMat);
 
 // ---- Stage: a floating meadow island — gently rolling vertex-colored grass over a rounded dirt
@@ -9653,10 +9654,11 @@ function drawDrinkIcon(cv, d) {
 // 3모금째 소멸. 따뜻한 컵은 뚜껑 없이 잔 안쪽 우물이 보여 수면이 내려가고(그래서 아메·라떼·카푸치노·
 // 초코가 구분된다), 아이스는 유리벽만 반투명 별도 메시라 수위가 그대로 비친다.
 function makeDrinkGeos(d, sips = 0) {
-    const s = Math.max(0, Math.min(2, sips)), op = [], tr = [];
-    const clear = d.id === 'icetea';   // 맑은 음료 = 액체를 반투명 메시로 분리
+    const s = Math.max(0, Math.min(2, sips)), op = [], tr = [], ts = [];
+    const clear = d.id === 'icetea' || d.id === 'iced-ame';        // 맑은 음료 — 확실히 비친다
+    const soft = d.id === 'strawberry' || d.id === 'matcha';       // 라떼류 색 층 — 살짝만 비친다
     const add = (geo, top, bot, opts) => { op.push(bakeGrad(geo, top, bot, opts || { curve: 1.1 })); };
-    const addLiq = (geo, top, bot, opts) => { (clear ? tr : op).push(bakeGrad(geo, top, bot, opts || { curve: 1.1 })); };
+    const addLiq = (geo, top, bot, opts) => { (clear ? tr : soft ? ts : op).push(bakeGrad(geo, top, bot, opts || { curve: 1.1 })); };
     const base = parseInt(d.color.slice(1), 16);
     const shade = (hex, f) => { const c = (x) => Math.max(0, Math.min(255, x + f)); return (c((hex >> 16) & 255) << 16) | (c((hex >> 8) & 255) << 8) | c(hex & 255); };
     let glass = null, topH = 0.08;
@@ -9671,7 +9673,7 @@ function makeDrinkGeos(d, sips = 0) {
         if (layered && s < 2) {                               // 2층 — 아래 우유 · 위 음료
             const yM = s === 0 ? 0.030 : 0.022, rM = rAt(yM) - 0.0012;
             const lo = new THREE.CylinderGeometry(rM, rB, yM - 0.004, 20); lo.translate(0, (yM + 0.004) / 2, 0); add(lo, milk, shade(milk, -14), { curve: 1 });
-            const hi = new THREE.CylinderGeometry(rT, rM, yT - yM, 20); hi.translate(0, (yT + yM) / 2, 0); add(hi, shade(base, 14), base, { curve: 1.1 });
+            const hi = new THREE.CylinderGeometry(rT, rM, yT - yM, 20); hi.translate(0, (yT + yM) / 2, 0); addLiq(hi, shade(base, 14), base, { curve: 1.1 });
         } else {
             const body = layered ? shade(base, 34) : base;    // 조금 남으면 우유와 섞인 옅은 색
             const colm = new THREE.CylinderGeometry(rT, rB, yT - 0.004, 20); colm.translate(0, (yT + 0.004) / 2, 0); addLiq(colm, shade(body, 14), shade(body, -18), { curve: 1.1 });
@@ -9734,7 +9736,7 @@ function makeDrinkGeos(d, sips = 0) {
         topH = 0.062;
     }
     const mg = (arr) => (arr.length ? mergeGeometries(arr.map((p) => (p.index ? p.toNonIndexed() : p)), false) : null);
-    return { opaque: mg(op), glass, liquid: mg(tr), topH };
+    return { opaque: mg(op), glass, liquid: mg(tr), liquidSoft: mg(ts), topH };
 }
 function makeDrinkMesh(d) {
     const g = makeDrinkGeos(d, 0);
@@ -9742,13 +9744,14 @@ function makeDrinkMesh(d) {
     const m = new THREE.Mesh(g.opaque, gradMat); m.castShadow = true; m.receiveShadow = true; grp.add(m);
     if (g.glass) grp.add(new THREE.Mesh(g.glass, glassMat));
     if (g.liquid) grp.add(new THREE.Mesh(g.liquid, liquidMat));
+    if (g.liquidSoft) grp.add(new THREE.Mesh(g.liquidSoft, liquidSoftMat));
     grp.userData.topH = g.topH;
     return grp;
 }
 function updateDrinkGeo(it, sips) {   // 한 모금마다 수위·얼음·거품이 실제로 줄어든 형상으로 교체
     const g = makeDrinkGeos(it.def, sips), kids = it.mesh.children;
     let i = 0;
-    for (const geo of [g.opaque, g.glass, g.liquid]) { if (!geo) continue; if (kids[i]) { kids[i].geometry.dispose(); kids[i].geometry = geo; } i++; }
+    for (const geo of [g.opaque, g.glass, g.liquid, g.liquidSoft]) { if (!geo) continue; if (kids[i]) { kids[i].geometry.dispose(); kids[i].geometry = geo; } i++; }
 }
 
 function removeHeldItem(p, key) {
@@ -17803,6 +17806,7 @@ if (location.search.includes('drinklab')) {
                 grp.add(new THREE.Mesh(g.opaque, gradMat));
                 if (g.glass) grp.add(new THREE.Mesh(g.glass, glassMat));
                 if (g.liquid) grp.add(new THREE.Mesh(g.liquid, liquidMat));
+                if (g.liquidSoft) grp.add(new THREE.Mesh(g.liquidSoft, liquidSoftMat));
                 grp.scale.setScalar(9);
                 grp.position.set((sp - 1) * 1.12 + Math.floor(i / 5) * 4.5, 20.4 - (i % 5) * 1.15, 0);
                 scene.add(grp);
