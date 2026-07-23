@@ -4196,6 +4196,7 @@ function marketStock() {
 }
 function marketConsume(id, n = 1) {
     const d = localDateStr();
+    if (id === '*') { const g0 = marketStock().filter((q) => q.left > 0).sort((a, b) => b.left - a.left)[0]; if (!g0) return false; id = g0.id; }
     const g = marketStock().find((q) => q.id === id);
     if (!g || g.left < n) return false;
     marketUsed = { [d]: { ...(marketUsed[d] || {}), [id]: ((marketUsed[d] || {})[id] || 0) + n } };   // 오늘 키만 유지 — 지난 장은 자연 소멸
@@ -4222,7 +4223,7 @@ const RECIPES = [
     { id: 'chickbiscuit',ko: '병아리 비스킷', emoji: '🐤', tier: 'heart', needs: [{ src: 'staple', id: 'flour', n: 1 }, { src: 'staple', id: 'sugar', n: 1 }] },
     { id: 'bfwaffle',   ko: '베프 와플',     emoji: '🧇', tier: 'heart', needs: [{ src: 'staple', id: 'flour', n: 1 }, { src: 'staple', id: 'milk', n: 1 }, { src: 'fruit', id: '*', n: 1 }] },
     { id: 'bfsteak',    ko: '베프 스테이크', emoji: '🥩', tier: 'heart', needs: [{ src: 'market', id: 'meat', n: 2 }] },
-    { id: 'eterncake',  ko: '영원 케이크',   emoji: '🎂', tier: 'heart', needs: [{ src: 'staple', id: 'flour', n: 1 }, { src: 'staple', id: 'sugar', n: 1 }, { src: 'staple', id: 'milk', n: 1 }, { src: 'fruit', id: '*', n: 1 }, { src: 'market', id: 'egg', n: 1 }] },
+    { id: 'eterncake',  ko: '영원 케이크',   emoji: '🎂', tier: 'heart', needs: [{ src: 'staple', id: 'flour', n: 1 }, { src: 'staple', id: 'sugar', n: 1 }, { src: 'staple', id: 'milk', n: 1 }, { src: 'fruit', id: '*', n: 1 }, { src: 'market', id: '*', n: 1 }] },
 ];
 const ING_KO = { '*': '아무거나', octopus: '문어', meat: '고기', noodle: '생면', cheese: '치즈', egg: '달걀', carrot: '당근', tomato: '토마토', sunflower: '해바라기', flour: '밀가루', sugar: '설탕', milk: '우유', oil: '기름', jang: '춘장' };
 function ingKo(nd) {
@@ -4239,7 +4240,7 @@ function ingredientCount(src, id) {
     if (src === 'fish') return id === '*' ? sumVals(iceboxCounts) : (iceboxCounts[id] || 0);
     if (src === 'seafood') { const c = seafoodCounts(); return id === '*' ? sumVals(c) : (c[id] || 0); }
     if (src === 'shell') { const c = shellCounts(); return id === '*' ? sumVals(c) : (c[id] || 0); }
-    if (src === 'market') { const g = marketStock().find((q) => q.id === id); return g ? g.left : 0; }
+    if (src === 'market') { const st = marketStock(); return id === '*' ? st.reduce((a, g) => a + g.left, 0) : ((st.find((q) => q.id === id) || {}).left || 0); }
     return 0;
 }
 const recipeMissing = (r) => r.needs.filter((nd) => ingredientCount(nd.src, nd.id) < nd.n);
@@ -4249,6 +4250,23 @@ const saveRecipesUnlocked = () => { try { localStorage.setItem('world-recipes-un
 let dishesFound = {};
 try { dishesFound = JSON.parse(localStorage.getItem('world-dishes-found') || '{}') || {}; } catch (e) {}
 const recipeLocked = (r) => r.tier === 'heart' && !recipesUnlocked[r.id];
+// 마음 요리 해금 = 요리 도감 마일스톤(서로 다른 요리 종수): 주방과 친해질수록 마음이 담긴
+// 레시피가 떠오른다. 비스킷 형제(1종) → 베프 와플(3) → 베프 스테이크(6) → 영원 케이크(10).
+const HEART_UNLOCKS = [
+    { id: 'bonebiscuit', at: 1 }, { id: 'chickbiscuit', at: 1 },
+    { id: 'bfwaffle', at: 3 }, { id: 'bfsteak', at: 6 }, { id: 'eterncake', at: 10 },
+];
+function maybeUnlockHearts() {
+    const n = Object.keys(dishesFound).length;
+    const newly = HEART_UNLOCKS.filter((h) => n >= h.at && !recipesUnlocked[h.id]);
+    if (!newly.length) return;
+    for (const h of newly) recipesUnlocked[h.id] = true;
+    saveRecipesUnlocked();
+    refreshKitchenPanel();
+    const kos = newly.map((h) => RECIPES.find((r) => r.id === h.id).ko).join(' · ');
+    showToast(`💗 새 레시피가 떠올랐어요 — ${kos}!`);
+    logWorldEvent(`마음 요리 레시피가 떠올랐다 — ${kos} 💗`);
+}
 // 주방 패널 — 위 재고 스트립(살아있는 수확 4계보 + 오늘의 장터), 아래 레시피 카드.
 // 카드 3상태: 조리 가능(밝음) / 재료 부족(흐림 + 뭐가 없는지) / 마음 요리 잠금(??? + 힌트).
 let kitchenPanel = null;
@@ -4397,6 +4415,53 @@ function beginCookSeq(p, r, pr) {
     spawnCookFx(pr, r);
     logWorldEvent(`${petKo(p)}가 주방에서 ${r.ko}를 만들기 시작했다 🍳`);
 }
+// 🎂 영원 케이크 — 혼자 먹는 요리가 아니다: 절친이 어디서 뭘 하든 달려와(소환 문법) 반쪽을
+// 받아 마주 보고 나눠 먹는다. 하트 스월 + 일기 — 마음 요리 해금 트리의 최종장.
+let eternScene = null;   // { chef, friend, t, hearts }
+function startEternScene(chef) {
+    const friend = pets.find((q) => q !== chef);
+    if (!friend) { if (chef !== possessed) releaseAI(chef, 2); return; }
+    friend.pet.sleeping = false;
+    friend.pet.autoSleeping = false;
+    if (friend.bed) forceEndBed(friend);
+    if (friend.dip) endDip(friend);
+    if (aiFishing && aiFishing.p === friend) endAiFishing();
+    releaseAI(friend);
+    (async () => {
+        await gotoAsync(friend, chef.mover.position.x + 0.55, chef.mover.position.z + 0.15);
+        if (friend.ai.state !== 'player') friend.ai.state = 'busy';
+        giveFood(friend, { id: 'cloche', name: '영원 케이크 (반쪽)' }, '주방에서');
+        chef.mover.rotation.y = Math.atan2(friend.mover.position.x - chef.mover.position.x, friend.mover.position.z - chef.mover.position.z);
+        friend.mover.rotation.y = chef.mover.rotation.y + Math.PI;
+        eternScene = { chef, friend, t: 0, hearts: false };
+    })();
+}
+function updateEternScene(delta) {
+    if (!eternScene) return;
+    const { chef, friend } = eternScene;
+    eternScene.t += delta;
+    for (const q of [chef, friend]) {   // 자동 냠냠 — 다 먹을 때까지 시퀀스를 이어 준다
+        if (q.food && !q.food.seq && eternScene.t > 0.8) q.food.seq = { count: 3, t: 0, played: -1 };
+    }
+    if (!eternScene.hearts && eternScene.t > 1.6) {
+        eternScene.hearts = true;
+        const mx = (chef.mover.position.x + friend.mover.position.x) / 2;
+        const mz = (chef.mover.position.z + friend.mover.position.z) / 2;
+        for (let i = 0; i < 10; i++) {
+            const spr = glowSprite(0xf2a5c0, 0.07 + Math.random() * 0.05, 0.9);
+            spr.position.set(mx + (Math.random() - 0.5) * 0.5, chef.height * 0.7 + chef.mover.position.y, mz + (Math.random() - 0.5) * 0.5);
+            scene.add(spr);
+            hugBurst.push({ spr, vx: (Math.random() - 0.5) * 0.25, vy: 0.55 + Math.random() * 0.3, vz: (Math.random() - 0.5) * 0.25, t: 0.8 });
+        }
+        logWorldEvent('둘이 영원 케이크를 나눠 먹었다 — 영원히 베프 🎂💗');
+        maybeProactive(null, '방금 절친과 영원 케이크를 나눠 먹었다! 우리는 영원히 베프다!');
+    }
+    if ((!chef.food && !friend.food) || eternScene.t > 30) {
+        if (friend.ai.state === 'busy') releaseAI(friend, 1.5);
+        if (chef !== possessed && chef.ai.state === 'busy') releaseAI(chef, 1.5);
+        eternScene = null;
+    }
+}
 function updateCooking(delta) {
     if (!cooking) return;
     const { p, r } = cooking;
@@ -4444,7 +4509,7 @@ function updateCooking(delta) {
         const first = !dishesFound[r.id];
         dishesFound[r.id] = (dishesFound[r.id] || 0) + 1;
         try { localStorage.setItem('world-dishes-found', JSON.stringify(dishesFound)); worldSync('world-dishes-found'); } catch (e) {}
-        giveFood(p, { id: 'cloche', name: r.ko }, '주방에서');
+        giveFood(p, { id: 'cloche', name: r.id === 'eterncake' ? '영원 케이크 (반쪽)' : r.ko }, '주방에서');
         if (!p.pet.action) p.pet.action = { id: 'happy', t: 0 };
         logWorldEvent(`${petKo(p)}가 ${r.ko}를 완성했다 🍳${first ? ' — 첫 요리!' : ''}`);
         if (first) {
@@ -4452,10 +4517,12 @@ function updateCooking(delta) {
             showToast(`🍳✨ 새 요리 발견 — ${r.ko}!`);
             maybeProactive(null, `방금 주방에서 처음으로 ${r.ko}를 만들었다! 뿌듯하다!`);
         }
+        maybeUnlockHearts();
         refreshKitchenPanel();
         const chef = p;
         cooking = null;
-        if (chef !== possessed) releaseAI(chef, 2);
+        if (r.id === 'eterncake') startEternScene(chef);   // 🎂 둘이 나눠 먹는 요리 — 절친 소환
+        else if (chef !== possessed) releaseAI(chef, 2);
     }
 }
 function toggleKitchenPanel() {
@@ -8325,8 +8392,8 @@ if (statsOn) window.__worldDev = {
     cookGo: (id) => {
         const r = RECIPES.find((q) => q.id === id);
         if (!r) return null;
-        const q0 = pets.find((q) => q !== possessed);
-        if (q0) {   // 부팅 자율활동 선점 청산 — rocketAiStart 문법
+        for (const q0 of pets) {   // 부팅 자율활동 선점 청산 — rocketAiStart 문법 (셰프 후보 전원)
+            if (q0 === possessed) continue;
             if (q0.bed) forceEndBed(q0);
             if (q0.dip) endDip(q0);
             if (aiFishing && aiFishing.p === q0) endAiFishing();
@@ -8337,6 +8404,15 @@ if (statsOn) window.__worldDev = {
     },
     cookState: () => (cooking ? { pet: cooking.p.name, phase: cooking.phase } : null),
     dishes: () => ({ ...dishesFound }),
+    dishesSeed: (n) => {   // E2E: 도감 종수 주입 → 마일스톤 해금 검사
+        dishesFound = {};
+        for (let i = 0; i < n; i++) dishesFound[`_seed${i}`] = 1;
+        try { localStorage.setItem('world-dishes-found', JSON.stringify(dishesFound)); } catch (e) {}
+        maybeUnlockHearts();
+        return { ...recipesUnlocked };
+    },
+    basketSeed: (id, n) => { basketCounts[id] = (basketCounts[id] || 0) + n; saveBasket(); return { ...basketCounts }; },
+    eternState: () => (eternScene ? { t: +eternScene.t.toFixed(1), chefFood: !!eternScene.chef.food, friendFood: !!eternScene.friend.food } : null),
     marketAt: (dstr) => marketToday(dstr),
     marketUse: (id) => marketConsume(id),
     staples: () => PANTRY_STAPLES.map((g) => g.id),
@@ -21585,6 +21661,7 @@ function animate() {
     updateAiBoat(delta);                     // 🚣 나룻배 자율 뱃놀이 — 웨이포인트 노젓기
     updateAiRadio(delta);                    // 📻 라디오 리듬타기 — 곁 댄스·한 곡 틀기
     updateCooking(delta);                    // 🍳 조리 시퀀스 — 손질·웍·플레이팅
+    updateEternScene(delta);                 // 🎂 영원 케이크 나눠 먹기
     updateFruitThrows(delta);                // 🧺 원거리 휙 담기 아크
     updateBalloon(delta);                    // 🎈 열기구 — 계류 살랑임/스플라인 투어/귀환
     updateBalloonHop(delta);                 // 절친 승선 큰 아크 — 데크에서 바구니로
