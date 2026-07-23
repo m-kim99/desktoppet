@@ -6332,6 +6332,77 @@ function steerToward(p, target, delta) {
     return 'moving';
 }
 
+// ---- 🎛️ 자율 여가 레지스트리 — 활동 정의의 단일 소스 ----
+// 새 사물의 자율 행동은 여기 "한 항목"이 전부다. 예전엔 체인 삽입 위치·시드 관용구·싱글턴
+// 게이트를 다섯 군데에서 맞춰야 했고, 그러다 운동 매트·도서관이 실제로 누락됐다(선언만 되고
+// 소비 블록이 없어 한 번도 발동 못 함 — 0c21ead부터).
+// 수치(p·cd·seed)를 바꾸면 npm run balance:world 로 전후 점유율을 비교한다 (시뮬 ACTS와 동기).
+// cdKey는 종전 필드명 그대로 — endTramp 등 밖에서 쿨다운을 다시 미는 코드와의 호환.
+// seed = 첫 쿨다운: 앱 켜자마자 탈것이 떠나버리면 주인이 탈 틈이 없다 (E2E에서 실측).
+const LEISURE_ACTS = [
+    // 물놀이 — 펫들이 같이 헤엄치게 (주인 포함). 연못/바다는 startDip이 코인플립.
+    { id: 'dip', cdKey: 'nextDipAt', cd: [150000, 300000], p: () => 0.25,
+      fire: (p) => { startDip(p); return true; } },
+    // 낚싯대를 메고 물가로 — 혼자 두어 캐스트.
+    { id: 'fish', cdKey: 'nextFishAt', cd: [300000, 600000], p: () => 0.09,
+      gate: (p) => !aiFishing && !(fishing && fishing.p === p),
+      fire: (p) => { startAiFishing(p); return true; } },
+    // 🟡 노랑호 잠수 투어 — 정박 중일 때만.
+    { id: 'sub', cdKey: 'nextSubAt', seed: [360000, 960000], cd: [600000, 1200000], p: () => 0.04,
+      gate: () => !subRide && !aiSubWalk && SUB.mode === 'docked',
+      fire: (p) => { startAiSub(p); return true; } },
+    // 열기구 하늘 한 바퀴 — 계류 중일 때만.
+    { id: 'balloon', cdKey: 'nextBalloonAt', seed: [240000, 720000], cd: [420000, 840000], p: () => 0.05,
+      gate: () => !balloonRide && !aiBalloonWalk && BALLOON.mode === 'docked',
+      fire: (p) => { startAiBalloon(p); return true; } },
+    // 🚀 별똥호 우주 산책 — 저녁 18.5시~엔 확률 2배(야간 발사 별구경). 쿨다운 길게 — 라이드가 길어 뜸하게.
+    { id: 'rocket', cdKey: 'nextRocketAt', seed: [420000, 1020000], cd: [720000, 1440000],
+      p: (h) => ((h >= 18.5 || h < 6) ? 0.07 : 0.035),
+      gate: () => !rocketRide && !aiRocketWalk && !rocketHop && ROCKET.mode === 'parked',
+      fire: (p) => { startAiRocket(p); return true; } },
+    // 트램펄린 폴짝 — 혼자 신나게 예닐곱 번.
+    { id: 'tramp', cdKey: 'nextTrampAt', seed: [180000, 480000], cd: [360000, 720000], p: () => 0.06,
+      gate: () => !aiTramp,
+      fire: (p) => startAiTramp(p) === 'ok' },
+    // 과일 따기 — 먹거나, 주인에게 물어다 준다.
+    { id: 'fruit', cdKey: 'nextFruitAt', seed: [240000, 600000], cd: [420000, 900000], p: () => 0.05,
+      gate: () => !aiFruit,
+      fire: (p) => startAiFruit(p) === 'ok' },
+    // 낙과 정리 — 주워서 바구니에. 확률은 낮게: 줍느라 딴 놀이 못 하지 않게.
+    { id: 'tidy', cdKey: 'nextTidyAt', seed: [300000, 600000], cd: [360000, 780000], p: () => 0.04,
+      gate: () => !aiTidy,
+      fire: (p) => startAiTidy(p) === 'ok' },
+    // 통통호 뱃놀이 — 모래섬 찍고 오는 왕복.
+    { id: 'ferry', cdKey: 'nextFerryAt', seed: [300000, 780000], cd: [480000, 960000], p: () => 0.04,
+      gate: () => !ferryRide && !aiFerryWalk && FERRY.mode === 'docked',
+      fire: (p) => { startAiFerry(p); return true; } },
+    // 그네/시소 — 빈 자리가 있을 때만: 쿨다운도 탑승이 성사될 때만 찍는다 (lateCd).
+    { id: 'swing', cdKey: 'nextSwingAt', cd: [180000, 360000], p: () => 0.14, lateCd: true,
+      fire: (p) => {
+          const seat = SWINGS.find((b) => !b.occupant) || SEESAWS.find((b) => !b.occupant);
+          if (!seat) return false;
+          p.nextSwingAt = Date.now() + 180000 + Math.random() * 180000;
+          mountBed(p, seat);
+          return true;
+      } },
+];
+// 셀렉터(현행): 배열을 코드 순서대로 훑는 순차 롤 — 종전 if-체인의 순수 이동이라 확률 의미
+// 동일 (실효 확률 = 자기 p × 앞 항목들의 (1-p) 곱). fire가 false를 돌려주면(자리 없음/후보
+// 없음) 다음 항목으로 계속 — 종전 'busy' 폴스루와 같다.
+function rollLeisure(p) {
+    const now = Date.now(), h = currentHour();
+    for (const a of LEISURE_ACTS) {
+        if (a.seed && !p[a.cdKey]) { p[a.cdKey] = now + a.seed[0] + Math.random() * (a.seed[1] - a.seed[0]); continue; }
+        if (isSleepTime(h)) continue;                       // 전 항목 공통 — 낮에만 (시드는 밤에도 심는다)
+        if (now <= (p[a.cdKey] || 0)) continue;
+        if (a.gate && !a.gate(p)) continue;
+        if (Math.random() >= a.p(h)) continue;
+        if (!a.lateCd) p[a.cdKey] = now + a.cd[0] + Math.random() * (a.cd[1] - a.cd[0]);
+        if (a.fire(p) !== false) return true;
+    }
+    return false;
+}
+
 function updateWander(p, delta) {
     const { ai, mover, pet } = p;
     if (p.poiWalk) return;                                           // 🧑‍🚀 달·정거장 산책 — 표면 자율은 updateRocket EVA 블록이 몬다
@@ -6362,79 +6433,8 @@ function updateWander(p, delta) {
         pet.walking = false;
         ai.wait -= delta;
         if (ai.wait <= 0) {
-            // Sometimes fancy a dip instead of a stroll (daytime only, on a cooldown) — so the
-            // pets end up swimming together, player included.
-            if (!isSleepTime(currentHour()) && Date.now() > (p.nextDipAt || 0) && Math.random() < 0.25) {
-                p.nextDipAt = Date.now() + 150000 + Math.random() * 150000;
-                startDip(p);
-                return;
-            }
-            // …or carry the rod to the shore and fish a couple of rounds alone (daytime, cooldown).
-            if (!isSleepTime(currentHour()) && !aiFishing && !(fishing && fishing.p === p)
-                && Date.now() > (p.nextFishAt || 0) && Math.random() < 0.09) {
-                p.nextFishAt = Date.now() + 300000 + Math.random() * 300000;
-                startAiFishing(p);
-                return;
-            }
-            // …또는 열기구를 타러 계류장으로 — 혼자 하늘 한 바퀴 (낮, 쿨다운, 열기구가 집에 있을 때).
-            // 첫 쿨다운은 시드만 — 앱 켜자마자 열기구가 떠나버리면 주인이 탈 틈이 없다 (E2E에서 실측).
-            if (!p.nextBalloonAt) p.nextBalloonAt = Date.now() + 240000 + Math.random() * 480000;
-            if (!p.nextSubAt) p.nextSubAt = Date.now() + 360000 + Math.random() * 600000;   // 🟡 첫 쿨다운 시드 (앱 시작 직후 출항 방지)
-            if (!subRide && !aiSubWalk && SUB.mode === 'docked' && !isSleepTime(currentHour())
-                && Date.now() > p.nextSubAt && Math.random() < 0.04) {
-                p.nextSubAt = Date.now() + 600000 + Math.random() * 600000;
-                startAiSub(p);
-                return;
-            }
-            else if (!isSleepTime(currentHour()) && !balloonRide && !aiBalloonWalk && BALLOON.mode === 'docked'
-                && Date.now() > p.nextBalloonAt && Math.random() < 0.05) {
-                p.nextBalloonAt = Date.now() + 420000 + Math.random() * 420000;
-                startAiBalloon(p);
-                return;
-            }
-            // …또는 별똥호를 타러 발사대로 — 혼자 우주 산책 (저녁 18.5~22시엔 확률 2배 = 야간 발사 별구경, 첫 쿨다운 시드)
-            if (!p.nextRocketAt) p.nextRocketAt = Date.now() + 420000 + Math.random() * 600000;
-            else if (!isSleepTime(currentHour()) && !rocketRide && !aiRocketWalk && !rocketHop && ROCKET.mode === 'parked'
-                && Date.now() > p.nextRocketAt && Math.random() < ((currentHour() >= 18.5 || currentHour() < 6) ? 0.07 : 0.035)) {
-                p.nextRocketAt = Date.now() + 720000 + Math.random() * 720000;   // 12~24분 — 라이드가 길어 뜸하게
-                startAiRocket(p);
-                return;
-            }
-            // …또는 트램펄린으로 폴짝 — 혼자 신나게 예닐곱 번 (낮, 쿨다운 시드 필수)
-            if (!p.nextTrampAt) p.nextTrampAt = Date.now() + 180000 + Math.random() * 300000;
-            else if (!isSleepTime(currentHour()) && !aiTramp && Date.now() > p.nextTrampAt && Math.random() < 0.06) {
-                p.nextTrampAt = Date.now() + 360000 + Math.random() * 360000;
-                if (startAiTramp(p) === 'ok') return;
-            }
-            // …또는 과일을 따러 — 먹거나, 주인에게 물어다 준다 (낮, 쿨다운 시드)
-            if (!p.nextFruitAt) p.nextFruitAt = Date.now() + 240000 + Math.random() * 360000;
-            else if (!isSleepTime(currentHour()) && !aiFruit && Date.now() > p.nextFruitAt && Math.random() < 0.05) {
-                p.nextFruitAt = Date.now() + 420000 + Math.random() * 480000;
-                if (startAiFruit(p) === 'ok') return;
-            }
-            // …또는 굴러다니는 낙과 정리 — 주워서 바구니에 (낮, 쿨다운 시드)
-            if (!p.nextTidyAt) p.nextTidyAt = Date.now() + 300000 + Math.random() * 300000;
-            else if (!isSleepTime(currentHour()) && !aiTidy && Date.now() > p.nextTidyAt && Math.random() < 0.04) {   // 확률은 다른 자율활동보다 낮게 — 과일 줍느라 딴 놀이 못 하지 않게
-                p.nextTidyAt = Date.now() + 360000 + Math.random() * 420000;
-                if (startAiTidy(p) === 'ok') return;
-            }
-            // …또는 통통호를 타러 잔교로 — 모래섬 찍고 오는 뱃놀이 (낮, 쿨다운 시드)
-            if (!p.nextFerryAt) p.nextFerryAt = Date.now() + 300000 + Math.random() * 480000;
-            else if (!isSleepTime(currentHour()) && !ferryRide && !aiFerryWalk && FERRY.mode === 'docked'
-                && Date.now() > p.nextFerryAt && Math.random() < 0.04) {
-                p.nextFerryAt = Date.now() + 480000 + Math.random() * 480000;
-                startAiFerry(p);
-                return;
-            }
-            // …or amble over to a free swing / seesaw and hop on (daytime, on its own cooldown).
-            if (!isSleepTime(currentHour()) && Date.now() > (p.nextSwingAt || 0) && Math.random() < 0.14) {
-                const seat = SWINGS.find((b) => !b.occupant) || SEESAWS.find((b) => !b.occupant);
-                if (seat) {
-                    p.nextSwingAt = Date.now() + 180000 + Math.random() * 180000;
-                    mountBed(p, seat);
-                    return;
-                }
-            }
+            // 산책 대신 가끔 딴짓 — 어떤 딴짓을 하는지는 여가 레지스트리(LEISURE_ACTS)가 정한다.
+            if (rollLeisure(p)) return;
             const target = pickTarget(mover.position);
             if (target) {
                 ai.target = target;

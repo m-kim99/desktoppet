@@ -5,6 +5,14 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Changed (🎛️ 자율 여가 레지스트리 — 체인 80줄을 활동 정의 배열로, 동작 무변경)
+- `updateWander`의 idle if-체인 10종을 `LEISURE_ACTS` 레지스트리 + 순차 셀렉터 `rollLeisure`로
+  순수 이동 — 확률·시드·쿨다운·폴스루('busy' → 다음 항목) 의미 전부 종전과 동일.
+- 새 사물의 자율 행동 추가 = 이제 **배열에 한 항목** (예전: 체인 삽입 위치·시드 관용구·싱글턴
+  게이트 다섯 군데 — 그러다 운동 매트·도서관이 실제로 누락됐던 구조를 청산하는 밑작업).
+- cdKey는 종전 필드명(`nextTrampAt` 등) 그대로 — endTramp처럼 밖에서 쿨다운을 미는 코드 호환.
+- 검증: world-smoke 10/10 · draws 206.
+
 ### Added (🎲 밸런스 시뮬레이터 — 자율활동 몬테카를로, npm run balance:world)
 - `scripts/balance-sim.mjs`: world.js 여가 결정 로직(체인 순서·시드·싱글턴·쿨다운 선소모
   버그까지)을 미러링해 가상 하루×N을 돌리고 **활동별 시작/일·분/일·점유율 표**를 낸다 —
