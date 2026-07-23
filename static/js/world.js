@@ -29,7 +29,7 @@ const savedLayout = await (async () => {
 // 🔄 월드 상태 KV 동기 (/api/world_kv — 폰·데탑 공유): 진행도·수집·월드 상태는 서버가 진실.
 // localStorage는 기기별이라 도감·조개·해금·발견이 접속 기기마다 갈렸다 (사용자 리포트 — 과일과 동일 원인).
 // 기기 유지: world-eco(성능)·world-layout(전용 API)·world-fruit-*(전용 API)·world-last-seen(기기별 리캡).
-const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked', 'world-pantry', 'world-icebox', 'world-market-used', 'world-recipes-unlocked', 'world-dishes-found',
+const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked', 'world-pantry', 'world-icebox', 'world-market-used', 'world-recipes-unlocked', 'world-dishes-found', 'world-kitchen-leftover',
     'world-sea-found', 'world-seabed-dug', 'world-islet-dug', 'world-discover', 'world-houselight', 'world-pets',
     'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-dex-seen-n', 'world-space-poi', 'world-moon-dug', 'world-last-seen'];   // last-seen 공유 = 기기 간 이중 정산 방지
 try {   // 부트 1회 — 서버 값이 로컬을 덮는다 (아래 모든 리더보다 먼저 실행되는 게 핵심)
@@ -4437,6 +4437,63 @@ function aiCookableRecipes() {
     return RECIPES.filter((r) => r.id !== 'eterncake' && !recipeLocked(r) && !recipeMissing(r).length);
 }
 let aiCookPost = null;   // { p, friend, mode: 'carry'|'eat', t } — 완성 후 대접/취식 전담
+// 🕰️ 부재 중 요리의 흔적 — 조리대 위에 클로슈가 놓인다(토스트 금지 원칙: 월드가 조용히 말한다).
+// 주방을 클릭하면 먼저 접시를 곁 펫에게 건네고, 그다음 클릭부터 평소처럼 패널.
+let kitchenLeftover = null;
+try { kitchenLeftover = JSON.parse(localStorage.getItem('world-kitchen-leftover') || 'null'); } catch (e) {}
+let leftoverGrp = null;
+function syncLeftoverMesh() {
+    const pr = PROPS.find((q) => q.type === 'kitchen');
+    if (!pr) return;
+    if (kitchenLeftover && !leftoverGrp) {
+        const geo = makeFoodGeo({ id: 'cloche', name: kitchenLeftover.name }, 0);
+        const mesh = new THREE.Mesh(geo, gradMat);
+        mesh.castShadow = true;
+        leftoverGrp = new THREE.Group();
+        leftoverGrp.position.set(pr.x, terrainHeight(pr.x, pr.z), pr.z);
+        leftoverGrp.rotation.y = pr.rotY || 0;
+        mesh.position.set(-0.28, 0.47, 0.03);
+        leftoverGrp.add(mesh);
+        scene.add(leftoverGrp);
+    } else if (!kitchenLeftover && leftoverGrp) {
+        leftoverGrp.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
+        scene.remove(leftoverGrp);
+        leftoverGrp = null;
+    }
+}
+const saveLeftover = () => { try { localStorage.setItem('world-kitchen-leftover', JSON.stringify(kitchenLeftover)); worldSync('world-kitchen-leftover'); } catch (e) {} };
+function claimLeftover() {
+    if (!kitchenLeftover) return false;
+    const pr = PROPS.find((q) => q.type === 'kitchen');
+    const near = possessed && pr && Math.hypot(possessed.mover.position.x - pr.x, possessed.mover.position.z - pr.z) < 2.2 ? possessed
+        : pets.find((q) => q !== possessed && !q.pet.sleeping && !q.bed && !q.dip && !q.food && (q.ai.state === 'idle' || q.ai.state === 'walk'));
+    if (!near) { showToast('🍽️ 접시를 받을 펫이 곁에 없어요'); return true; }
+    const name = kitchenLeftover.name;
+    kitchenLeftover = null;
+    saveLeftover();
+    syncLeftoverMesh();
+    giveFood(near, { id: 'cloche', name }, '조리대에서');
+    showToast(`🍽️ 부재 중 만들어둔 ${name}!`);
+    if (near !== possessed) {
+        releaseAI(near);
+        near.ai.state = 'busy';
+        aiCookPost = { p: near, mode: 'eat', t: 0 };
+    }
+    return true;
+}
+function offlineCookHook(n, win) {
+    const pool = aiCookableRecipes();
+    if (!pool.length || kitchenLeftover) return null;   // 접시가 이미 놓여 있으면 또 안 만든다
+    const r = pool[Math.floor(Math.random() * pool.length)];
+    consumeIngredients(r);   // 정산도 정직하게 — 재료 실차감
+    dishesFound[r.id] = (dishesFound[r.id] || 0) + 1;
+    try { localStorage.setItem('world-dishes-found', JSON.stringify(dishesFound)); worldSync('world-dishes-found'); } catch (e) {}
+    maybeUnlockHearts();
+    kitchenLeftover = { id: r.id, name: r.ko, t: Date.now() };
+    saveLeftover();
+    syncLeftoverMesh();
+    return { events: [{ t: randAwakeTime(win), text: `${petKo(pets[Math.floor(Math.random() * pets.length)] || pets[0])}가 주방에서 ${r.ko}를 만들어 조리대에 두었다 🍳` }], summary: `${r.ko} 한 접시` };
+}
 function startAiCook(p, opts = {}) {
     if (cooking || aiCookPost || !p || p === possessed || p.bed || p.dip || p.pet.sleeping || p.tramp || p.drink || p.food) return 'busy';
     if (p.ai.state !== 'idle' && p.ai.state !== 'walk') return 'busy';
@@ -5210,7 +5267,7 @@ function openCapsulePanel() {
 // 알려준다 (updateHoverPrompt). ----
 const PROP_CLICKS = {
     icebox: () => openIcebox(),
-    kitchen: () => toggleKitchenPanel(),
+    kitchen: () => { if (claimLeftover()) return; toggleKitchenPanel(); },
     pecktree: onPeckTreeClick,
     well: () => openWellPanel(),
     capsule: () => openCapsulePanel(),
@@ -7125,7 +7182,8 @@ const LEISURE_ACTS = [
     { id: 'cook', cdKey: 'nextCookAt', cd: [600000, 1200000], weight: 10, dur: 120,
       weightAt: (h) => ((h >= 11 && h < 12) || (h >= 17 && h < 18) ? 1.3 : 1),
       gate: () => !cooking && !aiCookPost && aiCookableRecipes().length > 0,
-      fire: (p) => startAiCook(p) === 'ok' },
+      fire: (p) => startAiCook(p) === 'ok',
+      offlineCap: 1, offline: (n, win) => offlineCookHook(n, win) },
 ];
 // 셀렉터: 2단 롤 — ① "딴짓을 할지"는 LEISURE_RATE 하나로 정하고(총량 노브 — 활동을 더
 // 추가해도 전체 딴짓 빈도는 그대로, 서로의 지분만 재분배), ② 자격 있는 활동만 모아 weight
@@ -8538,6 +8596,8 @@ if (statsOn) window.__worldDev = {
     mealCookP: (v) => { MEAL_COOK_P = v; return MEAL_COOK_P; },
     mealReset: (name) => { const p = pets.find((q) => q.name === name); if (!p) return null; p.mealDone = null; return true; },
     mealDoneOf: (name) => { const p = pets.find((q) => q.name === name); return p ? p.mealDone || null : null; },
+    leftover: () => (kitchenLeftover ? { ...kitchenLeftover, mesh: !!leftoverGrp } : null),
+    kitchenClick: () => { if (claimLeftover()) return 'claimed'; toggleKitchenPanel(); return 'panel'; },
     hsGo: () => {   // 숨바꼭질 강제 시작 (부팅 선점 청산)
         for (const q0 of pets) {
             if (q0 === possessed) continue;
@@ -21785,6 +21845,7 @@ function animate() {
     updateHideSeek(delta);
     updatePollActs();                        // 🎹⛏️🙈 전역 폴링 활동 추첨 (레지스트리)
     tickOfflineSettle();                     // 🕰️ 시간갭 감지 — 부팅·창 가림 복귀 시 부재 정산
+    if (kitchenLeftover && !leftoverGrp) syncLeftoverMesh();   // 지난 세션의 접시 복원
     updateHugSpot(delta);
     updateMemorialIsland(delta);
     updateHoverPrompt(delta);
