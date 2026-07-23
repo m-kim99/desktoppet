@@ -51,20 +51,20 @@ const range = (r, [a, b]) => a + r() * (b - a);
 // chainP: 롤당 확률(체인 모드) · weight: 설계 의도값(레지스트리 모드 — 물놀이 재설계 반영)
 // cd/seed: 초 단위 [min,max] · lock: 전역 싱글턴 키 · dur: 지속시간 초
 const ACTS = [
-    { id: 'dip',    ko: '물놀이',   chainP: () => 0.25,  weight: 35,  cd: [240, 480],   cdChain: [150, 300], seed: null, dur: (r) => 30 + r() * 30 },
+    { id: 'dip',    ko: '물놀이',   chainP: () => 0.25,  weight: 35,  cd: [240, 480],   cdChain: [150, 300], seed: null, weightAt: (h) => (h >= 11 && h < 16 ? 1.3 : 1), dur: (r) => 30 + r() * 30 },
     { id: 'fish',   ko: '낚시',     chainP: () => 0.09,  weight: 27,  cd: [300, 600],   seed: null,       lock: 'fish',    dur: (r) => 60 + r() * 60 },
     { id: 'sub',    ko: '잠수정',   chainP: () => 0.04,  weight: 11,  cd: [600, 1200],  seed: [360, 960], lock: 'sub',     dur: (r) => 200 + r() * 80 },
-    { id: 'balloon',ko: '열기구',   chainP: () => 0.05,  weight: 13,  cd: [420, 840],   seed: [240, 720], lock: 'balloon', dur: (r) => 170 + r() * 60 },
+    { id: 'balloon',ko: '열기구',   chainP: () => 0.05,  weight: 13,  cd: [420, 840],   seed: [240, 720], lock: 'balloon', weightAt: (h) => (h >= 17 && h < 19.5 ? 2 : 1), dur: (r) => 170 + r() * 60 },
     { id: 'rocket', ko: '로켓',     chainP: (h) => (h >= 18.5 ? 0.07 : 0.035), weight: 9, weightAt: (h) => (h >= 18.5 ? 2 : 1),
                     cd: [720, 1440], seed: [420, 1020], lock: 'rocket', dur: (r) => 420 + (r() < 0.4 ? 55 + r() * 55 : 0) },
     { id: 'tramp',  ko: '트램펄린', chainP: () => 0.06,  weight: 18,  cd: [360, 720],   seed: [180, 480], lock: 'tramp',   dur: (r) => 30 + r() * 20 },
-    { id: 'fruit',  ko: '과일따기', chainP: () => 0.05,  weight: 14,  cd: [420, 900],   seed: [240, 600], lock: 'fruit',   dur: (r) => 45 + r() * 30 },
+    { id: 'fruit',  ko: '과일따기', chainP: () => 0.05,  weight: 14,  cd: [420, 900],   seed: [240, 600], lock: 'fruit',   weightAt: (h) => (h >= 6 && h < 10 ? 1.5 : 1), dur: (r) => 45 + r() * 30 },
     { id: 'tidy',   ko: '낙과정리', chainP: () => 0.04,  weight: 10,   cd: [360, 780],   seed: [300, 600], lock: 'tidy',    dur: (r) => 45 + r() * 30, needsFruit: true },
-    { id: 'ferry',  ko: '페리',     chainP: () => 0.04,  weight: 8,   cd: [480, 960],   seed: [300, 780], lock: 'ferry',   dur: (r) => 170 + r() * 60 },
+    { id: 'ferry',  ko: '페리',     chainP: () => 0.04,  weight: 8,   cd: [480, 960],   seed: [300, 780], lock: 'ferry',   weightAt: (h) => (h >= 17 && h < 19.5 ? 1.5 : 1), dur: (r) => 170 + r() * 60 },
     { id: 'swing',  ko: '그네/시소',chainP: () => 0.14,  weight: 22,  cd: [180, 360],   seed: null,       dur: () => rideNow, cdAtMount: true },
     // 신설 2종 (레지스트리 모드 전용 — chainP 0: 구 체인엔 소비 블록이 없어 발동 자체가 없었다)
-    { id: 'gym',    ko: '스트레칭', chainP: () => 0,     weight: 10,   cd: [600, 1200],  seed: null,       lock: 'gym',     dur: (r) => 12 + r() * 6 },
-    { id: 'library',ko: '독서',     chainP: () => 0,     weight: 8,   cd: [600, 1200],  seed: null,       dur: (r) => 120 + r() * 120 },
+    { id: 'gym',    ko: '스트레칭', chainP: () => 0,     weight: 10,   cd: [600, 1200],  seed: null,       lock: 'gym',     weightAt: (h) => (h >= 6 && h < 9 ? 3 : 1), dur: (r) => 12 + r() * 6 },
+    { id: 'library',ko: '독서',     chainP: () => 0,     weight: 8,   cd: [600, 1200],  seed: null,       weightAt: (h) => (h >= 19 ? 2 : 1), dur: (r) => 120 + r() * 120 },
 ];
 // 체인 검사 순서 = 코드 순서 (dip → fish → sub → balloon → rocket → tramp → fruit → tidy → ferry → swing)
 

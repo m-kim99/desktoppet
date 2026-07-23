@@ -6326,6 +6326,7 @@ function steerToward(p, target, delta) {
 const LEISURE_ACTS = [
     // 물놀이 — 펫들이 같이 헤엄치게 (주인 포함). 연못/바다는 startDip이 코인플립.
     { id: 'dip', cdKey: 'nextDipAt', cd: [240000, 480000], weight: 35, dur: 45,
+      weightAt: (h) => (h >= 11 && h < 16 ? 1.3 : 1),   // 한낮 물놀이
       fire: (p) => startDip(p) },
     // 낚싯대를 메고 물가로 — 혼자 두어 캐스트. offline = 로그만: AI 어획은 라이브에서도 도감에
     // 안 오른다(주인 몫) — 정산이 라이브보다 후하면 안 된다.
@@ -6339,6 +6340,7 @@ const LEISURE_ACTS = [
       fire: (p) => { startAiSub(p); return true; } },
     // 열기구 하늘 한 바퀴 — 계류 중일 때만.
     { id: 'balloon', cdKey: 'nextBalloonAt', seed: [240000, 720000], cd: [420000, 840000], weight: 13, dur: 200,
+      weightAt: (h) => (h >= 17 && h < 19.5 ? 2 : 1),   // 해질녘 하늘에 열기구
       gate: () => !balloonRide && !aiBalloonWalk && BALLOON.mode === 'docked',
       fire: (p) => { startAiBalloon(p); return true; } },
     // 🚀 별똥호 우주 산책 — 저녁 18.5시~엔 성향 2배(야간 발사 별구경). 쿨다운 길게 — 라이드가 길어 뜸하게.
@@ -6352,6 +6354,7 @@ const LEISURE_ACTS = [
       fire: (p) => startAiTramp(p) === 'ok' },
     // 과일 따기 — 먹거나, 주인에게 물어다 준다. offline = 부재 중에도 따 먹고 몇 알 흘려둔다.
     { id: 'fruit', cdKey: 'nextFruitAt', seed: [240000, 600000], cd: [420000, 900000], weight: 14, dur: 60,
+      weightAt: (h) => (h >= 6 && h < 10 ? 1.5 : 1),   // 아침 과일
       gate: () => !aiFruit,
       fire: (p) => startAiFruit(p) === 'ok',
       offlineCap: 4, offline: (n, win) => offlineFruitHook(n, win) },
@@ -6362,6 +6365,7 @@ const LEISURE_ACTS = [
       offlineCap: 8, offline: (n, win) => offlineTidyHook(n, win) },
     // 통통호 뱃놀이 — 모래섬 찍고 오는 왕복.
     { id: 'ferry', cdKey: 'nextFerryAt', seed: [300000, 780000], cd: [480000, 960000], weight: 8, dur: 200,
+      weightAt: (h) => (h >= 17 && h < 19.5 ? 1.5 : 1),   // 해질녘 뱃놀이
       gate: () => !ferryRide && !aiFerryWalk && FERRY.mode === 'docked',
       fire: (p) => { startAiFerry(p); return true; } },
     // 그네/시소 — 빈 자리가 있을 때만 (자리 없음 = 시작 실패 → 셀렉터가 3초 재시도).
@@ -6375,10 +6379,12 @@ const LEISURE_ACTS = [
     // 🧘 운동 매트 스트레칭 — 0c21ead부터 xAutoAt 선언만 있고 소비 블록이 없어 한 번도 자율
     // 발동 못 하던 활동: 레지스트리 항목 하나로 부활 (코드 수정 없이 데이터 추가만 — 이 구조의 목적).
     { id: 'gym', cdKey: 'nextGymAt', cd: [600000, 1200000], weight: 10, dur: 15,
+      weightAt: (h) => (h >= 6 && h < 9 ? 3 : 1),   // 아침 몸풀기
       gate: () => !gymBusy && PROPS.some((q) => q.type === 'gym'),
       fire: (p) => { petStretch(p); return true; } },
     // 📚 도서관 독서 — 위와 같은 사연의 부활 조. 2~4분 읽고 스스로 일어난다 (auto 타이머).
     { id: 'library', cdKey: 'nextLibAt', cd: [600000, 1200000], weight: 8, dur: 180,
+      weightAt: (h) => (h >= 19 ? 2 : 1),   // 밤 독서 (수면 22시 전까지)
       gate: () => BEDS.some((b) => b.id.startsWith('libchair') && !b.occupant),
       fire: (p) => { petRead(p, true); return true; } },
 ];
@@ -7659,12 +7665,12 @@ if (statsOn) window.__worldDev = {
     fishState: () => (fishing ? fishing.state : null),   // 낚시 헤드리스 검증용
     aiFishState: () => (aiFishing ? aiFishing.state : null),   // 절친 자율 낚시 검증용
     actStats: () => ({ ...actStats }),   // 자율활동 시작 카운터 — 분포 검증(레지스트리 weight와 대조)용
-    leisureState: (name) => {   // 물림 검증: 자격 풀의 실효 weight + 최근 시작 스탬프
+    leisureState: (name, all = false) => {   // 물림·시간대 검증: 실효 weight + 최근 시작 스탬프 (all=쿨다운·게이트 무시 — 공식 자체 검증용)
         const p = pets.find((q) => q.name === name);
         if (!p) return null;
         const now = Date.now(), h = currentHour();
         return {
-            pool: LEISURE_ACTS.filter((a) => now > (p[a.cdKey] || 0) && (!a.gate || a.gate(p)))
+            pool: LEISURE_ACTS.filter((a) => all || (now > (p[a.cdKey] || 0) && (!a.gate || a.gate(p))))
                 .map((a) => ({ id: a.id, w: +leisureWeightOf(p, a, now, h).toFixed(3) })),
             last: { ...(p.actLast || {}) },
         };
