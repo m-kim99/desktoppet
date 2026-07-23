@@ -79,6 +79,7 @@ export const GLB_ACCESSORIES = [
     { id: 'santa-hat', label: '🎅 산타모자' },
     { id: 'straw-hat', label: '👒 밀짚모자' },   // 보물찾기 1호 보상 (월드에서 발굴하면 열림)
     { id: 'ribbon',    label: '🎀 리본' },       // 보물찾기 2호 보상
+    { id: 'space-helmet', label: '🧑‍🚀 우주 헬멧' },   // 달 크레이터 첫 발굴 보상
 ];
 
 // Classic floppy santa hat: white brim ring, red cone tilted at the tip, white pompom at the point.
@@ -141,7 +142,30 @@ function makeRibbon(brimR) {
     g.traverse(o => { if (o.isMesh) o.castShadow = true; });
     return g;
 }
-const ACCESSORY_BUILDERS = { 'santa-hat': makeSantaHat, 'straw-hat': makeStrawHat, 'ribbon': makeRibbon };
+// 우주 헬멧: 머리를 감싸는 투명 버블 + 목 실링 링 + 안테나 스터브(빨간 팁) — 달 발굴 보상.
+function makeSpaceHelmet(brimR) {
+    const g = new THREE.Group();
+    const glass = new THREE.MeshStandardMaterial({ color: 0xcfe8f4, transparent: true, opacity: 0.26, roughness: 0.12, metalness: 0.08, side: THREE.DoubleSide, depthWrite: false });
+    const metal = new THREE.MeshStandardMaterial({ color: 0xd8dde4, roughness: 0.4, metalness: 0.5 });
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(brimR * 1.6, 20, 16), glass);
+    dome.position.y = brimR * 0.1;   // 정수리 앵커 기준 살짝 아래 — 머리를 감싼다
+    g.add(dome);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(brimR * 1.28, brimR * 0.15, 10, 24), metal);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = -brimR * 1.05;
+    g.add(ring);
+    const stub = new THREE.Mesh(new THREE.CylinderGeometry(brimR * 0.06, brimR * 0.07, brimR * 0.55, 6), metal);
+    stub.position.set(brimR * 1.15, brimR * 1.25, 0);
+    stub.rotation.z = -0.45;
+    g.add(stub);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(brimR * 0.13, 8, 6), new THREE.MeshStandardMaterial({ color: 0xff8c7a, emissive: 0x772a1e, emissiveIntensity: 0.5, roughness: 0.5 }));
+    tip.position.set(brimR * 1.38, brimR * 1.52, 0);
+    g.add(tip);
+    g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    dome.castShadow = false;   // 투명 돔 그림자 blob 방지
+    return g;
+}
+const ACCESSORY_BUILDERS = { 'santa-hat': makeSantaHat, 'straw-hat': makeStrawHat, 'ribbon': makeRibbon, 'space-helmet': makeSpaceHelmet };
 
 // Wear a 코디 item (id) or take the current one off (id = null/undefined). The item is parented to
 // `wrap`, so every motion (nod, spin, sleep droop, …) carries it naturally.
