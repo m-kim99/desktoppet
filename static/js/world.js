@@ -3092,7 +3092,7 @@ function makeGym() {
     g.add(dumb);
     return g;
 }
-let gymBusy = false, gymAutoAt = Date.now() + 18 * 60000;
+let gymBusy = false;
 async function petStretch(player) {
     if (gymBusy) return;
     const pr = PROPS.find((q) => q.type === 'gym');
@@ -3210,13 +3210,12 @@ function mkOpenBook() {
     scene.add(b);
     return b;
 }
-let libAutoAt = Date.now() + 14 * 60000;
-async function petRead(player) {
+async function petRead(player, auto = false) {
     const bed = BEDS.find((b) => b.id.startsWith('libchair') && !b.occupant);
     const p = player || pets.find((q) => q !== possessed && !q.pet.sleeping && !q.bed && !q.dip
         && (q.ai.state === 'idle' || q.ai.state === 'walk'));
     if (!bed || !p || p.bed) { if (!player) return; showToast('📚 지금은 빈 의자가 없어요'); return; }
-    p._libUntil = player ? 0 : Date.now() + (2 + Math.random() * 2) * 60000;   // 자율 독서만 타이머로 일어난다
+    p._libUntil = (player && !auto) ? 0 : Date.now() + (2 + Math.random() * 2) * 60000;   // 자율 독서만 타이머로 일어난다 (auto = 레지스트리가 펫을 지정)
     logWorldEvent(`${petKo(p)}가 도서관 의자에서 책을 폈다 📚`);
     mountBed(p, bed);
 }
@@ -6386,6 +6385,15 @@ const LEISURE_ACTS = [
           mountBed(p, seat);
           return true;
       } },
+    // 🧘 운동 매트 스트레칭 — 0c21ead부터 xAutoAt 선언만 있고 소비 블록이 없어 한 번도 자율
+    // 발동 못 하던 활동: 레지스트리 항목 하나로 부활 (코드 수정 없이 데이터 추가만 — 이 구조의 목적).
+    { id: 'gym', cdKey: 'nextGymAt', cd: [600000, 1200000], weight: 6, dur: 15,
+      gate: () => !gymBusy && PROPS.some((q) => q.type === 'gym'),
+      fire: (p) => { petStretch(p); return true; } },
+    // 📚 도서관 독서 — 위와 같은 사연의 부활 조. 2~4분 읽고 스스로 일어난다 (auto 타이머).
+    { id: 'library', cdKey: 'nextLibAt', cd: [600000, 1200000], weight: 8, dur: 180,
+      gate: () => BEDS.some((b) => b.id.startsWith('libchair') && !b.occupant),
+      fire: (p) => { petRead(p, true); return true; } },
 ];
 // 셀렉터: 2단 롤 — ① "딴짓을 할지"는 LEISURE_RATE 하나로 정하고(총량 노브 — 활동을 더
 // 추가해도 전체 딴짓 빈도는 그대로, 서로의 지분만 재분배), ② 자격 있는 활동만 모아 weight

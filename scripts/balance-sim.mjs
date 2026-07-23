@@ -59,6 +59,9 @@ const ACTS = [
     { id: 'tidy',   ko: '낙과정리', chainP: () => 0.04,  weight: 9,   cd: [360, 780],   seed: [300, 600], lock: 'tidy',    dur: (r) => 45 + r() * 30, needsFruit: true },
     { id: 'ferry',  ko: '페리',     chainP: () => 0.04,  weight: 8,   cd: [480, 960],   seed: [300, 780], lock: 'ferry',   dur: (r) => 170 + r() * 60 },
     { id: 'swing',  ko: '그네/시소',chainP: () => 0.14,  weight: 28,  cd: [180, 360],   seed: null,       dur: () => RIDE_SEC, cdAtMount: true },
+    // 신설 2종 (레지스트리 모드 전용 — chainP 0: 구 체인엔 소비 블록이 없어 발동 자체가 없었다)
+    { id: 'gym',    ko: '스트레칭', chainP: () => 0,     weight: 6,   cd: [600, 1200],  seed: null,       lock: 'gym',     dur: (r) => 12 + r() * 6 },
+    { id: 'library',ko: '독서',     chainP: () => 0,     weight: 8,   cd: [600, 1200],  seed: null,       dur: (r) => 120 + r() * 120 },
 ];
 // 체인 검사 순서 = 코드 순서 (dip → fish → sub → balloon → rocket → tramp → fruit → tidy → ferry → swing)
 
