@@ -6342,11 +6342,11 @@ function steerToward(p, target, delta) {
 const LEISURE_ACTS = [
     // 물놀이 — 펫들이 같이 헤엄치게 (주인 포함). 연못/바다는 startDip이 코인플립.
     { id: 'dip', cdKey: 'nextDipAt', cd: [150000, 300000], weight: 100,
-      fire: (p) => { startDip(p); return true; } },
+      fire: (p) => startDip(p) },
     // 낚싯대를 메고 물가로 — 혼자 두어 캐스트.
     { id: 'fish', cdKey: 'nextFishAt', cd: [300000, 600000], weight: 27,
       gate: (p) => !aiFishing && !(fishing && fishing.p === p),
-      fire: (p) => { startAiFishing(p); return true; } },
+      fire: (p) => startAiFishing(p) },
     // 🟡 노랑호 잠수 투어 — 정박 중일 때만.
     { id: 'sub', cdKey: 'nextSubAt', seed: [360000, 960000], cd: [600000, 1200000], weight: 11,
       gate: () => !subRide && !aiSubWalk && SUB.mode === 'docked',
@@ -6376,12 +6376,11 @@ const LEISURE_ACTS = [
     { id: 'ferry', cdKey: 'nextFerryAt', seed: [300000, 780000], cd: [480000, 960000], weight: 8,
       gate: () => !ferryRide && !aiFerryWalk && FERRY.mode === 'docked',
       fire: (p) => { startAiFerry(p); return true; } },
-    // 그네/시소 — 빈 자리가 있을 때만: 쿨다운도 탑승이 성사될 때만 찍는다 (lateCd).
-    { id: 'swing', cdKey: 'nextSwingAt', cd: [180000, 360000], weight: 28, lateCd: true,
+    // 그네/시소 — 빈 자리가 있을 때만 (자리 없음 = 시작 실패 → 셀렉터가 3초 재시도).
+    { id: 'swing', cdKey: 'nextSwingAt', cd: [180000, 360000], weight: 28,
       fire: (p) => {
           const seat = SWINGS.find((b) => !b.occupant) || SEESAWS.find((b) => !b.occupant);
           if (!seat) return false;
-          p.nextSwingAt = Date.now() + 180000 + Math.random() * 180000;
           mountBed(p, seat);
           return true;
       } },
@@ -6391,9 +6390,11 @@ const LEISURE_ACTS = [
 // 비례로 하나 뽑는다. 종전 if-체인은 배열 순서가 곧 확률이라(앞 항목의 (1-p)가 곱해짐) 항목
 // 추가가 기존 밸런스를 조용히 밀었다 — 이제 순서는 의미 없다.
 // weight는 종전 실효 확률 비례 마이그레이션 값, rate 0.40은 시뮬 역산(총량 -0.5%, 활동별
-// ±5% 이내 — balance-sim --mode both). 뽑힌 활동이 시작에 실패하면(자리/후보 없음) 그 틱은
-// 그냥 배회 — 재추첨하지 않는다.
+// ±5% 이내 — balance-sim --mode both). fire가 false를 돌려주면(자리/후보/물가 없음) 시작
+// 실패: 쿨다운은 성공에만 찍고 실패는 3초 재시도만 — 예전엔 실패해도 6~15분 쿨다운이 타서
+// 헛방이 그 활동의 다음 기회까지 지웠다 (성공 확인 전 소진 금지).
 const LEISURE_RATE = 0.40;
+const LEISURE_RETRY_MS = 3000;
 function rollLeisure(p) {
     const now = Date.now(), h = currentHour();
     for (const a of LEISURE_ACTS) {                         // 첫 도달 시드 — 밤에도 심는다 (부팅 보호)
@@ -6407,8 +6408,9 @@ function rollLeisure(p) {
     let x = Math.random() * w.reduce((s, v) => s + v, 0);
     let pick = pool[pool.length - 1];
     for (let i = 0; i < pool.length; i++) { x -= w[i]; if (x <= 0) { pick = pool[i]; break; } }
-    if (!pick.lateCd) p[pick.cdKey] = now + pick.cd[0] + Math.random() * (pick.cd[1] - pick.cd[0]);
-    return pick.fire(p) !== false;
+    const ok = pick.fire(p) !== false;
+    p[pick.cdKey] = now + (ok ? pick.cd[0] + Math.random() * (pick.cd[1] - pick.cd[0]) : LEISURE_RETRY_MS);
+    return ok;
 }
 
 function updateWander(p, delta) {
@@ -11565,7 +11567,7 @@ function pickDipWaypoint(p) {
     const r = ISLAND_R + 0.5 + Math.random() * 1.5;
     return { x: Math.sin(a) * r, z: Math.cos(a) * r };
 }
-async function startDip(p, want) {
+function startDip(p, want) {
     const kind = (want === 'pond' || want === 'sea') ? want : (Math.random() < 0.5 ? 'pond' : 'sea');   // <swim> 태그는 장소를 고른다
     let entry = null;
     for (let i = 0; i < 10 && !entry; i++) {
@@ -11574,7 +11576,7 @@ async function startDip(p, want) {
         const z = kind === 'pond' ? pondPropRef.z + Math.cos(a) * 0.85 : Math.cos(a) * (ISLAND_R - 0.55);
         if (!world.isBlocked(x, z)) entry = { x, z, a };
     }
-    if (!entry) return;
+    if (!entry) return false;   // 물가가 다 막혔다 — 시작 실패 (셀렉터가 쿨다운 대신 3초 재시도)
     logWorldEvent(`${petKo(p)}가 ${kind === 'pond' ? '연못' : '바다'}로 물놀이를 하러 갔다`);
     p.dip = {
         kind, phase: 'approach', swimLeft: 9 + Math.random() * 9, waypoint: null,
@@ -11582,9 +11584,12 @@ async function startDip(p, want) {
             ? { x: pondPropRef.x, z: pondPropRef.z }
             : { x: Math.sin(entry.a) * (ISLAND_R + 0.8), z: Math.cos(entry.a) * (ISLAND_R + 0.8) },
     };
-    await gotoAsync(p, entry.x, entry.z);
-    if (!p.dip) return;
-    p.dip.phase = 'enter';
+    (async () => {
+        await gotoAsync(p, entry.x, entry.z);
+        if (!p.dip) return;
+        p.dip.phase = 'enter';
+    })();
+    return true;
 }
 function endDip(p) {
     p.dip = null;
@@ -19250,8 +19255,8 @@ function aiAfterRound(f) {
     if (f.castsLeft <= 0) endAiFishing();   // 남았으면 idle에서 1.2초 숨 고르고 다시 던진다
 }
 function startAiFishing(p) {
-    if (aiFishing || (fishing && fishing.p === p)) return;
-    if (p === possessed || p.bed || p.dip || p.pet.sleeping) return;   // 자거나 놀이 중이면 다음 기회에
+    if (aiFishing || (fishing && fishing.p === p)) return false;
+    if (p === possessed || p.bed || p.dip || p.pet.sleeping) return false;   // 자거나 놀이 중이면 다음 기회에
     const idx = islandOf(p.mover.position.x, p.mover.position.z);
     const isl = idx >= 0 ? ISLANDS[idx] : ISLANDS[0];
     // 물가 지점: 펫에서 가장 가까운 림 각도부터 좌우로 훑어 통행 가능한 첫 자리 (짧은 산책 + 막힘 최소)
@@ -19262,7 +19267,7 @@ function startAiFishing(p) {
         const x = isl.x + Math.cos(a) * (isl.r - 0.55), z = isl.z + Math.sin(a) * (isl.r - 0.55);
         if (!world.isBlocked(x, z)) { sx = x; sz = z; break; }
     }
-    if (sx === null) return;
+    if (sx === null) return false;   // 물가 24방향 전부 막힘 — 시작 실패 (쿨다운 안 태움)
     releaseAI(p);
     p.ai.state = 'goto';
     p.ai.target = { x: sx, z: sz };
@@ -19282,6 +19287,7 @@ function startAiFishing(p) {
     };
     p.ai.onArrive = aiFishing.ownArrive;
     logWorldEvent(`${petKo(p)}가 낚싯대를 챙겨 물가로 나섰다 🎣`);
+    return true;
 }
 function endAiFishing() {
     if (!aiFishing) return;
