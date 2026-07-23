@@ -14060,15 +14060,14 @@ function applyTeleVista() {
         showToast('⛏️ 달 표면에 뭔가 묻혀 있는 게 보인다!');
         logWorldEvent('망원경으로 달을 보다가 묻힌 보물 자국을 발견했다 ⛏️👀');
     }
-    controlHint.textContent = `🔭 ${label} — ←→${IS_TOUCH ? '/스틱' : ''} 다른 풍경 · ${IS_TOUCH ? '✋' : '⌘'}/Esc 그만보기`;
+    controlHint.textContent = `🔭 ${label} — ←→${IS_TOUCH ? '/스틱' : ''} 다른 풍경 · 드래그 시점·휠 줌 · ${IS_TOUCH ? '✋' : '⌘'}/Esc 그만보기`;
     controlHint.style.display = 'block';
 }
 function startTeleView() {
     if (teleView || Date.now() < teleBusyUntil) return;
     teleBusyUntil = Date.now() + 3000;
-    teleView = { vistas: makeTeleVistas(), idle: 0, lh: true, rh: true, th: true, dugSaid: false, savedPos: camera.position.clone(), savedTgt: controls.target.clone() };
-    controls.enabled = false;
-    teleMask.style.opacity = '1';
+    teleView = { vistas: makeTeleVistas(), idle: 0, lh: true, rh: true, th: true, dugSaid: false, savedPos: camera.position.clone(), savedTgt: controls.target.clone(), camPrev: camera.position.clone() };
+    teleMask.style.opacity = '1';   // 컨트롤은 켠 채 — 평상시처럼 드래그 회전·휠 줌으로 망원경을 젓는다 (탭 = 종료, 드래그는 slop 판정이 걸러줌)
     wakeSoft(7000);
     playBuffer(swishBuf, { vol: 0.28, rate: 1.5, filterFreq: 1300 });
     applyTeleVista();
@@ -14077,7 +14076,6 @@ function endTeleView() {
     if (!teleView) return;
     camera.position.copy(teleView.savedPos);
     controls.target.copy(teleView.savedTgt);
-    controls.enabled = true;
     teleMask.style.opacity = '0';
     teleView = null;
     if (!possessed) controlHint.style.display = 'none';
@@ -14085,6 +14083,10 @@ function endTeleView() {
 function updateTeleView(delta) {
     if (!teleView) return;
     teleView.idle += delta;
+    if (teleView.camPrev.distanceToSquared(camera.position) > 1e-6) {   // 드래그·줌 중이면 방치 아님
+        teleView.idle = 0;
+        teleView.camPrev.copy(camera.position);
+    }
     const L = heldKeys.has('ArrowLeft'), R = heldKeys.has('ArrowRight');
     let sw = 0;
     if (L && !teleView.lh) sw = -1;
