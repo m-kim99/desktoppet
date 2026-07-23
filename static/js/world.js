@@ -14422,50 +14422,83 @@ function updateRocket(delta) {
         const d = Math.hypot(dx, dz);
         if (d > poi.walkR) { mp_.x = poi.x + (dx / d) * poi.walkR; mp_.z = poi.z + (dz / d) * poi.walkR; }
         if (q === possessed) { poiLeaderOn = true; continue; }
-        let lead = possessed && possessed.poiWalk === poi ? possessed.mover.position : null;
-        let stopD = 1.05;
-        if (q.vendGo) {   // 🥤 자판기로 — 따라 뽑기/자율 뽑기 공용
+        // 🚶 존 배회(앵커 배회 + 로컬 어포던스): 무빙의 펫은 조종 여부와 무관하게 각자 독립적으로 산다.
+        // 목표는 존 안에서만 생성(본토 점프 원천 차단), 회전은 보간(스냅 금지). 따라다니기 없음 —
+        // 사용자가 아무도 조종 안 하고 구경만 할 수도 있으니까.
+        if (!q.poiAmble) q.poiAmble = { mode: 'pause', t: 0.8 + Math.random() * 1.5, tx: mp_.x, tz: mp_.z, spd: 0.72, hopT: 9, hops: 0, faceA: null };
+        const am = q.poiAmble;
+        const turnTo = (target, rate) => {
+            let dd = target - q.mover.rotation.y;
+            while (dd > Math.PI) dd -= Math.PI * 2;
+            while (dd < -Math.PI) dd += Math.PI * 2;
+            q.mover.rotation.y += THREE.MathUtils.clamp(dd, -rate, rate);
+        };
+        const rollNext = () => {   // 다음 심심풀이 — 존별 어포던스 롤
+            const r_ = Math.random();
+            am.faceA = null;
+            am.spd = 0.62 + Math.random() * 0.22;
+            if (poi.id === 'moon') {
+                if (r_ < 0.22) { am.mode = 'flag'; am.tx = poi.x - 1.5; am.tz = poi.z + 1.0; }   // 깃발 구경 명당
+                else if (r_ < 0.5) { am.mode = 'hop'; am.hops = 2 + Math.floor(Math.random() * 3); am.hopT = 0; }
+                else {
+                    am.mode = 'stroll';
+                    const aa = Math.random() * Math.PI * 2, rr = 0.6 + Math.random() * (poi.walkR * 0.8);
+                    am.tx = poi.x + Math.cos(aa) * rr; am.tz = poi.z + Math.sin(aa) * rr;
+                }
+            } else if (r_ < 0.12 && !q.food && !vendFly && !q.vendGo) { q.vendGo = 12; am.mode = 'pause'; am.t = 1; }
+            else if (r_ < 0.42) {   // 난간 구경 — 갑판 가장자리에 서서 발밑 세계를 내려다본다
+                am.mode = 'rail';
+                const aa = Math.random() * Math.PI * 2;
+                am.tx = poi.x + Math.cos(aa) * 3.5; am.tz = poi.z + Math.sin(aa) * 3.5;
+            } else {
+                am.mode = 'stroll';
+                const aa = Math.random() * Math.PI * 2, rr = 0.6 + Math.random() * (poi.walkR * 0.8);
+                am.tx = poi.x + Math.cos(aa) * rr; am.tz = poi.z + Math.sin(aa) * rr;
+            }
+        };
+        if (q.vendGo) {   // 🥤 자판기 — 어포던스 액션 (따라 뽑기·자율 뽑기 공용)
             q.vendGo = Math.max(0, q.vendGo - delta);
             if (poi.id === 'station' && q.vendGo > 0) {
-                const vd = Math.hypot(mp_.x - VEND_FRONT.x, mp_.z - VEND_FRONT.z);
-                if (vd < 0.55) {
-                    if (!vendFly && Date.now() >= vendBusyUntil) { q.vendGo = 0; vendGacha(q); }
-                } else { lead = { x: VEND_FRONT.x, z: VEND_FRONT.z }; stopD = 0.5; }
-            } else q.vendGo = 0;
-        } else if (!lead) {   // 🚶 무빙의 자율 어슬렁 — 산책 반경 안 랜덤 목적지 (동상 방지)
-            if (!q.poiAmble) q.poiAmble = { tx: mp_.x, tz: mp_.z, wait: 1 + Math.random() * 2, hopT: 9 };
-            const am = q.poiAmble;
-            if (am.wait > 0) {
-                am.wait -= delta;
-                q.pet.walking = false;
-                if (am.wait <= 0) {   // 새 목적지 — 달은 20% 깃발 곁, 정거장은 8% 자판기 뽑기
-                    if (poi.id === 'station' && Math.random() < 0.08 && !q.food) { q.vendGo = 12; }
-                    else if (poi.id === 'moon' && Math.random() < 0.2) {
-                        am.tx = poi.x - 1.65; am.tz = poi.z + 1.2;   // 깃발 언저리
-                    } else {
-                        const aa = Math.random() * Math.PI * 2, rr = Math.random() * poi.walkR * 0.85;
-                        am.tx = poi.x + Math.cos(aa) * rr;
-                        am.tz = poi.z + Math.sin(aa) * rr;
-                    }
-                    if (poi.id === 'moon' && Math.random() < 0.35) am.hopT = 0;   // 저중력 폴짝폴짝
+                const fx = VEND_FRONT.x - mp_.x, fz = VEND_FRONT.z - mp_.z;
+                const fd = Math.hypot(fx, fz);
+                if (fd < 0.55) {
+                    q.pet.walking = false;
+                    if (!vendFly && Date.now() >= vendBusyUntil) { q.vendGo = 0; vendGacha(q); am.mode = 'pause'; am.t = 3; }
+                } else {
+                    mp_.x += (fx / fd) * Math.min(fd, 0.95 * delta);
+                    mp_.z += (fz / fd) * Math.min(fd, 0.95 * delta);
+                    turnTo(Math.atan2(fx, fz), 5.5 * delta);
+                    q.pet.walking = true;
                 }
-            } else { lead = { x: am.tx, z: am.tz }; stopD = 0.3; }
-            if (am.hopT < 0.85) am.hopT += delta;
-        }
-        if (lead) {
-            const fx = lead.x - mp_.x, fz = lead.z - mp_.z;
+            } else q.vendGo = 0;
+        } else if (am.mode === 'pause' || am.mode === 'gaze') {
+            am.t -= delta;
+            q.pet.walking = false;
+            if (am.faceA !== null) turnTo(am.faceA, 2.4 * delta);
+            if (am.t <= 0) rollNext();
+        } else if (am.mode === 'hop') {   // 🌕 저중력 폴짝 세션
+            q.pet.walking = false;
+            if (am.hopT >= 0.85) {
+                if (am.hops > 0) { am.hops -= 1; am.hopT = 0; }
+                else { am.mode = 'pause'; am.t = 1.5 + Math.random() * 2.5; }
+            }
+        } else {   // stroll·flag·rail — 존 안 목적지로 슬렁슬렁 (회전 보간)
+            const fx = am.tx - mp_.x, fz = am.tz - mp_.z;
             const fd = Math.hypot(fx, fz);
-            if (fd > stopD) {
-                mp_.x += (fx / fd) * Math.min(fd - stopD + 0.1, (q.poiAmble && !q.vendGo ? 0.78 : 1.15) * delta);
-                mp_.z += (fz / fd) * Math.min(fd - stopD + 0.1, (q.poiAmble && !q.vendGo ? 0.78 : 1.15) * delta);
-                q.mover.rotation.y = Math.atan2(fx, fz);
+            if (fd > 0.28) {
+                mp_.x += (fx / fd) * Math.min(fd, am.spd * delta);
+                mp_.z += (fz / fd) * Math.min(fd, am.spd * delta);
+                turnTo(Math.atan2(fx, fz), 4.5 * delta);
                 q.pet.walking = true;
             } else {
                 q.pet.walking = false;
-                if (q.poiAmble && !q.vendGo && q.poiAmble.wait <= 0) q.poiAmble.wait = 2 + Math.random() * 4;   // 도착 — 두리번
+                if (am.mode === 'flag') { am.mode = 'gaze'; am.t = 3 + Math.random() * 3; am.faceA = Math.atan2((poi.x - 1.92) - mp_.x, (poi.z + 1.31) - mp_.z); }   // 깃발을 마주보고
+                else if (am.mode === 'rail') { am.mode = 'gaze'; am.t = 4 + Math.random() * 4; am.faceA = Math.atan2(mp_.x - poi.x, mp_.z - poi.z); }   // 바깥 — 발밑 세계 구경
+                else { am.mode = 'pause'; am.t = 2 + Math.random() * 4; am.faceA = null; }
             }
         }
-        const hop = q.poiAmble && q.poiAmble.hopT < 0.85 ? Math.sin((q.poiAmble.hopT / 0.85) * Math.PI) * 0.5 : 0;
+        if (am.hopT < 0.85) am.hopT += delta;
+        const hop = am.hopT < 0.85 ? Math.sin((am.hopT / 0.85) * Math.PI) * 0.5 : 0;
         mp_.y = poiSurfaceY(poi, mp_.x, mp_.z) + hop;
         q.mover.rotation.x = 0;
         q.mover.rotation.z = 0;
