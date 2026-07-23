@@ -6387,6 +6387,11 @@ const LEISURE_ACTS = [
       weightAt: (h) => (h >= 19 ? 2 : 1),   // 밤 독서 (수면 22시 전까지)
       gate: () => BEDS.some((b) => b.id.startsWith('libchair') && !b.occupant),
       fire: (p) => { petRead(p, true); return true; } },
+    // ☕🍞 부스 간식 — 아침엔 커피, 오후엔 간식으로 기움. 커피=들고 산책하며 홀짝, 간식=명당에 자리 잡고 냠냠.
+    { id: 'treat', cdKey: 'nextTreatAt', cd: [480000, 900000], weight: 12, dur: 90,
+      weightAt: (h) => ((h >= 7 && h < 10) || (h >= 14 && h < 17) ? 1.3 : 1),   // 모닝커피·오후 간식 시간
+      gate: (p) => !aiTreat && !p.drink && !p.food,
+      fire: (p) => startAiTreat(p) === 'ok' },
 ];
 // 셀렉터: 2단 롤 — ① "딴짓을 할지"는 LEISURE_RATE 하나로 정하고(총량 노브 — 활동을 더
 // 추가해도 전체 딴짓 빈도는 그대로, 서로의 지분만 재분배), ② 자격 있는 활동만 모아 weight
@@ -6414,7 +6419,7 @@ function rollLeisure(p) {
     for (const a of LEISURE_ACTS) {                         // 첫 도달 시드 — 밤에도 심는다 (부팅 보호)
         if (a.seed && !p[a.cdKey]) p[a.cdKey] = now + a.seed[0] + Math.random() * (a.seed[1] - a.seed[0]);
     }
-    if (isSleepTime(h)) return false;
+    if (isSleepTime(h) || p.drink || p.food) return false;   // 손이 차 있으면(음료·간식) 다 먹을 때까지 새 딴짓은 없다
     if (Math.random() >= LEISURE_RATE) return false;
     const pool = LEISURE_ACTS.filter((a) => now > (p[a.cdKey] || 0) && (!a.gate || a.gate(p)));
     if (!pool.length) return false;
@@ -7687,6 +7692,25 @@ if (statsOn) window.__worldDev = {
         const before = { ...(p.actLast || {}) };
         if (!rollLeisure(p)) return false;
         return Object.keys(p.actLast || {}).find((k) => p.actLast[k] !== before[k]) || true;
+    },
+    treatGo: (name, kind) => {   // 부스 간식 강제 (kind 지정 = 코인플립 대체) — 부팅 자율활동 선점은 rocketAiStart 문법으로 청산
+        const p = pets.find((q) => q.name === name);
+        if (!p) return null;
+        if (p.bed) forceEndBed(p);
+        if (p.dip) endDip(p);
+        if (aiFishing && aiFishing.p === p) endAiFishing();
+        releaseAI(p);
+        p.ai.state = 'idle';
+        return startAiTreat(p, kind);
+    },
+    treatState: () => (aiTreat ? { pet: aiTreat.p.name, kind: aiTreat.kind, phase: aiTreat.phase, sips: aiTreat.sips } : null),
+    heldOf: (name) => {
+        const p = pets.find((q) => q.name === name);
+        if (!p) return null;
+        return {
+            drink: p.drink ? p.drink.def.name : null, gulps: p.drink ? p.drink.gulps : null,
+            food: p.food ? p.food.def.name : null, bites: p.food ? p.food.bites : null,
+        };
     },
     offlineLast: () => offlineLastSummary,   // 마지막 오프라인 정산 요약 — E2E(부재 재진입) 검증용
     groundFruitN: () => groundFruits.length,   // 낙과 실체화 상한 검증용
@@ -17034,6 +17058,95 @@ function updateFruits(delta) {
 // 🍊 절친 자율 수확: 한가할 때 나무를 흔들어 하나 주워 먹거나 — 절반 확률로 주인에게 물어다
 // 준다 (자율 낚시 소유권 문법: began + ai.state 'busy' 확인, 스틸 시 즉시 반납).
 let aiFruit = null;
+// ☕🍞 부스 간식 자율 — 부스로 걸어가 랜덤 메뉴를 받는다. 커피는 배회를 재개하고 걷다 멈춘
+// 틈(idle)에 한 모금씩(걸으며 마시면 컵이 입에 떠다녀서), 간식은 분수 곁 명당으로 옮겨 자리
+// 잡고 연속 냠냠. 취식 완료(3모금/3입 → 제거·happy)는 updateHeldPose 규칙 그대로 빌려 쓴다.
+let aiTreat = null;   // { p, kind: drink|food, phase: walk|stroll|carry|consume, t, sips }
+const TREAT_EAT_SPOTS = [{ x: 0.95, z: -1.35 }, { x: 2.2, z: 0.8 }, { x: -1.8, z: 0.9 }];   // 분수 둘레 — 막히면 nearestOpenSpot이 비켜 준다
+function startAiTreat(p, wantKind) {
+    if (aiTreat || !p || p === possessed || p.bed || p.dip || p.pet.sleeping || p.tramp || p.drink || p.food) return 'busy';
+    if (p.ai.state !== 'idle' && p.ai.state !== 'walk') return 'busy';
+    if ((fishing && fishing.p === p) || (aiFishing && aiFishing.p === p)) return 'busy';
+    const kind = wantKind || (Math.random() < (currentHour() < 12 ? 0.72 : 0.3) ? 'drink' : 'food');   // 아침=커피 우선, 오후=간식 우선
+    const boothType = kind === 'drink' ? 'coffee' : 'food';
+    if (!PROPS.some((q) => q.type === boothType)) return 'busy';
+    const want = resolveGotoSpot(p, boothType === 'coffee' ? 'coffee' : 'snack');
+    const spot = want && nearestOpenSpot(want.x, want.z);
+    if (!spot) return 'busy';
+    releaseAI(p);
+    p.ai.state = 'goto';
+    p.ai.target = { x: spot.x, z: spot.z };
+    p.ai.waypoints = buildRoute(p.mover.position, p.ai.target);
+    p.ai.stall = 0;
+    aiTreat = { p, kind, phase: 'walk', t: 0, sips: 0 };
+    aiTreat.ownArrive = () => {
+        if (!aiTreat || aiTreat.p !== p) return;
+        const menu = kind === 'drink' ? DRINKS : FOODS;
+        (kind === 'drink' ? giveDrink : giveFood)(p, menu[Math.floor(Math.random() * menu.length)]);
+        aiTreat.t = 0;
+        if (kind === 'drink') {
+            aiTreat.phase = 'stroll';
+            releaseAI(p, 1.5);   // 배회 재개 — 홀짝은 updateAiTreat가 챙긴다
+        } else {
+            const sp = TREAT_EAT_SPOTS[Math.floor(Math.random() * TREAT_EAT_SPOTS.length)];
+            const open = nearestOpenSpot(sp.x, sp.z) || sp;
+            aiTreat.phase = 'carry';
+            p.ai.state = 'goto';
+            p.ai.target = { x: open.x, z: open.z };
+            p.ai.waypoints = buildRoute(p.mover.position, p.ai.target);
+            p.ai.stall = 0;
+            p.ai.onArrive = () => {
+                if (!aiTreat || aiTreat.p !== p) return;
+                p.ai.state = 'busy';
+                aiTreat.phase = 'consume';
+                aiTreat.t = 0;
+            };
+        }
+    };
+    p.ai.onArrive = aiTreat.ownArrive;
+    logWorldEvent(`${petKo(p)}가 ${kind === 'drink' ? '커피 부스로 커피를 사러' : '간식 부스로 주전부리하러'} 나섰다 ${kind === 'drink' ? '☕' : '🍞'}`);
+    return 'ok';
+}
+function endAiTreat(wait = 1.5) {
+    if (!aiTreat) return;
+    const p = aiTreat.p;
+    aiTreat = null;
+    if (p.ai.state === 'busy') releaseAI(p, wait);
+}
+function updateAiTreat(delta) {
+    if (!aiTreat) return;
+    const { p, kind } = aiTreat;
+    if (p === possessed) { aiTreat = null; return; }   // 빙의 — 남은 취식은 주인 몫(우클릭 먹기)
+    const it = kind === 'drink' ? p.drink : p.food;
+    if (aiTreat.phase === 'walk' || aiTreat.phase === 'carry') {
+        if (p.ai.state !== 'goto') {   // 디렉터 스틸/스톨 — 이미 받았으면 그 자리 취식으로 강등
+            if (!it) { aiTreat = null; return; }
+            aiTreat.phase = kind === 'drink' ? 'stroll' : 'consume';
+            if (kind === 'food') { p.ai.state = 'busy'; }
+            aiTreat.t = 0;
+        }
+        return;
+    }
+    if (!it) {   // 3모금/3입 완식 — updateHeldPose가 치웠다
+        if (kind === 'drink') logWorldEvent(`${petKo(p)}가 산책하며 커피를 다 마셨다 ☕`);
+        endAiTreat();
+        return;
+    }
+    aiTreat.t += delta;
+    if (aiTreat.phase === 'stroll') {
+        if (!it.seq && p.ai.state === 'idle' && aiTreat.t > 6 + aiTreat.sips * 2) {
+            it.seq = { count: 2, t: 0, played: -1 };
+            aiTreat.sips += 1;
+            aiTreat.t = 0;
+        }
+        return;
+    }
+    if (p.ai.state !== 'busy') { aiTreat = null; return; }   // consume 중 디렉터 스틸 — 반납
+    if (!it.seq && aiTreat.t > 0.9) {   // 자리 잡고 연속 냠냠 — aiFruit와 같은 리듬
+        it.seq = { count: 2, t: 0, played: -1 };
+        aiTreat.t = 0;
+    }
+}
 function startAiFruit(p, opts = {}) {
     if (aiFruit || !p || p === possessed || p.bed || p.dip || p.pet.sleeping || p.tramp || p.food || p.drink) return 'busy';
     if (p.ai.state !== 'idle' && p.ai.state !== 'walk') return 'busy';
@@ -20475,6 +20588,7 @@ function animate() {
     updateFruits(delta);                     // 🍎 흔들림/낙과/재성장 틱
     updateAiFruit(delta);                    // 🍊 절친 자율 수확·선물
     updateAiTidy(delta);                     // 🧹 절친 청소부 — 방치 낙과를 바구니로
+    updateAiTreat(delta);                    // ☕🍞 부스 간식 — 커피 산책 홀짝·간식 명당 냠냠
     updateFruitThrows(delta);                // 🧺 원거리 휙 담기 아크
     updateBalloon(delta);                    // 🎈 열기구 — 계류 살랑임/스플라인 투어/귀환
     updateBalloonHop(delta);                 // 절친 승선 큰 아크 — 데크에서 바구니로

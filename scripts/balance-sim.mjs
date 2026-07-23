@@ -9,6 +9,19 @@
 //   옵션: --days 400 --seed 42 --rate 0.40 --ride-sec N --dur-budget off --satiety off|초 --json
 // ⚠ 기본값 = world.js 현행 구성과 동기가 계약: LEISURE_RATE·SWING rideMs·weight·LEISURE_SATIETY_MS를 바꾸면 여기도 같이.
 //
+// ── 신규 자율활동 추가 지침 (확률이 자연스러우려면 이 8줄) ──────────────────────
+// 1) 레지스트리: 펫 혼자 심심풀이 = LEISURE_ACTS(개인 롤) / 듀오·"한가한 아무나" 대리지명 = POLL_ACTS.
+// 2) weight는 절대값이 아니라 앵커 비교 — 물놀이35 낚시27 그네22 트램펄린18 과일14 열기구13
+//    부스간식12 잠수정11 정리·스트레칭10 로켓9 페리·독서8. "이것보단 자주, 저것보단 드물게"로
+//    자리 잡기. 총량은 LEISURE_RATE가 고정 — 추가 = 지분 재분배이지 펫 과로가 아니다.
+// 3) dur(평균 지속 초)은 정직하게 — √dur 예산이 긴 활동을 자동 억제. 3분 넘는 이벤트급이면 weight 한 자리.
+// 4) cd 대역: 필러 4~8분 / 보통 6~15분 / 이벤트·탈것 10~24분 + seed(부팅 직후 출발 방지 — 탈것 필수).
+// 5) 시간대가 어울리면 weightAt ×1.3~×3 한 줄 (수면 22~06시는 셀렉터가 자동 차단).
+// 6) fire 계약: 성공 true / 실패 false(쿨다운 안 태움·3초 재시도). 물림·성공-쿨다운·계측(actStats)은 셀렉터가 자동.
+// 7) 검증 3종: 여기 ACTS에 같은 항목 추가(동기) → npm run balance:world(유효 활동 수 유지 +
+//    1위 15% 밴드 + 신규 시작/일이 의도 범위) → E2E(leisureState 훅) + world-smoke. 실플레이는 ?stats=1 acts: 대조.
+// 8) 신규 활동이 게이트에서 점유 10%를 넘으면 의도한 게 맞는지 재확인.
+//
 // 모델 노트 (실측 아님 — 코드 정적 분석 기반):
 // - 시간 = "앱이 켜져 있는 활동 시간"만 흐른다 (06~22시, 하루 57,600초). 쿨다운·타이머 전부
 //   활동 초 기준 — 실제 앱도 닫혀 있는 동안은 아무것도 진행되지 않으므로 이게 정직한 모델.
@@ -62,9 +75,10 @@ const ACTS = [
     { id: 'tidy',   ko: '낙과정리', chainP: () => 0.04,  weight: 10,   cd: [360, 780],   seed: [300, 600], lock: 'tidy',    dur: (r) => 45 + r() * 30, needsFruit: true },
     { id: 'ferry',  ko: '페리',     chainP: () => 0.04,  weight: 8,   cd: [480, 960],   seed: [300, 780], lock: 'ferry',   weightAt: (h) => (h >= 17 && h < 19.5 ? 1.5 : 1), dur: (r) => 170 + r() * 60 },
     { id: 'swing',  ko: '그네/시소',chainP: () => 0.14,  weight: 22,  cd: [180, 360],   seed: null,       dur: () => rideNow, cdAtMount: true },
-    // 신설 2종 (레지스트리 모드 전용 — chainP 0: 구 체인엔 소비 블록이 없어 발동 자체가 없었다)
+    // 신설 조 (레지스트리 모드 전용 — chainP 0: 구 체인에 없던 활동들. gym/library는 소비 블록 누락 부활, treat는 부스 간식 신설)
     { id: 'gym',    ko: '스트레칭', chainP: () => 0,     weight: 10,   cd: [600, 1200],  seed: null,       lock: 'gym',     weightAt: (h) => (h >= 6 && h < 9 ? 3 : 1), dur: (r) => 12 + r() * 6 },
     { id: 'library',ko: '독서',     chainP: () => 0,     weight: 8,   cd: [600, 1200],  seed: null,       weightAt: (h) => (h >= 19 ? 2 : 1), dur: (r) => 120 + r() * 120 },
+    { id: 'treat',  ko: '부스간식', chainP: () => 0,     weight: 12,  cd: [480, 900],   seed: null,       lock: 'treat',   weightAt: (h) => ((h >= 7 && h < 10) || (h >= 14 && h < 17) ? 1.3 : 1), dur: (r) => 70 + r() * 40 },
 ];
 // 체인 검사 순서 = 코드 순서 (dip → fish → sub → balloon → rocket → tramp → fruit → tidy → ferry → swing)
 
