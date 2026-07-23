@@ -82,6 +82,7 @@ const ACTS = [
     { id: 'sand',   ko: '모래놀이', chainP: () => 0,     weight: 10,  cd: [480, 960],   seed: null,       dur: (r) => 90 + r() * 90 },   // 자리 2개 — 락 없음
     { id: 'boat',   ko: '뱃놀이',   chainP: () => 0,     weight: 8,   cd: [600, 1200],  seed: [300, 780], lock: 'boat',    dur: (r) => 55 + r() * 50 },
     { id: 'radio',  ko: '라디오',   chainP: () => 0,     weight: 8,   cd: [600, 1200],  seed: null,       lock: 'radio',   dur: (r) => 25 + r() * 30 },
+    { id: 'cook',   ko: '요리',     chainP: () => 0,     weight: 10,  cd: [600, 1200],  seed: null,       lock: 'cook',    weightAt: (h) => ((h >= 11 && h < 12) || (h >= 17 && h < 18) ? 1.3 : 1), dur: (r) => 90 + r() * 60 },   // 재고 게이트는 미모델(주석)
 ];
 // 체인 검사 순서 = 코드 순서 (dip → fish → sub → balloon → rocket → tramp → fruit → tidy → ferry → swing)
 

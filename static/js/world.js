@@ -4414,9 +4414,9 @@ function cookRecipe(r) {
     chef.ai.onArrive = cooking.ownArrive;
     return true;
 }
-function beginCookSeq(p, r, pr) {
+function beginCookSeq(p, r, pr, carry) {
     if (recipeMissing(r).length) {   // 걷는 사이 재료가 사라졌을 수도 — 차감은 도착 후에만
-        showToast('🍳 재료가 부족해요');
+        if (!carry) showToast('🍳 재료가 부족해요');
         if (p !== possessed) releaseAI(p);
         cooking = null;
         return;
@@ -4425,9 +4425,82 @@ function beginCookSeq(p, r, pr) {
     refreshKitchenPanel();
     if (p !== possessed) p.ai.state = 'busy';
     p.mover.rotation.y = Math.atan2(pr.x - p.mover.position.x, pr.z - p.mover.position.z);
-    cooking = { p, r, pr, phase: 'chop', t: 0, act: 0 };
+    cooking = { p, r, pr, phase: 'chop', t: 0, act: 0, intent: carry && carry.intent, meal: carry && carry.meal };
     spawnCookFx(pr, r);
     logWorldEvent(`${petKo(p)}가 주방에서 ${r.ko}를 만들기 시작했다 🍳`);
+}
+// 🍳 자율 요리사(여가 17호) — 재고로 만들 수 있는 요리가 있으면 스스로 주방에 가서 만들고,
+// 절반은 그 자리에서 냠냠, 절반은 접시를 들고 절친에게 걸어가 대접한다(숨바꼭질 수리로 검증된
+// 펫→펫 접근). 영원 케이크는 자율 풀에서 제외 — 그건 주인이 시키는 이벤트 요리.
+function aiCookableRecipes() {
+    return RECIPES.filter((r) => r.id !== 'eterncake' && !recipeLocked(r) && !recipeMissing(r).length);
+}
+let aiCookPost = null;   // { p, friend, mode: 'carry'|'eat', t } — 완성 후 대접/취식 전담
+function startAiCook(p, opts = {}) {
+    if (cooking || aiCookPost || !p || p === possessed || p.bed || p.dip || p.pet.sleeping || p.tramp || p.drink || p.food) return 'busy';
+    if (p.ai.state !== 'idle' && p.ai.state !== 'walk') return 'busy';
+    if ((fishing && fishing.p === p) || (aiFishing && aiFishing.p === p)) return 'busy';
+    const pool = aiCookableRecipes();
+    const r = opts.recipe ? pool.find((q) => q.id === opts.recipe) : pool[Math.floor(Math.random() * pool.length)];
+    if (!r) return 'nodish';
+    const pr = PROPS.find((q) => q.type === 'kitchen');
+    if (!pr) return 'busy';
+    releaseAI(p);
+    p.ai.state = 'goto';
+    const spot = { x: pr.x + Math.sin(pr.rotY || 0) * 0.8, z: pr.z + Math.cos(pr.rotY || 0) * 0.8 };
+    const open = nearestOpenSpot(spot.x, spot.z) || spot;
+    p.ai.target = { x: open.x, z: open.z };
+    p.ai.waypoints = buildRoute(p.mover.position, p.ai.target);
+    p.ai.stall = 0;
+    const intent = opts.intent || (Math.random() < 0.5 ? 'serve' : 'eat');
+    cooking = { p, r, pr, phase: 'walk', t: 0, act: 0, intent, meal: opts.meal };
+    cooking.ownArrive = () => { if (cooking && cooking.p === p) beginCookSeq(p, r, pr, { intent, meal: opts.meal }); };
+    p.ai.onArrive = cooking.ownArrive;
+    logWorldEvent(`${petKo(p)}가 출출한지 주방으로 향했다 🍳`);
+    return 'ok';
+}
+function startAiCookPost(chef, intent, r) {
+    const friend = intent === 'serve'
+        ? pets.find((q) => q !== chef && q !== possessed && !q.pet.sleeping && !q.bed && !q.dip && (q.ai.state === 'idle' || q.ai.state === 'walk'))
+        : null;
+    chef.ai.state = 'busy';
+    if (!friend) { aiCookPost = { p: chef, mode: 'eat', t: 0 }; return; }   // 절친이 바쁘면 내가 냠 (intent 'eat' 포함)
+    aiCookPost = { p: chef, friend, mode: 'carry', t: 0 };
+    (async () => {
+        await gotoAsync(chef, friend.mover.position.x + 0.55, friend.mover.position.z + 0.15);
+        if (!aiCookPost || aiCookPost.p !== chef) return;
+        if (!chef.food || !friend || friend.pet.sleeping || friend.bed || friend.dip || friend === possessed) {   // 걸어오는 사이 사정이 바뀌었다 — 내가 냠
+            aiCookPost = { p: chef, mode: 'eat', t: 0 };
+            chef.ai.state = 'busy';
+            return;
+        }
+        const def = chef.food.def;
+        removeHeldItem(chef, 'food');
+        releaseAI(friend);
+        friend.ai.state = 'busy';
+        giveFood(friend, def, `${petKo(chef)}가 만든`);
+        faceEachOther(chef, friend);
+        chef.pet.action = { id: 'happy', t: 0 };
+        logWorldEvent(`${petKo(chef)}가 ${petKo(friend)}에게 ${r.ko}를 대접했다 🍳💗`);
+        maybeProactive(null, `방금 ${petKo(chef)}가 만든 ${r.ko}를 대접받았다! 맛있다!`);
+        aiCookPost = { p: friend, chefDone: chef, mode: 'eat', t: 0 };
+    })();
+}
+function updateAiCookPost(delta) {
+    if (!aiCookPost) return;
+    const { p } = aiCookPost;
+    if (aiCookPost.mode === 'carry') {
+        if (p === possessed || (p.ai.state !== 'goto' && p.ai.state !== 'busy')) aiCookPost = null;   // 스틸 — 반납
+        return;
+    }
+    if (p === possessed) { aiCookPost = null; return; }   // 빙의 — 남은 취식은 주인 몫(우클릭 먹기)
+    aiCookPost.t += delta;
+    if (aiCookPost.chefDone && aiCookPost.t > 1.2) { const c = aiCookPost.chefDone; aiCookPost.chefDone = null; if (c !== possessed && c.ai.state === 'busy') releaseAI(c, 1.5); }
+    if (p.food && !p.food.seq && aiCookPost.t > 0.9) p.food.seq = { count: 3, t: 0, played: -1 };
+    if (!p.food) {   // 완식 — updateHeldPose가 치웠다
+        if (p.ai.state === 'busy') releaseAI(p, 2);
+        aiCookPost = null;
+    }
 }
 // 🎂 영원 케이크 — 혼자 먹는 요리가 아니다: 절친이 어디서 뭘 하든 달려와(소환 문법) 반쪽을
 // 받아 마주 보고 나눠 먹는다. 하트 스월 + 일기 — 마음 요리 해금 트리의 최종장.
@@ -4534,8 +4607,10 @@ function updateCooking(delta) {
         maybeUnlockHearts();
         refreshKitchenPanel();
         const chef = p;
+        const intent = cooking.intent;
         cooking = null;
         if (r.id === 'eterncake') startEternScene(chef);   // 🎂 둘이 나눠 먹는 요리 — 절친 소환
+        else if (intent && chef !== possessed) startAiCookPost(chef, intent, r);   // 자율 셰프 — 먹거나 대접하거나
         else if (chef !== possessed) releaseAI(chef, 2);
     }
 }
@@ -7042,6 +7117,11 @@ const LEISURE_ACTS = [
     { id: 'radio', cdKey: 'nextRadioAt', cd: [600000, 1200000], weight: 8, dur: 40,
       gate: () => !aiRadio && PROPS.some((q) => q.type === 'radio'),
       fire: (p) => startAiRadio(p) === 'ok' },
+    // 🍳 자율 요리사 — 재고가 허락할 때 스스로 요리, 절반은 절친 대접. 식사 준비 무드 ×1.3.
+    { id: 'cook', cdKey: 'nextCookAt', cd: [600000, 1200000], weight: 10, dur: 120,
+      weightAt: (h) => ((h >= 11 && h < 12) || (h >= 17 && h < 18) ? 1.3 : 1),
+      gate: () => !cooking && !aiCookPost && aiCookableRecipes().length > 0,
+      fire: (p) => startAiCook(p) === 'ok' },
 ];
 // 셀렉터: 2단 롤 — ① "딴짓을 할지"는 LEISURE_RATE 하나로 정하고(총량 노브 — 활동을 더
 // 추가해도 전체 딴짓 빈도는 그대로, 서로의 지분만 재분배), ② 자격 있는 활동만 모아 weight
@@ -8439,6 +8519,18 @@ if (statsOn) window.__worldDev = {
     },
     cookState: () => (cooking ? { pet: cooking.p.name, phase: cooking.phase } : null),
     dishes: () => ({ ...dishesFound }),
+    aiCookGo: (recipe, intent) => {
+        for (const q0 of pets) {
+            if (q0 === possessed) continue;
+            if (q0.bed) forceEndBed(q0);
+            if (q0.dip) endDip(q0);
+            if (aiFishing && aiFishing.p === q0) endAiFishing();
+            releaseAI(q0);
+            q0.ai.state = 'idle';
+        }
+        return startAiCook(pets.find((q) => q !== possessed), { recipe, intent });
+    },
+    aiCookState: () => ({ cook: cooking ? { pet: cooking.p.name, phase: cooking.phase, intent: cooking.intent || null } : null, post: aiCookPost ? { pet: aiCookPost.p.name, mode: aiCookPost.mode } : null }),
     hsGo: () => {   // 숨바꼭질 강제 시작 (부팅 선점 청산)
         for (const q0 of pets) {
             if (q0 === possessed) continue;
@@ -21718,6 +21810,7 @@ function animate() {
     updateAiRadio(delta);                    // 📻 라디오 리듬타기 — 곁 댄스·한 곡 틀기
     updateCooking(delta);                    // 🍳 조리 시퀀스 — 손질·웍·플레이팅
     updateEternScene(delta);                 // 🎂 영원 케이크 나눠 먹기
+    updateAiCookPost(delta);                 // 🍳 자율 요리사 후처리 — 대접/셀프 냠냠
     updateFruitThrows(delta);                // 🧺 원거리 휙 담기 아크
     updateBalloon(delta);                    // 🎈 열기구 — 계류 살랑임/스플라인 투어/귀환
     updateBalloonHop(delta);                 // 절친 승선 큰 아크 — 데크에서 바구니로
