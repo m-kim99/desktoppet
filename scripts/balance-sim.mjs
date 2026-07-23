@@ -6,8 +6,8 @@
 //   node scripts/balance-sim.mjs --mode both        # 두 모드 나란히 비교 (±편차 표)
 //   node scripts/balance-sim.mjs --fit-rate         # LEISURE_RATE 역산 스윕 (7944122 마이그레이션 재현은
 //                                                     동일 조건으로: --ride-sec 600 --dur-budget off)
-//   옵션: --days 400 --seed 42 --rate 0.40 --ride-sec N --dur-budget off --json
-// ⚠ 기본값 = world.js 현행 구성과 동기가 계약: LEISURE_RATE·SWING rideMs·weight를 바꾸면 여기도 같이.
+//   옵션: --days 400 --seed 42 --rate 0.40 --ride-sec N --dur-budget off --satiety off|초 --json
+// ⚠ 기본값 = world.js 현행 구성과 동기가 계약: LEISURE_RATE·SWING rideMs·weight·LEISURE_SATIETY_MS를 바꾸면 여기도 같이.
 //
 // 모델 노트 (실측 아님 — 코드 정적 분석 기반):
 // - 시간 = "앱이 켜져 있는 활동 시간"만 흐른다 (06~22시, 하루 57,600초). 쿨다운·타이머 전부
@@ -29,6 +29,7 @@ const MODE = ARG.mode || 'registry';            // registry(현행 기본) | cha
 const RATE = +(ARG.rate || 0.40);               // registry: 여가 총량 노브 — world.js LEISURE_RATE와 동기
 const rideFor = (mode) => (ARG['ride-sec'] ? +ARG['ride-sec'] : (mode === 'chain' ? 600 : 150));   // 그네 한 판 — 시대별 기본 (체인=패치 전 10분, 레지스트리=현행 2~3분 평균)
 const DUR_BUDGET = ARG['dur-budget'] !== 'off'; // registry: 긴 활동 억제 보정항 — 현행 기본 on (끄기 = --dur-budget off)
+const SATIETY = ARG.satiety === 'off' ? 0 : +(ARG.satiety || 1800);   // 물림 램프 초 — world.js LEISURE_SATIETY_MS(30분)와 동기 (끄기 = --satiety off)
 const JSON_OUT = !!ARG.json;
 
 // mulberry32 — 시드 고정 (재현 가능한 게이트)
@@ -89,7 +90,7 @@ function simulate(mode, opts = {}) {
     // 펫 상태: mode idle|walk|busy, until = 전이 시각, cd/seeded = 활동별
     const pets = [0, 1].map(() => ({
         mode: 'idle', until: range(r, [1.5, 4.5]), busyId: null,
-        cd: {}, seeded: {}, mealDone: -1, dipKind: null, dipExt: 0,
+        cd: {}, seeded: {}, last: {}, mealDone: -1, dipKind: null, dipExt: 0,
     }));
     const locks = {};                                       // 전역 싱글턴 (탈것·aiX)
     const ground = [];                                      // 낙과 { bornAt } — 정리 후보/시들기
@@ -102,6 +103,7 @@ function simulate(mode, opts = {}) {
     const begin = (p, a, t) => {
         const d = a.dur(r);
         p.mode = 'busy'; p.busyId = a.id; p.until = t + d;
+        p.last[a.id] = t;   // 물림 스탬프 (체인 모드는 안 읽는다 — 물림 없던 시절 재현)
         if (a.lock) locks[a.lock] = true;
         if (a.id === 'dip') { p.dipKind = r() < 0.5 ? 'sea' : 'pond'; p.dipExt = 0; }
         stat(a.id).starts += 1;
@@ -146,6 +148,7 @@ function simulate(mode, opts = {}) {
         const pool = ACTS.filter((a) => eligible(p, a, t, h));
         if (!pool.length) return false;
         const w = pool.map((a) => (a.weight * (a.weightAt ? a.weightAt(h) : 1))
+            * (SATIETY ? Math.min(1, Math.max(0.2, (t - (p.last[a.id] ?? -1e9)) / SATIETY)) : 1)
             / (DUR_BUDGET ? Math.sqrt(Math.max(0.5, avgDur(a) / 60)) : 1));
         let x = r() * w.reduce((s, v) => s + v, 0);
         let pick = pool[0];

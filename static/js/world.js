@@ -6392,7 +6392,15 @@ const LEISURE_ACTS = [
 // 헛방이 그 활동의 다음 기회까지 지웠다 (성공 확인 전 소진 금지).
 const LEISURE_RATE = 0.40;
 const LEISURE_RETRY_MS = 3000;
+const LEISURE_SATIETY_MS = 1800000;   // 물림 — 방금 한 활동은 매력 0.2배에서 30분에 걸쳐 회복 (림월드 여가 내성/심즈 포만감 패턴). 세션 한정 상태 — 저장 안 함.
 const actStats = {};   // 계측: 이번 세션의 자율활동 시작 횟수 — ?stats=1 오버레이 + __worldDev.actStats (튜닝을 관측 기반으로)
+// 활동 하나의 실효 weight = 선호 × 시간대 × 물림 ÷ √(지속분).
+// 물림은 펫별 p.actLast[id](성공 시각) 기준 — 쿨다운(풀 제외 하드 게이트)이 끝나도 한동안 "덜 당기는" 소프트 감쇠층.
+// 점유시간 예산: 긴 활동일수록 √(분)로 눌러서, 지속시간이 긴 것이 하루를 먹지 못하게 (dur은 평균 추정 초 — 자릿수만 맞으면 된다).
+function leisureWeightOf(p, a, now, h) {
+    const satiety = Math.min(1, Math.max(0.2, (now - ((p.actLast && p.actLast[a.id]) || 0)) / LEISURE_SATIETY_MS));
+    return a.weight * (a.weightAt ? a.weightAt(h) : 1) * satiety / Math.sqrt(Math.max(0.5, (a.dur || 60) / 60));
+}
 function rollLeisure(p) {
     const now = Date.now(), h = currentHour();
     for (const a of LEISURE_ACTS) {                         // 첫 도달 시드 — 밤에도 심는다 (부팅 보호)
@@ -6402,15 +6410,16 @@ function rollLeisure(p) {
     if (Math.random() >= LEISURE_RATE) return false;
     const pool = LEISURE_ACTS.filter((a) => now > (p[a.cdKey] || 0) && (!a.gate || a.gate(p)));
     if (!pool.length) return false;
-    // 점유시간 예산: 긴 활동일수록 √(분)로 눌러서, 지속시간이 긴 것이 하루를 먹지 못하게.
-    // (dur = 평균 지속 초 — 정확할 필요는 없고 자릿수가 맞으면 된다.)
-    const w = pool.map((a) => a.weight * (a.weightAt ? a.weightAt(h) : 1) / Math.sqrt(Math.max(0.5, (a.dur || 60) / 60)));
+    const w = pool.map((a) => leisureWeightOf(p, a, now, h));
     let x = Math.random() * w.reduce((s, v) => s + v, 0);
     let pick = pool[pool.length - 1];
     for (let i = 0; i < pool.length; i++) { x -= w[i]; if (x <= 0) { pick = pool[i]; break; } }
     const ok = pick.fire(p) !== false;
     p[pick.cdKey] = now + (ok ? pick.cd[0] + Math.random() * (pick.cd[1] - pick.cd[0]) : LEISURE_RETRY_MS);
-    if (ok) actStats[pick.id] = (actStats[pick.id] || 0) + 1;
+    if (ok) {
+        (p.actLast = p.actLast || {})[pick.id] = now;   // 물림 스탬프 — 성공에만 (실패에 물리면 3초 재시도가 죽는다)
+        actStats[pick.id] = (actStats[pick.id] || 0) + 1;
+    }
     return ok;
 }
 
@@ -7648,6 +7657,29 @@ if (statsOn) window.__worldDev = {
     fishState: () => (fishing ? fishing.state : null),   // 낚시 헤드리스 검증용
     aiFishState: () => (aiFishing ? aiFishing.state : null),   // 절친 자율 낚시 검증용
     actStats: () => ({ ...actStats }),   // 자율활동 시작 카운터 — 분포 검증(레지스트리 weight와 대조)용
+    leisureState: (name) => {   // 물림 검증: 자격 풀의 실효 weight + 최근 시작 스탬프
+        const p = pets.find((q) => q.name === name);
+        if (!p) return null;
+        const now = Date.now(), h = currentHour();
+        return {
+            pool: LEISURE_ACTS.filter((a) => now > (p[a.cdKey] || 0) && (!a.gate || a.gate(p)))
+                .map((a) => ({ id: a.id, w: +leisureWeightOf(p, a, now, h).toFixed(3) })),
+            last: { ...(p.actLast || {}) },
+        };
+    },
+    leisureMark: (name, id, agoMs = 0) => {   // 물림 스탬프 수동 주입 (agoMs = 회복 램프 중간 지점 테스트용)
+        const p = pets.find((q) => q.name === name);
+        if (!p) return false;
+        (p.actLast = p.actLast || {})[id] = Date.now() - agoMs;
+        return true;
+    },
+    leisureTryRoll: (name) => {   // rollLeisure 실경로 1회 — 성공하면 이번에 시작한 활동 id
+        const p = pets.find((q) => q.name === name);
+        if (!p) return null;
+        const before = { ...(p.actLast || {}) };
+        if (!rollLeisure(p)) return false;
+        return Object.keys(p.actLast || {}).find((k) => p.actLast[k] !== before[k]) || true;
+    },
     offlineLast: () => offlineLastSummary,   // 마지막 오프라인 정산 요약 — E2E(부재 재진입) 검증용
     groundFruitN: () => groundFruits.length,   // 낙과 실체화 상한 검증용
     settleNow: (h) => { settleOffline(Date.now() - h * 3600000, Date.now()); return offlineLastSummary; },   // 부재 h시간 강제 정산
