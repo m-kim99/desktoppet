@@ -101,6 +101,7 @@ export const PROPS = [
         { type: 'radio', x: 2.825, z: 2.131, rotY: -2.027, r: 0.24 },    // 집 마당 라디오 — 포치 데크 밖 잔디 (데크 모서리 겹침 회피)
     { type: 'coffee',        x: -2.884, z: 0.803,  rotY: 2.1,   r: 0.5 },   // 광장 서쪽 — 링 안쪽 (도로 3.6 리뉴얼)  // NW 카페 거리 — 커피 부스 (Ctrl/⌘로 주문)
     { type: 'food', x: -1.771, z: 1.903, rotY: 2.73, r: 0.5 },   // NW 카페 거리 — 간식 부스 (Ctrl/⌘로 주문)
+    { type: 'icebox', x: -0.38, z: 5.5, rotY: 3.05, r: 0.3 },   // 본섬 북 잔교 곁 — 어획 보관함 (요리 재료, 조과 '보관' 선택의 목적지)
     // Satellite islands: a tree and a lamp at each bridgehead (otherwise open feature ground)
     { type: 'tree',  x: 11.136, z: 2.463, rotY: -0.085, r: 0.45, big: true  },   // NE 남쪽 공터 (섬 델타 동반)
     { type: 'tree',  x: -12.369, z: -3.32,  rotY: 2.9, r: 0.45, big: false },   // 추억의 섬 북서
