@@ -6541,7 +6541,8 @@ function settleOffline(from, to) {
     offlineLastSummary = { awakeMin: Math.round(awakeSec / 60), parts: [...parts] };
     if (!parts.length) return;
     injectWorldEvents(evs.slice(0, 8));
-    showToast(`🕰️ 다녀오셨네요 — 그동안 펫들이: ${parts.join(' · ')}`);
+    // 요약 토스트는 띄우지 않는다(사용자 피드백: 재접속마다 뜨는 정산 문구가 소음) —
+    // 부재의 흔적은 주입된 이벤트 로그·일기·바닥의 낙과가 조용히 말해 준다.
 }
 function tickOfflineSettle() {
     const now = Date.now();
