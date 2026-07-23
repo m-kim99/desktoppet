@@ -14020,8 +14020,8 @@ function toggleVendPanel() {
 // 보이면 "⛏️ 묻힌 게 보인다" 힌트 — 망원경이 보물 탐지기를 겸한다. ----
 const teleMask = document.createElement('div');
 teleMask.style.cssText = 'position:fixed; inset:0; pointer-events:none; z-index:80; opacity:0; transition:opacity 0.3s; background:#07090f;'
-    + '-webkit-mask-image:radial-gradient(circle at 37.5% 50%, transparent 25.5%, black 26.5%), radial-gradient(circle at 62.5% 50%, transparent 25.5%, black 26.5%);'
-    + '-webkit-mask-composite:source-in; mask-image:radial-gradient(circle at 37.5% 50%, transparent 25.5%, black 26.5%), radial-gradient(circle at 62.5% 50%, transparent 25.5%, black 26.5%); mask-composite:intersect;';
+    + '-webkit-mask-image:radial-gradient(circle at 36% 50%, transparent 31%, black 43%), radial-gradient(circle at 64% 50%, transparent 31%, black 43%);'
+    + '-webkit-mask-composite:source-in; mask-image:radial-gradient(circle at 36% 50%, transparent 31%, black 43%), radial-gradient(circle at 64% 50%, transparent 31%, black 43%); mask-composite:intersect;';
 document.body.appendChild(teleMask);
 let teleView = null, teleBusyUntil = 0;
 function makeTeleVistas() {
