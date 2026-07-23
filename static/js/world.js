@@ -6336,48 +6336,48 @@ function steerToward(p, target, delta) {
 // 새 사물의 자율 행동은 여기 "한 항목"이 전부다. 예전엔 체인 삽입 위치·시드 관용구·싱글턴
 // 게이트를 다섯 군데에서 맞춰야 했고, 그러다 운동 매트·도서관이 실제로 누락됐다(선언만 되고
 // 소비 블록이 없어 한 번도 발동 못 함 — 0c21ead부터).
-// 수치(p·cd·seed)를 바꾸면 npm run balance:world 로 전후 점유율을 비교한다 (시뮬 ACTS와 동기).
+// 수치(weight·cd·seed)를 바꾸면 npm run balance:world 로 전후 점유율을 비교한다 (시뮬 ACTS와 동기).
 // cdKey는 종전 필드명 그대로 — endTramp 등 밖에서 쿨다운을 다시 미는 코드와의 호환.
 // seed = 첫 쿨다운: 앱 켜자마자 탈것이 떠나버리면 주인이 탈 틈이 없다 (E2E에서 실측).
 const LEISURE_ACTS = [
     // 물놀이 — 펫들이 같이 헤엄치게 (주인 포함). 연못/바다는 startDip이 코인플립.
-    { id: 'dip', cdKey: 'nextDipAt', cd: [150000, 300000], p: () => 0.25,
+    { id: 'dip', cdKey: 'nextDipAt', cd: [150000, 300000], weight: 100,
       fire: (p) => { startDip(p); return true; } },
     // 낚싯대를 메고 물가로 — 혼자 두어 캐스트.
-    { id: 'fish', cdKey: 'nextFishAt', cd: [300000, 600000], p: () => 0.09,
+    { id: 'fish', cdKey: 'nextFishAt', cd: [300000, 600000], weight: 27,
       gate: (p) => !aiFishing && !(fishing && fishing.p === p),
       fire: (p) => { startAiFishing(p); return true; } },
     // 🟡 노랑호 잠수 투어 — 정박 중일 때만.
-    { id: 'sub', cdKey: 'nextSubAt', seed: [360000, 960000], cd: [600000, 1200000], p: () => 0.04,
+    { id: 'sub', cdKey: 'nextSubAt', seed: [360000, 960000], cd: [600000, 1200000], weight: 11,
       gate: () => !subRide && !aiSubWalk && SUB.mode === 'docked',
       fire: (p) => { startAiSub(p); return true; } },
     // 열기구 하늘 한 바퀴 — 계류 중일 때만.
-    { id: 'balloon', cdKey: 'nextBalloonAt', seed: [240000, 720000], cd: [420000, 840000], p: () => 0.05,
+    { id: 'balloon', cdKey: 'nextBalloonAt', seed: [240000, 720000], cd: [420000, 840000], weight: 13,
       gate: () => !balloonRide && !aiBalloonWalk && BALLOON.mode === 'docked',
       fire: (p) => { startAiBalloon(p); return true; } },
-    // 🚀 별똥호 우주 산책 — 저녁 18.5시~엔 확률 2배(야간 발사 별구경). 쿨다운 길게 — 라이드가 길어 뜸하게.
+    // 🚀 별똥호 우주 산책 — 저녁 18.5시~엔 성향 2배(야간 발사 별구경). 쿨다운 길게 — 라이드가 길어 뜸하게.
     { id: 'rocket', cdKey: 'nextRocketAt', seed: [420000, 1020000], cd: [720000, 1440000],
-      p: (h) => ((h >= 18.5 || h < 6) ? 0.07 : 0.035),
+      weight: 9, weightAt: (h) => ((h >= 18.5 || h < 6) ? 2 : 1),
       gate: () => !rocketRide && !aiRocketWalk && !rocketHop && ROCKET.mode === 'parked',
       fire: (p) => { startAiRocket(p); return true; } },
     // 트램펄린 폴짝 — 혼자 신나게 예닐곱 번.
-    { id: 'tramp', cdKey: 'nextTrampAt', seed: [180000, 480000], cd: [360000, 720000], p: () => 0.06,
+    { id: 'tramp', cdKey: 'nextTrampAt', seed: [180000, 480000], cd: [360000, 720000], weight: 14,
       gate: () => !aiTramp,
       fire: (p) => startAiTramp(p) === 'ok' },
     // 과일 따기 — 먹거나, 주인에게 물어다 준다.
-    { id: 'fruit', cdKey: 'nextFruitAt', seed: [240000, 600000], cd: [420000, 900000], p: () => 0.05,
+    { id: 'fruit', cdKey: 'nextFruitAt', seed: [240000, 600000], cd: [420000, 900000], weight: 11,
       gate: () => !aiFruit,
       fire: (p) => startAiFruit(p) === 'ok' },
     // 낙과 정리 — 주워서 바구니에. 확률은 낮게: 줍느라 딴 놀이 못 하지 않게.
-    { id: 'tidy', cdKey: 'nextTidyAt', seed: [300000, 600000], cd: [360000, 780000], p: () => 0.04,
+    { id: 'tidy', cdKey: 'nextTidyAt', seed: [300000, 600000], cd: [360000, 780000], weight: 9,
       gate: () => !aiTidy,
       fire: (p) => startAiTidy(p) === 'ok' },
     // 통통호 뱃놀이 — 모래섬 찍고 오는 왕복.
-    { id: 'ferry', cdKey: 'nextFerryAt', seed: [300000, 780000], cd: [480000, 960000], p: () => 0.04,
+    { id: 'ferry', cdKey: 'nextFerryAt', seed: [300000, 780000], cd: [480000, 960000], weight: 8,
       gate: () => !ferryRide && !aiFerryWalk && FERRY.mode === 'docked',
       fire: (p) => { startAiFerry(p); return true; } },
     // 그네/시소 — 빈 자리가 있을 때만: 쿨다운도 탑승이 성사될 때만 찍는다 (lateCd).
-    { id: 'swing', cdKey: 'nextSwingAt', cd: [180000, 360000], p: () => 0.14, lateCd: true,
+    { id: 'swing', cdKey: 'nextSwingAt', cd: [180000, 360000], weight: 28, lateCd: true,
       fire: (p) => {
           const seat = SWINGS.find((b) => !b.occupant) || SEESAWS.find((b) => !b.occupant);
           if (!seat) return false;
@@ -6386,21 +6386,29 @@ const LEISURE_ACTS = [
           return true;
       } },
 ];
-// 셀렉터(현행): 배열을 코드 순서대로 훑는 순차 롤 — 종전 if-체인의 순수 이동이라 확률 의미
-// 동일 (실효 확률 = 자기 p × 앞 항목들의 (1-p) 곱). fire가 false를 돌려주면(자리 없음/후보
-// 없음) 다음 항목으로 계속 — 종전 'busy' 폴스루와 같다.
+// 셀렉터: 2단 롤 — ① "딴짓을 할지"는 LEISURE_RATE 하나로 정하고(총량 노브 — 활동을 더
+// 추가해도 전체 딴짓 빈도는 그대로, 서로의 지분만 재분배), ② 자격 있는 활동만 모아 weight
+// 비례로 하나 뽑는다. 종전 if-체인은 배열 순서가 곧 확률이라(앞 항목의 (1-p)가 곱해짐) 항목
+// 추가가 기존 밸런스를 조용히 밀었다 — 이제 순서는 의미 없다.
+// weight는 종전 실효 확률 비례 마이그레이션 값, rate 0.40은 시뮬 역산(총량 -0.5%, 활동별
+// ±5% 이내 — balance-sim --mode both). 뽑힌 활동이 시작에 실패하면(자리/후보 없음) 그 틱은
+// 그냥 배회 — 재추첨하지 않는다.
+const LEISURE_RATE = 0.40;
 function rollLeisure(p) {
     const now = Date.now(), h = currentHour();
-    for (const a of LEISURE_ACTS) {
-        if (a.seed && !p[a.cdKey]) { p[a.cdKey] = now + a.seed[0] + Math.random() * (a.seed[1] - a.seed[0]); continue; }
-        if (isSleepTime(h)) continue;                       // 전 항목 공통 — 낮에만 (시드는 밤에도 심는다)
-        if (now <= (p[a.cdKey] || 0)) continue;
-        if (a.gate && !a.gate(p)) continue;
-        if (Math.random() >= a.p(h)) continue;
-        if (!a.lateCd) p[a.cdKey] = now + a.cd[0] + Math.random() * (a.cd[1] - a.cd[0]);
-        if (a.fire(p) !== false) return true;
+    for (const a of LEISURE_ACTS) {                         // 첫 도달 시드 — 밤에도 심는다 (부팅 보호)
+        if (a.seed && !p[a.cdKey]) p[a.cdKey] = now + a.seed[0] + Math.random() * (a.seed[1] - a.seed[0]);
     }
-    return false;
+    if (isSleepTime(h)) return false;
+    if (Math.random() >= LEISURE_RATE) return false;
+    const pool = LEISURE_ACTS.filter((a) => now > (p[a.cdKey] || 0) && (!a.gate || a.gate(p)));
+    if (!pool.length) return false;
+    const w = pool.map((a) => a.weight * (a.weightAt ? a.weightAt(h) : 1));
+    let x = Math.random() * w.reduce((s, v) => s + v, 0);
+    let pick = pool[pool.length - 1];
+    for (let i = 0; i < pool.length; i++) { x -= w[i]; if (x <= 0) { pick = pool[i]; break; } }
+    if (!pick.lateCd) p[pick.cdKey] = now + pick.cd[0] + Math.random() * (pick.cd[1] - pick.cd[0]);
+    return pick.fire(p) !== false;
 }
 
 function updateWander(p, delta) {
