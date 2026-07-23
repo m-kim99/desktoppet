@@ -7830,7 +7830,8 @@ function canSee(seeker, target) {
     const dx = H.x - S.x, dz = H.z - S.z;
     const d = Math.hypot(dx, dz);
     if (d > 3.2) return false;
-    if (d > 0.8) {   // 팔 뻗을 거리 밖이면 시야 원뿔 안에도 있어야 한다
+    if (d < 0.95) return true;   // 팔 뻗을 거리 = 촉각 — 프롭에 가려도, 등 뒤여도 부스럭 소리에 들킨다 (1.1m 지나침 실측 수리)
+    {   // 그 밖은 시야 원뿔 안에도 있어야 한다
         const fx = Math.sin(seeker.mover.rotation.y), fz = Math.cos(seeker.mover.rotation.y);
         if ((fx * dx + fz * dz) / d < 0.25) return false;
     }
@@ -7844,6 +7845,8 @@ function pickHideSpot(fromX, fromZ) {
         const dx = pr.x - fromX, dz = pr.z - fromZ;
         const d = Math.hypot(dx, dz) || 1;
         const x = pr.x + (dx / d) * off, z = pr.z + (dz / d) * off;   // 술래 반대편, 프롭 뒤
+        const sd = Math.hypot(x - fromX, z - fromZ);
+        if (sd > 6.5 || sd < 2.8) continue;   // 스팟 기준 거리 캡 — 멀면 숨다 들키고, 가까우면 개시 즉시 들킨다 (둘 다 실측). 6.5 = 본섬 안
         if (world.isBlocked(x, z)) continue;
         cands.push({ x, z, prop: pr, score: d + Math.random() * 4 });
     }
@@ -7859,6 +7862,8 @@ async function worldHideSeek(clicked) {
     if (!seeker || !hider) return;
     const ok = (q) => q === possessed || (!q.pet.sleeping && !q.bed && !q.dip && q.ai.state !== 'held');
     if (!ok(seeker) || !ok(hider)) { showToast('🙈 지금은 숨바꼭질을 할 수 없어요'); return; }
+    // 광장에서 너무 먼 참가자(무인도·앞바다 표류)는 경로가 안 잡혀 판이 공탕이 된다 — 조용히 다음 기회에 (16m 표류 정착 실측)
+    if (!playerHides && [seeker, hider].some((q) => Math.hypot(q.mover.position.x - HS_COUNT_SPOT.x, q.mover.position.z - HS_COUNT_SPOT.z) > 9)) return;
     duoBusy = true;
     const g = hideSeekGame = {
         phase: 'count', seeker, hider, playerHides,
@@ -7873,18 +7878,26 @@ async function worldHideSeek(clicked) {
         seeker.mover.rotation.y = Math.PI * 0.9;   // 숨는 쪽을 등지고 바다를 본다
         seeker.pet.action = { id: 'think', t: 0 };
         if (playerHides) {
+            g.hiderSettled = true;   // 주인이 숨는 판 — 카운트만 기다린다
             showToast(`🙈 ${petKo(seeker)}가 ${g.countTotal}까지 세요 — 어서 숨어요!`);
         } else {
-            const spot = pickHideSpot(HS_COUNT_SPOT.x, HS_COUNT_SPOT.z);
+            let spot = pickHideSpot(HS_COUNT_SPOT.x, HS_COUNT_SPOT.z);
             if (spot) {
-                gotoAsync(hider, spot.x, spot.z).then(() => {
+                gotoAsync(hider, spot.x, spot.z).then(async () => {
                     if (hideSeekGame !== g || g.cancel) return;
+                    // 경로가 막혀 스팟이 아닌 데서 멈췄으면(스톨 give-up — 11m 밖 정착 실측) 한 번 더, 지금 자리 기준으로
+                    if (Math.hypot(hider.mover.position.x - spot.x, hider.mover.position.z - spot.z) > 1.3) {
+                        const re = pickHideSpot(HS_COUNT_SPOT.x, HS_COUNT_SPOT.z);   // 앵커는 항상 카운트 지점 — 하이더 기준으로 잡으면 섬 밖 스팟이 열린다 (13m 실측)
+                        if (re) { spot = re; await gotoAsync(hider, re.x, re.z); }
+                        if (hideSeekGame !== g || g.cancel) return;
+                    }
+                    g.hiderSettled = true;   // 다 숨었다 — 이제 술래가 나서도 된다
                     hider.ai.state = 'busy';
                     hider.mover.rotation.y = Math.atan2(spot.prop.x - spot.x, spot.prop.z - spot.z);   // 프롭에 딱 붙어 웅크린 방향
                 });
-            }
+            } else g.hiderSettled = true;
         }
-        await waitFor(() => g.t >= g.countTotal || g.cancel, (g.countTotal + 6) * 1000);
+        await waitFor(() => (g.t >= g.countTotal && g.hiderSettled) || g.cancel, (g.countTotal + 10) * 1000);   // 하이더가 덜 숨었으면 수색을 살짝 미룬다 (숨다 들키는 그림 방지)
         if (g.cancel) return;
         seeker.pet.setCount(null);
         seeker.pet.action = { id: 'happy', t: 0 };
@@ -7892,18 +7905,26 @@ async function worldHideSeek(clicked) {
         if (playerHides) showToast('👀 술래가 찾기 시작했어요!');
         // 수색: 숨을 만한 프롭들을 가까운 곳부터(약간 뒤섞어) 순회 — 시야 판정은 updateHideSeek가 맡는다.
         const spots = PROPS.filter((pr) => HIDE_STANDOFF[pr.type])
-            .map((pr) => ({ x: pr.x, z: pr.z, d: Math.hypot(pr.x - HS_COUNT_SPOT.x, pr.z - HS_COUNT_SPOT.z) + Math.random() * 5 }))
+            .map((pr) => {   // 프롭 중심(콜라이더 안 — 비비다 헛돎)이 아니라, 하이더가 실제 서는 반대편 스탠드오프 지점으로
+                const off = HIDE_STANDOFF[pr.type];
+                const dx = pr.x - HS_COUNT_SPOT.x, dz = pr.z - HS_COUNT_SPOT.z;
+                const dd = Math.hypot(dx, dz) || 1;
+                return { x: pr.x + (dx / dd) * off, z: pr.z + (dz / dd) * off, d: dd + Math.random() * 5 };
+            })
+            .filter((wp) => !world.isBlocked(wp.x, wp.z))
             .sort((a, b) => a.d - b.d);
         const done = () => g.found || g.cancel || g.seekT > 90;
         for (const wp of spots) {
             if (done()) break;
             await Promise.race([
-                gotoAsync(seeker, wp.x + (Math.random() - 0.5) * 0.8, wp.z + (Math.random() - 0.5) * 0.8),
+                gotoAsync(seeker, wp.x + (Math.random() - 0.5) * 0.3, wp.z + (Math.random() - 0.5) * 0.3),
                 waitFor(done, 30000),
             ]);
         }
-        while (!done()) {   // 코스를 다 돌고도 못 찾았으면 시간이 다할 때까지 재수색
-            const wp = spots[Math.floor(Math.random() * spots.length)];
+        while (!done()) {   // 코스를 다 돌고도 못 찾았으면 재수색 — 절반은 발소리(하이더 부근 ±1.2)를 따라간다
+            const wp = Math.random() < 0.5
+                ? spots[Math.floor(Math.random() * spots.length)]
+                : { x: g.hider.mover.position.x + (Math.random() - 0.5) * 2.4, z: g.hider.mover.position.z + (Math.random() - 0.5) * 2.4 };
             await Promise.race([gotoAsync(seeker, wp.x, wp.z), waitFor(done, 30000)]);
         }
         if (g.cancel) return;
@@ -8418,6 +8439,27 @@ if (statsOn) window.__worldDev = {
     },
     cookState: () => (cooking ? { pet: cooking.p.name, phase: cooking.phase } : null),
     dishes: () => ({ ...dishesFound }),
+    hsGo: () => {   // 숨바꼭질 강제 시작 (부팅 선점 청산)
+        for (const q0 of pets) {
+            if (q0 === possessed) continue;
+            if (q0.bed) forceEndBed(q0);
+            if (q0.dip) endDip(q0);
+            if (aiFishing && aiFishing.p === q0) endAiFishing();
+            releaseAI(q0);
+            q0.ai.state = 'idle';
+        }
+        window.__worldDev.tp && pets.forEach((q, i) => {   // E2E 결정화 — 참가자를 광장 근처로 (endDip이 바다에 둔 채 시작하던 함정)
+            q.mover.position.set(0.6 - i * 1.1, world.groundHeightAt(0.6 - i * 1.1, 0.7), 0.7);
+        });
+        worldHideSeek(pets[0]);
+        return !!hideSeekGame;
+    },
+    hsState: () => {
+        const g = hideSeekGame;
+        if (!g) return null;
+        const d = Math.hypot(g.seeker.mover.position.x - g.hider.mover.position.x, g.seeker.mover.position.z - g.hider.mover.position.z);
+        return { phase: g.phase, seekT: +g.seekT.toFixed(1), found: g.found, d: +d.toFixed(2), seeker: g.seeker.name };
+    },
     dishesSeed: (n) => {   // E2E: 도감 종수 주입 → 마일스톤 해금 검사
         dishesFound = {};
         for (let i = 0; i < n; i++) dishesFound[`_seed${i}`] = 1;
