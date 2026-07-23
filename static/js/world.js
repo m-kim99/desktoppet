@@ -7550,6 +7550,7 @@ if (statsOn) window.__worldDev = {
     },
     aiEvaShort: () => { if (ROCKET.aiEvaT > 0) ROCKET.aiEvaT = 5; return +(ROCKET.aiEvaT || 0).toFixed(1); },
     teleGo: () => { startTeleView(); return !!teleView; },
+    plazaGo: () => { const was = possessed ? possessed.name : 'cam'; goPlaza(); return was; },
     teleState: () => teleView ? { i: teleView.vistas.i, n: teleView.vistas.list.length, cam: [+camera.position.x.toFixed(1), +camera.position.y.toFixed(1), +camera.position.z.toFixed(1)] } : null,
     rocketTp: (x, y, z) => { if (rocketRide && (ROCKET.mode === 'space' || ROCKET.mode === 'manual')) { ROCKET.mode = 'manual'; ROCKET.spd = 0; ROCKET.x = x; ROCKET.y = y; ROCKET.z = z; } return ROCKET.mode; },   // E2E — 수동 비행 워프
     rocketAiStart: () => {   // E2E 훅 — 부팅 직후 자율활동(물놀이·낚시 등)에 선점된 펫도 결정적으로 출발시킨다
@@ -18210,6 +18211,52 @@ function refreshIsletChunks() {
 // ---- 🧲 탈것 회수: 지도에서 아이콘 탭 → "원위치로 회수" + 수면 시간대 자동 귀항 (2시간
 // 미사용 + 홈에서 12m 이상 = 밤사이 스스로 돌아옴). 페리·열기구는 자가 귀환이라 제외. ----
 const vehicleLastUse = { boat: Date.now(), plane: Date.now(), sub: Date.now(), car: Date.now() };
+// ⛲ 광장 패스트 트래블 (지도 핀 → 확인 버튼, 회수 문법): 빙의 펫은 어떤 상황이든 — 로켓 비행·달
+// 뒷면·해저 포함 — 강제 적출 후 분수 곁으로. 트릭 = "해제→재빙의→TP" 3연타로 검증된 청산 경로 전부
+// 재사용. 로켓 탑승만 특수(비행 중 해제 = '탑승 유지 오토파일럿'이라 진짜 적출이 따로 필요 — 남은
+// 절친은 솔로 AI 라이더로 승격, 빈 로켓은 알아서 귀환). 무빙의면 카메라만 광장 부감으로.
+const PLAZA_SPOT = { x: 0.95, z: -1.35 };
+function goPlaza() {
+    const p = possessed;
+    if (p) {
+        if (rocketRide && (rocketRide.p === p || rocketRide.friend === p)) {
+            const r = rocketRide;
+            if (r.friend === p) r.friend = null;
+            else if (r.friend) {
+                r.p = r.friend;
+                r.friend = null;
+                r.isAI = true;
+                releaseAI(r.p);
+                r.p.ai.state = 'busy';
+            } else { r.p = null; r.empty = true; }
+        }
+        if (rocketTether && rocketTether.p === p) { rocketTether = null; tetherLine.visible = false; }
+        if (p.poiWalk) { p.poiWalk = null; p.moonYaw = 0; p.moonH = 0; p.moonJumpV = undefined; p.moonDir = null; }
+        if (dive && dive.p === p && !dive.isAI) endDive();
+        if (fishing && fishing.p === p && fishing.state !== 'idle') cancelFishing(true);
+        p.tramp = null;
+        releasePossession();   // 나머지(차·배·잠수정·침대·손잡기·통화…)는 검증된 청산 경로로
+        possessPet(p);         // 조종은 무조건 성공 규칙
+        p.mover.position.set(PLAZA_SPOT.x, world.groundHeightAt(PLAZA_SPOT.x, PLAZA_SPOT.z), PLAZA_SPOT.z);
+        p.mover.rotation.set(0, Math.atan2(-PLAZA_SPOT.x, -PLAZA_SPOT.z), 0);
+        p.swimming = false;
+        for (let i = 0; i < 9; i++) {   // 도착 스월
+            const a = (i / 9) * Math.PI * 2;
+            const spr = glowSprite(0xbfe0ff, 0.08 + Math.random() * 0.05, 0.85);
+            spr.position.set(PLAZA_SPOT.x + Math.cos(a) * 0.28, p.mover.position.y + 0.15 + (i % 3) * 0.14, PLAZA_SPOT.z + Math.sin(a) * 0.28);
+            scene.add(spr);
+            hugBurst.push({ spr, vx: Math.cos(a) * 0.4, vy: 0.5, vz: Math.sin(a) * 0.4, t: 0.45 });
+        }
+        playBuffer(swishBuf, { vol: 0.35, rate: 1.4, filterFreq: 1200 });
+        showToast('⛲ 광장으로 순간이동!');
+        logWorldEvent(`${petKo(p)}가 광장 분수 곁으로 순간이동했다 ⛲✨`);
+    } else {
+        camera.position.set(5.2, 4.6, 5.2);
+        controls.target.set(0, 0.4, 0);
+        zoomTargetDist = THREE.MathUtils.clamp(camera.position.distanceTo(controls.target), controls.minDistance, controls.maxDistance);
+        showToast('⛲ 광장 전망으로 왔어요');
+    }
+}
 function recallVehicle(type, quiet = false) {
     if (type === 'boat') {
         if (boatRide) { if (!quiet) showToast('🚣 지금 타는 중이에요'); return false; }
@@ -18376,8 +18423,13 @@ mapPanel.addEventListener('pointerup', (e) => {   // 🧲 탈것 아이콘 탭 �
     const my = (e.clientY - rect.top) * (mapPanel.height / rect.height);
     const hit = mapIconPts.find((q) => Math.hypot(q.sx - mx, q.sy - my) < 20);
     if (!hit) { mapMenu.style.display = 'none'; return; }
-    mapMenuBtn.textContent = `🧲 ${hit.type === 'boat' ? '나룻배' : hit.type === 'sub' ? '노랑호' : hit.type === 'car' ? '스포츠카' : '경비행기'} 원위치로 회수`;
-    mapMenuBtn.onclick = () => { mapMenu.style.display = 'none'; recallVehicle(hit.type); drawWorldMap(); };
+    if (hit.type === 'plaza') {   // ⛲ 패스트 트래블 — 회수와 같은 2단 확인
+        mapMenuBtn.textContent = possessed ? `⛲ ${petKo(possessed)} 광장으로 순간이동` : '⛲ 광장 구경 가기';
+        mapMenuBtn.onclick = () => { mapMenu.style.display = 'none'; goPlaza(); drawWorldMap(); };
+    } else {
+        mapMenuBtn.textContent = `🧲 ${hit.type === 'boat' ? '나룻배' : hit.type === 'sub' ? '노랑호' : hit.type === 'car' ? '스포츠카' : '경비행기'} 원위치로 회수`;
+        mapMenuBtn.onclick = () => { mapMenu.style.display = 'none'; recallVehicle(hit.type); drawWorldMap(); };
+    }
     mapMenu.style.left = `${Math.min(e.clientX + 6, window.innerWidth - 190)}px`;
     mapMenu.style.top = `${Math.min(e.clientY, window.innerHeight - 56)}px`;
     mapMenu.style.display = 'block';
@@ -18550,6 +18602,7 @@ function drawWorldMap() {
     mark('🚣', BOAT.x, BOAT.z, 'boat');
     mark('🛩️', PLANE.x, PLANE.z, 'plane');
     mark('🏎️', CAR.x, CAR.z, 'car');
+    mark('⛲', 0, 0, 'plaza');   // 패스트 트래블 핀 — 탭 → 확인 버튼 (회수 문법)
     {   // 🟡 노랑호 — 잠수함 이모지가 없어 캡슐을 직접 그린다
         const d = Math.hypot(SUB.x, SUB.z);
         const lim = viewR - 4;
