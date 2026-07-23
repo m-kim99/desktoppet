@@ -6236,6 +6236,7 @@ function savePetState() {
                 swim: p.swimming || null,
             };
         }
+        out.sp = rocketSaveToken();   // 🚀 우주 내구 상태(착륙/EVA)는 {poi}, 비행 중은 'flight' — 로드가 정산 복원
         localStorage.setItem('world-pets', JSON.stringify(out)); worldSync('world-pets');
     } catch (e) {}
 }
@@ -7531,6 +7532,7 @@ if (statsOn) window.__worldDev = {
     rocketState: () => ({ mode: ROCKET.mode, x: +ROCKET.x.toFixed(2), y: +ROCKET.y.toFixed(2), z: +ROCKET.z.toFixed(2), pitch: +ROCKET.pitch.toFixed(2), lap: +ROCKET.lapAcc.toFixed(2), burn: +ROCKET.burn.toFixed(2), spaceF: +spaceF.toFixed(2), riding: !!rocketRide, empty: !!(rocketRide && rocketRide.empty), friend: !!(rocketRide && rocketRide.friend), ai: !!(rocketRide && rocketRide.isAI), walk: !!aiRocketWalk, hop: !!rocketHop, light: rocketLightOn, padK: +(ROCKET.padK || 0).toFixed(2), poi: ROCKET.poi ? ROCKET.poi.id : null, found: Object.keys(spacePoiFound).length, out: pets.filter((q) => q.poiWalk).length, course: ROCKET.route ? ROCKET.route.names.join('·') : null, wp: ROCKET.route ? `${ROCKET.route.i}/${ROCKET.route.pts.length}` : null, dwell: ROCKET.route ? +ROCKET.route.dwellT.toFixed(1) : 0, tether: rocketTether ? +rocketTether.off.length().toFixed(2) : null, reeling: !!(rocketTether && rocketTether.reeling) }),
     rocketJump: () => { doJump(); return !!rocketTether; },
     petBounce: (name) => { const q = pets.find((o) => o.name === name); return q ? +q.pet.wrap.position.y.toFixed(3) : null; },
+    moonTp: (nx, ny, nz) => { const p = possessed; if (!p || !p.poiWalk || !p.poiWalk.R) return false; const poi = p.poiWalk; const L = Math.hypot(nx, ny, nz) || 1; p.mover.position.set(poi.x + (nx / L) * poi.R, poi.y + (ny / L) * poi.R, poi.z + (nz / L) * poi.R); return true; },   // E2E — 구면 워프
     rocketTp: (x, y, z) => { if (rocketRide && (ROCKET.mode === 'space' || ROCKET.mode === 'manual')) { ROCKET.mode = 'manual'; ROCKET.spd = 0; ROCKET.x = x; ROCKET.y = y; ROCKET.z = z; } return ROCKET.mode; },   // E2E — 수동 비행 워프
     rocketAiStart: () => {   // E2E 훅 — 부팅 직후 자율활동(물놀이·낚시 등)에 선점된 펫도 결정적으로 출발시킨다
         const q = pets.find((o) => o !== possessed);
@@ -10774,6 +10776,10 @@ function doJump() {
         if (ROCKET.mode === 'space' && !rocketTether) startTether();   // 🧑‍🚀 순항 중 점프키 = 해치 열고 테더 유영
         return;
     }
+    if (possessed.poiWalk && possessed.poiWalk.R) {   // 🌕 구면에선 전역 y 점프 금지 — 법선 점프로
+        if (possessed.moonJumpV === undefined) possessed.moonJumpV = 2.35;
+        return;
+    }
     if (possessed.tramp) { possessed.tramp.boost = true; return; }   // 🤸 바운스 중 Space = 다음 발사 부스트
     if (fishing && (fishing.state === 'bite' || fishing.state === 'wait')) { fishingIntercept(); return; }   // Space도 챔질
     if (fishing && fishing.state !== 'idle') return;   // 시전·파이팅 중 점프 잠금
@@ -10815,7 +10821,7 @@ function doInteract() {
     if (balloonRide && (balloonRide.p === possessed || balloonRide.friend === possessed)) { requestBalloonExit(); return; }
     if (rocketRide && (rocketRide.p === possessed || rocketRide.friend === possessed)) { requestRocketExit(); return; }
     if (possessed.poiWalk) {   // 🧑‍🚀 표면 산책 중 ⌘ — 로켓 곁 = 재탑승·이륙, 자판기 곁 = 랜덤 뽑기
-        if (Math.hypot(possessed.mover.position.x - ROCKET.x, possessed.mover.position.z - ROCKET.z) < 2.0) boardPoiRocket();
+        if (Math.hypot(possessed.mover.position.x - ROCKET.x, possessed.mover.position.y - ROCKET.y, possessed.mover.position.z - ROCKET.z) < 2.2) boardPoiRocket();   // 3D 거리 — 구체 뒷면에서 로켓을 관통해 탑승 금지
         else if (possessed.poiWalk.id === 'station'
             && Math.hypot(possessed.mover.position.x - VEND_FRONT.x, possessed.mover.position.z - VEND_FRONT.z) < 1.4) vendGacha(possessed);
         else showToast('🚀 로켓 곁에서 ⌘ = 재탑승·이륙');
@@ -11237,6 +11243,58 @@ function updatePlayer(delta) {
             p.pet.walking = false;
             return;
         }
+    }
+    if (p.poiWalk && p.poiWalk.R) {   // 🌕 갤럭시식 구체 보행 — 접평면 이동·법선 점프, 일반 물리 전면 양보 (자세는 updateRocketPose 소유)
+        const poi = p.poiWalk;
+        moonNormalOf(poi, p.mover.position, _mnN);
+        let mx = 0, mz = 0;
+        if (heldKeys.has('ArrowUp')) mz += 1;
+        if (heldKeys.has('ArrowDown')) mz -= 1;
+        if (heldKeys.has('ArrowLeft')) mx -= 1;
+        if (heldKeys.has('ArrowRight')) mx += 1;
+        if (touchMove.active) { mx = touchMove.x; mz = touchMove.z; }
+        let moving = false;
+        const sameIn = p.moonIx === mx && p.moonIz === mz;
+        p.moonIx = mx; p.moonIz = mz;
+        if (mx !== 0 || mz !== 0) {
+            camera.getWorldDirection(_mnF);
+            _mnF.addScaledVector(_mnN, -_mnF.dot(_mnN));   // 카메라 전방을 접평면에 투영
+            let ok = _mnF.lengthSq() > 0.09;
+            if (ok) {
+                _mnF.normalize();
+                _mnR.crossVectors(_mnF, _mnN);
+                _mnD.copy(_mnR).multiplyScalar(mx).addScaledVector(_mnF, mz).normalize();
+            }
+            if (p.moonDir && sameIn) {   // 🌍 종주 안정화: 같은 입력인데 투영이 퇴화·반전되면(적도 너머) 관성 방향 유지
+                _mnM.copy(p.moonDir).addScaledVector(_mnN, -p.moonDir.dot(_mnN));
+                if (_mnM.lengthSq() > 1e-4) {
+                    _mnM.normalize();
+                    if (!ok || _mnD.dot(_mnM) < 0.15) { _mnD.copy(_mnM); ok = true; }
+                }
+            }
+            if (ok) {
+                const run = running || (touchMove.active && touchMove.mag > 0.7);
+                p.mover.position.addScaledVector(_mnD, p.speed * (run ? 3.0 : 1.5) * delta);   // 속도는 지상 걷기·달리기와 동일
+                moonNormalOf(poi, p.mover.position, _mnN);
+                _mnD.addScaledVector(_mnN, -_mnD.dot(_mnN)).normalize();
+                (p.moonDir || (p.moonDir = new THREE.Vector3())).copy(_mnD);
+                moonYawLerp(p, moonYawTo(_mnN, _mnD), delta * 7);
+                moving = true;
+            }
+        } else p.moonDir = null;   // 입력 뗌 — 다음 입력은 카메라 기준 새 방향
+        p.pet.walking = moving;
+        if (p.moonJumpV !== undefined) {   // 법선 방향 저중력 점프
+            p.moonH = (p.moonH || 0) + p.moonJumpV * delta;
+            p.moonJumpV -= 2.6 * delta;
+            if (p.moonH <= 0) { p.moonH = 0; p.moonJumpV = undefined; playStep('sand', 1.0); }
+        }
+        moonPlace(p, poi, _mnN, p.moonH || 0);
+        p.swimming = false;
+        const under = _mnN.y < -0.15;
+        const rkNear3 = Math.hypot(p.mover.position.x - ROCKET.x, p.mover.position.y - ROCKET.y, p.mover.position.z - ROCKET.z) < 2.2;
+        const mHint = `🌕 ${petKo(p)} 달${under ? ' 뒷면(!)' : ''} 산책 중 — 온 구체 자유 · 저중력 ${IS_TOUCH ? '🦘' : 'Space'} 점프${rkNear3 ? ` · ${IS_TOUCH ? '✋' : '⌘'} 재탑승·이륙` : ''} · ${IS_TOUCH ? '✕' : 'Esc'} 해제`;
+        if (controlHint.textContent !== mHint) controlHint.textContent = mHint;
+        return;
     }
     let ix = 0, iz = 0;
     if (heldKeys.has('ArrowUp')) iz += 1;
@@ -13400,6 +13458,29 @@ function poiSurfaceY(poi, x, z) {   // 산책 표면 — 달은 구면 캡(언�
     return poi.y;
 }
 const MOON_PAD_N = new THREE.Vector3(1.4, Math.sqrt(49 - 1.96), 0).normalize();   // 정상에서 살짝 비낀 착륙 명당 — 어린왕자 기울기
+const MOON_FLAG_N = new THREE.Vector3(-1.9, 6.55, 1.3).normalize();               // 빨간 깃발 법선 — 조형·산책 어포던스 공유
+// 🌕 갤럭시식 구체 보행 유틸: "위" = 구 법선. 위치는 (법선 × R+h), 자세는 법선 정렬 ∘ 로컬(요·기울임).
+// 물리엔진 한계가 아니라 높이맵(x,z→y 하나)의 한계였으므로 — 달 존은 법선 파라미터화로 전신 보행.
+const _mnN = new THREE.Vector3(), _mnF = new THREE.Vector3(), _mnR = new THREE.Vector3(), _mnD = new THREE.Vector3(), _mnZ = new THREE.Vector3(), _mnAxis = new THREE.Vector3(), _mnM = new THREE.Vector3();
+const _mnQ = new THREE.Quaternion(), _mnQ2 = new THREE.Quaternion(), _mnE = new THREE.Euler();
+function moonNormalOf(poi, pos, out) { return out.set(pos.x - poi.x, pos.y - poi.y, pos.z - poi.z).normalize(); }
+function moonPlace(q, poi, n, h) {
+    q.mover.position.set(poi.x + n.x * (poi.R + h), poi.y + n.y * (poi.R + h), poi.z + n.z * (poi.R + h));
+}
+function moonYawTo(n, d) {   // 접평면 방향 d → 정렬 프레임 기준 로컬 요
+    _mnZ.set(0, 0, 1).applyQuaternion(_mnQ.setFromUnitVectors(UP, n));
+    return Math.atan2(_mnAxis.crossVectors(_mnZ, d).dot(n), _mnZ.dot(d));
+}
+function moonOrient(q, n, lean) {   // 최종 자세 — updateRocketPose가 매 프레임 단독 소유
+    _mnE.set(lean, q.moonYaw || 0, 0, 'YXZ');
+    q.mover.quaternion.copy(_mnQ.setFromUnitVectors(UP, n)).multiply(_mnQ2.setFromEuler(_mnE));
+}
+function moonYawLerp(q, yawT, rate) {
+    let dy = yawT - (q.moonYaw || 0);
+    while (dy > Math.PI) dy -= Math.PI * 2;
+    while (dy < -Math.PI) dy += Math.PI * 2;
+    q.moonYaw = (q.moonYaw || 0) + THREE.MathUtils.clamp(dy, -rate, rate);
+}
 SPACE_POIS[0].padPos = new THREE.Vector3(SPACE_POIS[0].x, SPACE_POIS[0].y, SPACE_POIS[0].z).addScaledVector(MOON_PAD_N, 7);
 SPACE_POIS[0].padQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), MOON_PAD_N);
 SPACE_POIS[1].padPos = new THREE.Vector3(SPACE_POIS[1].x, SPACE_POIS[1].y, SPACE_POIS[1].z + 2.2);   // 갑판 위 착륙 패드 (코어 비켜서)
@@ -13451,7 +13532,7 @@ const poiBeaconMat = new THREE.MeshBasicMaterial({ color: 0xff7a6a, transparent:
         craterGeos.push(rim);
     }
     addMerged(moonG, craterGeos, poiCrater);
-    const flagN = new THREE.Vector3(-1.9, 6.55, 1.3).normalize();   // 깃발 — 산책 캡 안, 정상 곁 (걸어가서 볼 수 있다)
+    const flagN = MOON_FLAG_N;   // 깃발 — 조형·산책 어포던스가 같은 법선 공유
     _cq.setFromUnitVectors(new THREE.Vector3(0, 1, 0), flagN);
     const pole = new THREE.CylinderGeometry(0.035, 0.045, 1.15, 6);
     pole.translate(0, 0.56, 0);
@@ -13635,19 +13716,85 @@ function disembarkPoi() {
 function boardPoiRocket() {   // 산책 → 재탑승 = 곧장 이륙 (발사대의 "타면 떠난다" 문법)
     const rider = possessed;
     const q = pets.find((o) => o !== rider && o.poiWalk);
-    rider.poiWalk = null;
+    for (const w of [rider, q]) { if (w) { w.poiWalk = null; w.moonYaw = 0; w.moonH = 0; w.moonJumpV = undefined; w.moonDir = null; w.mover.rotation.set(0, w.mover.rotation.y, 0); } }   // 구면 자세 청산
     rider.swimming = false;
-    if (q) { q.poiWalk = null; q.swimming = false; if (q.ai.state !== 'held') { releaseAI(q); q.ai.state = 'held'; } }
+    if (q) { q.swimming = false; if (q.ai.state !== 'held') { releaseAI(q); q.ai.state = 'held'; } }
     rocketRide = { p: rider, friend: q || null, t: 0, zg: 0, som: [{ cd: 6 + Math.random() * 6, t: 9 }, { cd: 10 + Math.random() * 6, t: 9 }] };
     ROCKET.padDir = -1; ROCKET.padDone = false;
     wakeSoft(4000);
     showToast('🚀 재탑승 — 이륙!');
     logWorldEvent(ROCKET.poi && ROCKET.poi.id === 'moon' ? '별똥호가 달에서 이륙했다 🌕' : '별똥호가 정거장을 떠났다 🛰️');
 }
+// 🔁 세션 영속: 착륙/도킹/EVA = 내구 상태({poi} — 그 자리에서 이어짐), 비행 중 = 'flight'(순간 상태 —
+// 재접속 시 여행을 곱게 정산하고 발사대 곁 물가에서 시작). BotW식 세이프 앵커 + 심즈식 상태 요약.
+function rocketSaveToken() {
+    const landed = (ROCKET.mode === 'moonland' || ROCKET.mode === 'dock') && ROCKET.padDir > 0 && ROCKET.padK >= 0.99;
+    if (landed && ROCKET.poi) return { poi: ROCKET.poi.id };
+    const walker = pets.find((q) => q.poiWalk);
+    if (walker) return { poi: walker.poiWalk.id };   // 보험 — 착륙 상태가 아닌데 산책자가 있으면
+    if (rocketRide && !rocketRide.empty && ROCKET.mode !== 'parked') return 'flight';
+    return null;
+}
+function applySpaceRestore(tok) {
+    if (tok && tok.poi) {
+        const poi = SPACE_POIS.find((q) => q.id === tok.poi);
+        if (!poi) return;
+        ROCKET.mode = poi.id === 'moon' ? 'moonland' : 'dock';
+        ROCKET.poi = poi;
+        ROCKET.padK = 1; ROCKET.padDir = 1; ROCKET.padDone = true; ROCKET.aiDwell = 9e9;
+        ROCKET.burn = 0;
+        ROCKET.x = poi.padPos.x; ROCKET.y = poi.padPos.y; ROCKET.z = poi.padPos.z;
+        // 이륙 이징 시작점(free*) 필수 — 안 채우면 pad lerp가 undefined→NaN으로 좌표 전체 오염 (실측)
+        ROCKET.freeX = poi.padPos.x + (poi.R ? MOON_PAD_N.x * 2.6 : 0);
+        ROCKET.freeY = poi.padPos.y + 2.6;
+        ROCKET.freeZ = poi.padPos.z + (poi.R ? MOON_PAD_N.z * 2.6 : 0);
+        ROCKET.freeHeading = 0; ROCKET.freePitch = 0;
+        ROCKET.heading = 0; ROCKET.pitch = 0;
+        rocketGroup.position.copy(poi.padPos);
+        rocketGroup.quaternion.copy(poi.padQuat);
+        const dx = poi.x - ROCKET.x, dz = poi.z - ROCKET.z;
+        const L = Math.hypot(dx, dz) || 1;
+        pets.forEach((q, i) => {
+            const side = i ? -1 : 1;
+            const qx = ROCKET.x + (dx / L) * 1.5 - (dz / L) * side * 0.5;
+            const qz = ROCKET.z + (dz / L) * 1.5 + (dx / L) * side * 0.5;
+            q.mover.position.set(qx, poiSurfaceY(poi, qx, qz), qz);
+            q.poiWalk = poi;
+            q.swimming = false;
+            releaseAI(q);
+            q.ai.state = 'held';
+        });
+        logWorldEvent(`${poi.emoji} ${poi.ko}에서의 시간이 그대로 이어진다 — 펫들은 여전히 우주 산책 중 🧑‍🚀`);
+    } else if (tok === 'flight') {
+        let best = ISLANDS[0], bd = Infinity;
+        for (const s of ISLANDS) { const d = Math.hypot(ROCKET_PAD.x - s.x, ROCKET_PAD.z - s.z) - s.r; if (d < bd) { bd = d; best = s; } }
+        const dx = ROCKET_PAD.x - best.x, dz = ROCKET_PAD.z - best.z, L = Math.hypot(dx, dz) || 1;
+        pets.forEach((q, i) => {
+            const t_ = (i ? -1 : 1) * 0.55;
+            const qx = best.x + (dx / L) * (best.r - 0.7) - (dz / L) * t_;
+            const qz = best.z + (dz / L) * (best.r - 0.7) + (dx / L) * t_;
+            q.mover.position.set(qx, world.groundHeightAt(qx, qz), qz);
+            q.mover.rotation.set(0, Math.atan2(dx, dz), 0);
+            q.swimming = false;
+        });
+        logWorldEvent('밤사이 별똥호가 우주 여행을 마치고 무사히 돌아왔다 🚀');
+    }
+}
+{   // 부팅 복원 — 펫 로드가 비동기라 도착을 기다렸다 1회 적용
+    const tok = savedPets && savedPets.sp;
+    if (tok) {
+        const iv = setInterval(() => {
+            if (pets.length < PETS.length) return;
+            clearInterval(iv);
+            try { applySpaceRestore(tok); } catch (e) {}
+        }, 300);
+        setTimeout(() => clearInterval(iv), 30000);   // 로드 실패 안전망
+    }
+}
 function poiAutoReturn() {   // 산책 중 빙의 해제 — 펫들이 알아서 로켓 타고 집으로
     const walkers = pets.filter((q) => q.poiWalk);
     if (!walkers.length) return;
-    for (const q of walkers) { q.poiWalk = null; q.swimming = false; releaseAI(q); }
+    for (const q of walkers) { q.poiWalk = null; q.moonYaw = 0; q.moonH = 0; q.moonJumpV = undefined; q.mover.rotation.set(0, q.mover.rotation.y, 0); q.swimming = false; releaseAI(q); }
     walkers[0].ai.state = 'busy';
     if (walkers[1]) walkers[1].ai.state = 'held';
     rocketRide = { p: walkers[0], friend: walkers[1] || null, t: 0, zg: 0, isAI: true, som: [{ cd: 9, t: 9 }, { cd: 13, t: 9 }] };
@@ -14419,14 +14566,71 @@ function updateRocket(delta) {
         const poi = q.poiWalk;
         poiWalkers += 1;
         const mp_ = q.mover.position;
-        const dx = mp_.x - poi.x, dz = mp_.z - poi.z;
-        const d = Math.hypot(dx, dz);
-        if (d > poi.walkR) { mp_.x = poi.x + (dx / d) * poi.walkR; mp_.z = poi.z + (dz / d) * poi.walkR; }
+        if (!poi.R) {   // 울타리는 평갑판(정거장)만 — 달은 온 구체가 보행면
+            const dx = mp_.x - poi.x, dz = mp_.z - poi.z;
+            const d = Math.hypot(dx, dz);
+            if (d > poi.walkR) { mp_.x = poi.x + (dx / d) * poi.walkR; mp_.z = poi.z + (dz / d) * poi.walkR; }
+        }
         if (q === possessed) { poiLeaderOn = true; continue; }
-        // 🚶 존 배회(앵커 배회 + 로컬 어포던스): 무빙의 펫은 조종 여부와 무관하게 각자 독립적으로 산다.
-        // 목표는 존 안에서만 생성(본토 점프 원천 차단), 회전은 보간(스냅 금지). 따라다니기 없음 —
-        // 사용자가 아무도 조종 안 하고 구경만 할 수도 있으니까.
-        if (!q.poiAmble) q.poiAmble = { mode: 'pause', t: 0.8 + Math.random() * 1.5, tx: mp_.x, tz: mp_.z, spd: 0.72, hopT: 9, hops: 0, faceA: null };
+        if (poi.R) {   // 🌕 구체 배회 — 목표=단위 법선, 이동=대원(great-circle), 자세는 updateRocketPose(moonOrient) 소유
+            if (!q.poiAmble || !q.poiAmble.tn) q.poiAmble = { mode: 'pause', t: 0.8 + Math.random() * 1.5, spd: 0.7, hopT: 9, hops: 0, faceYaw: null, tn: new THREE.Vector3(0, 1, 0) };
+            const am = q.poiAmble;
+            const sphereTn = (yLo, yHi) => {
+                const yc = yLo + Math.random() * (yHi - yLo);
+                const rxy = Math.sqrt(Math.max(0, 1 - yc * yc)), az = Math.random() * Math.PI * 2;
+                am.tn.set(Math.cos(az) * rxy, yc, Math.sin(az) * rxy);
+            };
+            const rollMoon = () => {
+                const r_ = Math.random();
+                am.faceYaw = null;
+                am.spd = 0.6 + Math.random() * 0.22;
+                if (r_ < 0.18) { am.mode = 'flag'; am.tn.copy(MOON_FLAG_N); }
+                else if (r_ < 0.34) { am.mode = 'gazeDown'; sphereTn(-0.9, -0.45); }   // 🌍 남반구 — 거꾸로 매달려 세계 구경
+                else if (r_ < 0.58) { am.mode = 'hop'; am.hops = 2 + Math.floor(Math.random() * 3); am.hopT = 0; }
+                else { am.mode = 'stroll'; sphereTn(-1, 1); }
+            };
+            moonNormalOf(poi, mp_, _mnN);
+            if (am.mode === 'pause' || am.mode === 'gaze') {
+                am.t -= delta;
+                q.pet.walking = false;
+                if (am.faceYaw !== null) moonYawLerp(q, am.faceYaw, 2.4 * delta);
+                if (am.t <= 0) rollMoon();
+            } else if (am.mode === 'hop') {
+                q.pet.walking = false;
+                if (am.hopT >= 0.85) {
+                    if (am.hops > 0) { am.hops -= 1; am.hopT = 0; }
+                    else { am.mode = 'pause'; am.t = 1.5 + Math.random() * 2.5; }
+                }
+            } else {
+                const ang = _mnN.angleTo(am.tn);
+                if (ang > 0.035) {
+                    _mnAxis.crossVectors(_mnN, am.tn);
+                    if (_mnAxis.lengthSq() < 1e-8) _mnAxis.set(1, 0, 0); else _mnAxis.normalize();
+                    _mnN.applyAxisAngle(_mnAxis, Math.min(ang, (am.spd / poi.R) * delta));
+                    _mnD.crossVectors(_mnAxis, _mnN).normalize();
+                    moonYawLerp(q, moonYawTo(_mnN, _mnD), 4.5 * delta);
+                    q.pet.walking = true;
+                } else {
+                    q.pet.walking = false;
+                    if (am.mode === 'flag') {   // 도착 — 깃발을 마주보고
+                        am.mode = 'gaze'; am.t = 3 + Math.random() * 3;
+                        _mnD.set(poi.x + MOON_FLAG_N.x * poi.R - mp_.x, poi.y + MOON_FLAG_N.y * poi.R - mp_.y, poi.z + MOON_FLAG_N.z * poi.R - mp_.z);
+                        _mnD.addScaledVector(_mnN, -_mnD.dot(_mnN));
+                        am.faceYaw = _mnD.lengthSq() > 1e-4 ? moonYawTo(_mnN, _mnD.normalize()) : null;
+                    } else if (am.mode === 'gazeDown') {
+                        am.mode = 'gaze'; am.t = 5 + Math.random() * 4; am.faceYaw = null;
+                        if (!am.saidDown && Math.random() < 0.5) { am.saidDown = true; logWorldEvent(`${petKo(q)}가 달 남반구에 거꾸로 매달려 세계를 구경한다 🌍`); }
+                    } else { am.mode = 'pause'; am.t = 2 + Math.random() * 4; am.faceYaw = null; }
+                }
+            }
+            if (am.hopT < 0.85) am.hopT += delta;
+            const hop = am.hopT < 0.85 ? Math.sin((am.hopT / 0.85) * Math.PI) * 0.5 : 0;
+            moonPlace(q, poi, _mnN, hop);
+            continue;
+        }
+        // 🚶 갑판 존 배회(앵커 배회 + 로컬 어포던스): 무빙의 펫은 조종 여부와 무관하게 각자 독립적으로 산다.
+        // 목표는 존 안에서만 생성(본토 점프 원천 차단), 회전은 보간(스냅 금지).
+        if (!q.poiAmble || q.poiAmble.tn) q.poiAmble = { mode: 'pause', t: 0.8 + Math.random() * 1.5, tx: mp_.x, tz: mp_.z, spd: 0.72, hopT: 9, hops: 0, faceA: null };
         const am = q.poiAmble;
         const turnTo = (target, rate) => {
             let dd = target - q.mover.rotation.y;
@@ -14434,19 +14638,11 @@ function updateRocket(delta) {
             while (dd < -Math.PI) dd += Math.PI * 2;
             q.mover.rotation.y += THREE.MathUtils.clamp(dd, -rate, rate);
         };
-        const rollNext = () => {   // 다음 심심풀이 — 존별 어포던스 롤
+        const rollNext = () => {   // 다음 심심풀이 — 갑판 어포던스 롤
             const r_ = Math.random();
             am.faceA = null;
             am.spd = 0.62 + Math.random() * 0.22;
-            if (poi.id === 'moon') {
-                if (r_ < 0.22) { am.mode = 'flag'; am.tx = poi.x - 1.5; am.tz = poi.z + 1.0; }   // 깃발 구경 명당
-                else if (r_ < 0.5) { am.mode = 'hop'; am.hops = 2 + Math.floor(Math.random() * 3); am.hopT = 0; }
-                else {
-                    am.mode = 'stroll';
-                    const aa = Math.random() * Math.PI * 2, rr = 0.6 + Math.random() * (poi.walkR * 0.8);
-                    am.tx = poi.x + Math.cos(aa) * rr; am.tz = poi.z + Math.sin(aa) * rr;
-                }
-            } else if (r_ < 0.12 && !q.food && !vendFly && !q.vendGo) { q.vendGo = 12; am.mode = 'pause'; am.t = 1; }
+            if (r_ < 0.12 && !q.food && !vendFly && !q.vendGo) { q.vendGo = 12; am.mode = 'pause'; am.t = 1; }
             else if (r_ < 0.42) {   // 난간 구경 — 갑판 가장자리에 서서 발밑 세계를 내려다본다
                 am.mode = 'rail';
                 const aa = Math.random() * Math.PI * 2;
@@ -14477,13 +14673,7 @@ function updateRocket(delta) {
             q.pet.walking = false;
             if (am.faceA !== null) turnTo(am.faceA, 2.4 * delta);
             if (am.t <= 0) rollNext();
-        } else if (am.mode === 'hop') {   // 🌕 저중력 폴짝 세션
-            q.pet.walking = false;
-            if (am.hopT >= 0.85) {
-                if (am.hops > 0) { am.hops -= 1; am.hopT = 0; }
-                else { am.mode = 'pause'; am.t = 1.5 + Math.random() * 2.5; }
-            }
-        } else {   // stroll·flag·rail — 존 안 목적지로 슬렁슬렁 (회전 보간)
+        } else {   // stroll·rail — 갑판 목적지로 슬렁슬렁 (회전 보간)
             const fx = am.tx - mp_.x, fz = am.tz - mp_.z;
             const fd = Math.hypot(fx, fz);
             if (fd > 0.28) {
@@ -14493,14 +14683,11 @@ function updateRocket(delta) {
                 q.pet.walking = true;
             } else {
                 q.pet.walking = false;
-                if (am.mode === 'flag') { am.mode = 'gaze'; am.t = 3 + Math.random() * 3; am.faceA = Math.atan2((poi.x - 1.92) - mp_.x, (poi.z + 1.31) - mp_.z); }   // 깃발을 마주보고
-                else if (am.mode === 'rail') { am.mode = 'gaze'; am.t = 4 + Math.random() * 4; am.faceA = Math.atan2(mp_.x - poi.x, mp_.z - poi.z); }   // 바깥 — 발밑 세계 구경
+                if (am.mode === 'rail') { am.mode = 'gaze'; am.t = 4 + Math.random() * 4; am.faceA = Math.atan2(mp_.x - poi.x, mp_.z - poi.z); }   // 바깥 — 발밑 세계 구경
                 else { am.mode = 'pause'; am.t = 2 + Math.random() * 4; am.faceA = null; }
             }
         }
-        if (am.hopT < 0.85) am.hopT += delta;
-        const hop = am.hopT < 0.85 ? Math.sin((am.hopT / 0.85) * Math.PI) * 0.5 : 0;
-        mp_.y = poiSurfaceY(poi, mp_.x, mp_.z) + hop;
+        mp_.y = poiSurfaceY(poi, mp_.x, mp_.z);
         q.mover.rotation.x = 0;
         q.mover.rotation.z = 0;
     }
@@ -14516,11 +14703,12 @@ function updateRocketPose(delta) {   // 엔티티 업데이트 뒤 덮어쓰기 
     // 달 = 낮고 긴 도약 사이클(체공+행타임), 정거장 = 호버-글라이드. 조종·자율 공용, 점프 물리엔 양보.
     for (const q of pets) {
         if (!q.poiWalk) continue;
-        if (q === possessed && airborne) { if (q.zgGait) q.zgGait.ph = 9; continue; }   // Space 점프 중엔 점프가 소유
-        const g = q.zgGait || (q.zgGait = { ph: 9 });
         const moon = !!q.poiWalk.R;
+        if (q === possessed && !moon && airborne) { if (q.zgGait) q.zgGait.ph = 9; continue; }   // 갑판 Space 점프 중엔 점프가 소유
+        const g = q.zgGait || (q.zgGait = { ph: 9 });
         const period = moon ? 0.62 : 0.8;
-        if (q.pet.walking) {
+        if (moon && q.moonJumpV !== undefined) g.ph = 9;   // 🌕 법선 점프 중 — 점프가 소유
+        else if (q.pet.walking) {
             if (g.ph >= 9) g.ph = 0;
             g.ph += delta / period;
             if (g.ph >= 1) g.ph = 0;
@@ -14531,12 +14719,15 @@ function updateRocketPose(delta) {   // 엔티티 업데이트 뒤 덮어쓰기 
         const k = g.ph < 9 ? Math.sin(Math.min(g.ph, 1) * Math.PI) : 0;
         // 바운스는 mover가 아니라 비주얼 래퍼에 — mover.y를 올리면 updatePlayer 물리가 "낙하"로
         // 해석해 되끌어내린다(트램펄린 교훈). k>0일 때만 절대 덮어쓰기 — 엔티티가 매 프레임 재작성하므로
-        // 손 떼는 순간 소유권이 자동 복귀.
+        // 손 떼는 순간 소유권이 자동 복귀. (wrap +y는 mover 로컬 업 = 구면에선 법선 — 자동으로 옳다)
         if (k > 0) {
             q.pet.wrap.position.y = k * (moon ? 0.22 : 0.11);
-            q.mover.rotation.x = k * (moon ? 0.13 : 0.07);   // 살짝 앞기울임 (절대값 — 적분 누적 금지)
             for (const er of q.pet.ears) er.rotation.x = (er.userData._restRotX || 0) - 0.2 * k;   // 귀가 둥실
         }
+        if (moon) {   // 🌕 최종 자세 = 법선 정렬 ∘ (기울임·요) — 이 루프가 매 프레임 단독 소유
+            moonNormalOf(q.poiWalk, q.mover.position, _mnN);
+            moonOrient(q, _mnN, k * 0.13);
+        } else if (k > 0) q.mover.rotation.x = k * 0.07;   // 갑판 — 살짝 앞기울임 (절대값)
     }
     const r = rocketRide;
     if (!r || r.empty) return;
