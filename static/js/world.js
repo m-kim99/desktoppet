@@ -6402,6 +6402,10 @@ const LEISURE_ACTS = [
     { id: 'boat', cdKey: 'nextBoatAt', seed: [300000, 780000], cd: [600000, 1200000], weight: 8, dur: 80,
       gate: () => !boatRide && !aiBoat,
       fire: (p) => startAiBoat(p) === 'ok' },
+    // 📻 라디오 리듬타기 — 주인 음악이면 곁에서 춤만, 꺼져 있으면 한 곡 틀고 흔들다 끈다.
+    { id: 'radio', cdKey: 'nextRadioAt', cd: [600000, 1200000], weight: 8, dur: 40,
+      gate: () => !aiRadio && PROPS.some((q) => q.type === 'radio'),
+      fire: (p) => startAiRadio(p) === 'ok' },
 ];
 // 셀렉터: 2단 롤 — ① "딴짓을 할지"는 LEISURE_RATE 하나로 정하고(총량 노브 — 활동을 더
 // 추가해도 전체 딴짓 빈도는 그대로, 서로의 지분만 재분배), ② 자격 있는 활동만 모아 weight
@@ -7738,6 +7742,18 @@ if (statsOn) window.__worldDev = {
         return startAiBoat(p);
     },
     boatState: () => ({ ai: aiBoat ? { phase: aiBoat.phase, i: aiBoat.i, n: aiBoat.pts.length, retry: aiBoat.retry || 0, pts: aiBoat.pts.map((q) => [+q.x.toFixed(1), +q.z.toFixed(1)]) } : null, ride: boatRide ? boatRide.driver.name : null, x: +BOAT.x.toFixed(2), z: +BOAT.z.toFixed(2), vel: +BOAT.vel.toFixed(2) }),
+    radioGo: (name) => {
+        const p = pets.find((q) => q.name === name);
+        if (!p) return null;
+        if (p.bed) forceEndBed(p);
+        if (p.dip) endDip(p);
+        if (aiFishing && aiFishing.p === p) endAiFishing();
+        releaseAI(p);
+        p.ai.state = 'idle';
+        return startAiRadio(p);
+    },
+    radioState: () => ({ ai: aiRadio ? { pet: aiRadio.p.name, phase: aiRadio.phase, own: aiRadio.own } : null, playing: radioCurrent }),
+    radioPlay: (name) => { playRadioTrack(name); return radioCurrent; },
     heldOf: (name) => {
         const p = pets.find((q) => q.name === name);
         if (!p) return null;
@@ -8847,6 +8863,91 @@ function playRadioTrack(name) {
 function stopRadio() {
     if (radioAudio) { try { radioAudio.pause(); } catch (e) {} radioAudio = null; }
     radioCurrent = null;
+}
+// 📻 라디오 리듬타기 자율 — 라디오 곁으로 가서: 주인이 틀어둔 음악이 있으면 곁에서 춤만,
+// 꺼져 있으면 스스로 한 곡 틀고(트랙 목록은 캐시) 몸을 흔들다 제가 켠 것만 끈다(주인 음악 존중).
+// 음악 파일이 하나도 없으면 킁킁 구경하고 돌아간다 — 죽은 게이트를 만들지 않는 폴백.
+let aiRadio = null;   // { p, pr, phase: walk|tune|bop|peek, t, until, own }
+let radioFilesCache = null;
+function startAiRadio(p) {
+    if (aiRadio || !p || p === possessed || p.bed || p.dip || p.pet.sleeping || p.tramp || p.drink || p.food) return 'busy';
+    if (p.ai.state !== 'idle' && p.ai.state !== 'walk') return 'busy';
+    if ((fishing && fishing.p === p) || (aiFishing && aiFishing.p === p)) return 'busy';
+    const pr = PROPS.find((q) => q.type === 'radio');
+    if (!pr) return 'busy';
+    const a = Math.atan2(p.mover.position.z - pr.z, p.mover.position.x - pr.x);
+    const ax = pr.x + Math.cos(a) * 0.55, az = pr.z + Math.sin(a) * 0.55;
+    if (world.isBlocked(ax, az)) return 'busy';
+    releaseAI(p);
+    p.ai.state = 'goto';
+    p.ai.target = { x: ax, z: az };
+    p.ai.waypoints = buildRoute(p.mover.position, p.ai.target);
+    p.ai.stall = 0;
+    aiRadio = { p, pr, phase: 'walk', t: 0, own: null };
+    aiRadio.ownArrive = () => {
+        if (!aiRadio || aiRadio.p !== p) return;
+        p.ai.state = 'busy';
+        p.mover.rotation.y = Math.atan2(pr.x - p.mover.position.x, pr.z - p.mover.position.z);
+        aiRadio.t = 0;
+        if (radioCurrent) {   // 주인 음악에 맞춰 — 켜고 끄는 건 건드리지 않는다
+            aiRadio.phase = 'bop';
+            aiRadio.until = 18 + Math.random() * 14;
+            logWorldEvent(`${petKo(p)}가 라디오 곁에서 음악에 맞춰 몸을 흔들었다 📻`);
+        } else {
+            aiRadio.phase = 'tune';
+            (async () => {
+                let files = radioFilesCache;
+                if (!files) {
+                    try {
+                        const r = await fetch('/api/radio_list');
+                        files = ((await r.json()) || {}).files || [];
+                    } catch (e) { files = []; }
+                    radioFilesCache = files;
+                    setTimeout(() => { radioFilesCache = null; }, 300000);   // 5분 캐시 — 곡을 새로 넣으면 이내 반영
+                }
+                if (!aiRadio || aiRadio.p !== p || aiRadio.phase !== 'tune') return;
+                if (files.length && !radioCurrent) {
+                    const name = files[Math.floor(Math.random() * files.length)];
+                    playRadioTrack(name);
+                    aiRadio.own = name;
+                    aiRadio.phase = 'bop';
+                    aiRadio.until = 18 + Math.random() * 14;
+                    showToast(`📻 ${petKo(p)}가 라디오를 켰다 — ♪ ${name}`);
+                    logWorldEvent(`${petKo(p)}가 라디오를 켜고 몸을 흔들었다 📻`);
+                } else {
+                    aiRadio.phase = 'peek';
+                    aiRadio.until = 2.6;
+                    if (!p.pet.action) p.pet.action = { id: 'happy', t: 0 };
+                    logWorldEvent(`${petKo(p)}가 라디오를 킁킁 구경했다 📻`);
+                }
+            })();
+        }
+    };
+    p.ai.onArrive = aiRadio.ownArrive;
+    return 'ok';
+}
+function updateAiRadio(delta) {
+    if (!aiRadio) return;
+    const p = aiRadio.p;
+    const bail = () => {   // 스틸·빙의 반납 — 제가 켠 음악은 꺼 준다
+        if (aiRadio.own && radioCurrent === aiRadio.own) stopRadio();
+        aiRadio = null;
+    };
+    if (p === possessed) { bail(); return; }
+    if (aiRadio.phase === 'walk') { if (p.ai.state !== 'goto') aiRadio = null; return; }
+    if (p.ai.state !== 'busy') { bail(); return; }
+    aiRadio.t += delta;
+    if (aiRadio.phase === 'tune') {
+        if (aiRadio.t > 6) { aiRadio.phase = 'peek'; aiRadio.until = 2; }   // fetch 미아 안전망
+        return;
+    }
+    if (aiRadio.phase === 'bop' && !p.pet.action && Math.random() < delta * 1.1) p.pet.action = { id: 'dance', t: 0 };
+    if (aiRadio.t >= aiRadio.until) {
+        if (aiRadio.own && radioCurrent === aiRadio.own) stopRadio();   // 자기가 켠 것만 — 주인이 곡을 바꿨으면 존중
+        const pp = p;
+        aiRadio = null;
+        releaseAI(pp, 2);
+    }
 }
 async function toggleRadioPanel() {
     if (radioPanel.style.display === 'none' || !radioPanel.style.display) {
@@ -20789,6 +20890,7 @@ function animate() {
     updateAiTidy(delta);                     // 🧹 절친 청소부 — 방치 낙과를 바구니로
     updateAiTreat(delta);                    // ☕🍞 부스 간식 — 커피 산책 홀짝·간식 명당 냠냠
     updateAiBoat(delta);                     // 🚣 나룻배 자율 뱃놀이 — 웨이포인트 노젓기
+    updateAiRadio(delta);                    // 📻 라디오 리듬타기 — 곁 댄스·한 곡 틀기
     updateFruitThrows(delta);                // 🧺 원거리 휙 담기 아크
     updateBalloon(delta);                    // 🎈 열기구 — 계류 살랑임/스플라인 투어/귀환
     updateBalloonHop(delta);                 // 절친 승선 큰 아크 — 데크에서 바구니로
