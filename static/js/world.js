@@ -7528,7 +7528,8 @@ if (statsOn) window.__worldDev = {
     petPos: (name) => { const q = pets.find((o) => o.name === name); return q ? { x: +q.mover.position.x.toFixed(2), y: +q.mover.position.y.toFixed(2), z: +q.mover.position.z.toFixed(2) } : null; },
     planeSummon: () => { summonPlanePassenger(); return !!planeHop; },   // 절친 뒷좌석 소환 (E2E)
     balloonState: () => ({ mode: BALLOON.mode, x: +BALLOON.x.toFixed(2), y: +BALLOON.y.toFixed(2), z: +BALLOON.z.toFixed(2), riding: !!balloonRide, rider: balloonRide && balloonRide.p ? balloonRide.p.name : null, friend: balloonRide && balloonRide.friend ? balloonRide.friend.name : null, lap: balloonRide ? balloonRide.lap : 0, pois: balloonRide && balloonRide.route ? balloonRide.route.names.length : 0 }),
-    rocketState: () => ({ mode: ROCKET.mode, x: +ROCKET.x.toFixed(2), y: +ROCKET.y.toFixed(2), z: +ROCKET.z.toFixed(2), pitch: +ROCKET.pitch.toFixed(2), lap: +ROCKET.lapAcc.toFixed(2), burn: +ROCKET.burn.toFixed(2), spaceF: +spaceF.toFixed(2), riding: !!rocketRide, empty: !!(rocketRide && rocketRide.empty), friend: !!(rocketRide && rocketRide.friend), ai: !!(rocketRide && rocketRide.isAI), walk: !!aiRocketWalk, hop: !!rocketHop, light: rocketLightOn, padK: +(ROCKET.padK || 0).toFixed(2), poi: ROCKET.poi ? ROCKET.poi.id : null, found: Object.keys(spacePoiFound).length, out: pets.filter((q) => q.poiWalk).length, course: ROCKET.route ? ROCKET.route.names.join('·') : null, wp: ROCKET.route ? `${ROCKET.route.i}/${ROCKET.route.pts.length}` : null, dwell: ROCKET.route ? +ROCKET.route.dwellT.toFixed(1) : 0 }),
+    rocketState: () => ({ mode: ROCKET.mode, x: +ROCKET.x.toFixed(2), y: +ROCKET.y.toFixed(2), z: +ROCKET.z.toFixed(2), pitch: +ROCKET.pitch.toFixed(2), lap: +ROCKET.lapAcc.toFixed(2), burn: +ROCKET.burn.toFixed(2), spaceF: +spaceF.toFixed(2), riding: !!rocketRide, empty: !!(rocketRide && rocketRide.empty), friend: !!(rocketRide && rocketRide.friend), ai: !!(rocketRide && rocketRide.isAI), walk: !!aiRocketWalk, hop: !!rocketHop, light: rocketLightOn, padK: +(ROCKET.padK || 0).toFixed(2), poi: ROCKET.poi ? ROCKET.poi.id : null, found: Object.keys(spacePoiFound).length, out: pets.filter((q) => q.poiWalk).length, course: ROCKET.route ? ROCKET.route.names.join('·') : null, wp: ROCKET.route ? `${ROCKET.route.i}/${ROCKET.route.pts.length}` : null, dwell: ROCKET.route ? +ROCKET.route.dwellT.toFixed(1) : 0, tether: rocketTether ? +rocketTether.off.length().toFixed(2) : null, reeling: !!(rocketTether && rocketTether.reeling) }),
+    rocketJump: () => { doJump(); return !!rocketTether; },
     rocketTp: (x, y, z) => { if (rocketRide && (ROCKET.mode === 'space' || ROCKET.mode === 'manual')) { ROCKET.mode = 'manual'; ROCKET.spd = 0; ROCKET.x = x; ROCKET.y = y; ROCKET.z = z; } return ROCKET.mode; },   // E2E — 수동 비행 워프
     rocketAiStart: () => {   // E2E 훅 — 부팅 직후 자율활동(물놀이·낚시 등)에 선점된 펫도 결정적으로 출발시킨다
         const q = pets.find((o) => o !== possessed);
@@ -8096,7 +8097,7 @@ function syncDiveBtn() {   // 🤿 문맥 버튼: 바다 수영=🤿, 잠수 중
     }
     if (touchDiveBtns) {   // 📱 딥 다이브·노랑호 수동·별똥호 우주 = 🦘 자리에 🔼🔽 스왑 (마크 모바일 문법)
         const deepNow = (diving && dive.phase === 'deep') || !!(subRide && !subRide.isAI && subRide.p === possessed && SUB.mode === 'manual')
-            || !!(rocketRide && rocketRide.p === possessed && (ROCKET.mode === 'manual' || ROCKET.mode === 'space'));   // space에서도 — 🔼(KeyW)가 곧 조종간 잡기
+            || !!(rocketRide && rocketRide.p === possessed && (ROCKET.mode === 'manual' || rocketTether));   // 순항 중엔 🦘 유지(=유영 해치), 수동·유영은 🔼🔽(W/S)
         const dDisp = deepNow ? 'flex' : 'none';
         if (touchDiveBtns.up.style.display !== dDisp) {
             touchDiveBtns.up.style.display = dDisp;
@@ -10768,7 +10769,10 @@ function doJump() {
     if (balloonRide && (balloonRide.p === possessed || balloonRide.friend === possessed)) return;   // 🎈 바구니에서 점프 금지
     if (ferryRide && (ferryRide.p === possessed || ferryRide.friend === possessed)) return;   // ⛴️ 갑판에서 점프 금지
     if (subRide && (subRide.p === possessed || subRide.friend === possessed)) return;   // 🟡 좌석에서 점프 금지
-    if (rocketRide && (rocketRide.p === possessed || rocketRide.friend === possessed)) return;   // 🚀 캐빈에서 점프 금지
+    if (rocketRide && (rocketRide.p === possessed || rocketRide.friend === possessed)) {
+        if (ROCKET.mode === 'space' && !rocketTether) startTether();   // 🧑‍🚀 순항 중 점프키 = 해치 열고 테더 유영
+        return;
+    }
     if (possessed.tramp) { possessed.tramp.boost = true; return; }   // 🤸 바운스 중 Space = 다음 발사 부스트
     if (fishing && (fishing.state === 'bite' || fishing.state === 'wait')) { fishingIntercept(); return; }   // Space도 챔질
     if (fishing && fishing.state !== 'idle') return;   // 시전·파이팅 중 점프 잠금
@@ -11142,7 +11146,7 @@ function updatePlayer(delta) {
     }
     if (rocketRide && (rocketRide.p === possessed || rocketRide.friend === possessed)) {
         // 🚀 궤도 유영 중 조작 입력 = 조종간 잡기 (노랑호 핸들 문법 — 그 뒤론 stepRocketManual이 updateRocket에서 돈다)
-        if (rocketRide.p === p && ROCKET.mode === 'space') {
+        if (rocketRide.p === p && ROCKET.mode === 'space' && !rocketTether) {   // 유영 중엔 입력이 RCS 분사 — 조종간 안 잡힘
             const inputNow = heldKeys.has('ArrowUp') || heldKeys.has('ArrowDown') || heldKeys.has('ArrowLeft') || heldKeys.has('ArrowRight')
                 || heldKeys.has('KeyW') || heldKeys.has('KeyS') || touchMove.active;
             if (inputNow) {
@@ -11159,7 +11163,9 @@ function updatePlayer(delta) {
                 if (Math.hypot(ROCKET.x - poi.x, ROCKET.y - poi.y, ROCKET.z - poi.z) < poi.near) { nearPoi = poi; break; }
             }
         }
-        const rkHint = ROCKET.mode === 'count' || ROCKET.mode === 'ignite'
+        const rkHint = rocketTether
+            ? `🧑‍🚀 ${petKo(p)} 우주 유영 중 — ${IS_TOUCH ? '스틱' : '방향키'}·${IS_TOUCH ? '🔼🔽' : 'W/S'} 분사 · ${IS_TOUCH ? '✋' : '⌘'} 줄 감기`
+            : ROCKET.mode === 'count' || ROCKET.mode === 'ignite'
             ? '🚀 카운트다운! — Ctrl/⌘ 발사 취소'
             : ROCKET.mode === 'moonland'
                 ? (ROCKET.padK >= 0.99 ? `🌕 달 착륙 완료 — 크레이터와 빨간 깃발 · ${IS_TOUCH ? '✋' : '⌘'} 이륙` : '🌕 착륙 시퀀스 — 사뿐히…')
@@ -11169,7 +11175,7 @@ function updatePlayer(delta) {
                 ? (nearPoi ? `${nearPoi.emoji} ${nearPoi.ko} 곁 — ${IS_TOUCH ? '✋' : '⌘'} ${nearPoi.id === 'moon' ? '착륙' : '도킹'}!`
                     : (IS_TOUCH ? `🚀 ${petKo(p)} 우주 조종 중${rocketRide.friend ? ' 👥' : ''} — 스틱 추진·방향 · ✋ 재진입`
                         : `🚀 ${petKo(p)} 우주 조종 중${rocketRide.friend ? ' 👥' : ''} — ↑↓ 추진 · ←→ 방향 · W/S 고도 · ⌘ 재진입`))
-            : ROCKET.mode === 'space' ? `🌌 ${petKo(p)} 궤도 유영 중${rocketRide.friend ? ' 👥' : ''} — ${IS_TOUCH ? '스틱' : '조작'}하면 조종간 잡기 · ${IS_TOUCH ? '✋' : '⌘'} 재진입 · 마우스로 경치 구경`
+            : ROCKET.mode === 'space' ? `🌌 ${petKo(p)} 우주 순항 중${rocketRide.friend ? ' 👥' : ''} — ${IS_TOUCH ? '스틱' : '조작'}하면 조종간 · ${IS_TOUCH ? '🦘' : 'Space'} 테더 유영 · ${IS_TOUCH ? '✋' : '⌘'} 재진입`
             : ROCKET.mode === 'descent' || ROCKET.mode === 'retro' ? '🚀 재진입 — 역추진 착륙 중'
             : `🚀 ${petKo(p)} 상승 중${rocketRide.friend ? ' 👥' : ''} — 우주까지 자동 비행`;
         if (controlHint.textContent !== rkHint) controlHint.textContent = rkHint;
@@ -13341,6 +13347,38 @@ stage.add(shootStar);
 const _shootVel = new THREE.Vector3(), _shootX = new THREE.Vector3(), _shootY = new THREE.Vector3(), _shootZ = new THREE.Vector3(), _shootM = new THREE.Matrix4();
 let shootLife = 1, shootCd = 5;
 const _rocketCam = new THREE.Vector3(), _padQuatA = new THREE.Quaternion(), _padEuler = new THREE.Euler();
+// 🧑‍🚀 테더 유영: 우주 순항 중 Space/🦘 = 해치 열고 생명줄 유영 — 입력은 RCS 분사, ⌘ = 줄 감기
+let rocketTether = null;   // { p, off:V3, vel:V3, t, reeling, somT, somCd, puffT }
+const TETHER_L = 2.2;
+const _tetherAnchor = new THREE.Vector3(), _tetherF = new THREE.Vector3(), _tetherN = new THREE.Vector3();
+const tetherLine = (() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+    const ln = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xf2f6fa, transparent: true, opacity: 0.85, fog: false }));
+    ln.visible = false;
+    ln.frustumCulled = false;
+    stage.add(ln);
+    return ln;
+})();
+function startTether() {
+    const p = possessed;
+    if (!p || rocketTether || !rocketRide || rocketRide.isAI || rocketRide.empty || ROCKET.mode !== 'space') return;
+    rocketTether = {
+        p, t: 0, reeling: false, puffT: 0,
+        somT: 9, somCd: 6 + Math.random() * 7,
+        off: new THREE.Vector3((Math.random() - 0.5) * 0.4, 0.35, -0.7),
+        vel: new THREE.Vector3((Math.random() - 0.5) * 0.25, 0.2, -0.25),
+    };
+    playBuffer(swishBuf, { vol: 0.3, rate: 1.1, filterFreq: 900 });   // 해치
+    wakeSoft(6000);
+    showToast(`🧑‍🚀 해치 오픈 — 우주 유영! (${IS_TOUCH ? '스틱' : '방향키'}·${IS_TOUCH ? '🔼🔽' : 'W/S'} 분사 · ${IS_TOUCH ? '✋' : '⌘'} 줄 감기)`);
+    if (!spacePoiFound.tether) {
+        spacePoiFound.tether = Date.now();
+        try { localStorage.setItem('world-space-poi', JSON.stringify(spacePoiFound)); worldSync('world-space-poi'); } catch (e) {}
+        logWorldEvent(`${petKo(p)}가 생명줄 하나에 몸을 맡기고 첫 우주 유영에 나섰다 🧑‍🚀✨`);
+        maybeProactive(p, '지금 우주에 맨몸으로 떠 있어!! 줄 하나에 매달려서… 발밑엔 온 세계가 반짝여!!');
+    } else logWorldEvent(`${petKo(p)}가 해치를 열고 우주 유영을 즐긴다 🧑‍🚀`);
+}
 // 🌙 야간 발사 라이트: 번 동안만 scene.add — 화염이 갑판·바다를 주황으로 물들인다 (라이트 add/remove 발열 규칙)
 const rocketBurnLight = new THREE.PointLight(0xffa050, 0, 9, 1.8);
 let rocketLightOn = false;
@@ -13850,8 +13888,16 @@ function startPoiLanding(poi) {   // 수동 비행 중 ⌘ — POI 곁이면 착
     wakeSoft(5000);
     showToast(poi.id === 'moon' ? '🌕 달 착륙 시퀀스 — 사뿐히…' : '🛰️ 도킹 시퀀스 — 클램프 정렬…');
 }
-function requestRocketExit() {   // ⌘: 카운트다운 = 취소, POI 곁 = 착륙/도킹, 착륙 완료 = 이륙, 우주 = 재진입 (Esc = 긴급)
+function requestRocketExit() {   // ⌘: 유영 중 = 줄 감기, 카운트다운 = 취소, POI 곁 = 착륙/도킹, 착륙 완료 = 이륙, 우주 = 재진입
     if (!rocketRide) return;
+    if (rocketTether) {
+        if (!rocketTether.reeling) {
+            rocketTether.reeling = true;
+            playBuffer(swishBuf, { vol: 0.25, rate: 0.9, filterFreq: 800 });
+            showToast('🧑‍🚀 줄 감는 중 — 캐빈으로');
+        }
+        return;
+    }
     if (ROCKET.mode === 'count' || ROCKET.mode === 'ignite') {
         dismountRocket();
         ROCKET.mode = 'parked'; ROCKET.burn = 0; ROCKET.t = 0;
@@ -13889,6 +13935,7 @@ function exitRocketForce() {   // 빙의 해제 — 발사 전=취소, 착륙·�
         disembarkPoi();   // 🧑‍🚀 로켓은 도킹 유지 — 펫들은 표면 산책 (밤이 되면 알아서 귀항)
         return;
     }
+    if (rocketTether) rocketTether = null;   // 🧑‍🚀 유영 중 해제 — 즉시 릴인 (좌석 포즈가 다음 프레임에 앉힌다)
     r.isAI = true;   // 🤖 비행은 로켓이 알아서 마저 — 펫들은 탄 채로, 착륙하면 물가에 내려준다
     if (r.p) { releaseAI(r.p); r.p.ai.state = 'busy'; }
     if (r.friend && r.friend.ai.state !== 'held') { releaseAI(r.friend); r.friend.ai.state = 'held'; }
@@ -14032,8 +14079,13 @@ function updateRocket(delta) {
                 }
                 rt.i += 1;
                 if (rt.i >= rt.pts.length) {
-                    ROCKET.mode = 'descent'; ROCKET.t = 0;
-                    if (r && !r.empty && !r.isAI) showToast('🚀 우주 산책 완주 — 재진입! 발사대로 돌아갑니다');
+                    if (rocketTether) {   // 🧑‍🚀 유영 중 여정 끝 — 마지막 지점에서 호버하며 줄부터 감는다
+                        rt.i = rt.pts.length;
+                        if (!rocketTether.reeling) { rocketTether.reeling = true; showToast('🧑‍🚀 여정 끝 — 줄을 감아요'); }
+                    } else {
+                        ROCKET.mode = 'descent'; ROCKET.t = 0;
+                        if (r && !r.empty && !r.isAI) showToast('🚀 우주 산책 완주 — 재진입! 발사대로 돌아갑니다');
+                    }
                 }
             }
         }
@@ -14157,6 +14209,70 @@ function updateRocket(delta) {
         camera.position.x += (Math.random() - 0.5) * 0.02;
         camera.position.y += (Math.random() - 0.5) * 0.014;
     }
+    // 🧑‍🚀 테더 유영 적분: 입력 = 카메라 기준 RCS 분사(관성·감쇠), 줄 길이 밖은 구면 투영 + 지름
+    // 속도 튕김(팽팽한 줄 감각). 릴인은 지수 감김 → 좌석 포즈가 이어받는다. 라인은 앵커↔펫 2점.
+    if (rocketTether) {
+        const th = rocketTether;
+        th.t += delta;
+        _tetherAnchor.set(0, 1.15, 0).multiplyScalar(RK_SCALE).applyQuaternion(rocketGroup.quaternion).add(rocketGroup.position);
+        if (!th.reeling) {
+            camera.getWorldDirection(_tetherF);
+            _tetherF.y = 0;
+            _tetherF.normalize();
+            let ix = 0, iz = 0;
+            if (heldKeys.has('ArrowUp')) iz += 1;
+            if (heldKeys.has('ArrowDown')) iz -= 1;
+            if (heldKeys.has('ArrowRight')) ix += 1;
+            if (heldKeys.has('ArrowLeft')) ix -= 1;
+            if (touchMove.active) { iz += touchMove.z; ix += touchMove.x; }
+            const iy = (heldKeys.has('KeyW') ? 1 : 0) - (heldKeys.has('KeyS') ? 1 : 0);
+            th.vel.x += (_tetherF.x * iz - _tetherF.z * ix) * 1.5 * delta;
+            th.vel.z += (_tetherF.z * iz + _tetherF.x * ix) * 1.5 * delta;
+            th.vel.y += iy * 1.25 * delta;
+            th.vel.x += Math.sin(th.t * 0.63 + 1.2) * 0.055 * delta;   // 미세 드리프트
+            th.vel.y += Math.sin(th.t * 0.5 + 0.4) * 0.04 * delta;
+            th.vel.z += Math.cos(th.t * 0.57) * 0.055 * delta;
+            th.vel.multiplyScalar(Math.pow(0.5, delta));
+            th.off.addScaledVector(th.vel, delta);
+            const len = th.off.length();
+            if (len > TETHER_L) {
+                th.off.multiplyScalar(TETHER_L / len);
+                _tetherN.copy(th.off).normalize();
+                const vr = th.vel.dot(_tetherN);
+                if (vr > 0) th.vel.addScaledVector(_tetherN, -vr * 1.4);   // 줄 팽팽 — 살짝 튕김
+            }
+            if ((ix || iy || iz) && th.t - th.puffT > 0.13) {   // RCS 퍼프
+                th.puffT = th.t;
+                const spr = glowSprite(0xeef4fa, 0.05 + Math.random() * 0.03, 0.75);
+                const pm = th.p.mover.position;
+                spr.position.set(pm.x - th.vel.x * 0.25, pm.y + 0.2 - th.vel.y * 0.25, pm.z - th.vel.z * 0.25);
+                scene.add(spr);
+                hugBurst.push({ spr, vx: -th.vel.x * 0.6, vy: -th.vel.y * 0.6, vz: -th.vel.z * 0.6, t: 0.3 });
+            }
+        } else {
+            th.off.multiplyScalar(Math.max(0, 1 - delta * 3.4));   // 릴인 — 지수 감김
+            if (th.off.length() < 0.3) {
+                rocketTether = null;
+                tetherLine.visible = false;
+                playBuffer(swishBuf, { vol: 0.22, rate: 1.3, filterFreq: 1100 });
+            }
+        }
+        if (rocketTether) {
+            const pm = th.p.mover.position;
+            pm.set(_tetherAnchor.x + th.off.x, _tetherAnchor.y + th.off.y - 0.25, _tetherAnchor.z + th.off.z);
+            // 자세 — 느긋한 텀블 + 이따금 슬로우 백플립
+            if (th.somT >= 2.5) { th.somCd -= delta; if (th.somCd <= 0) { th.somT = 0; th.somCd = 7 + Math.random() * 7; } }
+            let rx = Math.sin(th.t * 0.31) * 0.4;
+            if (th.somT < 2.5) { th.somT += delta; rx += Math.PI * 2 * THREE.MathUtils.smoothstep(th.somT / 2.5, 0, 1); }
+            th.p.mover.rotation.set(rx, ROCKET.heading + Math.sin(th.t * 0.17) * 0.8, Math.sin(th.t * 0.23) * 0.3);
+            th.p.swimming = false;
+            const lp = tetherLine.geometry.attributes.position;
+            lp.setXYZ(0, _tetherAnchor.x, _tetherAnchor.y, _tetherAnchor.z);
+            lp.setXYZ(1, pm.x, pm.y + 0.22, pm.z);
+            lp.needsUpdate = true;
+            tetherLine.visible = true;
+        }
+    } else if (tetherLine.visible) tetherLine.visible = false;
     // 화염 3겹: 백열 코어 콘 + 주황 외염 콘 + 스파크 기둥 Points — 우주(자동·수동·착륙·도킹)에선 전부 접고 청백 RCS 잔불만
     const inSpace = ROCKET.mode === 'space' || ROCKET.mode === 'manual' || padMode;
     const flameK = inSpace ? 0 : ROCKET.burn;
@@ -14371,6 +14487,12 @@ function updateRocketPose(delta) {   // 엔티티 업데이트 뒤 덮어쓰기 
     const t = ROCKET.t;
     const pose = (q, fwd, ph, idx) => {
         if (!q) return;
+        if (rocketTether && rocketTether.p === q) {   // 🧑‍🚀 유영 — 위치·회전은 테더 적분 소유, 귀·다리만 여기서(엔티티 뒤)
+            for (const f of q.pet.feet) f.rotation.x = -0.35;
+            for (const er of q.pet.ears) er.rotation.x = (er.userData._restRotX || 0) - 0.3;
+            q.pet.walking = false;
+            return;
+        }
         // 좌석 로컬(0.972, ±0.115): 캐빈 바닥 위 등맞대기 — 유리 돔(0.98~1.24)에 어깨까지 보인다
         _rocketSeat.set(0, 0.972, fwd * 0.115).multiplyScalar(RK_SCALE).applyQuaternion(rocketGroup.quaternion).add(rocketGroup.position);
         let rx = ROCKET.pitch * 0.4, rz = 0;
