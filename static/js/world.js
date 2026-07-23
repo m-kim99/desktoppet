@@ -14032,8 +14032,10 @@ function makeTeleVistas() {
         { label: '🪷 연못', x: -3.44, z: -3.44 },
     ].sort(() => Math.random() - 0.5);
     for (const lm of lms.slice(0, 2)) list.push({ label: lm.label, pos: [lm.x + 3.1, 4.8, lm.z + 3.1], tgt: [lm.x, 0.4, lm.z] });
+    list.push({ label: '🏖️ 휴양지 모래섬', pos: [-3.2 + 4.6, 5.6, 11.8 + 4.6], tgt: [-3.2, 0.3, 11.8] });
+    list.push({ label: '🛝 놀이터 섬', pos: [11.23 + 4.6, 5.6, 5.73 + 4.6], tgt: [11.23, 0.4, 5.73] });
     list.push({ friend: true });
-    list.push({ label: '🌕 꼬마 달', pos: [-24 + 6.4, 33 + 8.6, 16 + 6.4], tgt: [-24, 36, 16], moon: true });
+    list.push({ label: '🌕 꼬마 달', pos: [-24 + 13, 33 + 10, 16 + 13], tgt: [-24, 33.5, 16], moon: true });   // 원거리 21m — 달이 '공'으로 보이게 (뷰 동안 maxDistance 확장)
     list.push({ label: '🌌 별하늘', sky: true });
     return { list, i: Math.floor(Math.random() * list.length) };
 }
@@ -14051,10 +14053,13 @@ function applyTeleVista() {
         }
     } else if (v.sky) {
         pos = [TELE.x, 35.4, TELE.z];
-        tgt = [TELE.x - 12, 54, TELE.z - 9];
+        tgt = [TELE.x - 6, 44.5, TELE.z - 4.5];   // maxDistance(15) 안 — 밖이면 컨트롤이 카메라를 끌어당긴다
     }
     camera.position.set(pos[0], pos[1], pos[2]);
     controls.target.set(tgt[0], tgt[1], tgt[2]);
+    // ⚠️ 커스텀 휠줌 글라이드가 매 프레임 zoomTargetDist로 끌어당긴다 — 컷 거리로 동기하지 않으면
+    // 카메라가 이전 줌 거리로 미끄러져 달 속에 파묻힘 (실측). 복원 시에도 되돌린다.
+    zoomTargetDist = THREE.MathUtils.clamp(camera.position.distanceTo(controls.target), controls.minDistance, controls.maxDistance);
     if (v.moon && moonDigGroup && moonDigGroup.visible && !teleView.dugSaid) {
         teleView.dugSaid = true;
         showToast('⛏️ 달 표면에 뭔가 묻혀 있는 게 보인다!');
@@ -14067,6 +14072,8 @@ function startTeleView() {
     if (teleView || Date.now() < teleBusyUntil) return;
     teleBusyUntil = Date.now() + 3000;
     teleView = { vistas: makeTeleVistas(), idle: 0, lh: true, rh: true, th: true, dugSaid: false, savedPos: camera.position.clone(), savedTgt: controls.target.clone(), camPrev: camera.position.clone() };
+    teleView.savedMaxD = controls.maxDistance;
+    controls.maxDistance = 44;   // 원거리 풍경(달 21m 등)을 컨트롤이 15m로 끌어당기지 않게 — 종료 시 복원
     teleMask.style.opacity = '1';   // 컨트롤은 켠 채 — 평상시처럼 드래그 회전·휠 줌으로 망원경을 젓는다 (탭 = 종료, 드래그는 slop 판정이 걸러줌)
     wakeSoft(7000);
     playBuffer(swishBuf, { vol: 0.28, rate: 1.5, filterFreq: 1300 });
@@ -14076,6 +14083,8 @@ function endTeleView() {
     if (!teleView) return;
     camera.position.copy(teleView.savedPos);
     controls.target.copy(teleView.savedTgt);
+    controls.maxDistance = teleView.savedMaxD;
+    zoomTargetDist = THREE.MathUtils.clamp(camera.position.distanceTo(controls.target), controls.minDistance, controls.maxDistance);   // 줌 글라이드도 원위치
     teleMask.style.opacity = '0';
     teleView = null;
     if (!possessed) controlHint.style.display = 'none';
