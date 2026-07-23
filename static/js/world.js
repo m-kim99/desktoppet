@@ -6398,6 +6398,10 @@ const LEISURE_ACTS = [
     { id: 'sand', cdKey: 'nextSandAt', cd: [480000, 960000], weight: 10, dur: 135,
       gate: () => BEDS.some((b) => b.id.startsWith('sandspot') && !b.occupant),
       fire: (p) => petSandPlay(p, true) },
+    // 🚣 나룻배 뱃놀이 — 열린 바다 웨이포인트 한 바퀴 (탈것 4형제 완성 조).
+    { id: 'boat', cdKey: 'nextBoatAt', seed: [300000, 780000], cd: [600000, 1200000], weight: 8, dur: 80,
+      gate: () => !boatRide && !aiBoat,
+      fire: (p) => startAiBoat(p) === 'ok' },
 ];
 // 셀렉터: 2단 롤 — ① "딴짓을 할지"는 LEISURE_RATE 하나로 정하고(총량 노브 — 활동을 더
 // 추가해도 전체 딴짓 빈도는 그대로, 서로의 지분만 재분배), ② 자격 있는 활동만 모아 weight
@@ -7085,7 +7089,7 @@ function playWorldMotion(p, id) {
     if (p.ai.state === 'goto' || p.ai.state === 'busy' || p.ai.state === 'held') return;   // choreography/hand-hold owns it
     if (id === 'sleep') { p.pet.sleeping = true; releaseAI(p, 4); return; }
     p.pet.sleeping = false; p.pet.autoSleeping = false;
-    const busyRide = p === possessed && (carDrive || boatRide || planeRide || balloonRide || ferryRide || subRide || dive || p.tramp);
+    const busyRide = p === possessed && (carDrive || (boatRide && boatRide.driver === p) || planeRide || balloonRide || ferryRide || subRide || dive || p.tramp);
     if (id === 'holiday') {
         if (busyRide) { p.pet.action = { id: 'holiday', t: 0 }; return; }   // 좌석/잠수 중엔 제자리 솔로
         worldHoliday(p);   // 조종 유지 — 디렉터가 잠깐 몰고 releaseAI가 주인에게 돌려준다 (카메라도 계속 추종)
@@ -7723,6 +7727,17 @@ if (statsOn) window.__worldDev = {
         return ok;
     },
     sandState: (name) => { const p = pets.find((q) => q.name === name); return p ? (p.bed ? p.bed.id : null) : null; },
+    boatGo: (name) => {
+        const p = pets.find((q) => q.name === name);
+        if (!p) return null;
+        if (p.bed) forceEndBed(p);
+        if (p.dip) endDip(p);
+        if (aiFishing && aiFishing.p === p) endAiFishing();
+        releaseAI(p);
+        p.ai.state = 'idle';
+        return startAiBoat(p);
+    },
+    boatState: () => ({ ai: aiBoat ? { phase: aiBoat.phase, i: aiBoat.i, n: aiBoat.pts.length, retry: aiBoat.retry || 0, pts: aiBoat.pts.map((q) => [+q.x.toFixed(1), +q.z.toFixed(1)]) } : null, ride: boatRide ? boatRide.driver.name : null, x: +BOAT.x.toFixed(2), z: +BOAT.z.toFixed(2), vel: +BOAT.vel.toFixed(2) }),
     heldOf: (name) => {
         const p = pets.find((q) => q.name === name);
         if (!p) return null;
@@ -11068,7 +11083,7 @@ function releasePossession() {
     airborne = false; jumpVy = 0; jumpsLeft = 2;
     seaHop = null;
     if (carDrive) exitCar();
-    if (boatRide) exitBoat(true);   // 강제 하선 — 거절 없이 (절친은 기슭 or 물에)
+    if (boatRide && boatRide.driver === possessed) exitBoat(true);   // 강제 하선 — 거절 없이 (절친은 기슭 or 물에). AI가 젓는 배는 건드리지 않는다
     if (planeRide) exitPlane(true); // 강제 하기 — 공중이면 비상 착륙 후 내려준다
     if (balloonRide && !balloonRide.isAI) exitBalloonForce(); // 라이더는 계류장으로, 빈 열기구는 자율 귀환
     if (rocketRide && (rocketRide.p === p || rocketRide.friend === p)) exitRocketForce(); // 🚀 착륙 중=하선 유지, 비행 중=오토파일럿
@@ -11165,7 +11180,7 @@ function doInteract() {
         exitPlane();
         return;
     }
-    if (boatRide) { exitBoat(); return; }
+    if (boatRide && boatRide.driver === possessed) { exitBoat(); return; }   // AI가 젓는 중엔 ⌘로 못 내리게 — 하이재킹은 그 펫 빙의로
     if (possessed.swimming === 'sea') {
         const pos = possessed.mover.position;
         if (Math.hypot(pos.x - BOAT.x, pos.z - BOAT.z) < 1.15) { enterBoat(); return; }   // 헤엄쳐 와서 승선
@@ -11552,7 +11567,7 @@ function updatePlayer(delta) {
         if (controlHint.textContent !== subHint) controlHint.textContent = subHint;
         return;
     }
-    if (boatRide) {
+    if (boatRide && boatRide.driver === p) {   // AI 라이드는 updateAiBoat가 젓는다 — 유저 입력이 남의 배를 몰면 안 된다
         // 노 젓기: ↑/↓ 전진·후진, ←/→ 방향 (차와 같은 키, 물의 관성)
         let acc = 0;
         if (heldKeys.has('ArrowUp')) acc += 1.9;
@@ -12023,7 +12038,7 @@ function makePhone() {
 function startPhoneCall() {
     const p = possessed;
     if (!p || phoneCall) return;
-    if (carDrive || boatRide || planeRide || balloonRide || ferryRide) { showToast('📞 탈것에서 내린 뒤에 걸어요'); return; }
+    if (carDrive || (boatRide && boatRide.driver === possessed) || planeRide || balloonRide || ferryRide) { showToast('📞 탈것에서 내린 뒤에 걸어요'); return; }
     const friend = pets.find((q) => q !== p);
     if (!friend) { showToast('👥 부를 친구가 없어요'); return; }
     if (fishing && fishing.state !== 'idle') cancelFishing(true);
@@ -12407,6 +12422,171 @@ function updateBoatIdle() {
     if (boatRide) return;
     boatGroup.position.set(BOAT.x, waveYAt(BOAT.x, BOAT.z) + 0.02, BOAT.z);
     boatGroup.rotation.set(Math.sin(wxTime.value * 0.8) * 0.02, BOAT.heading, Math.sin(wxTime.value * 0.65 + 1.3) * 0.025);
+}
+// 🚣 나룻배 자율 뱃놀이 — 페리·잠수정과 달리 항로가 없는 배라, 출항 때마다 열린 바다 위
+// 웨이포인트 2~3개를 뽑아 선분 샘플로 검증하고(노랑호 항로 3단 교훈) 제자리로 돌아온다.
+// 노는 stepBoat 그대로(관성·기슭 멈춤·노 애니·물소리) — AI는 acc/steer만 공급한다.
+let aiBoat = null;   // { p, phase: walk|hop|row, pts, i, t, fx, fy, fz, stuck }
+function boatSegClear(x1, z1, x2, z2) {
+    const d = Math.hypot(x2 - x1, z2 - z1);
+    const n = Math.max(2, Math.ceil(d / 0.45));
+    const px = -(z2 - z1) / (d || 1), pz = (x2 - x1) / (d || 1);   // 측면 여유 0.55 — 실제 조타는 곡선이라 직선만 보면 섬을 스친다
+    for (let i = 1; i <= n; i++) {
+        const k = i / n;
+        const x = x1 + (x2 - x1) * k, z = z1 + (z2 - z1) * k;
+        if (boatBlocked(x, z) || boatBlocked(x + px * 0.55, z + pz * 0.55) || boatBlocked(x - px * 0.55, z - pz * 0.55)) return false;
+    }
+    return true;
+}
+function makeBoatTour() {
+    // 앞바다는 군도·무인도가 빼곡해서(boatBlocked = 모든 섬) 원점 링 항로는 성립 안 한다 —
+    // 짧은 다리(2.5~4.5m) 랜덤워크로 섬 사이를 누비고, 마지막 두 다리는 독 방향으로 수렴시킨다.
+    for (let attempt = 0; attempt < 8; attempt++) {
+        const pts = [];
+        let ax = BOAT.x, az = BOAT.z;
+        let heading = Math.atan2(ax, az);                  // 첫 발은 뭍 반대(바다) 쪽
+        const n = 3 + Math.floor(Math.random() * 3);       // 3~5 다리
+        let ok = true;
+        for (let i = 0; i < n; i++) {
+            if (i >= n - 2) heading = Math.atan2(BOAT.x - ax, BOAT.z - az);   // 귀항 수렴
+            let found = null;
+            for (let k = 0; k < 14 && !found; k++) {
+                const a = heading + (Math.random() - 0.5) * 2.2;
+                const d = 2.5 + Math.random() * 2.0;
+                const x = ax + Math.sin(a) * d, z = az + Math.cos(a) * d;
+                if (Math.hypot(x, z) > EXPLORE_R - 1.5) continue;
+                if (boatSegClear(ax, az, x, z)) found = { x, z, a };
+            }
+            if (!found) { ok = false; break; }
+            pts.push({ x: found.x, z: found.z });
+            heading = found.a;
+            ax = found.x;
+            az = found.z;
+        }
+        if (!ok || !boatSegClear(ax, az, BOAT.x, BOAT.z)) continue;   // 이번 후보는 접고 새로 뽑는다
+        pts.push({ x: BOAT.x, z: BOAT.z });                // 귀항 — 떠난 그 정박지로
+        return pts;
+    }
+    return null;
+}
+function startAiBoat(p) {
+    if (aiBoat || boatRide || !p || p === possessed || p.bed || p.dip || p.pet.sleeping || p.tramp || p.drink || p.food) return 'busy';
+    if (p.ai.state !== 'idle' && p.ai.state !== 'walk') return 'busy';
+    if ((fishing && fishing.p === p) || (aiFishing && aiFishing.p === p)) return 'busy';
+    const spot = boatShoreSpot();
+    if (!spot || spot.d > 3.2) return 'shore';   // 폴짝으로 못 닿는 앞바다 정박 — 오늘은 안 탄다 (하선도 같은 지점)
+    const pts = makeBoatTour();
+    if (!pts) return 'route';   // 항로 검증 실패 — 사유 코드는 셀렉터엔 똑같이 실패, 디버그엔 구분
+    releaseAI(p);
+    p.ai.state = 'goto';
+    p.ai.target = { x: spot.tx, z: spot.tz };
+    p.ai.waypoints = buildRoute(p.mover.position, p.ai.target);
+    p.ai.stall = 0;
+    aiBoat = { p, phase: 'walk', pts, i: 0, t: 0, stuck: 0 };   // 승선/하선 물가 = 림 투영점 (summonPassenger 문법)
+    aiBoat.ownArrive = () => {
+        if (!aiBoat || aiBoat.p !== p) return;
+        p.ai.state = 'busy';
+        aiBoat.phase = 'hop';
+        aiBoat.t = 0;
+        aiBoat.fx = p.mover.position.x;
+        aiBoat.fy = p.mover.position.y;
+        aiBoat.fz = p.mover.position.z;
+    };
+    p.ai.onArrive = aiBoat.ownArrive;
+    logWorldEvent(`${petKo(p)}가 나룻배를 타러 물가로 나섰다 🚣`);
+    return 'ok';
+}
+function boatShoreSpot() {   // 배에서 제일 가까운 물가 = 섬 림 투영점 (친구 태우기와 같은 문법)
+    let spot = null, best = Infinity;
+    for (const s of ISLANDS) {
+        const dx = BOAT.x - s.x, dz = BOAT.z - s.z;
+        const d = Math.hypot(dx, dz) || 1;
+        const k = (s.r - 0.5) / d;
+        const tx = s.x + dx * k, tz = s.z + dz * k;
+        const dd = Math.hypot(BOAT.x - tx, BOAT.z - tz);
+        if (dd < best) { best = dd; spot = { tx, tz, d: dd }; }
+    }
+    return spot;
+}
+function finishAiBoat() {
+    const p = aiBoat.p;
+    aiBoat = null;
+    const spot = boatShoreSpot();   // 정상 완주면 독 곁 물가, 좌초 조기 종료면 그 자리 최근접 물가
+    boatRide = null;
+    BOAT.vel = 0;
+    vehicleLastUse.boat = Date.now();
+    p.mover.position.set(spot.tx, world.groundHeightAt(spot.tx, spot.tz), spot.tz);   // AI 펫은 항상 뭍으로 (퐁당 수영은 조종 펫 전용 연출 — 물에 남기지 않는다, summon 순간이동 선례)
+    p.mover.rotation.x = 0;
+    p.mover.rotation.z = 0;
+    p.swimming = false;
+    saveLayout();
+    logWorldEvent(`${petKo(p)}가 노를 저어 바다 한 바퀴를 돌고 왔다 🚣`);
+    releaseAI(p, 2);
+}
+function updateAiBoat(delta) {
+    if (!aiBoat) return;
+    const p = aiBoat.p;
+    if (aiBoat.phase === 'walk') {
+        if (p === possessed || p.ai.state !== 'goto') aiBoat = null;   // 스틸/빙의 — 출항 전이라 그냥 반납
+        return;
+    }
+    if (aiBoat.phase === 'hop') {   // 물가 → 뱃전 승선 아크
+        aiBoat.t += delta / 0.6;
+        const k = Math.min(1, aiBoat.t);
+        const by = waveYAt(BOAT.x, BOAT.z) + 0.16;
+        p.mover.position.set(
+            THREE.MathUtils.lerp(aiBoat.fx, BOAT.x, k),
+            THREE.MathUtils.lerp(aiBoat.fy, by, k) + Math.sin(k * Math.PI) * 0.35,
+            THREE.MathUtils.lerp(aiBoat.fz, BOAT.z, k)
+        );
+        p.mover.rotation.y = Math.atan2(BOAT.x - aiBoat.fx, BOAT.z - aiBoat.fz);
+        if (k >= 1) {
+            if (boatRide) {   // 아크 사이 누가 먼저 탔다 — 물가로 반납
+                p.mover.position.set(aiBoat.fx, aiBoat.fy, aiBoat.fz);
+                releaseAI(p);
+                aiBoat = null;
+                return;
+            }
+            boatRide = { driver: p, passenger: null, row: 0, lastPh: 0 };
+            vehicleLastUse.boat = Date.now();
+            aiBoat.phase = 'row';
+            logWorldEvent(`${petKo(p)}가 나룻배에 올라 스스로 노를 잡았다 🚣`);
+        }
+        return;
+    }
+    if (p === possessed) { aiBoat = null; return; }   // 하이재킹 — boatRide는 유지, 노가 유저 손으로
+    if (!boatRide || boatRide.driver !== p) { aiBoat = null; return; }
+    if (aiBoat.phase === 'back') {   // 좌초 — 잠깐 후진해서 빠져나온 뒤 같은 웨이포인트 재시도
+        aiBoat.t += delta;
+        stepBoat(-1.3, 0, delta, p);
+        if (aiBoat.t > 1.1) { aiBoat.phase = 'row'; aiBoat.stuck = 0; }
+        return;
+    }
+    const wp = aiBoat.pts[aiBoat.i];
+    const dx = wp.x - BOAT.x, dz = wp.z - BOAT.z;
+    if (Math.hypot(dx, dz) < 1.0) {
+        aiBoat.i += 1;
+        aiBoat.stuck = 0;
+        aiBoat.retry = 0;
+        if (aiBoat.i >= aiBoat.pts.length) finishAiBoat();
+        return;
+    }
+    const want = Math.atan2(dx, dz);
+    let dh = want - BOAT.heading;
+    while (dh > Math.PI) dh -= Math.PI * 2;
+    while (dh < -Math.PI) dh += Math.PI * 2;
+    const steer = THREE.MathUtils.clamp(dh * 2.2, -1, 1);
+    const acc = 1.6 * THREE.MathUtils.clamp(1.3 - Math.abs(dh) * 0.75, 0.22, 1);   // 크게 틀 땐 노를 살살
+    stepBoat(acc, steer, delta, p);
+    if (Math.abs(BOAT.vel) < 0.05) {
+        aiBoat.stuck += delta;
+        if (aiBoat.stuck > 3) {   // 기슭에 비볐다 — 후진 2회까지, 그래도 안 되면 그 다리는 접는다
+            aiBoat.stuck = 0;
+            aiBoat.retry = (aiBoat.retry || 0) + 1;
+            if (aiBoat.retry <= 2) { aiBoat.phase = 'back'; aiBoat.t = 0; }
+            else { aiBoat.retry = 0; aiBoat.i += 1; if (aiBoat.i >= aiBoat.pts.length) finishAiBoat(); }
+        }
+    } else aiBoat.stuck = 0;
 }
 // 🚣 보트 우클릭 메뉴 — 노 젓는 중에 배를 우클릭하면 "친구 태우기": 절친이 물가까지 걸어와
 // 배에 오른다 (배가 기슭에서 멀면 못 닿는다고 알려준다).
@@ -20608,6 +20788,7 @@ function animate() {
     updateAiFruit(delta);                    // 🍊 절친 자율 수확·선물
     updateAiTidy(delta);                     // 🧹 절친 청소부 — 방치 낙과를 바구니로
     updateAiTreat(delta);                    // ☕🍞 부스 간식 — 커피 산책 홀짝·간식 명당 냠냠
+    updateAiBoat(delta);                     // 🚣 나룻배 자율 뱃놀이 — 웨이포인트 노젓기
     updateFruitThrows(delta);                // 🧺 원거리 휙 담기 아크
     updateBalloon(delta);                    // 🎈 열기구 — 계류 살랑임/스플라인 투어/귀환
     updateBalloonHop(delta);                 // 절친 승선 큰 아크 — 데크에서 바구니로
