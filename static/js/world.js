@@ -2097,7 +2097,9 @@ function makeHammock() {
 // 그네 (2-seat A-frame swing): one top bar on two A-frame supports, two seats hung side by side.
 // Geometry lives here; SWING gives the shared numbers the seat registration + pendulum both read
 // so the visual plank and the riding pet stay locked to the same arc.
-const SWING = { barY: 0.98, span: 1.36, seatX: 0.31, ropeL: 0.62, sitLift: 0.05, approach: 0.66, rideMs: 600000 };
+// rideMs: 탑승 상한의 기본값 — 실제 한 판은 탑승 순간 bed.rideMs = 2~3분 랜덤으로 정한다.
+// (10분이던 시절엔 깨어있는 시간의 절반 이상을 그네 위에서 보냈다 — balance-sim 실측 52.5%.)
+const SWING = { barY: 0.98, span: 1.36, seatX: 0.31, ropeL: 0.62, sitLift: 0.05, approach: 0.66, rideMs: 180000 };
 function makeSwing() {
     const g = new THREE.Group();
     const wood = M(0xb08a60, { map: woodTex });
@@ -6341,43 +6343,43 @@ function steerToward(p, target, delta) {
 // seed = 첫 쿨다운: 앱 켜자마자 탈것이 떠나버리면 주인이 탈 틈이 없다 (E2E에서 실측).
 const LEISURE_ACTS = [
     // 물놀이 — 펫들이 같이 헤엄치게 (주인 포함). 연못/바다는 startDip이 코인플립.
-    { id: 'dip', cdKey: 'nextDipAt', cd: [150000, 300000], weight: 100,
+    { id: 'dip', cdKey: 'nextDipAt', cd: [150000, 300000], weight: 100, dur: 45,
       fire: (p) => startDip(p) },
     // 낚싯대를 메고 물가로 — 혼자 두어 캐스트.
-    { id: 'fish', cdKey: 'nextFishAt', cd: [300000, 600000], weight: 27,
+    { id: 'fish', cdKey: 'nextFishAt', cd: [300000, 600000], weight: 27, dur: 90,
       gate: (p) => !aiFishing && !(fishing && fishing.p === p),
       fire: (p) => startAiFishing(p) },
     // 🟡 노랑호 잠수 투어 — 정박 중일 때만.
-    { id: 'sub', cdKey: 'nextSubAt', seed: [360000, 960000], cd: [600000, 1200000], weight: 11,
+    { id: 'sub', cdKey: 'nextSubAt', seed: [360000, 960000], cd: [600000, 1200000], weight: 11, dur: 240,
       gate: () => !subRide && !aiSubWalk && SUB.mode === 'docked',
       fire: (p) => { startAiSub(p); return true; } },
     // 열기구 하늘 한 바퀴 — 계류 중일 때만.
-    { id: 'balloon', cdKey: 'nextBalloonAt', seed: [240000, 720000], cd: [420000, 840000], weight: 13,
+    { id: 'balloon', cdKey: 'nextBalloonAt', seed: [240000, 720000], cd: [420000, 840000], weight: 13, dur: 200,
       gate: () => !balloonRide && !aiBalloonWalk && BALLOON.mode === 'docked',
       fire: (p) => { startAiBalloon(p); return true; } },
     // 🚀 별똥호 우주 산책 — 저녁 18.5시~엔 성향 2배(야간 발사 별구경). 쿨다운 길게 — 라이드가 길어 뜸하게.
     { id: 'rocket', cdKey: 'nextRocketAt', seed: [420000, 1020000], cd: [720000, 1440000],
-      weight: 9, weightAt: (h) => ((h >= 18.5 || h < 6) ? 2 : 1),
+      weight: 9, dur: 450, weightAt: (h) => ((h >= 18.5 || h < 6) ? 2 : 1),
       gate: () => !rocketRide && !aiRocketWalk && !rocketHop && ROCKET.mode === 'parked',
       fire: (p) => { startAiRocket(p); return true; } },
     // 트램펄린 폴짝 — 혼자 신나게 예닐곱 번.
-    { id: 'tramp', cdKey: 'nextTrampAt', seed: [180000, 480000], cd: [360000, 720000], weight: 14,
+    { id: 'tramp', cdKey: 'nextTrampAt', seed: [180000, 480000], cd: [360000, 720000], weight: 14, dur: 40,
       gate: () => !aiTramp,
       fire: (p) => startAiTramp(p) === 'ok' },
     // 과일 따기 — 먹거나, 주인에게 물어다 준다.
-    { id: 'fruit', cdKey: 'nextFruitAt', seed: [240000, 600000], cd: [420000, 900000], weight: 11,
+    { id: 'fruit', cdKey: 'nextFruitAt', seed: [240000, 600000], cd: [420000, 900000], weight: 11, dur: 60,
       gate: () => !aiFruit,
       fire: (p) => startAiFruit(p) === 'ok' },
     // 낙과 정리 — 주워서 바구니에. 확률은 낮게: 줍느라 딴 놀이 못 하지 않게.
-    { id: 'tidy', cdKey: 'nextTidyAt', seed: [300000, 600000], cd: [360000, 780000], weight: 9,
+    { id: 'tidy', cdKey: 'nextTidyAt', seed: [300000, 600000], cd: [360000, 780000], weight: 9, dur: 60,
       gate: () => !aiTidy,
       fire: (p) => startAiTidy(p) === 'ok' },
     // 통통호 뱃놀이 — 모래섬 찍고 오는 왕복.
-    { id: 'ferry', cdKey: 'nextFerryAt', seed: [300000, 780000], cd: [480000, 960000], weight: 8,
+    { id: 'ferry', cdKey: 'nextFerryAt', seed: [300000, 780000], cd: [480000, 960000], weight: 8, dur: 200,
       gate: () => !ferryRide && !aiFerryWalk && FERRY.mode === 'docked',
       fire: (p) => { startAiFerry(p); return true; } },
     // 그네/시소 — 빈 자리가 있을 때만 (자리 없음 = 시작 실패 → 셀렉터가 3초 재시도).
-    { id: 'swing', cdKey: 'nextSwingAt', cd: [180000, 360000], weight: 28,
+    { id: 'swing', cdKey: 'nextSwingAt', cd: [180000, 360000], weight: 28, dur: 150,
       fire: (p) => {
           const seat = SWINGS.find((b) => !b.occupant) || SEESAWS.find((b) => !b.occupant);
           if (!seat) return false;
@@ -6404,7 +6406,9 @@ function rollLeisure(p) {
     if (Math.random() >= LEISURE_RATE) return false;
     const pool = LEISURE_ACTS.filter((a) => now > (p[a.cdKey] || 0) && (!a.gate || a.gate(p)));
     if (!pool.length) return false;
-    const w = pool.map((a) => a.weight * (a.weightAt ? a.weightAt(h) : 1));
+    // 점유시간 예산: 긴 활동일수록 √(분)로 눌러서, 지속시간이 긴 것이 하루를 먹지 못하게.
+    // (dur = 평균 지속 초 — 정확할 필요는 없고 자릿수가 맞으면 된다.)
+    const w = pool.map((a) => a.weight * (a.weightAt ? a.weightAt(h) : 1) / Math.sqrt(Math.max(0.5, (a.dur || 60) / 60)));
     let x = Math.random() * w.reduce((s, v) => s + v, 0);
     let pick = pool[pool.length - 1];
     for (let i = 0; i < pool.length; i++) { x -= w[i]; if (x <= 0) { pick = pool[i]; break; } }
@@ -19848,8 +19852,8 @@ function updateBeds(delta) {
                 p.bedPhase = 'lying'; p.bedT = 0;
                 p.pet.sleeping = bed.mode !== 'sit' && bed.mode !== 'swing' && bed.mode !== 'seesaw';   // swings/seesaws sit awake
                 p.ai.state = 'busy';
-                if (bed.mode === 'swing') { bed.angle = 0; bed.vel = 1.9; bed.mountedAt = Date.now(); }  // first push
-                else if (bed.mode === 'seesaw') { bed.mountedAt = Date.now(); bed.body.vel += -1.0 * bed.end; }  // dip the new rider's end
+                if (bed.mode === 'swing') { bed.angle = 0; bed.vel = 1.9; bed.mountedAt = Date.now(); bed.rideMs = 120000 + Math.random() * 60000; }  // first push, 한 판 = 2~3분
+                else if (bed.mode === 'seesaw') { bed.mountedAt = Date.now(); bed.rideMs = 120000 + Math.random() * 60000; bed.body.vel += -1.0 * bed.end; }  // dip the new rider's end
             }
         } else if (p.bedPhase === 'lying') {
             p.bedT += delta;
@@ -19901,7 +19905,7 @@ function updateSwings(delta) {
             rider.mover.rotation.x = -s.angle;      // lean with the swing
             rider.mover.rotation.y = s.headY;        // face forward (perpendicular to the bar)
             rider.mover.rotation.z = 0;
-            if (Date.now() - s.mountedAt > SWING.rideMs) rider.bedExit = true;   // 10분 → hop off (updateBeds tweens down)
+            if (Date.now() - s.mountedAt > (s.rideMs || SWING.rideMs)) rider.bedExit = true;   // 2~3분 → hop off (updateBeds tweens down)
         } else {
             s.vel += (-SWING_GL * Math.sin(s.angle) - 1.6 * s.vel) * delta;   // empty: settle to rest
             s.angle += s.vel * delta;
@@ -19932,7 +19936,7 @@ function updateSeesaws(delta) {
                 s.occupant.mover.rotation.x = -b.angle;   // rigid plank → both riders share the tilt
                 s.occupant.mover.rotation.y = s.headY;
                 s.occupant.mover.rotation.z = 0;
-                if (Date.now() - s.mountedAt > SWING.rideMs) s.occupant.bedExit = true;   // 10분 → hop off
+                if (Date.now() - s.mountedAt > (s.rideMs || SWING.rideMs)) s.occupant.bedExit = true;   // 2~3분 → hop off
             }
         } else {
             b.vel += (-SEESAW_K * b.angle - 2.2 * b.vel) * delta;   // empty: settle level
