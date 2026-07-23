@@ -29,7 +29,7 @@ const savedLayout = await (async () => {
 // 🔄 월드 상태 KV 동기 (/api/world_kv — 폰·데탑 공유): 진행도·수집·월드 상태는 서버가 진실.
 // localStorage는 기기별이라 도감·조개·해금·발견이 접속 기기마다 갈렸다 (사용자 리포트 — 과일과 동일 원인).
 // 기기 유지: world-eco(성능)·world-layout(전용 API)·world-fruit-*(전용 API)·world-last-seen(기기별 리캡).
-const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked',
+const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked', 'world-pantry',
     'world-sea-found', 'world-seabed-dug', 'world-islet-dug', 'world-discover', 'world-houselight', 'world-pets',
     'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-dex-seen-n', 'world-space-poi', 'world-moon-dug', 'world-last-seen'];   // last-seen 공유 = 기기 간 이중 정산 방지
 try {   // 부트 1회 — 서버 값이 로컬을 덮는다 (아래 모든 리더보다 먼저 실행되는 게 핵심)
@@ -3923,6 +3923,11 @@ const GARDEN_CROPS = [
     { id: 'sunflower', ko: '해바라기', emoji: '🌻' },
 ];
 const GARDEN_T1 = 3600000, GARDEN_T2 = 14400000;
+// 🍳 팬트리 — 텃밭 수확물 재고(요리 재료). 과일바구니(basketCounts)의 텃밭판: {cropId: n}.
+// 조개·해산물은 이미 카운트 재고(world-shells/world-seafood)라 텃밭만 재고화하면 수확 4계보가 모인다.
+let pantryCounts = {};
+try { pantryCounts = JSON.parse(localStorage.getItem('world-pantry') || '{}') || {}; } catch (e) {}
+const savePantry = () => { try { localStorage.setItem('world-pantry', JSON.stringify(pantryCounts)); worldSync('world-pantry'); } catch (e) {} };
 const GARDEN_PLOTS_LOCAL = [[-0.32, -0.21], [0.32, -0.21], [-0.32, 0.26], [0.32, 0.26]];
 let gardenPlots = [null, null, null, null];   // { kind, plantedAt, boost, wateredStage } | null
 let gardenGroups = null;
@@ -4077,7 +4082,9 @@ function onGardenClick(pr, hit) {
         const crop = GARDEN_CROPS.find((c) => c.id === pl.kind) || GARDEN_CROPS[0];
         gardenPlots[idx] = null;
         triggerHugBurst(wx, terrainHeight(wx, wz) + 0.25, wz);
-        showToast(`${crop.emoji} ${crop.ko} 수확!`);
+        pantryCounts[crop.id] = (pantryCounts[crop.id] || 0) + 1;   // 🍳 팬트리로 — 요리 재료 (소멸하던 수확물의 종착지)
+        savePantry();
+        showToast(`${crop.emoji} ${crop.ko} 수확! 팬트리에 담아뒀어요`);
         logWorldEvent(`텃밭에서 ${crop.ko}를 수확했다 ${crop.emoji}`);
         maybeProactive(null, `주인이 방금 텃밭에서 ${crop.ko}를 수확했다! 맛있겠다!`);
         const p = pets.find((q) => q.ai.state === 'idle' || q.ai.state === 'walk');
@@ -7754,6 +7761,20 @@ if (statsOn) window.__worldDev = {
     },
     radioState: () => ({ ai: aiRadio ? { pet: aiRadio.p.name, phase: aiRadio.phase, own: aiRadio.own } : null, playing: radioCurrent }),
     radioPlay: (name) => { playRadioTrack(name); return radioCurrent; },
+    pantry: () => ({ ...pantryCounts }),
+    gardenState: () => gardenPlots.map((pl) => (pl ? { kind: pl.kind, st: gardenStage(pl) } : null)),
+    gardenSet: (idx, kind) => {   // E2E: 익은 작물 심기 (성장 1h+4h 대기 생략)
+        gardenPlots[idx] = { kind, plantedAt: Date.now() - GARDEN_T1 - GARDEN_T2 - 60000, boost: 0, wateredStage: 0 };
+        saveGarden();
+        refreshGardenVisuals();
+        return gardenStage(gardenPlots[idx]);
+    },
+    gardenPick: (idx) => {   // E2E: 밭 칸 클릭 경로 그대로 수확
+        const pr = PROPS.find((q) => q.type === 'garden');
+        if (!pr) return null;
+        onGardenClick(pr, { object: { userData: { plotIdx: idx } } });
+        return { ...pantryCounts };
+    },
     heldOf: (name) => {
         const p = pets.find((q) => q.name === name);
         if (!p) return null;
