@@ -57,7 +57,7 @@ function worldSync(key) {   // 변경 키만 900ms 디바운스 POST — 원시 
     }, 900);
 }
 // 이동 가능한 타입 (연못=지형 함몰이라 고정, furniture=집 내부 파생이라 집을 따라감)
-const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'vine', 'fruitbasket', 'library', 'flowerbasket', 'pond', 'portal', 'icebox']);
+const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'vine', 'fruitbasket', 'library', 'flowerbasket', 'pond', 'portal', 'icebox', 'kitchen']);
 // 섬 정의 지문 — 섬을 옮기거나 크기를 바꾸면 값이 달라진다(재발 방지: 저장 배치의 "섬 이사" 자동 감지).
 // 'v2|' 접두 = 배치 리뉴얼 세대: 섬 기하가 그대로여도 접두를 올리면 위성섬 소품이 전부 새 기본값으로
 // 리셋된다. 좌표 테이블(MOVED_DEFAULTS)은 클라이언트별 사본(서버 파일/localStorage 오리진들)의
@@ -2253,6 +2253,153 @@ function makeRadio() {
     return g;
 }
 
+// 🍳 야외 주방 — 카페 거리의 요리 무대: 크림 카운터(수납장 문 2짝) + 나무 상판 + 벽돌 화덕
+// (아치 입구·불 글로우·굴뚝·구리 냄비) + 도구 바(팬·국자·뒤집개) + 도마·칼 + 양념병 3형제 +
+// 스트라이프 어닝 + KITCHEN 간판. 전부 정적(조리 연출은 오버레이 별도) = worldBake 병합.
+function makeKitchen() {
+    const g = new THREE.Group();
+    const wood = M(0xb08a60, { map: woodTex });
+    const woodDark = M(0x8a6844, { map: woodTex });
+    const cream = M(0xfff2dd, { map: plasterTex });
+    const steel = M(0xcfd6dd);
+    // 카운터 몸통 + 수납장 문 2짝(패널 홈·손잡이) — 부스 결
+    const counter = new THREE.Mesh(new RoundedBoxGeometry(1.0, 0.42, 0.46, 3, 0.03), cream);
+    counter.position.y = 0.21;
+    g.add(counter);
+    for (const dx of [-0.24, 0.24]) {
+        const door = new THREE.Mesh(new RoundedBoxGeometry(0.34, 0.28, 0.02, 2, 0.008), M(0xf3e2c8));
+        door.position.set(dx, 0.19, 0.235);
+        g.add(door);
+        const knob = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 8), woodDark);
+        knob.position.set(dx + (dx < 0 ? 0.12 : -0.12), 0.19, 0.25);
+        g.add(knob);
+    }
+    const top = new THREE.Mesh(new RoundedBoxGeometry(1.08, 0.05, 0.54, 2, 0.02), wood);
+    top.position.y = 0.445;
+    g.add(top);
+    // 🔥 벽돌 화덕 — 오른쪽: 돔 몸통 + 아치 입구 + 불 글로우(발광 Basic — 밤에 스스로 빛나 보인다) + 굴뚝
+    const brick = M(0xc96f4a);
+    const brickDark = M(0xa85838);
+    const oven = new THREE.Mesh(new THREE.SphereGeometry(0.24, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.52), brick);
+    oven.position.set(0.32, 0.47, -0.04);
+    oven.scale.set(1, 0.9, 1);
+    g.add(oven);
+    const ovenBase = new THREE.Mesh(new THREE.CylinderGeometry(0.245, 0.26, 0.09, 14), brickDark);
+    ovenBase.position.set(0.32, 0.5, -0.04);
+    g.add(ovenBase);
+    const arch = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.105, 0.05, 12, 1, false, -Math.PI / 2, Math.PI), brickDark);
+    arch.rotation.x = Math.PI / 2;
+    arch.position.set(0.32, 0.545, 0.15);
+    g.add(arch);
+    const ember = new THREE.Mesh(new THREE.CircleGeometry(0.085, 12), new THREE.MeshBasicMaterial({ color: 0xff9a4d }));
+    ember.position.set(0.32, 0.545, 0.148);
+    g.add(ember);
+    const emberCore = new THREE.Mesh(new THREE.CircleGeometry(0.045, 10), new THREE.MeshBasicMaterial({ color: 0xffd98a }));
+    emberCore.position.set(0.32, 0.53, 0.149);
+    g.add(emberCore);
+    const chimney = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.22, 10), brickDark);
+    chimney.position.set(0.4, 0.72, -0.12);
+    g.add(chimney);
+    const chimCap = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.03, 10), M(0x6a5244));
+    chimCap.position.set(0.4, 0.84, -0.12);
+    g.add(chimCap);
+    // 구리 냄비 — 화덕 위
+    const copper = M(0xc98a5a);
+    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.075, 0.09, 14), copper);
+    pot.position.set(0.19, 0.71, -0.1);
+    g.add(pot);
+    const potLid = new THREE.Mesh(new THREE.SphereGeometry(0.082, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.4), M(0x8a6844));
+    potLid.position.set(0.19, 0.75, -0.1);
+    g.add(potLid);
+    const potKnob = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 8), woodDark);
+    potKnob.position.set(0.19, 0.785, -0.1);
+    g.add(potKnob);
+    // 도구 바 — 뒤 기둥 2 + 가로봉 + 팬·국자·뒤집개 매달기
+    for (const px of [-0.5, 0.5]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.95, 8), wood);
+        post.position.set(px, 0.85, -0.2);
+        g.add(post);
+    }
+    const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 1.0, 8), steel);
+    rail.rotation.z = Math.PI / 2;
+    rail.position.set(0, 1.12, -0.2);
+    g.add(rail);
+    const hang = (x, maker) => { const item = maker(); item.position.x += x; g.add(item); };
+    hang(-0.34, () => {   // 프라이팬
+        const grp = new THREE.Group();
+        const pan = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.075, 0.028, 14), M(0x4c545c));
+        pan.position.set(0, 0.94, -0.2);
+        grp.add(pan);
+        const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.14, 8), woodDark);
+        handle.position.set(0, 1.05, -0.2);
+        grp.add(handle);
+        return grp;
+    });
+    hang(0.0, () => {   // 국자
+        const grp = new THREE.Group();
+        const bowl = new THREE.Mesh(new THREE.SphereGeometry(0.042, 10, 8, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.55), steel);
+        bowl.position.set(0, 0.95, -0.2);
+        grp.add(bowl);
+        const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.17, 8), steel);
+        stick.position.set(0, 1.045, -0.2);
+        grp.add(stick);
+        return grp;
+    });
+    hang(0.34, () => {   // 뒤집개
+        const grp = new THREE.Group();
+        const blade = new THREE.Mesh(new RoundedBoxGeometry(0.07, 0.09, 0.012, 2, 0.006), steel);
+        blade.position.set(0, 0.95, -0.2);
+        grp.add(blade);
+        const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.15, 8), woodDark);
+        stick.position.set(0, 1.06, -0.2);
+        grp.add(stick);
+        return grp;
+    });
+    // 도마 + 칼 — 왼쪽 상판
+    const board = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.025, 0.18, 2, 0.01), M(0xd9b98c, { map: woodTex }));
+    board.position.set(-0.28, 0.48, 0.03);
+    board.rotation.y = 0.14;
+    g.add(board);
+    const knife = new THREE.Mesh(new RoundedBoxGeometry(0.1, 0.008, 0.028, 1, 0.004), steel);
+    knife.position.set(-0.24, 0.5, 0.09);
+    knife.rotation.y = -0.35;
+    g.add(knife);
+    const knifeGrip = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.05, 8), woodDark);
+    knifeGrip.rotation.z = Math.PI / 2;
+    knifeGrip.rotation.y = -0.35;
+    knifeGrip.position.set(-0.31, 0.5, 0.115);
+    g.add(knifeGrip);
+    // 양념병 3형제 — 상판 안쪽
+    for (const [i, col] of [[0, 0xd8574a], [1, 0xe8b64f], [2, 0x8a6844]].values()) {
+        const jar = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.03, 0.075, 10), M(col));
+        jar.position.set(-0.03 + i * 0.075, 0.485, -0.15);
+        g.add(jar);
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.02, 10), cream);
+        cap.position.set(-0.03 + i * 0.075, 0.53, -0.15);
+        g.add(cap);
+    }
+    // 어닝 + 간판 — 부스 패밀리의 결
+    const awning = new THREE.Mesh(new THREE.BoxGeometry(1.14, 0.03, 0.6), new THREE.MeshStandardMaterial({ map: awningTex, roughness: 1, metalness: 0 }));
+    awning.position.set(0, 1.3, 0.05);
+    awning.rotation.x = 0.24;
+    g.add(awning);
+    const signCv = document.createElement('canvas');
+    signCv.width = 128;
+    signCv.height = 64;
+    const sctx = signCv.getContext('2d');
+    sctx.fillStyle = '#7a4a33';
+    sctx.fillRect(0, 0, 128, 64);
+    sctx.fillStyle = '#ffe9c9';
+    sctx.font = 'bold 24px sans-serif';
+    sctx.textAlign = 'center';
+    sctx.fillText('🍳 KITCHEN', 64, 40);
+    const signTex = new THREE.CanvasTexture(signCv);
+    signTex.colorSpace = THREE.SRGBColorSpace;
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.17, 0.03), new THREE.MeshStandardMaterial({ map: signTex, roughness: 1, metalness: 0 }));
+    sign.position.set(0, 1.06, -0.02);
+    g.add(sign);
+    return g;
+}
 // 🧊 아이스박스 — 잔교 곁 캠핑 쿨러(조과 보관함·요리 재료). 뚜껑을 뒤 힌지로 빼꼼 열어
 // 얼음 큐브와 물고기 꼬리가 내다보이게 — "생선 보관함"이 조형만으로 읽힌다. 정적 = 병합 대상.
 function makeIcebox() {
@@ -4656,6 +4803,7 @@ const PROP_CLICKS = {
 // 호버 프롬프트: 클릭형은 "· 클릭", 몸이 필요한 것은 ⌘ 안내, 나머지는 이름표만.
 const HOVER_PROMPTS = {
     icebox: () => '🧊 어획 보관함 · 클릭',
+    kitchen: () => '🍳 주방 — 곧 개업!',
     pecktree: () => '💗 쪼아쪼아 나무 · 클릭',
     well: () => '🪙 소원 빌기 · 클릭',
     capsule: () => '🕰️ 타임캡슐 · 클릭',
@@ -4692,7 +4840,7 @@ const HOVER_PROMPTS = {
     sandcastle: () => '🏰 모래성 — 클릭하면 펫이 모래놀이 · 조종 중 ⌘ = 직접 앉기',
     palm: () => '🌴 야자수',
 };
-const HOVER_H = { icebox: 0.62, pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, piano: 1.05, photoboard: 1.55, mailbox: 0.75, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, balloon: 2.1, ferry: 1.3, sandcastle: 0.65, palm: 1.2 };
+const HOVER_H = { icebox: 0.62, kitchen: 1.5, pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, piano: 1.05, photoboard: 1.55, mailbox: 0.75, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, balloon: 2.1, ferry: 1.3, sandcastle: 0.65, palm: 1.2 };
 const hoverEl = document.createElement('div');
 hoverEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); z-index:88; pointer-events:none; background:rgba(30,32,40,0.88); color:#fff; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
 document.body.appendChild(hoverEl);
@@ -4808,7 +4956,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointerleave', () => { hoverActive = false; });
 fetchCapsules();   // 부팅 시 한 번 — 개봉 알림용
 
-const PROP_BUILDERS = { icebox: makeIcebox, tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, trampoline: makeTrampoline, vine: makeVine, fruitbasket: makeFruitBasket, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket, palm: makePalm, sandcastle: makeSandcastle };
+const PROP_BUILDERS = { icebox: makeIcebox, kitchen: makeKitchen, tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, trampoline: makeTrampoline, vine: makeVine, fruitbasket: makeFruitBasket, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket, palm: makePalm, sandcastle: makeSandcastle };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -4826,7 +4974,7 @@ const blobTex = (() => {
 })();
 const blobGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-const BLOB_SIZE = { icebox: 0.48, tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62, pecktree: 0.55, well: 0.75, capsule: 0.5, boulder: 0.75, garden: 1.5, piano: 0.8, photoboard: 0.8, mailbox: 0.35, gym: 1.5, library: 1.35 };
+const BLOB_SIZE = { icebox: 0.48, kitchen: 1.05, tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62, pecktree: 0.55, well: 0.75, capsule: 0.5, boulder: 0.75, garden: 1.5, piano: 0.8, photoboard: 0.8, mailbox: 0.35, gym: 1.5, library: 1.35 };
 // Beds register a lying spot (on the furniture, with a lean-back tilt + heading) and an
 // approach point just outside their collider that the pet walks to before climbing on.
 // 🔨 함수로 분리: 로드 시 프롭 루프가 굽고, 공사모드에서 프롭이 이사하면 unbake→bake로 다시
@@ -4920,7 +5068,7 @@ function unbakePropBeds(p) {
 //  · Mesh가 아닌 것(라이트·스프라이트·Points)과 visible=false(숨김 토글류)는 그냥 둔다
 const MERGE_TYPES = new Set(['house', 'bowl', 'fence', 'pond', 'sunbed', 'hammock', 'lamp', 'radio',
     'coffee', 'food', 'monument', 'pecktree', 'well', 'capsule', 'boulder', 'cave', 'lookout',
-    'garden', 'piano', 'mailbox', 'gym', 'library', 'fountain', 'flowerbasket', 'swing', 'seesaw', 'palm', 'sandcastle', 'icebox']);
+    'garden', 'piano', 'mailbox', 'gym', 'library', 'fountain', 'flowerbasket', 'swing', 'seesaw', 'palm', 'sandcastle', 'icebox', 'kitchen']);
 function mergePropGroup(root) {
     const skip = new Set(seasonSnowCaps);
     if (mailFlag) mailFlag.traverse((o) => skip.add(o));
@@ -7575,7 +7723,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { icebox: '아이스박스', tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호' };
+const PROP_KO = { icebox: '아이스박스', kitchen: '주방', tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -8667,7 +8815,7 @@ document.body.appendChild(dockUI);
 // 배치는 서버(/api/world_layout)+localStorage에 저장되고 다음 접속 때 씬을 짓기 전에 적용된다
 // (파일 상단 savedLayout). 지형 평탄화 패드는 섬 메시에 구워져 있어 리로드 후에야 새 위치를
 // 따라간다 — 그때까지 잔디가 살짝 울퉁불퉁할 수 있는 게 유일한 시각적 타협점.
-const PROP_LABELS = { icebox: '아이스박스', tree: '나무', bowl: '밥그릇', fence: '울타리', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', house: '집', car: '자동차' };
+const PROP_LABELS = { icebox: '아이스박스', kitchen: '주방', tree: '나무', bowl: '밥그릇', fence: '울타리', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', house: '집', car: '자동차' };
 const buildRingMat = new THREE.MeshBasicMaterial({ color: 0x66d9ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
 const buildRing = new THREE.Mesh(new THREE.RingGeometry(0.82, 1.0, 40), buildRingMat);
 buildRing.rotation.x = -Math.PI / 2;
