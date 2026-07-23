@@ -4281,22 +4281,36 @@ function refreshKitchenPanel() {
     strip.textContent = `${inv.map(([e, n]) => `${e}${n}`).join(' ')}  ·  🛒 ${mk || '오늘 장은 쉬는 날'}`;
     const body = kitchenPanel.querySelector('.kc-body');
     body.innerHTML = '';
+    // 타일 그리드 — 요리는 흰 바탕 정사각 이미지(지금은 이모지 대체, 조형 확정 후 아이콘 스냅샷).
+    // 이름·재료는 펫 모션 메뉴 문법: 데탑 = title 툴팁, 터치 = 길게 눌러 라벨(짧은 탭 = 실행).
     for (const r of RECIPES) {
         const locked = recipeLocked(r);
         const missing = recipeMissing(r);
         const ok = !locked && !missing.length;
-        const row = document.createElement('div');
-        row.style.cssText = `display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:10px; margin-bottom:3px; background:rgba(255,255,255,${ok ? '0.1' : '0.03'}); opacity:${locked ? 0.55 : ok ? 1 : 0.6}; cursor:${ok ? 'pointer' : 'default'};`;
-        const needTxt = locked ? '우정이 깊어지면 떠오를 레시피…'
-            : r.needs.map((nd) => {
-                const has = ingredientCount(nd.src, nd.id) >= nd.n;
-                return `<span style="color:${has ? '#cfe3cf' : '#e89a9a'};">${ingKo(nd)}×${nd.n}</span>`;
-            }).join(' · ');
-        row.innerHTML = `<span style="font-size:21px; filter:${locked ? 'grayscale(1) brightness(0.5)' : 'none'};">${locked ? '❓' : r.emoji}</span>
-<div style="flex:1; min-width:0;"><div style="font-size:13px; font-weight:700;">${locked ? '???' : r.ko}${dishesFound[r.id] ? ' <span style="opacity:0.8;">✓</span>' : ''}</div>
-<div style="font-size:11px; opacity:0.85; line-height:1.35;">${needTxt}</div></div>`;
-        if (ok) row.onclick = () => { cookRecipe(r); };
-        body.appendChild(row);
+        const label = locked ? '??? — 우정이 깊어지면 떠오를 레시피'
+            : missing.length ? `${r.ko} — ${missing.map((nd) => `${ingKo(nd)}×${nd.n}`).join('·')} 부족`
+            : `${r.ko} 만들기`;
+        const tile = document.createElement('div');
+        tile.title = label;
+        tile.style.cssText = `position:relative; aspect-ratio:1; background:${locked ? 'rgba(255,255,255,0.55)' : '#fff'}; border-radius:11px; display:flex; align-items:center; justify-content:center; font-size:26px; cursor:pointer; user-select:none; -webkit-user-select:none; box-shadow:0 2px 6px rgba(0,0,0,0.25);`;
+        tile.innerHTML = `<span style="filter:${locked ? 'grayscale(1) opacity(0.5)' : missing.length ? 'grayscale(0.75) opacity(0.45)' : 'none'};">${locked ? '❓' : r.emoji}</span>${dishesFound[r.id] ? '<span style="position:absolute; top:3px; right:5px; font-size:10px; color:#3d9950;">✓</span>' : ''}`;
+        tile.onmouseenter = () => { tile.style.boxShadow = '0 0 0 2px #ffd54f, 0 2px 6px rgba(0,0,0,0.25)'; };
+        tile.onmouseleave = () => { tile.style.boxShadow = '0 2px 6px rgba(0,0,0,0.25)'; };
+        let lpT = null, lpFired = false;
+        tile.addEventListener('pointerdown', () => {
+            lpFired = false;
+            if (IS_TOUCH) lpT = setTimeout(() => { lpFired = true; showMenuTip(tile, label); }, 480);   // 📱 길게 = 요리명
+        });
+        const lpClear = () => clearTimeout(lpT);
+        tile.addEventListener('pointerup', lpClear);
+        tile.addEventListener('pointercancel', lpClear);
+        tile.addEventListener('pointerleave', lpClear);
+        tile.onclick = () => {
+            if (lpFired) { lpFired = false; return; }   // 길게 누른 손가락은 실행 안 함
+            if (ok) cookRecipe(r);
+            else showToast(locked ? '💗 우정이 깊어지면 떠오를 레시피예요' : `🍳 ${label}`);
+        };
+        body.appendChild(tile);
     }
 }
 const pickMaxKey = (o) => { const e = Object.entries(o).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1])[0]; return e ? e[0] : null; };
@@ -4531,7 +4545,7 @@ function toggleKitchenPanel() {
         kitchenPanel.style.cssText = 'position:fixed; right:64px; bottom:calc(70px + env(safe-area-inset-bottom, 0px)); display:none; width:min(292px, calc(100vw - 90px)); max-height:62vh; overflow-y:auto; background:rgba(30,32,40,0.94); border-radius:12px; padding:10px; z-index:110; box-shadow:0 6px 24px rgba(0,0,0,0.4); font-family:sans-serif; color:#fff;';
         kitchenPanel.innerHTML = `<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;"><span style="font-size:13px; font-weight:700;">🍳 야외 주방</span><span class="kc-x" style="color:#aab; font-size:13px; cursor:pointer; padding:2px 6px;">✕</span></div>
 <div class="kc-stock" style="font-size:11.5px; opacity:0.9; background:rgba(255,255,255,0.06); border-radius:8px; padding:6px 8px; margin-bottom:8px; line-height:1.4;"></div>
-<div class="kc-body"></div>`;
+<div class="kc-body" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:7px;"></div>`;
         kitchenPanel.addEventListener('pointerdown', (e) => e.stopPropagation());
         kitchenPanel.querySelector('.kc-x').onclick = () => { kitchenPanel.style.display = 'none'; };
         document.body.appendChild(kitchenPanel);
