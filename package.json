@@ -15,7 +15,8 @@
     "pack": "electron-builder --dir",
     "dist:mac": ".venv/bin/pyinstaller server.spec --noconfirm && electron-builder --mac",
     "test:world": "node scripts/world-smoke.mjs",
-    "perf:world": "node scripts/world-perf-probe.mjs"
+    "perf:world": "node scripts/world-perf-probe.mjs",
+    "balance:world": "node scripts/balance-sim.mjs"
   },
   "keywords": [
     "AI",
