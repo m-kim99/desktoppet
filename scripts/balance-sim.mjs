@@ -253,6 +253,12 @@ function printRun(label, out) {
         console.log(`${(row.ko + '          ').slice(0, 7)} ${fmt(row.perDay, 2)} ${fmt(row.minPerDay)} ${fmt(row.share * 100)}%`);
     }
     console.log(`한가로움(배회·대기) 점유율 ${(out.wanderShare * 100).toFixed(1)}% · 둘 다 한가 비율 ${(out.bothFree * 100).toFixed(1)}%`);
+    // 다양성 게이지: 유효 활동 수 = 1/Σ(여가 점유 비중²) — 전부 균등하면 활동 수, 1강 과점이면 1로 수렴.
+    const ls = out.rows.filter((x) => ACTS.some((a) => a.id === x.id) && x.share > 0);
+    const tot = ls.reduce((s, x) => s + x.share, 0);
+    const effN = 1 / ls.reduce((s, x) => s + (x.share / tot) ** 2, 0);
+    const band = ls[0].share > 0.15 ? '  ← 15% 밴드 밖' : '';
+    console.log(`다양성: 유효 활동 수 ${effN.toFixed(1)}종 · 1위 시간점유 ${(ls[0].share * 100).toFixed(1)}% (${ls[0].ko})${band}`);
 }
 
 if (ARG['fit-rate']) {
