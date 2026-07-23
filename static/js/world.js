@@ -2726,7 +2726,7 @@ function makeDigsite(p) {
     g.add(digGlint);
     return g;
 }
-let digDoing = false, digAutoAt = Date.now() + 15 * 60000;
+let digDoing = false;
 async function startDig(p) {
     refreshDigState();
     if (!digState || digState.dug || digDoing || !p || p.bed || p.dip) return;
@@ -3658,7 +3658,7 @@ function onPianoClick(pr, hit) {
     }
     petPlayPiano();   // 몸통 클릭 = 펫에게 연주 부탁 (심즈式 — 가까운 펫이 걸어와서 친다)
 }
-let pianoBusy = false, pianoAutoAt = Date.now() + 20 * 60000;
+let pianoBusy = false;
 async function petPlayPiano(player) {
     if (pianoBusy) return;
     const pr = PROPS.find((q) => q.type === 'piano');
@@ -4645,25 +4645,7 @@ function updateMemorialIsland(delta) {
             }
         }
     }
-    // 피아노: 아주 가끔 펫이 스스로 한 곡 (한가할 때만)
-    if (Date.now() > pianoAutoAt) {
-        pianoAutoAt = Date.now() + 20 * 60000;
-        if (!pianoBusy && !duoBusy && Math.random() < 0.08) petPlayPiano();
-    }
-    if (Date.now() > digAutoAt) {
-        digAutoAt = Date.now() + 15 * 60000;
-        if (digState && !digState.dug && !digDoing && !duoBusy && Math.random() < 0.1) {
-            const p = pets.find((q) => q !== possessed && !q.pet.sleeping && !q.bed && !q.dip
-                && (q.ai.state === 'idle' || q.ai.state === 'walk'));
-            const w = digSpotWorld();
-            if (p && w) (async () => {
-                await gotoAsync(p, w.x + 0.3, w.z + 0.2);
-                p.ai.state = 'busy';
-                await startDig(p);
-                releaseAI(p);
-            })();
-        }
-    }
+    // 피아노·발굴 자율 트리거는 POLL_ACTS(전역 폴링 레지스트리)로 이사했다.
     // 타임캡슐 개봉 알림: 1분마다 확인, 세션당 한 번만 조른다
     capsuleNoticeT += delta;
     if (capsuleNoticeT >= 60) {
@@ -6425,6 +6407,50 @@ function rollLeisure(p) {
     return ok;
 }
 
+// ---- 전역 폴링 활동 — 펫 개인의 idle 롤이 아니라 월드가 주기 추첨으로 시키는 것들 ----
+// 듀오(숨바꼭질)거나 "한가한 아무나"를 지명하는 대리주문(피아노·발굴)이라 per-pet 셀렉터에
+// 안 실린다. 예전엔 활동마다 xAutoAt 선언 + 소비 블록이 다른 곳에 흩어져 있었다 — gym/library
+// 누락 사고가 난 바로 그 패턴이라, 선언과 소비를 한 항목으로 합친다. 케이던스 의미는 종전
+// 동일: 주기마다 1회 추첨, 게이트 불발도 그 주기를 소모한다.
+const POLL_ACTS = [
+    // 🎹 아주 가끔 스스로 한 곡 (한가할 때만)
+    { id: 'piano', every: 20 * 60000, p: 0.08,
+      gate: () => !pianoBusy && !duoBusy,
+      fire: () => petPlayPiano() },
+    // ⛏️ 보물 모래밭 자율 발굴 — 오늘 자리를 아직 안 팠을 때만 (하루 1회)
+    { id: 'dig', every: 15 * 60000, p: 0.1,
+      gate: () => digState && !digState.dug && !digDoing && !duoBusy,
+      fire: () => {
+          const p = pets.find((q) => q !== possessed && !q.pet.sleeping && !q.bed && !q.dip
+              && (q.ai.state === 'idle' || q.ai.state === 'walk'));
+          const w = digSpotWorld();
+          if (p && w) (async () => {
+              await gotoAsync(p, w.x + 0.3, w.z + 0.2);
+              p.ai.state = 'busy';
+              await startDig(p);
+              releaseAI(p);
+          })();
+      } },
+    // 🙈 숨바꼭질 자동 한 판 — 둘 다 한가한 낮에만
+    { id: 'hideseek', every: 12 * 60000, p: 0.12,
+      gate: () => !hideSeekGame && !duoBusy && !buildMode && !possessed && pets.length >= 2
+          && dayFactor(currentHour()) > 0.3
+          && pets.every((q) => !q.pet.sleeping && !q.bed && !q.dip && q.ai.state !== 'held'
+              && (q.ai.state === 'idle' || q.ai.state === 'walk')),
+      fire: () => worldHideSeek(pets[Math.floor(Math.random() * pets.length)]) },
+];
+function updatePollActs() {
+    const now = Date.now();
+    for (const a of POLL_ACTS) {
+        if (!a.nextAt) a.nextAt = now + a.every;            // 첫 주기 시드 — 부팅 직후 몰림 방지 (종전 동일)
+        if (now < a.nextAt) continue;
+        a.nextAt = now + a.every;
+        if (a.gate && !a.gate()) continue;
+        if (Math.random() >= a.p) continue;
+        a.fire();
+    }
+}
+
 function updateWander(p, delta) {
     const { ai, mover, pet } = p;
     if (p.poiWalk) return;                                           // 🧑‍🚀 달·정거장 산책 — 표면 자율은 updateRocket EVA 블록이 몬다
@@ -7027,7 +7053,6 @@ const HIDE_OCCLUDERS = { tree: 0.42, house: 1.15, coffee: 0.5, food: 0.5, swing:
 const HIDE_STANDOFF  = { tree: 0.75, house: 1.6, coffee: 0.85, food: 0.85, swing: 0.85, seesaw: 0.9, fence: 0.8, radio: 0.55, monument: 0.62, pecktree: 0.75, well: 0.8, boulder: 0.8, cave: 1.4, library: 1.5, gym: 1.7 };
 const HS_COUNT_SPOT = { x: 0.25, z: 0.45 };   // 광장 가운데 — 술래가 눈 가리고 세는 자리
 let hideSeekGame = null;   // { phase, seeker, hider, playerHides, countTotal, t, seekT, losT, lastLeft, found, cancel }
-let hideSeekAutoAt = Date.now() + 12 * 60000;   // 가끔 스스로 한 판 (다음 추첨 시각)
 
 function sightClear(ax, az, bx, bz) {
     const d = Math.hypot(bx - ax, bz - az);
@@ -7167,17 +7192,7 @@ async function worldHideSeek(clicked) {
 }
 function updateHideSeek(delta) {
     const g = hideSeekGame;
-    if (!g) {
-        if (Date.now() > hideSeekAutoAt) {   // 가끔 스스로 한 판: 둘 다 한가한 낮에만
-            hideSeekAutoAt = Date.now() + 12 * 60000;
-            const okAuto = !duoBusy && !buildMode && !possessed && pets.length >= 2
-                && dayFactor(currentHour()) > 0.3 && Math.random() < 0.12
-                && pets.every((q) => !q.pet.sleeping && !q.bed && !q.dip && q.ai.state !== 'held'
-                    && (q.ai.state === 'idle' || q.ai.state === 'walk'));
-            if (okAuto) worldHideSeek(pets[Math.floor(Math.random() * pets.length)]);
-        }
-        return;
-    }
+    if (!g) return;   // 자동 한 판 추첨은 POLL_ACTS(전역 폴링 레지스트리)가 돌린다
     // 판 접기: 술래를 조종하거나, AI 하이더를 조종하거나, 공사 모드에 들어가면.
     if (buildMode || g.seeker.ai.state === 'player' || g.seeker.ai.state === 'held') g.cancel = true;
     if (g.playerHides && g.hider !== possessed) g.cancel = true;                        // 숨던 주인이 조종을 풀었다
@@ -20148,6 +20163,7 @@ function animate() {
     updateSwings(delta);
     updateSeesaws(delta);
     updateHideSeek(delta);
+    updatePollActs();                        // 🎹⛏️🙈 전역 폴링 활동 추첨 (레지스트리)
     updateHugSpot(delta);
     updateMemorialIsland(delta);
     updateHoverPrompt(delta);
