@@ -4417,6 +4417,7 @@ function cookRecipe(r) {
 function beginCookSeq(p, r, pr, carry) {
     if (recipeMissing(r).length) {   // 걷는 사이 재료가 사라졌을 수도 — 차감은 도착 후에만
         if (!carry) showToast('🍳 재료가 부족해요');
+        if (carry && carry.meal && p.mealDone === carry.meal) p.mealDone = null;   // 끼니 환급 — 밥그릇으로 재시도 (성공 확인 전 소진 금지)
         if (p !== possessed) releaseAI(p);
         cooking = null;
         return;
@@ -4598,7 +4599,10 @@ function updateCooking(delta) {
         try { localStorage.setItem('world-dishes-found', JSON.stringify(dishesFound)); worldSync('world-dishes-found'); } catch (e) {}
         giveFood(p, { id: 'cloche', name: r.id === 'eterncake' ? '영원 케이크 (반쪽)' : r.ko }, '주방에서');
         if (!p.pet.action) p.pet.action = { id: 'happy', t: 0 };
-        logWorldEvent(`${petKo(p)}가 ${r.ko}를 완성했다 🍳${first ? ' — 첫 요리!' : ''}`);
+        if (cooking.meal) {
+            const mh = +String(cooking.meal).split('-')[1];
+            logWorldEvent(`${petKo(p)}가 ${mh === 8 ? '아침' : mh === 12 ? '점심' : '저녁'}으로 직접 만든 ${r.ko}를 차렸다 🍳${first ? ' — 첫 요리!' : ''}`);
+        } else logWorldEvent(`${petKo(p)}가 ${r.ko}를 완성했다 🍳${first ? ' — 첫 요리!' : ''}`);
         if (first) {
             fishFanfare();
             showToast(`🍳✨ 새 요리 발견 — ${r.ko}!`);
@@ -8530,7 +8534,10 @@ if (statsOn) window.__worldDev = {
         }
         return startAiCook(pets.find((q) => q !== possessed), { recipe, intent });
     },
-    aiCookState: () => ({ cook: cooking ? { pet: cooking.p.name, phase: cooking.phase, intent: cooking.intent || null } : null, post: aiCookPost ? { pet: aiCookPost.p.name, mode: aiCookPost.mode } : null }),
+    aiCookState: () => ({ cook: cooking ? { pet: cooking.p.name, phase: cooking.phase, intent: cooking.intent || null, meal: cooking.meal || null } : null, post: aiCookPost ? { pet: aiCookPost.p.name, mode: aiCookPost.mode } : null }),
+    mealCookP: (v) => { MEAL_COOK_P = v; return MEAL_COOK_P; },
+    mealReset: (name) => { const p = pets.find((q) => q.name === name); if (!p) return null; p.mealDone = null; return true; },
+    mealDoneOf: (name) => { const p = pets.find((q) => q.name === name); return p ? p.mealDone || null : null; },
     hsGo: () => {   // 숨바꼭질 강제 시작 (부팅 선점 청산)
         for (const q0 of pets) {
             if (q0 === possessed) continue;
@@ -21611,6 +21618,7 @@ function updateAutoSleep() {
 // sleep/beds/possession block getting up for food in the first place.
 const MEAL_TIMES = [8, 12, 18];
 const MEAL_WINDOW = 0.5;
+let MEAL_COOK_P = 0.3;   // 밥때에 밥그릇 대신 직접 요리할 확률 (재고가 허락할 때만) — 훅으로 조정 가능
 const bowlProp = PROPS.find((p) => p.type === 'bowl');
 function pickEatSpot(p) {
     for (let i = 0; i < 14; i++) {
@@ -21651,6 +21659,12 @@ function updateMeals() {
         if (p.mealDone === key) continue;
         if (p === possessed || p.bed || p.pet.sleeping || p.pet.action) continue;
         if (p.ai.state !== 'idle' && p.ai.state !== 'walk') continue;
+        // 🍳 가끔은 밥그릇 대신 직접 만든 요리로 한 끼 — 재고가 허락할 때만, 주방이 한가할 때만
+        if (Math.random() < MEAL_COOK_P && !cooking && !aiCookPost && aiCookableRecipes().length
+            && startAiCook(p, { intent: 'eat', meal: key }) === 'ok') {
+            p.mealDone = key;
+            continue;
+        }
         p.eatSpot = pickEatSpot(p);
         p.mealDone = key;
         haveMeal(p);
