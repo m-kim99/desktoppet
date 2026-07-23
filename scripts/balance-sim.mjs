@@ -1,11 +1,13 @@
 // 자율활동 밸런스 몬테카를로 — world.js 여가 결정 로직을 미러링해 가상 하루를 N회 돌리고
 // 활동별 점유율 표를 낸다. 리팩터·튜닝의 전후 비교 게이트 (world-layout-sweep과 같은 위상).
 //
-//   node scripts/balance-sim.mjs                    # 현행 체인 베이스라인
-//   node scripts/balance-sim.mjs --mode registry    # 가중랜덤 셀렉터 (리팩터 후 구조)
+//   node scripts/balance-sim.mjs                    # 현행 구성 게이트 (레지스트리 rate 0.40 · ride 150s · dur보정)
+//   node scripts/balance-sim.mjs --mode chain       # 패치 전 체인 스냅샷 (ride 600s — 전/후 비교의 "전")
 //   node scripts/balance-sim.mjs --mode both        # 두 모드 나란히 비교 (±편차 표)
-//   node scripts/balance-sim.mjs --fit-rate         # LEISURE_RATE 역산 스윕
-//   옵션: --days 400 --seed 42 --rate 0.35 --ride-sec 600 --dur-budget --json
+//   node scripts/balance-sim.mjs --fit-rate         # LEISURE_RATE 역산 스윕 (7944122 마이그레이션 재현은
+//                                                     동일 조건으로: --ride-sec 600 --dur-budget off)
+//   옵션: --days 400 --seed 42 --rate 0.40 --ride-sec N --dur-budget off --json
+// ⚠ 기본값 = world.js 현행 구성과 동기가 계약: LEISURE_RATE·SWING rideMs·weight를 바꾸면 여기도 같이.
 //
 // 모델 노트 (실측 아님 — 코드 정적 분석 기반):
 // - 시간 = "앱이 켜져 있는 활동 시간"만 흐른다 (06~22시, 하루 57,600초). 쿨다운·타이머 전부
@@ -23,10 +25,10 @@ const ARG = Object.fromEntries(process.argv.slice(2).flatMap((a, i, all) => {
 
 const DAYS = +(ARG.days || 400);
 const SEED = +(ARG.seed || 42);
-const MODE = ARG.mode || 'chain';               // chain | registry | both
-const RATE = +(ARG.rate || 0.35);               // registry: 여가 총량 노브
-const RIDE_SEC = +(ARG['ride-sec'] || 600);     // SWING.rideMs — 현행 600s
-const DUR_BUDGET = !!ARG['dur-budget'];         // registry: 긴 활동 억제 보정항
+const MODE = ARG.mode || 'registry';            // registry(현행 기본) | chain(패치 전) | both
+const RATE = +(ARG.rate || 0.40);               // registry: 여가 총량 노브 — world.js LEISURE_RATE와 동기
+const rideFor = (mode) => (ARG['ride-sec'] ? +ARG['ride-sec'] : (mode === 'chain' ? 600 : 150));   // 그네 한 판 — 시대별 기본 (체인=패치 전 10분, 레지스트리=현행 2~3분 평균)
+const DUR_BUDGET = ARG['dur-budget'] !== 'off'; // registry: 긴 활동 억제 보정항 — 현행 기본 on (끄기 = --dur-budget off)
 const JSON_OUT = !!ARG.json;
 
 // mulberry32 — 시드 고정 (재현 가능한 게이트)
@@ -58,7 +60,7 @@ const ACTS = [
     { id: 'fruit',  ko: '과일따기', chainP: () => 0.05,  weight: 11,  cd: [420, 900],   seed: [240, 600], lock: 'fruit',   dur: (r) => 45 + r() * 30 },
     { id: 'tidy',   ko: '낙과정리', chainP: () => 0.04,  weight: 9,   cd: [360, 780],   seed: [300, 600], lock: 'tidy',    dur: (r) => 45 + r() * 30, needsFruit: true },
     { id: 'ferry',  ko: '페리',     chainP: () => 0.04,  weight: 8,   cd: [480, 960],   seed: [300, 780], lock: 'ferry',   dur: (r) => 170 + r() * 60 },
-    { id: 'swing',  ko: '그네/시소',chainP: () => 0.14,  weight: 28,  cd: [180, 360],   seed: null,       dur: () => RIDE_SEC, cdAtMount: true },
+    { id: 'swing',  ko: '그네/시소',chainP: () => 0.14,  weight: 28,  cd: [180, 360],   seed: null,       dur: () => rideNow, cdAtMount: true },
     // 신설 2종 (레지스트리 모드 전용 — chainP 0: 구 체인엔 소비 블록이 없어 발동 자체가 없었다)
     { id: 'gym',    ko: '스트레칭', chainP: () => 0,     weight: 6,   cd: [600, 1200],  seed: null,       lock: 'gym',     dur: (r) => 12 + r() * 6 },
     { id: 'library',ko: '독서',     chainP: () => 0,     weight: 8,   cd: [600, 1200],  seed: null,       dur: (r) => 120 + r() * 120 },
@@ -72,7 +74,9 @@ const LOTTO = [
     { id: 'hideseek', ko: '숨바꼭질', every: 720,  p: 0.12, dur: (r) => 130 + r() * 50, kind: 'duo', daylight: true },
 ];
 
+let rideNow = 150;   // 그네 지속 — simulate가 모드별 기본으로 채운다 (dur 클로저가 읽음)
 function simulate(mode, opts = {}) {
+    rideNow = rideFor(mode);
     const r = rng(opts.seed ?? SEED);
     const rate = opts.rate ?? RATE;
     const stats = {};                                       // id → { starts, busy }
@@ -266,8 +270,8 @@ if (ARG['fit-rate']) {
 
 if (MODE === 'both') {
     const a = simulate('chain'), b = simulate('registry');
-    printRun('현행 체인', a);
-    printRun(`레지스트리 (rate ${RATE}${DUR_BUDGET ? ' · dur보정' : ''} · ride ${RIDE_SEC}s)`, b);
+    printRun('구 체인 (패치 전 · ride 600s)', a);
+    printRun(`레지스트리 (rate ${RATE}${DUR_BUDGET ? ' · dur보정' : ''} · ride ${rideFor('registry')}s)`, b);
     console.log('\n== 편차 (레지스트리 vs 체인, 시작/일 기준) ==');
     for (const row of a.rows) {
         if (!ACTS.some((x) => x.id === row.id) || row.perDay < 0.01) continue;
@@ -280,7 +284,7 @@ if (MODE === 'both') {
     const out = simulate(MODE);
     if (JSON_OUT) console.log(JSON.stringify(out, null, 1));
     else {
-        printRun(MODE === 'chain' ? '현행 체인' : `레지스트리 (rate ${RATE})`, out);
+        printRun(MODE === 'chain' ? '구 체인 (패치 전 · ride 600s)' : `레지스트리 — 현행 구성 (rate ${RATE}${DUR_BUDGET ? ' · dur보정' : ''} · ride ${rideFor('registry')}s)`, out);
         const top = out.rows[0];
         if (top && top.share > 0.25) console.log(`⚠ 단일 활동 점유율 25% 초과: ${top.ko} ${(top.share * 100).toFixed(1)}%`);
     }
