@@ -6325,7 +6325,7 @@ function steerToward(p, target, delta) {
 // seed = 첫 쿨다운: 앱 켜자마자 탈것이 떠나버리면 주인이 탈 틈이 없다 (E2E에서 실측).
 const LEISURE_ACTS = [
     // 물놀이 — 펫들이 같이 헤엄치게 (주인 포함). 연못/바다는 startDip이 코인플립.
-    { id: 'dip', cdKey: 'nextDipAt', cd: [150000, 300000], weight: 100, dur: 45,
+    { id: 'dip', cdKey: 'nextDipAt', cd: [240000, 480000], weight: 35, dur: 45,
       fire: (p) => startDip(p) },
     // 낚싯대를 메고 물가로 — 혼자 두어 캐스트. offline = 로그만: AI 어획은 라이브에서도 도감에
     // 안 오른다(주인 몫) — 정산이 라이브보다 후하면 안 된다.
@@ -6347,16 +6347,16 @@ const LEISURE_ACTS = [
       gate: () => !rocketRide && !aiRocketWalk && !rocketHop && ROCKET.mode === 'parked',
       fire: (p) => { startAiRocket(p); return true; } },
     // 트램펄린 폴짝 — 혼자 신나게 예닐곱 번.
-    { id: 'tramp', cdKey: 'nextTrampAt', seed: [180000, 480000], cd: [360000, 720000], weight: 14, dur: 40,
+    { id: 'tramp', cdKey: 'nextTrampAt', seed: [180000, 480000], cd: [360000, 720000], weight: 18, dur: 40,
       gate: () => !aiTramp,
       fire: (p) => startAiTramp(p) === 'ok' },
     // 과일 따기 — 먹거나, 주인에게 물어다 준다. offline = 부재 중에도 따 먹고 몇 알 흘려둔다.
-    { id: 'fruit', cdKey: 'nextFruitAt', seed: [240000, 600000], cd: [420000, 900000], weight: 11, dur: 60,
+    { id: 'fruit', cdKey: 'nextFruitAt', seed: [240000, 600000], cd: [420000, 900000], weight: 14, dur: 60,
       gate: () => !aiFruit,
       fire: (p) => startAiFruit(p) === 'ok',
       offlineCap: 4, offline: (n, win) => offlineFruitHook(n, win) },
     // 낙과 정리 — 주워서 바구니에. 확률은 낮게: 줍느라 딴 놀이 못 하지 않게.
-    { id: 'tidy', cdKey: 'nextTidyAt', seed: [300000, 600000], cd: [360000, 780000], weight: 9, dur: 60,
+    { id: 'tidy', cdKey: 'nextTidyAt', seed: [300000, 600000], cd: [360000, 780000], weight: 10, dur: 60,
       gate: () => !aiTidy,
       fire: (p) => startAiTidy(p) === 'ok',
       offlineCap: 8, offline: (n, win) => offlineTidyHook(n, win) },
@@ -6365,7 +6365,7 @@ const LEISURE_ACTS = [
       gate: () => !ferryRide && !aiFerryWalk && FERRY.mode === 'docked',
       fire: (p) => { startAiFerry(p); return true; } },
     // 그네/시소 — 빈 자리가 있을 때만 (자리 없음 = 시작 실패 → 셀렉터가 3초 재시도).
-    { id: 'swing', cdKey: 'nextSwingAt', cd: [180000, 360000], weight: 28, dur: 150,
+    { id: 'swing', cdKey: 'nextSwingAt', cd: [180000, 360000], weight: 22, dur: 150,
       fire: (p) => {
           const seat = SWINGS.find((b) => !b.occupant) || SEESAWS.find((b) => !b.occupant);
           if (!seat) return false;
@@ -6374,7 +6374,7 @@ const LEISURE_ACTS = [
       } },
     // 🧘 운동 매트 스트레칭 — 0c21ead부터 xAutoAt 선언만 있고 소비 블록이 없어 한 번도 자율
     // 발동 못 하던 활동: 레지스트리 항목 하나로 부활 (코드 수정 없이 데이터 추가만 — 이 구조의 목적).
-    { id: 'gym', cdKey: 'nextGymAt', cd: [600000, 1200000], weight: 6, dur: 15,
+    { id: 'gym', cdKey: 'nextGymAt', cd: [600000, 1200000], weight: 10, dur: 15,
       gate: () => !gymBusy && PROPS.some((q) => q.type === 'gym'),
       fire: (p) => { petStretch(p); return true; } },
     // 📚 도서관 독서 — 위와 같은 사연의 부활 조. 2~4분 읽고 스스로 일어난다 (auto 타이머).
@@ -6386,8 +6386,10 @@ const LEISURE_ACTS = [
 // 추가해도 전체 딴짓 빈도는 그대로, 서로의 지분만 재분배), ② 자격 있는 활동만 모아 weight
 // 비례로 하나 뽑는다. 종전 if-체인은 배열 순서가 곧 확률이라(앞 항목의 (1-p)가 곱해짐) 항목
 // 추가가 기존 밸런스를 조용히 밀었다 — 이제 순서는 의미 없다.
-// weight는 종전 실효 확률 비례 마이그레이션 값, rate 0.40은 시뮬 역산(총량 -0.5%, 활동별
-// ±5% 이내 — balance-sim --mode both). fire가 false를 돌려주면(자리/후보/물가 없음) 시작
+// weight는 설계 의도값("얼마나 보였으면 하는가") — 처음엔 구 체인 실효 확률을 비례 이식했으나
+// 물놀이 100은 체인 맨 앞자리(p 0.25·최단 쿨다운)의 화석이라 재설계: 물놀이 지분 축소 + 짧고
+// 귀여운 활동(트램펄린·과일·정리·스트레칭) 상향. rate 0.40은 총량 노브(시뮬 역산 — 불변).
+// fire가 false를 돌려주면(자리/후보/물가 없음) 시작
 // 실패: 쿨다운은 성공에만 찍고 실패는 3초 재시도만 — 예전엔 실패해도 6~15분 쿨다운이 타서
 // 헛방이 그 활동의 다음 기회까지 지웠다 (성공 확인 전 소진 금지).
 const LEISURE_RATE = 0.40;

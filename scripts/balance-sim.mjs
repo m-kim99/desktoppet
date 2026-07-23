@@ -14,7 +14,7 @@
 //   활동 초 기준 — 실제 앱도 닫혀 있는 동안은 아무것도 진행되지 않으므로 이게 정직한 모델.
 // - 확률·쿨다운·시드는 world.js에서 그대로 인용. 활동 지속시간은 추정치(아래 DUR 주석).
 // - 미모델: 근접 트리거(포옹/쪼아나무), 비 대피(맑음 가정), 주인 조작(무빙의), 경로 막힘 실패.
-// - 레지스트리 weight는 체인 실효 확률 비례 마이그레이션 값 — world.js 레지스트리와 동기 유지.
+// - 레지스트리 weight는 설계 의도값(물놀이 화석 지분 재설계 완료) — world.js 레지스트리와 동기 유지.
 
 const ARG = Object.fromEntries(process.argv.slice(2).flatMap((a, i, all) => {
     if (!a.startsWith('--')) return [];
@@ -48,22 +48,22 @@ const hourAt = (t) => 6 + ((t % DAY_SEC) / 3600);
 const range = (r, [a, b]) => a + r() * (b - a);
 
 // ---- 활동 정의 — 수치는 world.js updateWander 체인(6367-6437) 인용, dur은 추정 ----
-// chainP: 롤당 확률(체인 모드) · weight: 실효 확률 비례 마이그레이션 값(레지스트리 모드)
+// chainP: 롤당 확률(체인 모드) · weight: 설계 의도값(레지스트리 모드 — 물놀이 재설계 반영)
 // cd/seed: 초 단위 [min,max] · lock: 전역 싱글턴 키 · dur: 지속시간 초
 const ACTS = [
-    { id: 'dip',    ko: '물놀이',   chainP: () => 0.25,  weight: 100, cd: [150, 300],   seed: null,       dur: (r) => 30 + r() * 30 },
+    { id: 'dip',    ko: '물놀이',   chainP: () => 0.25,  weight: 35,  cd: [240, 480],   cdChain: [150, 300], seed: null, dur: (r) => 30 + r() * 30 },
     { id: 'fish',   ko: '낚시',     chainP: () => 0.09,  weight: 27,  cd: [300, 600],   seed: null,       lock: 'fish',    dur: (r) => 60 + r() * 60 },
     { id: 'sub',    ko: '잠수정',   chainP: () => 0.04,  weight: 11,  cd: [600, 1200],  seed: [360, 960], lock: 'sub',     dur: (r) => 200 + r() * 80 },
     { id: 'balloon',ko: '열기구',   chainP: () => 0.05,  weight: 13,  cd: [420, 840],   seed: [240, 720], lock: 'balloon', dur: (r) => 170 + r() * 60 },
     { id: 'rocket', ko: '로켓',     chainP: (h) => (h >= 18.5 ? 0.07 : 0.035), weight: 9, weightAt: (h) => (h >= 18.5 ? 2 : 1),
                     cd: [720, 1440], seed: [420, 1020], lock: 'rocket', dur: (r) => 420 + (r() < 0.4 ? 55 + r() * 55 : 0) },
-    { id: 'tramp',  ko: '트램펄린', chainP: () => 0.06,  weight: 14,  cd: [360, 720],   seed: [180, 480], lock: 'tramp',   dur: (r) => 30 + r() * 20 },
-    { id: 'fruit',  ko: '과일따기', chainP: () => 0.05,  weight: 11,  cd: [420, 900],   seed: [240, 600], lock: 'fruit',   dur: (r) => 45 + r() * 30 },
-    { id: 'tidy',   ko: '낙과정리', chainP: () => 0.04,  weight: 9,   cd: [360, 780],   seed: [300, 600], lock: 'tidy',    dur: (r) => 45 + r() * 30, needsFruit: true },
+    { id: 'tramp',  ko: '트램펄린', chainP: () => 0.06,  weight: 18,  cd: [360, 720],   seed: [180, 480], lock: 'tramp',   dur: (r) => 30 + r() * 20 },
+    { id: 'fruit',  ko: '과일따기', chainP: () => 0.05,  weight: 14,  cd: [420, 900],   seed: [240, 600], lock: 'fruit',   dur: (r) => 45 + r() * 30 },
+    { id: 'tidy',   ko: '낙과정리', chainP: () => 0.04,  weight: 10,   cd: [360, 780],   seed: [300, 600], lock: 'tidy',    dur: (r) => 45 + r() * 30, needsFruit: true },
     { id: 'ferry',  ko: '페리',     chainP: () => 0.04,  weight: 8,   cd: [480, 960],   seed: [300, 780], lock: 'ferry',   dur: (r) => 170 + r() * 60 },
-    { id: 'swing',  ko: '그네/시소',chainP: () => 0.14,  weight: 28,  cd: [180, 360],   seed: null,       dur: () => rideNow, cdAtMount: true },
+    { id: 'swing',  ko: '그네/시소',chainP: () => 0.14,  weight: 22,  cd: [180, 360],   seed: null,       dur: () => rideNow, cdAtMount: true },
     // 신설 2종 (레지스트리 모드 전용 — chainP 0: 구 체인엔 소비 블록이 없어 발동 자체가 없었다)
-    { id: 'gym',    ko: '스트레칭', chainP: () => 0,     weight: 6,   cd: [600, 1200],  seed: null,       lock: 'gym',     dur: (r) => 12 + r() * 6 },
+    { id: 'gym',    ko: '스트레칭', chainP: () => 0,     weight: 10,   cd: [600, 1200],  seed: null,       lock: 'gym',     dur: (r) => 12 + r() * 6 },
     { id: 'library',ko: '독서',     chainP: () => 0,     weight: 8,   cd: [600, 1200],  seed: null,       dur: (r) => 120 + r() * 120 },
 ];
 // 체인 검사 순서 = 코드 순서 (dip → fish → sub → balloon → rocket → tramp → fruit → tidy → ferry → swing)
@@ -99,7 +99,7 @@ function simulate(mode, opts = {}) {
     let diveNext = 25;
 
     const free = (p) => p.mode !== 'busy';
-    const stampCd = (p, a, t) => { p.cd[a.id] = t + range(r, a.cd); };
+    const stampCd = (p, a, t) => { p.cd[a.id] = t + range(r, (mode === 'chain' && a.cdChain) || a.cd); };   // cdChain = 패치 전 값 보존 (체인 모드는 역사 스냅샷)
     const begin = (p, a, t) => {
         const d = a.dur(r);
         p.mode = 'busy'; p.busyId = a.id; p.until = t + d;
