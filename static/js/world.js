@@ -4572,6 +4572,7 @@ function updateHoverPrompt(delta) {
                 if (raycaster.intersectObject(pr.obj, true).length) { hoverProp = pr; break; }
             }
             if (!hoverProp && spacePoiGroup.visible && vendGroup && raycaster.intersectObject(vendGroup, true).length) hoverProp = VEND_HOVER;   // 🥤 우주 자판기
+            if (!hoverProp && spacePoiGroup.visible && teleGroup && raycaster.intersectObject(teleGroup, true).length) hoverProp = TELE_HOVER;   // 🔭 망원경
         }
         renderer.domElement.style.cursor = hoverProp && PROP_CLICKS[hoverProp.type] ? 'pointer' : '';
     }
@@ -6852,7 +6853,12 @@ renderer.domElement.addEventListener('pointerup', (e) => {
         if (res === 'near') { showToast('🎣 발밑 말고 조금 앞에 던져요!'); return; }
         // 'land' = 물이 아님 — 아래 일반 클릭 처리로 계속
     }
-    // 🥤 우주 자판기 (정거장 갑판) — POI 가시 고도에서만 검사해 지상 비용 0
+    // 🔭 보는 중 클릭 = 그만보기 / 망원경 클릭 = 보기 · 🥤 자판기 클릭 = 패널 (POI 가시 고도에서만 — 지상 비용 0)
+    if (teleView) { endTeleView(); return; }
+    if (spacePoiGroup.visible && teleGroup && raycaster.intersectObject(teleGroup, true).length) {
+        startTeleView();
+        return;
+    }
     if (spacePoiGroup.visible && vendGroup && raycaster.intersectObject(vendGroup, true).length) {
         toggleVendPanel();
         return;
@@ -7543,6 +7549,8 @@ if (statsOn) window.__worldDev = {
         return 'ok';
     },
     aiEvaShort: () => { if (ROCKET.aiEvaT > 0) ROCKET.aiEvaT = 5; return +(ROCKET.aiEvaT || 0).toFixed(1); },
+    teleGo: () => { startTeleView(); return !!teleView; },
+    teleState: () => teleView ? { i: teleView.vistas.i, n: teleView.vistas.list.length, cam: [+camera.position.x.toFixed(1), +camera.position.y.toFixed(1), +camera.position.z.toFixed(1)] } : null,
     rocketTp: (x, y, z) => { if (rocketRide && (ROCKET.mode === 'space' || ROCKET.mode === 'manual')) { ROCKET.mode = 'manual'; ROCKET.spd = 0; ROCKET.x = x; ROCKET.y = y; ROCKET.z = z; } return ROCKET.mode; },   // E2E — 수동 비행 워프
     rocketAiStart: () => {   // E2E 훅 — 부팅 직후 자율활동(물놀이·낚시 등)에 선점된 펫도 결정적으로 출발시킨다
         const q = pets.find((o) => o !== possessed);
@@ -10812,6 +10820,7 @@ function doJump() {
     }
 }
 function escapeAction() {
+    if (teleView) { endTeleView(); return; }   // 🔭 보는 중 Esc = 그만보기만
     releasePossession();
     hideMenu();
     radioPanel.style.display = 'none';
@@ -10830,7 +10839,8 @@ function doInteract() {
     if (ferryRide && (ferryRide.p === possessed || ferryRide.friend === possessed)) { requestFerryExit(); return; }
     if (balloonRide && (balloonRide.p === possessed || balloonRide.friend === possessed)) { requestBalloonExit(); return; }
     if (rocketRide && (rocketRide.p === possessed || rocketRide.friend === possessed)) { requestRocketExit(); return; }
-    if (possessed.poiWalk) {   // 🧑‍🚀 표면 산책 중 ⌘ — 로켓 곁 = 재탑승·이륙, 보물 곁 = 파기, 자판기 곁 = 랜덤 뽑기
+    if (teleView) { endTeleView(); return; }   // 🔭 보는 중 ⌘ = 그만보기
+    if (possessed.poiWalk) {   // 🧑‍🚀 표면 산책 중 ⌘ — 로켓 곁 = 재탑승·이륙, 보물 곁 = 파기, 자판기/망원경 곁 = 사용
         if (Math.hypot(possessed.mover.position.x - ROCKET.x, possessed.mover.position.y - ROCKET.y, possessed.mover.position.z - ROCKET.z) < 2.2) boardPoiRocket();   // 3D 거리 — 구체 뒷면에서 로켓을 관통해 탑승 금지
         else if (possessed.poiWalk.R && moonDigGroup && moonDigGroup.visible && !moonDigging
             && possessed.mover.position.distanceTo(moonDigWorld) < 1.15) {
@@ -10839,6 +10849,8 @@ function doInteract() {
             playStep('sand', 0.9);
         } else if (possessed.poiWalk.id === 'station'
             && Math.hypot(possessed.mover.position.x - VEND_FRONT.x, possessed.mover.position.z - VEND_FRONT.z) < 1.4) vendGacha(possessed);
+        else if (possessed.poiWalk.id === 'station'
+            && Math.hypot(possessed.mover.position.x - TELE_FRONT.x, possessed.mover.position.z - TELE_FRONT.z) < 1.3) startTeleView();
         else showToast('🚀 로켓 곁에서 ⌘ = 재탑승·이륙');
         return;
     }
@@ -11166,6 +11178,7 @@ function updatePlayer(delta) {
         if (controlHint.textContent !== bHint) controlHint.textContent = bHint;
         return;
     }
+    if (teleView) { p.pet.walking = false; return; }   // 🔭 보는 중 — 이동·힌트 정지
     if (rocketRide && (rocketRide.p === possessed || rocketRide.friend === possessed)) {
         // 🚀 궤도 유영 중 조작 입력 = 조종간 잡기 (노랑호 핸들 문법 — 그 뒤론 stepRocketManual이 updateRocket에서 돈다)
         if (rocketRide.p === p && ROCKET.mode === 'space' && !rocketTether) {   // 유영 중엔 입력이 RCS 분사 — 조종간 안 잡힘
@@ -11625,6 +11638,7 @@ function updateSelectRing() {
 // same offset, so your chosen angle/zoom is preserved — drag/wheel still work mid-follow).
 const _followDelta = new THREE.Vector3();
 function updateFollowCam(delta) {
+    if (teleView) return;   // 🔭 카메라는 망원경 소유
     if (!possessed) return;
     const p = possessed;
     _followDelta.set(
@@ -13519,7 +13533,11 @@ SPACE_POIS[0].padQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vect
 SPACE_POIS[1].padPos = new THREE.Vector3(SPACE_POIS[1].x, SPACE_POIS[1].y, SPACE_POIS[1].z + 2.2);   // 갑판 위 착륙 패드 (코어 비켜서)
 SPACE_POIS[1].padQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0));   // 한 좌석이 정거장 창을 마주본다
 const spacePoiGroup = new THREE.Group();
-let stationWingL = null, stationWingR = null, vendGroup = null;
+let stationWingL = null, stationWingR = null, vendGroup = null, teleGroup = null;
+// 🔭 전망 망원경 좌표계: 갑판 세계 쪽 난간 (자판기 반대편 균형점), 바깥을 향해 설치
+const TELE_A = Math.atan2(-3.05, 1.8);
+const TELE = { x: 22 - 3.05, z: -13 + 1.8 };
+const TELE_FRONT = { x: TELE.x + Math.sin(TELE_A + Math.PI) * 0.55, z: TELE.z + Math.cos(TELE_A + Math.PI) * 0.55 };   // 접안 쪽(안쪽) 서는 자리
 // 🥤 우주 자판기 좌표계: 정거장 갑판 왼쪽 파일런 곁, 광장 중앙을 본다 (로컬 -2.35,-2.05 · 회전은 조형에서)
 const VEND_A = Math.atan2(2.35, 2.05);
 const VEND = { x: 22 - 2.35, z: -13 - 2.05 };
@@ -13530,6 +13548,9 @@ const vendGlowMat = new THREE.MeshBasicMaterial({ color: 0xffeecb, transparent: 
 const VEND_HOVER = { type: 'vend', x: VEND.x, z: VEND.z, labelY: 35.5 };   // 호버 라벨용 의사 프롭 (PROPS엔 절대 안 넣는다 — layoutId 불변식)
 PROP_CLICKS.vend = () => toggleVendPanel();
 HOVER_PROMPTS.vend = () => '🥤 우주 자판기 — 클릭 골라주기 · ⌘ 랜덤 뽑기';
+const TELE_HOVER = { type: 'tele', x: 22 - 3.05, z: -13 + 1.8, labelY: 35.3 };
+PROP_CLICKS.tele = () => startTeleView();
+HOVER_PROMPTS.tele = () => '🔭 전망 망원경 — 클릭/⌘ 들여다보기 (←→ 풍경 전환)';
 const poiBeaconMat = new THREE.MeshBasicMaterial({ color: 0xff7a6a, transparent: true, opacity: 0.9, fog: false });
 {
     // 천체는 대기 안개를 뚫고 또렷하게 (해·달 문법 fog:false) — 재질은 전용 (공유 M 변이 금지)
@@ -13717,6 +13738,42 @@ const poiBeaconMat = new THREE.MeshBasicMaterial({ color: 0xff7a6a, transparent:
     vendG.add(new THREE.Mesh(vWinGeo, vendGlowMat));   // 발광부 — 펄스는 POI 라이브에서
     stG.add(vendG);
     vendGroup = vendG;
+    // 🔭 전망 망원경 (관광 쌍안경 스타일): 기둥 + 스위블 + 쌍둥이 경통 + 레드 밴드 + 발광 접안점
+    const teleG = new THREE.Group();
+    teleG.position.set(-3.05, 0, 1.8);
+    teleG.rotation.y = TELE_A;   // 경통(+z)이 난간 바깥을 본다
+    const tGrad = [], tMetal = [], tRed = [];
+    const tPole = new THREE.CylinderGeometry(0.035, 0.045, 0.5, 10);
+    tPole.translate(0, 0.25, 0);
+    tMetal.push(tPole);
+    const tBase = new THREE.CylinderGeometry(0.12, 0.14, 0.03, 12);
+    tBase.translate(0, 0.015, 0);
+    tMetal.push(tBase);
+    const tSwiv = new THREE.SphereGeometry(0.055, 10, 8);
+    tSwiv.translate(0, 0.53, 0);
+    tMetal.push(tSwiv);
+    for (const sx of [-0.062, 0.062]) {   // 쌍둥이 경통 — 살짝 아래를 향해
+        const barrel = new THREE.CylinderGeometry(0.052, 0.058, 0.3, 12);
+        barrel.rotateX(Math.PI / 2 + 0.22);
+        barrel.translate(sx, 0.585, 0.04);
+        tGrad.push(bakeGrad(barrel, 0xf4e6c8, 0xcfa87a, { curve: 1.2 }));
+        const lens = new THREE.TorusGeometry(0.05, 0.014, 8, 14);
+        lens.rotateX(0.22);
+        lens.translate(sx, 0.552, 0.185);
+        tMetal.push(lens);
+    }
+    const tBand = new THREE.BoxGeometry(0.21, 0.035, 0.03);
+    tBand.translate(0, 0.6, 0.06);
+    tRed.push(tBand);
+    for (const [arr, mat] of [[tGrad, poiGrad], [tMetal, poiMetal], [tRed, poiRed]]) {
+        const g = mergeGeometries(arr.map((q) => (q.index ? q.toNonIndexed() : q)), false);
+        if (g) teleG.add(new THREE.Mesh(g, mat));
+    }
+    const tEye = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), vendGlowMat);   // 접안 글로우 — 자판기 펄스 공유
+    tEye.position.set(0, 0.615, -0.115);
+    teleG.add(tEye);
+    stG.add(teleG);
+    teleGroup = teleG;
     spacePoiGroup.add(stG);
     spacePoiGroup.visible = false;
     stage.add(spacePoiGroup);
@@ -13957,6 +14014,94 @@ function toggleVendPanel() {
         renderVendPanel();
         vendPanel.style.display = 'block';
     } else vendPanel.style.display = 'none';
+}
+// ---- 🔭 전망 망원경: 클릭/⌘ = 쌍안경 비네트 + 카메라 컷으로 풍경 감상, ←→(스틱) = 다른 풍경 전환.
+// 두 번째 렌더 패스 없음(발열 규칙) — 실제 카메라를 잠깐 빌렸다 원위치 복원. 달 보물 마커가
+// 보이면 "⛏️ 묻힌 게 보인다" 힌트 — 망원경이 보물 탐지기를 겸한다. ----
+const teleMask = document.createElement('div');
+teleMask.style.cssText = 'position:fixed; inset:0; pointer-events:none; z-index:80; opacity:0; transition:opacity 0.3s; background:#07090f;'
+    + '-webkit-mask-image:radial-gradient(circle at 37.5% 50%, transparent 25.5%, black 26.5%), radial-gradient(circle at 62.5% 50%, transparent 25.5%, black 26.5%);'
+    + '-webkit-mask-composite:source-in; mask-image:radial-gradient(circle at 37.5% 50%, transparent 25.5%, black 26.5%), radial-gradient(circle at 62.5% 50%, transparent 25.5%, black 26.5%); mask-composite:intersect;';
+document.body.appendChild(teleMask);
+let teleView = null, teleBusyUntil = 0;
+function makeTeleVistas() {
+    const list = [];
+    const lms = [
+        { label: '🏠 우리 집', x: 3.42, z: 4.305 },
+        { label: '⛲ 광장 분수', x: 0, z: 0 },
+        { label: '🪷 연못', x: -3.44, z: -3.44 },
+    ].sort(() => Math.random() - 0.5);
+    for (const lm of lms.slice(0, 2)) list.push({ label: lm.label, pos: [lm.x + 3.1, 4.8, lm.z + 3.1], tgt: [lm.x, 0.4, lm.z] });
+    list.push({ friend: true });
+    list.push({ label: '🌕 꼬마 달', pos: [-24 + 6.4, 33 + 8.6, 16 + 6.4], tgt: [-24, 36, 16], moon: true });
+    list.push({ label: '🌌 별하늘', sky: true });
+    return { list, i: Math.floor(Math.random() * list.length) };
+}
+function applyTeleVista() {
+    const v = teleView.vistas.list[teleView.vistas.i];
+    let pos = v.pos, tgt = v.tgt, label = v.label;
+    if (v.friend) {
+        const q = pets.find((o) => o !== possessed) || pets[0];
+        if (!q) { pos = [3, 4, 3]; tgt = [0, 0, 0]; label = '🏝️ 본토'; }
+        else {
+            const m = q.mover.position;
+            pos = [m.x + 2.4, m.y + 1.8, m.z + 2.4];
+            tgt = [m.x, m.y + 0.3, m.z];
+            label = `👀 ${petKo(q)}는 지금…`;
+        }
+    } else if (v.sky) {
+        pos = [TELE.x, 35.4, TELE.z];
+        tgt = [TELE.x - 12, 54, TELE.z - 9];
+    }
+    camera.position.set(pos[0], pos[1], pos[2]);
+    controls.target.set(tgt[0], tgt[1], tgt[2]);
+    if (v.moon && moonDigGroup && moonDigGroup.visible && !teleView.dugSaid) {
+        teleView.dugSaid = true;
+        showToast('⛏️ 달 표면에 뭔가 묻혀 있는 게 보인다!');
+        logWorldEvent('망원경으로 달을 보다가 묻힌 보물 자국을 발견했다 ⛏️👀');
+    }
+    controlHint.textContent = `🔭 ${label} — ←→${IS_TOUCH ? '/스틱' : ''} 다른 풍경 · ${IS_TOUCH ? '✋' : '⌘'}/Esc 그만보기`;
+    controlHint.style.display = 'block';
+}
+function startTeleView() {
+    if (teleView || Date.now() < teleBusyUntil) return;
+    teleBusyUntil = Date.now() + 3000;
+    teleView = { vistas: makeTeleVistas(), idle: 0, lh: true, rh: true, th: true, dugSaid: false, savedPos: camera.position.clone(), savedTgt: controls.target.clone() };
+    controls.enabled = false;
+    teleMask.style.opacity = '1';
+    wakeSoft(7000);
+    playBuffer(swishBuf, { vol: 0.28, rate: 1.5, filterFreq: 1300 });
+    applyTeleVista();
+}
+function endTeleView() {
+    if (!teleView) return;
+    camera.position.copy(teleView.savedPos);
+    controls.target.copy(teleView.savedTgt);
+    controls.enabled = true;
+    teleMask.style.opacity = '0';
+    teleView = null;
+    if (!possessed) controlHint.style.display = 'none';
+}
+function updateTeleView(delta) {
+    if (!teleView) return;
+    teleView.idle += delta;
+    const L = heldKeys.has('ArrowLeft'), R = heldKeys.has('ArrowRight');
+    let sw = 0;
+    if (L && !teleView.lh) sw = -1;
+    if (R && !teleView.rh) sw = 1;
+    teleView.lh = L; teleView.rh = R;
+    if (touchMove.active && Math.abs(touchMove.x) > 0.65) {
+        if (!teleView.th) { sw = touchMove.x > 0 ? 1 : -1; teleView.th = true; }
+    } else teleView.th = false;
+    if (sw) {
+        teleView.idle = 0;
+        const n = teleView.vistas.list.length;
+        teleView.vistas.i = (teleView.vistas.i + sw + n) % n;
+        applyTeleVista();
+        playBuffer(swishBuf, { vol: 0.2, rate: 1.8, filterFreq: 1500 });
+        wakeSoft(6000);
+    }
+    if (teleView.idle > 25) endTeleView();   // 방치 안전망
 }
 // ---- 🤖 자율 탑승 (열기구 문법 + 발사대는 앞바다라 승선 아크): 걷기(onArrive 클로저 소유권)
 // → 본섬 남안 물가 → 갑판으로 폴짝 아크(보트 승선 문법) → 혼자 우주 산책. 저녁(18.5~22시)엔
@@ -14720,7 +14865,8 @@ function updateRocket(delta) {
             am.faceA = null;
             am.spd = 0.62 + Math.random() * 0.22;
             if (r_ < 0.12 && !q.food && !vendFly && !q.vendGo) { q.vendGo = 12; am.mode = 'pause'; am.t = 1; }
-            else if (r_ < 0.42) {   // 난간 구경 — 갑판 가장자리에 서서 발밑 세계를 내려다본다
+            else if (r_ < 0.24) { am.mode = 'tele'; am.tx = TELE_FRONT.x; am.tz = TELE_FRONT.z; }   // 🔭 망원경 구경
+            else if (r_ < 0.52) {   // 난간 구경 — 갑판 가장자리에 서서 발밑 세계를 내려다본다
                 am.mode = 'rail';
                 const aa = Math.random() * Math.PI * 2;
                 am.tx = poi.x + Math.cos(aa) * 3.5; am.tz = poi.z + Math.sin(aa) * 3.5;
@@ -14760,7 +14906,11 @@ function updateRocket(delta) {
                 q.pet.walking = true;
             } else {
                 q.pet.walking = false;
-                if (am.mode === 'rail') { am.mode = 'gaze'; am.t = 4 + Math.random() * 4; am.faceA = Math.atan2(mp_.x - poi.x, mp_.z - poi.z); }   // 바깥 — 발밑 세계 구경
+                if (am.mode === 'tele') {   // 도착 — 망원경을 들여다본다 (유저 카메라는 안 건드림)
+                    am.mode = 'gaze'; am.t = 3 + Math.random() * 3;
+                    am.faceA = Math.atan2(TELE.x - mp_.x, TELE.z - mp_.z);
+                    if (!q.teleSaid && Math.random() < 0.3) { q.teleSaid = true; logWorldEvent(`${petKo(q)}가 망원경으로 본토를 내려다봤다 — 우리 집이 콩알만 하다 🔭`); }
+                } else if (am.mode === 'rail') { am.mode = 'gaze'; am.t = 4 + Math.random() * 4; am.faceA = Math.atan2(mp_.x - poi.x, mp_.z - poi.z); }   // 바깥 — 발밑 세계 구경
                 else { am.mode = 'pause'; am.t = 2 + Math.random() * 4; am.faceA = null; }
             }
         }
@@ -19923,6 +20073,7 @@ function animate() {
     updateBalloonHop(delta);                 // 절친 승선 큰 아크 — 데크에서 바구니로
     updateRocket(delta);                     // 🚀 별똥호 — 카운트다운/발사/궤도/역추진 착륙
     updateRocketHop(delta);                  // 자율 탑승 아크 — 물가에서 갑판으로 폴짝
+    updateTeleView(delta);                   // 🔭 망원경 뷰 — ←→ 풍경 전환·방치 안전망
     updateSpaceSky();                        // 카메라 고도 → 우주 하늘 블렌드 (전이 때만 리페인트)
     updatePlaneIdle();                       // 🛩️ 주차 비행기 (물 위면 살랑임, 프로펠러 정지)
     updatePlaneHop(delta);                   // 절친 뒷좌석 승선 아크
