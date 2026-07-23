@@ -4571,6 +4571,7 @@ function updateHoverPrompt(delta) {
                 if (!HOVER_PROMPTS[pr.type] || !pr.obj) continue;
                 if (raycaster.intersectObject(pr.obj, true).length) { hoverProp = pr; break; }
             }
+            if (!hoverProp && spacePoiGroup.visible && vendGroup && raycaster.intersectObject(vendGroup, true).length) hoverProp = VEND_HOVER;   // 🥤 우주 자판기
         }
         renderer.domElement.style.cursor = hoverProp && PROP_CLICKS[hoverProp.type] ? 'pointer' : '';
     }
@@ -4578,7 +4579,7 @@ function updateHoverPrompt(delta) {
         if (hoverEl.style.display !== 'none') hoverEl.style.display = 'none';
         return;
     }
-    _hoverV.set(hoverProp.x, terrainHeight(hoverProp.x, hoverProp.z) + (HOVER_H[hoverProp.type] || 1), hoverProp.z).project(camera);
+    _hoverV.set(hoverProp.x, hoverProp.labelY !== undefined ? hoverProp.labelY : terrainHeight(hoverProp.x, hoverProp.z) + (HOVER_H[hoverProp.type] || 1), hoverProp.z).project(camera);
     if (_hoverV.z > 1) { hoverEl.style.display = 'none'; return; }
     hoverEl.textContent = HOVER_PROMPTS[hoverProp.type]();
     hoverEl.style.left = `${(_hoverV.x * 0.5 + 0.5) * window.innerWidth}px`;
@@ -6849,6 +6850,11 @@ renderer.domElement.addEventListener('pointerup', (e) => {
         if (res === 'near') { showToast('🎣 발밑 말고 조금 앞에 던져요!'); return; }
         // 'land' = 물이 아님 — 아래 일반 클릭 처리로 계속
     }
+    // 🥤 우주 자판기 (정거장 갑판) — POI 가시 고도에서만 검사해 지상 비용 0
+    if (spacePoiGroup.visible && vendGroup && raycaster.intersectObject(vendGroup, true).length) {
+        toggleVendPanel();
+        return;
+    }
     // 추억의 섬 소품 (쪼아쪼아나무·소원우물·타임캡슐): 클릭/탭으로 상호작용 — 드래그는 위의
     // slop 판정에서 이미 걸러졌으니 좌클릭 탭도 카메라와 안 싸운다.
     for (const pr of PROPS) {
@@ -7535,6 +7541,10 @@ if (statsOn) window.__worldDev = {
         return aiRocketWalk ? 'ok' : `fail(mode=${ROCKET.mode},ride=${!!rocketRide},st=${q.ai.state})`;
     },
     spaceFx: () => ({ lift: +skyDomeMesh.position.y.toFixed(1), veil: atmoVeil.visible, milky: +milkyMat.opacity.toFixed(2), star: +starMat.size.toFixed(2), spd: +(ROCKET.spd || 0).toFixed(2) }),
+    vend: () => ({ pending: vendPending ? vendPending.id : null, fly: !!vendFly, busy: Date.now() < vendBusyUntil, food: possessed && possessed.food ? possessed.food.def.id : null, gold: !!spacePoiFound.goldbread, panel: vendPanel.style.display === 'block' }),
+    vendPick: (id) => { const d = SPACE_SNACKS.find((s) => s.id === id); if (d && !d.gold) vendOrder(d); return !!d; },
+    vendRoll: () => { if (possessed) vendGacha(possessed); return !!vendFly; },
+    vendOpen: () => { toggleVendPanel(); return vendPanel.style.display; },
     balloonSummon: () => { summonBalloonFriend(); return !!balloonHop; },   // 이륙 직후 절친 소환 (E2E)
     ferryState: () => ({ mode: FERRY.mode, x: +FERRY.x.toFixed(2), z: +FERRY.z.toFixed(2), u: +FERRY.u.toFixed(3), riding: !!ferryRide, rider: ferryRide && ferryRide.p ? ferryRide.p.name : null, friend: ferryRide && ferryRide.friend ? ferryRide.friend.name : null, dwellT: +FERRY.dwellT.toFixed(1) }),
     ferrySummon: () => { summonFerryFriend(); return !!ferryHop; },
@@ -9684,6 +9694,85 @@ function makeFoodGeo(f, bites = 0) {
         for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; const gr = new THREE.BoxGeometry(0.0016, sL * 0.94, 0.0016); gr.translate(0.0106 * Math.cos(a), scy - 0.05, 0.0106 * Math.sin(a)); gr.rotateZ(0.28); gr.translate(0, 0.05, 0); add(gr, 0x99632f, 0x7a4c20, { curve: 1 }); }
         for (let i = 0; i < 9; i++) { const yy = 0.012 + i * 0.01; if (yy < yTop - 0.006) { const sg = new THREE.SphereGeometry(0.0018, 5, 4); sg.translate((i % 2 ? 0.009 : -0.009) - Math.sin(0.28) * (yy - 0.05), yy, (i % 3 - 1) * 0.006); add(sg, 0xf4e8ca, 0xe8d4a6, { curve: 1 }); } }
         topH = 0.095;
+    } else if (f.id === 'sjuice') {   // 🧃 우주 주스 파우치 — 모금마다 홀쭉해진다 (자판기 우주식)
+        const hh = [0.088, 0.064, 0.046][b];
+        const w = 0.034, cr2 = 0.008;
+        const sp = new THREE.Shape();
+        sp.moveTo(-w + cr2, 0); sp.lineTo(w - cr2, 0); sp.quadraticCurveTo(w, 0, w, cr2);
+        sp.lineTo(w - 0.006, hh - cr2); sp.quadraticCurveTo(w - 0.007, hh, w - 0.015, hh);
+        sp.lineTo(-w + 0.015, hh); sp.quadraticCurveTo(-w + 0.007, hh, -w + 0.006, hh - cr2);
+        sp.lineTo(-w, cr2); sp.quadraticCurveTo(-w, 0, -w + cr2, 0);
+        sp.closePath();
+        const pouch = new THREE.ExtrudeGeometry(sp, { depth: 0.015 - b * 0.003, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.004, bevelSegments: 2, curveSegments: 6 });
+        pouch.translate(0, 0.002, -0.007);
+        add(pouch, 0xe8edf4, 0xaab4c0, { curve: 1.1 });
+        const label = new THREE.BoxGeometry(0.05, 0.028, 0.024 - b * 0.005);
+        label.translate(0, hh * 0.46, 0);
+        add(label, 0x5c8fd6, 0x3e6cb0, { curve: 1 });
+        const star = new THREE.SphereGeometry(0.006, 6, 5);
+        star.translate(0.013, hh * 0.5, 0.012);
+        add(star, 0xffe27a, 0xf4c542, { curve: 1 });
+        const straw = new THREE.CylinderGeometry(0.0035, 0.0035, 0.034, 6);
+        straw.rotateZ(-0.32);
+        straw.translate(-0.019, hh + 0.008, 0);
+        add(straw, 0xf2f6fa, 0xc8d2dc, { curve: 1 });
+        topH = hh + 0.02;
+    } else if (f.id === 'sice') {   // 🍦 동결건조 아이스크림 샌드 — 오른쪽부터 베어 먹는다
+        const ws = [0.072, 0.05, 0.032][b], xo = (ws - 0.072) / 2;
+        const van = new THREE.BoxGeometry(ws, 0.033, 0.03);
+        van.translate(xo, 0.06, 0);
+        add(van, 0xfdf4e6, 0xf0dfc2, { curve: 1.1 });
+        const berry = new THREE.BoxGeometry(ws, 0.033, 0.03);
+        berry.translate(xo, 0.027, 0);
+        add(berry, 0xf6c2d0, 0xe89cb4, { curve: 1.1 });
+        topH = 0.078;
+    } else if (f.id === 'stube') {   // 🥫 튜브 우주죽 — 짜먹을수록 납작해진다
+        const squish = [1, 0.6, 0.32][b];
+        const body = new THREE.CylinderGeometry(0.02, 0.019 * squish + 0.003, 0.076, 12);
+        body.scale(1, 1, 0.5 + 0.5 * squish);
+        body.translate(0, 0.048, 0);
+        add(body, 0xd8ece4, 0xa0c4b4, { curve: 1.1 });
+        const stripe = new THREE.BoxGeometry(0.032, 0.02, 0.02 * (0.5 + 0.5 * squish) + 0.008);
+        stripe.translate(0, 0.054, 0);
+        add(stripe, 0x6fbf9f, 0x4f9f7f, { curve: 1 });
+        const cap = new THREE.CylinderGeometry(0.011, 0.0125, 0.016, 10);
+        cap.translate(0, 0.093, 0);
+        add(cap, 0x58b08e, 0x3d8a6a, { curve: 1 });
+        const crimp = new THREE.BoxGeometry(0.034, 0.006, 0.005);
+        crimp.translate(0, 0.008, 0);
+        add(crimp, 0xb8ccc2, 0x8aa49a, { curve: 1 });
+        topH = 0.1;
+    } else if (f.id === 'scookie') {   // 🍪 별 쿠키 — 먹을수록 작아지는 별 (음료 축소 문법)
+        const mkStar = (R, r) => {
+            const s2 = new THREE.Shape();
+            for (let i = 0; i < 10; i++) {
+                const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+                const rr = i % 2 === 0 ? R : r;
+                if (i === 0) s2.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+                else s2.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+            }
+            s2.closePath();
+            return s2;
+        };
+        const k = [1, 0.76, 0.52][b];
+        const cookie = new THREE.ExtrudeGeometry(mkStar(0.05 * k, 0.022 * k), { depth: 0.014, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.003, bevelSegments: 2, curveSegments: 4 });
+        cookie.translate(0, 0.052, -0.007);
+        add(cookie, 0xe8b45c, 0xc48c3c, { curve: 1.1 });
+        const icing = new THREE.ExtrudeGeometry(mkStar(0.031 * k, 0.0135 * k), { depth: 0.005, bevelEnabled: false, curveSegments: 4 });
+        icing.translate(0, 0.052, 0.009);
+        add(icing, 0xf8da84, 0xecc45e, { curve: 1 });
+        topH = 0.1;
+    } else if (f.id === 'sgold') {   // 🌟 골드 문크림빵 — 금박 광택 + 초승달 스탬프 (⌘ 뽑기 한정 레어)
+        const k = [1, 0.78, 0.55][b];
+        const bun = new THREE.SphereGeometry(0.048 * k, 18, 14);
+        bun.scale(1.12, 0.76, 0.95);
+        bun.translate(0, 0.04, 0);
+        add(bun, 0xf8dc7a, 0xcc9c2c, { curve: 1.25 });
+        const moon = new THREE.TorusGeometry(0.017 * k, 0.005 * k, 6, 12, Math.PI * 1.25);
+        moon.rotateZ(0.55);
+        moon.translate(0.002, 0.046, 0.036 * k);
+        add(moon, 0xfff4cc, 0xecd088, { curve: 1 });
+        topH = 0.072;
     } else {                                                  // 컵케이크 — 위(체리·크림)부터 → 케이크
         const cup = new THREE.CylinderGeometry(0.033, 0.023, 0.034, 16); cup.translate(0, 0.017, 0); add(cup, 0xc08a44, 0x92652f, { curve: 1.1 });
         const cupTop = new THREE.CylinderGeometry(0.034, 0.033, 0.004, 16); cupTop.translate(0, 0.036, 0); add(cupTop, 0xcf9a52, 0xa9773a, { curve: 1 });
@@ -10706,6 +10795,7 @@ function escapeAction() {
     radioPanel.style.display = 'none';
     coffeePanel.style.display = 'none';
     foodPanel.style.display = 'none';
+    vendPanel.style.display = 'none';
     hideSipMenu();
 }
 function doInteract() {
@@ -10718,8 +10808,10 @@ function doInteract() {
     if (ferryRide && (ferryRide.p === possessed || ferryRide.friend === possessed)) { requestFerryExit(); return; }
     if (balloonRide && (balloonRide.p === possessed || balloonRide.friend === possessed)) { requestBalloonExit(); return; }
     if (rocketRide && (rocketRide.p === possessed || rocketRide.friend === possessed)) { requestRocketExit(); return; }
-    if (possessed.poiWalk) {   // 🧑‍🚀 표면 산책 중 ⌘ — 로켓 곁이면 재탑승·곧장 이륙
+    if (possessed.poiWalk) {   // 🧑‍🚀 표면 산책 중 ⌘ — 로켓 곁 = 재탑승·이륙, 자판기 곁 = 랜덤 뽑기
         if (Math.hypot(possessed.mover.position.x - ROCKET.x, possessed.mover.position.z - ROCKET.z) < 2.0) boardPoiRocket();
+        else if (possessed.poiWalk.id === 'station'
+            && Math.hypot(possessed.mover.position.x - VEND_FRONT.x, possessed.mover.position.z - VEND_FRONT.z) < 1.4) vendGacha(possessed);
         else showToast('🚀 로켓 곁에서 ⌘ = 재탑승·이륙');
         return;
     }
@@ -11246,7 +11338,7 @@ function updatePlayer(delta) {
         : lampNear ? ` · ${IKEY} 가로등 ${Math.round(lampBrightness * 100)}%` : '';
     const shiftSeg = IS_TOUCH ? '' : ` · Shift ${running ? '걷기' : '달리기'}`;
     const hint = p.poiWalk
-        ? `${p.poiWalk.emoji} ${petName} ${p.poiWalk.id === 'moon' ? `달 산책 중 — 저중력 ${JUMPK} 점프` : '정거장 갑판 산책 중'}${Math.hypot(p.mover.position.x - ROCKET.x, p.mover.position.z - ROCKET.z) < 2.0 ? ` · ${IKEY} 재탑승·이륙` : ` · 로켓 곁 ${IKEY} = 이륙`} · ${RELK} 해제`
+        ? `${p.poiWalk.emoji} ${petName} ${p.poiWalk.id === 'moon' ? `달 산책 중 — 저중력 ${JUMPK} 점프` : '정거장 갑판 산책 중'}${Math.hypot(p.mover.position.x - ROCKET.x, p.mover.position.z - ROCKET.z) < 2.0 ? ` · ${IKEY} 재탑승·이륙` : p.poiWalk.id === 'station' && Math.hypot(p.mover.position.x - VEND_FRONT.x, p.mover.position.z - VEND_FRONT.z) < 1.4 ? ` · ${IKEY} 랜덤 뽑기 🎰` : ` · 로켓 곁 ${IKEY} = 이륙`} · ${RELK} 해제`
         : p.swimming
         ? `🏊 ${petName} 수영 중${handHold ? ' 🤝' : ''} — ${MOVEK} 이동 · ${JUMPK} 물장구${nearCliff ? ` · ${IKEY} 섬으로 올라가기` : handHold ? ` · ${IKEY} ${p.swimming === 'sea' ? '같이 잠수' : '손 놓기'}` : ''} · ${RELK} 해제`
         : `${runNow ? '🏃' : '🎮'} ${petName} ${runNow ? '달리는 중' : '조종 중'}${handHold ? ' 🤝' : ''} — ${MOVEK} 이동${shiftSeg} · ${JUMPK} 점프${act} · ${RELK} 해제`;
@@ -13273,7 +13365,17 @@ SPACE_POIS[0].padQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vect
 SPACE_POIS[1].padPos = new THREE.Vector3(SPACE_POIS[1].x, SPACE_POIS[1].y, SPACE_POIS[1].z + 2.2);   // 갑판 위 착륙 패드 (코어 비켜서)
 SPACE_POIS[1].padQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0));   // 한 좌석이 정거장 창을 마주본다
 const spacePoiGroup = new THREE.Group();
-let stationWingL = null, stationWingR = null;
+let stationWingL = null, stationWingR = null, vendGroup = null;
+// 🥤 우주 자판기 좌표계: 정거장 갑판 왼쪽 파일런 곁, 광장 중앙을 본다 (로컬 -2.35,-2.05 · 회전은 조형에서)
+const VEND_A = Math.atan2(2.35, 2.05);
+const VEND = { x: 22 - 2.35, z: -13 - 2.05 };
+const vendLocalPt = (lx, lz) => ({ x: VEND.x + lx * Math.cos(VEND_A) + lz * Math.sin(VEND_A), z: VEND.z - lx * Math.sin(VEND_A) + lz * Math.cos(VEND_A) });
+const VEND_FRONT = vendLocalPt(0, 0.62);    // 펫이 서는 자리
+const VEND_TRAY = vendLocalPt(-0.045, 0.3); // 배출구 — 여기서 간식이 둥실 떠나온다
+const vendGlowMat = new THREE.MeshBasicMaterial({ color: 0xffeecb, transparent: true, opacity: 0.9, fog: false });
+const VEND_HOVER = { type: 'vend', x: VEND.x, z: VEND.z, labelY: 35.5 };   // 호버 라벨용 의사 프롭 (PROPS엔 절대 안 넣는다 — layoutId 불변식)
+PROP_CLICKS.vend = () => toggleVendPanel();
+HOVER_PROMPTS.vend = () => '🥤 우주 자판기 — 클릭 골라주기 · ⌘ 랜덤 뽑기';
 const poiBeaconMat = new THREE.MeshBasicMaterial({ color: 0xff7a6a, transparent: true, opacity: 0.9, fog: false });
 {
     // 천체는 대기 안개를 뚫고 또렷하게 (해·달 문법 fog:false) — 재질은 전용 (공유 M 변이 금지)
@@ -13391,6 +13493,57 @@ const poiBeaconMat = new THREE.MeshBasicMaterial({ color: 0xff7a6a, transparent:
     const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), poiBeaconMat);
     beacon.position.set(0, 5.55, -2.9);
     stG.add(beacon);
+    // 🥤 우주 자판기 — 크림 몸통 + 블루 옆판 + 레드 탑밴드 + 발광 진열창(미니 4종 진열) + 배출 트레이 + 안전매트
+    const vendG = new THREE.Group();
+    vendG.position.set(-2.35, 0, -2.05);
+    vendG.rotation.y = VEND_A;
+    const vGrad = [], vRed = [], vMetal = [], vPanel = [];
+    const vBody = new THREE.BoxGeometry(0.55, 1.15, 0.4);
+    vBody.translate(0, 0.575, 0);
+    vGrad.push(bakeGrad(vBody, 0xf4e6c8, 0xcfa87a, { curve: 1.2 }));
+    for (const sx of [-0.276, 0.276]) {
+        const side = new THREE.BoxGeometry(0.02, 0.98, 0.34);
+        side.translate(sx, 0.6, 0);
+        vPanel.push(side);
+    }
+    const vTop = new THREE.BoxGeometry(0.57, 0.085, 0.42);
+    vTop.translate(0, 1.19, 0);
+    vRed.push(vTop);
+    const vMat_ = new THREE.BoxGeometry(0.44, 0.008, 0.3);   // 앞 안전매트
+    vMat_.translate(0, 0.004, 0.42);
+    vGrad.push(bakeGrad(vMat_, 0xe8c860, 0xc8a040, { curve: 1 }));
+    // 진열 미니 4종 (발광창 앞에 얹힌다)
+    const miniJ = new THREE.BoxGeometry(0.055, 0.075, 0.02); miniJ.translate(-0.115, 0.93, 0.216); vGrad.push(bakeGrad(miniJ, 0xe8edf4, 0xaab4c0, { curve: 1 }));
+    const miniI = new THREE.BoxGeometry(0.06, 0.05, 0.022); miniI.translate(0.03, 0.92, 0.216); vGrad.push(bakeGrad(miniI, 0xfdf4e6, 0xf6c2d0, { curve: 1 }));
+    const miniT = new THREE.CylinderGeometry(0.019, 0.023, 0.07, 10); miniT.translate(-0.115, 0.68, 0.216); vGrad.push(bakeGrad(miniT, 0xd8ece4, 0x6fbf9f, { curve: 1 }));
+    const miniC = new THREE.CylinderGeometry(0.032, 0.032, 0.016, 5); miniC.rotateX(Math.PI / 2); miniC.translate(0.03, 0.68, 0.216); vGrad.push(bakeGrad(miniC, 0xe8b45c, 0xc48c3c, { curve: 1 }));
+    for (let i = 0; i < 3; i++) {   // 버튼 3 + 동전구 + 배출 트레이
+        const btn = new THREE.BoxGeometry(0.05, 0.045, 0.018);
+        btn.translate(0.2, 0.92 - i * 0.09, 0.204);
+        if (i === 0) vRed.push(btn); else if (i === 1) vPanel.push(btn); else vMetal.push(btn);
+    }
+    const coin = new THREE.BoxGeometry(0.035, 0.055, 0.016);
+    coin.translate(0.2, 0.62, 0.204);
+    vMetal.push(coin);
+    const tray = new THREE.BoxGeometry(0.32, 0.15, 0.05);
+    tray.translate(-0.045, 0.19, 0.19);
+    vMetal.push(tray);
+    const vWin = new THREE.BoxGeometry(0.37, 0.58, 0.012);   // 어두운 진열 유리 — 그 위에 불 켜진 선반 + 미니 상품
+    vWin.translate(-0.045, 0.79, 0.198);
+    vPanel.push(vWin);
+    for (const [arr, mat] of [[vGrad, poiGrad], [vRed, poiRed], [vMetal, poiMetal], [vPanel, poiPanel]]) {
+        const g = mergeGeometries(arr.map((q) => (q.index ? q.toNonIndexed() : q)), false);
+        if (g) vendG.add(new THREE.Mesh(g, mat));
+    }
+    const vWinGeo = mergeGeometries([
+        new THREE.BoxGeometry(0.34, 0.035, 0.02).translate(-0.045, 0.875, 0.204),   // 불 켜진 선반 2단
+        new THREE.BoxGeometry(0.34, 0.035, 0.02).translate(-0.045, 0.625, 0.204),
+        new THREE.BoxGeometry(0.34, 0.022, 0.016).translate(-0.045, 1.04, 0.204),   // 상단 마퀴 라이트
+        new THREE.BoxGeometry(0.09, 0.05, 0.012).translate(0.2, 0.74, 0.2),         // 미니 스크린
+    ], false);
+    vendG.add(new THREE.Mesh(vWinGeo, vendGlowMat));   // 발광부 — 펄스는 POI 라이브에서
+    stG.add(vendG);
+    vendGroup = vendG;
     spacePoiGroup.add(stG);
     spacePoiGroup.visible = false;
     stage.add(spacePoiGroup);
@@ -13460,6 +13613,108 @@ function poiAutoReturn() {   // 산책 중 빙의 해제 — 펫들이 알아서
     rocketRide = { p: walkers[0], friend: walkers[1] || null, t: 0, zg: 0, isAI: true, som: [{ cd: 9, t: 9 }, { cd: 13, t: 9 }] };
     ROCKET.padDir = -1; ROCKET.padDone = false;
     logWorldEvent('주인이 자리를 비우자 펫들이 별똥호에 올라 알아서 귀환길에 나섰다 🚀');
+}
+// ---- 🥤 우주 자판기: 클릭 = 골라주기 패널(푸드 부스 문법) · 곁에서 ⌘ = 펫이 직접 랜덤 뽑기.
+// 🌟 골드 문크림빵(8%)은 랜덤 뽑기에서만 — 두 경로 모두 존재 이유가 생긴다. 디스펜스는 무중력
+// 아크(간식이 둥실 떠나오면 펫이 받음), 절친이 갑판에 있으면 15% 따라 뽑기. ----
+const SPACE_SNACKS = [
+    { id: 'sjuice', name: '우주 주스 파우치', emoji: '🧃', w: 23 },
+    { id: 'sice', name: '동결건조 아이스크림', emoji: '🍦', w: 23 },
+    { id: 'stube', name: '튜브 우주죽', emoji: '🥫', w: 23 },
+    { id: 'scookie', name: '별 쿠키', emoji: '🍪', w: 23 },
+    { id: 'sgold', name: '골드 문크림빵', emoji: '🌟', w: 8, gold: true },
+];
+let vendPending = null, vendBusyUntil = 0, vendFly = null;
+function giveSnack(p, f) {   // giveFood 미러 — 자판기는 받자마자 그 자리에서 냠냠
+    removeFood(p);
+    const mesh = makeFoodMesh(f);
+    mesh.rotation.y = Math.PI;
+    p.pet.wrap.add(mesh);
+    const dims = p.pet.dims;
+    const itemY = dims.y * 0.34, itemZ = -dims.z * 0.12;
+    const sideX = flankX(p, 1, itemY, itemZ);
+    mesh.position.set(sideX + 0.045, itemY, itemZ);
+    const food = {
+        def: f, mesh, bites: 0, seq: { count: 3, t: 0, played: -1 },
+        rest: mesh.position.clone(),
+        anchor: new THREE.Vector3(sideX - 0.025, itemY + 0.045, itemZ + 0.01),
+    };
+    if (!p.pet.wings.length) {
+        const furMat = M(0xe6cba6);
+        food.arm = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 1, 8), furMat);
+        food.paw = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 8), furMat);
+        p.pet.wrap.add(food.arm);
+        p.pet.wrap.add(food.paw);
+    }
+    p.food = food;
+}
+function vendDispense(p, def, gacha) {
+    vendBusyUntil = Date.now() + 1500;
+    vendPending = null;
+    playBuffer(swishBuf, { vol: 0.32, rate: 1.7, filterFreq: 1500 });   // 동전 딸깍
+    const mesh = makeFoodMesh(def);
+    mesh.position.set(VEND_TRAY.x, 34.24, VEND_TRAY.z);
+    stage.add(mesh);
+    vendFly = { mesh, def, p, t: 0, gacha: !!gacha };
+    wakeSoft(3500);
+}
+function vendGacha(p) {
+    if (Date.now() < vendBusyUntil || vendFly) return;
+    let sum = 0;
+    for (const s of SPACE_SNACKS) sum += s.w;
+    let roll = Math.random() * sum, pick = SPACE_SNACKS[0];
+    for (const s of SPACE_SNACKS) { roll -= s.w; if (roll <= 0) { pick = s; break; } }
+    playBuffer(swishBuf, { vol: 0.25, rate: 1.2, filterFreq: 1100 });   // 버튼 꾹
+    vendDispense(p, pick, true);
+}
+const vendPanel = document.createElement('div');
+vendPanel.style.cssText = 'position:fixed; right:64px; bottom:calc(70px + env(safe-area-inset-bottom, 0px)); display:none; width:min(250px, calc(100vw - 90px)); background:rgba(30,32,40,0.94); border-radius:12px; padding:10px; z-index:110; box-shadow:0 6px 24px rgba(0,0,0,0.4); font-family:sans-serif;';
+document.body.appendChild(vendPanel);
+function vendOrder(def) {
+    vendPanel.style.display = 'none';
+    const p = possessed;
+    if (!p || !p.poiWalk || p.poiWalk.id !== 'station') { showToast('🥤 정거장 갑판을 산책하는 중에 골라줄 수 있어요'); return; }
+    if (Date.now() < vendBusyUntil || vendFly) return;
+    if (Math.hypot(p.mover.position.x - VEND_FRONT.x, p.mover.position.z - VEND_FRONT.z) < 1.6) vendDispense(p, def);
+    else {
+        vendPending = def;
+        showToast(`${def.emoji} ${def.name} 골랐다 — 자판기 곁으로 가면 나와요`);
+    }
+}
+function renderVendPanel() {
+    vendPanel.innerHTML = '';
+    const head = document.createElement('div');
+    head.style.cssText = 'display:flex; justify-content:space-between; align-items:center; color:#ffe9c6; font-size:13px; font-weight:700; padding:2px 4px 8px;';
+    head.textContent = '🥤 우주 자판기';
+    const close = document.createElement('span');
+    close.textContent = '✕';
+    close.style.cssText = 'cursor:pointer; color:#aab; font-size:13px; padding:2px 4px;';
+    close.onclick = () => { vendPanel.style.display = 'none'; };
+    head.appendChild(close);
+    vendPanel.appendChild(head);
+    for (const s of SPACE_SNACKS) {
+        const row = document.createElement('div');
+        if (s.gold) {
+            const got = !!spacePoiFound.goldbread;
+            row.textContent = got ? `🌟 골드 문크림빵 — 뽑기 한정 ✨` : '🌟 ??? — ⌘ 랜덤 뽑기에서만 나와요';
+            row.style.cssText = 'padding:8px 9px; margin:3px 0; border-radius:9px; background:rgba(255,226,122,0.10); color:#d9c98a; font-size:12px;';
+        } else {
+            row.textContent = `${s.emoji} ${s.name}`;
+            row.style.cssText = 'padding:9px 10px; margin:3px 0; border-radius:9px; background:rgba(255,255,255,0.07); color:#fff; font-size:12.5px; cursor:pointer;';
+            row.onclick = () => vendOrder(s);
+        }
+        vendPanel.appendChild(row);
+    }
+    const tip = document.createElement('div');
+    tip.textContent = '곁에서 ⌘/✋ = 펫이 직접 랜덤 뽑기 🎰';
+    tip.style.cssText = 'color:#8fa0b4; font-size:10.5px; padding:5px 4px 0; text-align:center;';
+    vendPanel.appendChild(tip);
+}
+function toggleVendPanel() {
+    if (vendPanel.style.display === 'none' || !vendPanel.style.display) {
+        renderVendPanel();
+        vendPanel.style.display = 'block';
+    } else vendPanel.style.display = 'none';
 }
 // ---- 🤖 자율 탑승 (열기구 문법 + 발사대는 앞바다라 승선 아크): 걷기(onArrive 클로저 소유권)
 // → 본섬 남안 물가 → 갑판으로 폴짝 아크(보트 승선 문법) → 혼자 우주 산책. 저녁(18.5~22시)엔
@@ -13912,6 +14167,54 @@ function updateRocket(delta) {
         stationWingL.rotation.x += delta * 0.16;
         stationWingR.rotation.x += delta * 0.16;
         poiBeaconMat.opacity = 0.35 + 0.65 * Math.abs(Math.sin(wxTime.value * 2.6));
+        vendGlowMat.opacity = 0.82 + Math.sin(wxTime.value * 1.8) * 0.13;   // 🥤 진열창 숨쉬는 펄스
+    }
+    // 🥤 무중력 디스펜스 아크 — 간식이 트레이에서 둥실 떠나와 펫 손으로
+    if (vendFly) {
+        vendFly.t += delta / 1.1;
+        const k = Math.min(1, vendFly.t);
+        const e = k * k * (3 - 2 * k);
+        const tp_ = vendFly.p.mover.position;
+        vendFly.mesh.position.set(
+            THREE.MathUtils.lerp(VEND_TRAY.x, tp_.x, e),
+            THREE.MathUtils.lerp(34.24, tp_.y + 0.32, e) + Math.sin(Math.PI * k) * 0.34,
+            THREE.MathUtils.lerp(VEND_TRAY.z, tp_.z, e)
+        );
+        vendFly.mesh.rotation.y += delta * 2.4;
+        if (k >= 1) {
+            stage.remove(vendFly.mesh);
+            vendFly.mesh.geometry.dispose();
+            const def = vendFly.def, q = vendFly.p;
+            giveSnack(q, def);
+            if (def.gold) {
+                fishFanfare();
+                showToast('🌟 골드 문크림빵이 나왔다!! 전설의 우주식!');
+                logWorldEvent(`${petKo(q)}가 우주 자판기에서 전설의 골드 문크림빵을 뽑았다 🌟✨`);
+                maybeProactive(q, '자판기에서 반짝반짝 골드 문크림빵이 나왔다!! 이건 진짜 레어템이야!!');
+                if (!spacePoiFound.goldbread) {
+                    spacePoiFound.goldbread = Date.now();
+                    try { localStorage.setItem('world-space-poi', JSON.stringify(spacePoiFound)); worldSync('world-space-poi'); } catch (e) {}
+                }
+                for (let i = 0; i < 8; i++) {
+                    const spr = glowSprite(0xffe27a, 0.09 + Math.random() * 0.06, 0.9);
+                    spr.position.set(tp_.x + (Math.random() - 0.5) * 0.4, tp_.y + 0.3 + Math.random() * 0.3, tp_.z + (Math.random() - 0.5) * 0.4);
+                    scene.add(spr);
+                    hugBurst.push({ spr, vx: (Math.random() - 0.5) * 0.5, vy: 0.5, vz: (Math.random() - 0.5) * 0.5, t: 0.5 });
+                }
+            } else {
+                showToast(`${def.emoji} ${def.name} 나왔습니다!`);
+                logWorldEvent(`${petKo(q)}가 우주 자판기에서 ${def.name}를 뽑았다 ${def.emoji}`);
+            }
+            const fr = pets.find((o) => o !== q && o.poiWalk && o.poiWalk.id === 'station');
+            if (fr && !fr.vendGo && !fr.food && Math.random() < 0.15) fr.vendGo = 12;   // 절친 따라 뽑기
+            vendFly = null;
+        }
+    }
+    // 패널에서 미리 골라둔 주문 — 자판기 곁에 도착하면 자동으로 나온다
+    if (vendPending && possessed && possessed.poiWalk && possessed.poiWalk.id === 'station' && !vendFly
+        && Date.now() >= vendBusyUntil
+        && Math.hypot(possessed.mover.position.x - VEND_FRONT.x, possessed.mover.position.z - VEND_FRONT.z) < 1.6) {
+        vendDispense(possessed, vendPending);
     }
     // 🧑‍🚀 EVA 산책: 울타리 클램프(둘 다) + 절친 따라다니기·표면 y (조종 펫의 y·이동은 playerSupportY 몫)
     for (const q of pets) {
@@ -13922,13 +14225,23 @@ function updateRocket(delta) {
         const d = Math.hypot(dx, dz);
         if (d > poi.walkR) { mp_.x = poi.x + (dx / d) * poi.walkR; mp_.z = poi.z + (dz / d) * poi.walkR; }
         if (q === possessed) continue;
-        const lead = possessed && possessed.poiWalk === poi ? possessed.mover.position : null;
+        let lead = possessed && possessed.poiWalk === poi ? possessed.mover.position : null;
+        let stopD = 1.05;
+        if (q.vendGo) {   // 🥤 따라 뽑기 — 잠시 리더 대신 자판기로
+            q.vendGo = Math.max(0, q.vendGo - delta);
+            if (poi.id === 'station' && q.vendGo > 0) {
+                const vd = Math.hypot(mp_.x - VEND_FRONT.x, mp_.z - VEND_FRONT.z);
+                if (vd < 0.55) {
+                    if (!vendFly && Date.now() >= vendBusyUntil) { q.vendGo = 0; vendGacha(q); }
+                } else { lead = VEND_FRONT; stopD = 0.5; }
+            } else q.vendGo = 0;
+        }
         if (lead) {
             const fx = lead.x - mp_.x, fz = lead.z - mp_.z;
             const fd = Math.hypot(fx, fz);
-            if (fd > 1.05) {
-                mp_.x += (fx / fd) * Math.min(fd - 0.95, 1.15 * delta);
-                mp_.z += (fz / fd) * Math.min(fd - 0.95, 1.15 * delta);
+            if (fd > stopD) {
+                mp_.x += (fx / fd) * Math.min(fd - stopD + 0.1, 1.15 * delta);
+                mp_.z += (fz / fd) * Math.min(fd - stopD + 0.1, 1.15 * delta);
                 q.mover.rotation.y = Math.atan2(fx, fz);
                 q.pet.walking = true;
             } else q.pet.walking = false;
