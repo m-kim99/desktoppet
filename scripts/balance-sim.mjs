@@ -79,6 +79,7 @@ const ACTS = [
     { id: 'gym',    ko: '스트레칭', chainP: () => 0,     weight: 10,   cd: [600, 1200],  seed: null,       lock: 'gym',     weightAt: (h) => (h >= 6 && h < 9 ? 3 : 1), dur: (r) => 12 + r() * 6 },
     { id: 'library',ko: '독서',     chainP: () => 0,     weight: 8,   cd: [600, 1200],  seed: null,       weightAt: (h) => (h >= 19 ? 2 : 1), dur: (r) => 120 + r() * 120 },
     { id: 'treat',  ko: '부스간식', chainP: () => 0,     weight: 12,  cd: [480, 900],   seed: null,       lock: 'treat',   weightAt: (h) => ((h >= 7 && h < 10) || (h >= 14 && h < 17) ? 1.3 : 1), dur: (r) => 70 + r() * 40 },
+    { id: 'sand',   ko: '모래놀이', chainP: () => 0,     weight: 10,  cd: [480, 960],   seed: null,       dur: (r) => 90 + r() * 90 },   // 자리 2개 — 락 없음
 ];
 // 체인 검사 순서 = 코드 순서 (dip → fish → sub → balloon → rocket → tramp → fruit → tidy → ferry → swing)
 

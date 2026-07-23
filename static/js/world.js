@@ -3316,14 +3316,15 @@ function updateSandPlay(delta) {
 }
 // 클릭 = 대리주문(심즈式): 한가한 펫을 골라 모래성으로 보낸다 — 이미 한 마리가 놀고 있으면
 // 남은 자리(만지기)로 다른 친구가 간다. 조종 중엔 ⌘(일반 침대 문법)로 직접 앉는다.
-function petSandPlay(player) {
+function petSandPlay(player, auto = false) {   // auto = 여가 셀렉터 경로: 지정 펫이 타이머로 스스로 일어난다
     const free = BEDS.find((b) => b.id.startsWith('sandspot') && !b.occupant);
     const p = player || pets.find((q) => q !== possessed && !q.pet.sleeping && !q.bed && !q.dip
         && (q.ai.state === 'idle' || q.ai.state === 'walk'));
-    if (!free || !p || p.bed) { if (!player) showToast('🏰 지금은 모래놀이 자리가 없어요'); return; }
-    p._sandUntil = player ? 0 : Date.now() + 90000 + Math.random() * 90000;   // 자율 모래놀이만 타이머로 일어난다
+    if (!free || !p || p.bed) { if (!player) showToast('🏰 지금은 모래놀이 자리가 없어요'); return false; }
+    p._sandUntil = (player && !auto) ? 0 : Date.now() + 90000 + Math.random() * 90000;   // 자율 모래놀이만 타이머로 일어난다
     logWorldEvent(`${petKo(p)}가 모래성 곁에 앉아 모래놀이를 시작했다 🏖️`);
     mountBed(p, free);
+    return true;
 }
 
 // ---- 분수 (④): 자체 원형 돌 둘레 + 물그릇을 갖춘 독립 분수 — 물방울이 끊임없이 솟아 떨어지고,
@@ -6392,6 +6393,11 @@ const LEISURE_ACTS = [
       weightAt: (h) => ((h >= 7 && h < 10) || (h >= 14 && h < 17) ? 1.3 : 1),   // 모닝커피·오후 간식 시간
       gate: (p) => !aiTreat && !p.drink && !p.food,
       fire: (p) => startAiTreat(p) === 'ok' },
+    // 🏰 모래놀이 — 해변 sandspot 두 자리(삽질/토닥토닥), 1.5~3분 놀다 스스로 일어난다.
+    // 클릭=대리 지명만 있던 반자율의 승격 조 (petSandPlay에 자율 모드가 이미 있었다 — 데이터 1줄).
+    { id: 'sand', cdKey: 'nextSandAt', cd: [480000, 960000], weight: 10, dur: 135,
+      gate: () => BEDS.some((b) => b.id.startsWith('sandspot') && !b.occupant),
+      fire: (p) => petSandPlay(p, true) },
 ];
 // 셀렉터: 2단 롤 — ① "딴짓을 할지"는 LEISURE_RATE 하나로 정하고(총량 노브 — 활동을 더
 // 추가해도 전체 딴짓 빈도는 그대로, 서로의 지분만 재분배), ② 자격 있는 활동만 모아 weight
@@ -7705,6 +7711,18 @@ if (statsOn) window.__worldDev = {
         return startAiTreat(p, kind);
     },
     treatState: () => (aiTreat ? { pet: aiTreat.p.name, kind: aiTreat.kind, phase: aiTreat.phase, sips: aiTreat.sips } : null),
+    sandGo: (name, ms) => {   // 자율 모래놀이 강제 (ms = E2E용 짧은 타이머)
+        const p = pets.find((q) => q.name === name);
+        if (!p) return null;
+        if (p.bed) forceEndBed(p);
+        if (p.dip) endDip(p);
+        releaseAI(p);
+        p.ai.state = 'idle';
+        const ok = petSandPlay(p, true);
+        if (ok && ms) p._sandUntil = Date.now() + ms;
+        return ok;
+    },
+    sandState: (name) => { const p = pets.find((q) => q.name === name); return p ? (p.bed ? p.bed.id : null) : null; },
     heldOf: (name) => {
         const p = pets.find((q) => q.name === name);
         if (!p) return null;
