@@ -72,7 +72,7 @@ log('halfLap', await st());
 await page.screenshot({ path: path.join(SHOT, 'rk4-space-half.png') });
 
 // 5) 착륙까지 폴링 (남은 궤도 ~29s + 하강 ~12s)
-for (let i = 0; i < 140; i++) {
+for (let i = 0; i < 300; i++) {   // 랜덤 코스(플라이바이 포함)라 최대 ~150s
     await page.waitForTimeout(500);
     s = await st();
     if (s.mode === 'parked' && !s.riding) break;
@@ -86,7 +86,7 @@ const who = await page.evaluate(() => window.__worldDev.who());
 const ctrl = await page.evaluate(() => window.__worldDev.ctrl());
 console.log('possessed:', who, JSON.stringify(ctrl));
 console.log('errors:', errs.length ? errs : 'none');
-const pass = s && s.mode === 'parked' && !s.riding && s.lap >= 6.28 && errs.length === 0;
+const pass = s && s.mode === 'parked' && !s.riding && errs.length === 0;   // lap 고정 어서션 폐기 — 코스가 랜덤
 console.log(pass ? '===== ROCKET E2E PASS =====' : '===== ROCKET E2E FAIL =====');
 await browser.close();
 server.close();
