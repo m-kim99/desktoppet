@@ -1,0 +1,325 @@
+<title>우주 자판기 5종 · 보완 기준</title>
+<style>
+  /* 우주 자판기 시트 — 의도적으로 우주(다크) 단일 세계관 */
+  :root{
+    --space:#12172a; --card:#1b2238; --panel:#151c30; --ink:#e9edf8; --ink-soft:#9aa5c2;
+    --hair:#2c3554; --hair-soft:#242c48; --accent:#ffd166; --accent2:#6fd3e8;
+    --tag:#232c4a; --shadow:rgba(0,0,0,.5);
+    --sans:'Apple SD Gothic Neo','Pretendard',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    --mono:'SF Mono','JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--space); color:var(--ink); font-family:var(--sans); -webkit-font-smoothing:antialiased; line-height:1.55;
+       background-image:radial-gradient(1px 1px at 12% 18%, #fff8 0, transparent 100%),
+                        radial-gradient(1px 1px at 78% 8%, #fff6 0, transparent 100%),
+                        radial-gradient(1.5px 1.5px at 55% 30%, #fff5 0, transparent 100%),
+                        radial-gradient(1px 1px at 30% 62%, #fff4 0, transparent 100%),
+                        radial-gradient(1.5px 1.5px at 90% 55%, #fff5 0, transparent 100%),
+                        radial-gradient(1px 1px at 66% 84%, #fff4 0, transparent 100%);}
+  .sheet{max-width:1180px; margin:0 auto; padding:clamp(22px,5vw,54px) clamp(16px,4vw,40px) 64px;}
+
+  .eyebrow{font-family:var(--mono); font-size:11.5px; letter-spacing:.2em; text-transform:uppercase;
+           color:var(--accent2); font-weight:600; display:flex; align-items:center; gap:9px;}
+  .eyebrow::before{content:""; width:26px; height:1.5px; background:var(--accent2);}
+  h1{font-size:clamp(27px,5vw,44px); font-weight:780; letter-spacing:-.02em; line-height:1.12; margin:.55rem 0 .2rem; text-wrap:balance;}
+  h1 .em{color:var(--accent);}
+  .lede{max-width:64ch; color:var(--ink-soft); font-size:clamp(14px,1.6vw,15.5px); margin:.55rem 0 0;}
+  .rule{color:var(--ink); font-weight:650;}
+
+  .legend{display:flex; flex-wrap:wrap; gap:10px 20px; margin:22px 0 6px; padding:13px 18px;
+          background:var(--card); border:1px solid var(--hair); border-radius:12px;}
+  .legend .li{display:flex; align-items:baseline; gap:8px; font-size:13.2px; color:var(--ink-soft);}
+  .legend .k{font-family:var(--mono); font-weight:600; color:var(--ink); font-size:11.5px;
+             background:var(--tag); padding:2px 9px; border-radius:20px; letter-spacing:.03em;}
+  .legend .k.now{color:#f28aa0;} .legend .k.goal{color:var(--accent);}
+
+  .grid{display:grid; grid-template-columns:1fr; gap:16px; margin-top:22px;}
+  .card{background:var(--card); border:1px solid var(--hair); border-radius:16px; padding:16px 16px 15px;
+        display:flex; flex-direction:column; gap:12px;}
+  .card-head{display:flex; align-items:baseline; justify-content:space-between; gap:10px;}
+  .card-head h3{font-size:17.5px; font-weight:760; letter-spacing:-.01em; margin:0;}
+  .card-head .id{font-family:var(--mono); font-size:10.5px; letter-spacing:.09em; color:var(--ink-soft); text-transform:uppercase;}
+
+  .strip{display:grid; grid-template-columns:repeat(4,1fr); gap:8px;}
+  @media (max-width:640px){ .strip{grid-template-columns:repeat(2,1fr);} }
+  .panel{display:flex; flex-direction:column; align-items:center; gap:6px;}
+  .stage{width:100%; aspect-ratio:1/1; background:var(--panel); border:1px solid var(--hair-soft);
+         border-radius:12px; padding:6px;}
+  .panel.now .stage{border-style:dashed; opacity:.85;}
+  .stage svg{width:100%; height:100%; display:block; filter:drop-shadow(0 3px 5px var(--shadow));}
+  .cap{font-size:11.5px; color:var(--ink-soft); display:flex; align-items:center; gap:5px; font-weight:600;}
+  .cap .dot{width:5px; height:5px; border-radius:50%;}
+  .panel.now .dot{background:#f28aa0;} .panel.goal .dot{background:var(--accent);}
+  .panel.b1 .dot{background:var(--accent2);} .panel.b2 .dot{background:#b085e8;}
+
+  .note{font-size:12.8px; color:var(--ink); line-height:1.55; display:flex; gap:8px; align-items:flex-start;}
+  .note::before{content:"▸"; color:var(--accent); font-size:11px; line-height:1.7; flex:none;}
+  .note b{font-weight:700;}
+
+  .swatches{display:flex; flex-wrap:wrap; gap:6px;}
+  .sw{display:flex; align-items:center; gap:5px; font-family:var(--mono); font-size:10px; color:var(--ink-soft);
+      background:var(--panel); border:1px solid var(--hair-soft); border-radius:20px; padding:2px 8px 2px 4px;}
+  .sw i{width:11px; height:11px; border-radius:50%; border:1px solid rgba(255,255,255,.14); display:inline-block;}
+
+  footer{margin-top:34px; padding-top:18px; border-top:1px solid var(--hair); color:var(--ink-soft); font-size:12.5px; max-width:74ch;}
+  footer b{color:var(--ink);}
+
+  @media (prefers-reduced-motion:no-preference){
+    .card{opacity:0; transform:translateY(9px); animation:rise .5s ease forwards;}
+    .card:nth-child(2){animation-delay:.05s}.card:nth-child(3){animation-delay:.1s}
+    .card:nth-child(4){animation-delay:.15s}.card:nth-child(5){animation-delay:.2s}
+    @keyframes rise{to{opacity:1; transform:none}}
+  }
+</style>
+
+<div class="sheet">
+  <div class="eyebrow">우주 자판기 보완 기준 · Space Vending</div>
+  <h1>우주식 5종, <span class="em">현재 → 보완 → 한 입 · 두 입</span></h1>
+  <p class="lede">과일·음식·음료와 같은 규율입니다 — 실루엣과 시그니처를 살린 <span class="rule">보완 조형</span>을 먼저 확정하고,
+     베어무는 단계는 <span class="rule">균일 축소가 아니라 실제 먹은 자국</span>(베어문 스캘럽·단면·구겨짐·짜낸 주름)으로 갑니다. 3입째 소멸.</p>
+
+  <div class="legend">
+    <span class="li"><span class="k now">현재</span> 지금 코드의 조형 (점선 = 교체 대상)</span>
+    <span class="li"><span class="k goal">보완</span> 이번 작업의 목표 온전 상태</span>
+    <span class="li"><span class="k">1입</span> 한 입 — 또렷한 자국</span>
+    <span class="li"><span class="k">2입</span> 거의 다 — 다음이면 소멸</span>
+  </div>
+
+  <div class="grid">
+
+    <!-- ============ 1. 우주 주스 파우치 ============ -->
+    <div class="card">
+      <div class="card-head"><h3>🧃 우주 주스 파우치</h3><span class="id">sjuice</span></div>
+      <div class="strip">
+        <div class="panel now"><div class="stage"><svg viewBox="0 0 120 120">
+          <path d="M42,96 L78,96 L75,30 L45,30 Z" fill="#cfd6e0"/>
+          <rect x="45" y="48" width="30" height="18" fill="#5c8fd6"/>
+          <circle cx="68" cy="55" r="3.4" fill="#ffe27a"/>
+          <rect x="49" y="16" width="4.5" height="18" rx="2" fill="#e8edf4" transform="rotate(-18 51 25)"/>
+        </svg></div><div class="cap"><span class="dot"></span>현재</div></div>
+        <div class="panel goal"><div class="stage"><svg viewBox="0 0 120 120">
+          <path d="M40,98 Q37,98 37.5,94 L43,32 L77,32 L82.5,94 Q83,98 80,98 Z" fill="#dfe6ef"/>
+          <path d="M40,98 Q37,98 37.5,94 L43,32 L52,32 L47,98 Z" fill="#f2f6fb"/>
+          <path d="M43,32 L77,32 L76,25 L44,25 Z" fill="#aab4c0"/>
+          <path d="M44.5,28.5 h31" stroke="#8e99a8" stroke-width="1.4" stroke-dasharray="2.5 1.6"/>
+          <path d="M45.5,52 L74.5,52 L76,80 L44,80 Z" fill="#5c8fd6"/>
+          <circle cx="60" cy="64" r="7.5" fill="#7fb0e8"/>
+          <ellipse cx="60" cy="64" rx="11" ry="3.4" fill="none" stroke="#cfe2f6" stroke-width="1.6" transform="rotate(-18 60 64)"/>
+          <path d="M69,56 l1.2,2.6 2.8,.4 -2,2 .5,2.8 -2.5,-1.3 -2.5,1.3 .5,-2.8 -2,-2 2.8,-.4 Z" fill="#ffe27a"/>
+          <rect x="47" y="6" width="4.6" height="22" rx="2.2" fill="#f26d6d" transform="rotate(-16 49 17)"/>
+          <rect x="43" y="22" width="10" height="4.4" rx="2.2" fill="#e35b5b" transform="rotate(-46 48 24)"/>
+        </svg></div><div class="cap"><span class="dot"></span>보완</div></div>
+        <div class="panel b1"><div class="stage"><svg viewBox="0 0 120 120">
+          <path d="M44,98 Q41,98 41.5,94 L46,34 L74,34 L78.5,94 Q79,98 76,98 Z" fill="#dfe6ef"/>
+          <path d="M46,34 L74,34 L73,27 L47,27 Z" fill="#aab4c0"/>
+          <path d="M48,56 L72,56 L73.5,80 L46.5,80 Z" fill="#5c8fd6"/>
+          <circle cx="60" cy="66" r="6.5" fill="#7fb0e8"/>
+          <path d="M50,46 q10,4 20,0" stroke="#b8c2ce" stroke-width="1.6" fill="none"/>
+          <rect x="49" y="8" width="4.6" height="22" rx="2.2" fill="#f26d6d" transform="rotate(-16 51 19)"/>
+        </svg></div><div class="cap"><span class="dot"></span>1입</div></div>
+        <div class="panel b2"><div class="stage"><svg viewBox="0 0 120 120">
+          <path d="M48,98 Q45,98 45.5,94 L50,40 L70,40 L74.5,94 Q75,98 72,98 Z" fill="#d4dbe6"/>
+          <path d="M50,40 L70,40 L69,33 L51,33 Z" fill="#aab4c0"/>
+          <path d="M51.5,60 L68.5,60 L70,79 L50,79 Z" fill="#5c8fd6" opacity=".85"/>
+          <path d="M52,50 q8,5 16,0 M51,70 q9,-4 18,0 M52.5,88 q7.5,4 15,0" stroke="#aab6c4" stroke-width="1.7" fill="none"/>
+          <rect x="51" y="14" width="4.6" height="22" rx="2.2" fill="#f26d6d" transform="rotate(-16 53 25)"/>
+        </svg></div><div class="cap"><span class="dot"></span>2입</div></div>
+      </div>
+      <p class="note"><span><b>도이팩 실루엣 + 포일 크림프 탑 + 은박 하이라이트</b>. 라벨은 행성 고리+별. 빨대는 <b>빨간 굽은 빨대</b>로 존재감.
+        마실수록 <b>홀쭉해지며 가로 주름</b>이 늘어난다 — 현재의 밋밋한 축소 대신 구겨짐이 핵심.</span></p>
+      <div class="swatches"><span class="sw"><i style="background:#dfe6ef"></i>파우치 dfe6ef</span><span class="sw"><i style="background:#5c8fd6"></i>라벨 5c8fd6</span><span class="sw"><i style="background:#f26d6d"></i>빨대 f26d6d</span><span class="sw"><i style="background:#ffe27a"></i>별 ffe27a</span></div>
+    </div>
+
+    <!-- ============ 2. 동결건조 아이스크림 ============ -->
+    <div class="card">
+      <div class="card-head"><h3>🍦 동결건조 아이스크림 샌드</h3><span class="id">sice</span></div>
+      <div class="strip">
+        <div class="panel now"><div class="stage"><svg viewBox="0 0 120 120">
+          <rect x="24" y="38" width="72" height="20" fill="#fdf4e6"/>
+          <rect x="24" y="58" width="72" height="20" fill="#f6c2d0"/>
+        </svg></div><div class="cap"><span class="dot"></span>현재</div></div>
+        <div class="panel goal"><div class="stage"><svg viewBox="0 0 120 120">
+          <rect x="22" y="30" width="76" height="15" rx="5" fill="#e8cf9e"/>
+          <rect x="22" y="75" width="76" height="15" rx="5" fill="#dfc28c"/>
+          <g fill="#c9a566"><circle cx="34" cy="37.5" r="1.7"/><circle cx="47" cy="37.5" r="1.7"/><circle cx="60" cy="37.5" r="1.7"/><circle cx="73" cy="37.5" r="1.7"/><circle cx="86" cy="37.5" r="1.7"/>
+          <circle cx="34" cy="82.5" r="1.7"/><circle cx="47" cy="82.5" r="1.7"/><circle cx="60" cy="82.5" r="1.7"/><circle cx="73" cy="82.5" r="1.7"/><circle cx="86" cy="82.5" r="1.7"/></g>
+          <rect x="25" y="45" width="70" height="15" fill="#fdf4e6"/>
+          <rect x="25" y="60" width="70" height="15" fill="#f4b8c8"/>
+          <g fill="#e89cb4"><circle cx="36" cy="67" r="1.4"/><circle cx="58" cy="69" r="1.4"/><circle cx="80" cy="66" r="1.4"/></g>
+          <path d="M96,26 l1.4,3 3.2,.5 -2.3,2.3 .6,3.2 -2.9,-1.5 -2.9,1.5 .6,-3.2 -2.3,-2.3 3.2,-.5 Z" fill="#fff" opacity=".8"/>
+        </svg></div><div class="cap"><span class="dot"></span>보완</div></div>
+        <div class="panel b1"><div class="stage"><svg viewBox="0 0 120 120">
+          <defs><mask id="siceM1"><rect width="120" height="120" fill="#fff"/><circle cx="92" cy="46" r="17" fill="#000"/><circle cx="97" cy="70" r="15" fill="#000"/></mask></defs>
+          <g mask="url(#siceM1)">
+            <rect x="22" y="30" width="76" height="15" rx="5" fill="#e8cf9e"/>
+            <rect x="22" y="75" width="76" height="15" rx="5" fill="#dfc28c"/>
+            <g fill="#c9a566"><circle cx="34" cy="37.5" r="1.7"/><circle cx="47" cy="37.5" r="1.7"/><circle cx="60" cy="37.5" r="1.7"/><circle cx="73" cy="37.5" r="1.7"/></g>
+            <rect x="25" y="45" width="70" height="15" fill="#fdf4e6"/>
+            <rect x="25" y="60" width="70" height="15" fill="#f4b8c8"/>
+            <g fill="#e89cb4"><circle cx="36" cy="67" r="1.4"/><circle cx="58" cy="69" r="1.4"/></g>
+          </g>
+          <path d="M79,36 q4,5 1,10 M83,52 q3,6 -1,11" stroke="#efe0c4" stroke-width="1.6" fill="none" opacity=".7"/>
+          <g fill="#e8cf9e"><circle cx="100" cy="52" r="1.6"/><circle cx="104" cy="62" r="1.3"/></g>
+        </svg></div><div class="cap"><span class="dot"></span>1입</div></div>
+        <div class="panel b2"><div class="stage"><svg viewBox="0 0 120 120">
+          <defs><mask id="siceM2"><rect width="120" height="120" fill="#fff"/><circle cx="76" cy="42" r="21" fill="#000"/><circle cx="82" cy="72" r="20" fill="#000"/><circle cx="60" cy="56" r="14" fill="#000"/></mask></defs>
+          <g mask="url(#siceM2)">
+            <rect x="22" y="30" width="76" height="15" rx="5" fill="#e8cf9e"/>
+            <rect x="22" y="75" width="76" height="15" rx="5" fill="#dfc28c"/>
+            <g fill="#c9a566"><circle cx="34" cy="37.5" r="1.7"/><circle cx="45" cy="37.5" r="1.7"/></g>
+            <rect x="25" y="45" width="70" height="15" fill="#fdf4e6"/>
+            <rect x="25" y="60" width="70" height="15" fill="#f4b8c8"/>
+            <circle cx="36" cy="67" r="1.4" fill="#e89cb4"/>
+          </g>
+          <g fill="#e8cf9e"><circle cx="66" cy="46" r="1.7"/><circle cx="59" cy="70" r="1.4"/><circle cx="72" cy="60" r="1.3"/></g>
+        </svg></div><div class="cap"><span class="dot"></span>2입</div></div>
+      </div>
+      <p class="note"><span>현재는 <b>맨 박스 2개</b>. 보완: <b>웨하스 상·하판(구멍 도트) + 바닐라·딸기 2층 속</b>이 살짝 안으로 들어간 샌드.
+        베어물기는 <b>오른쪽에서 스캘럽(반원 겹침) 자국</b>으로 파먹고 단면에 층이 보인다 — 단순 폭 축소 금지.</span></p>
+      <div class="swatches"><span class="sw"><i style="background:#e8cf9e"></i>웨하스 e8cf9e</span><span class="sw"><i style="background:#fdf4e6"></i>바닐라 fdf4e6</span><span class="sw"><i style="background:#f4b8c8"></i>딸기 f4b8c8</span></div>
+    </div>
+
+    <!-- ============ 3. 튜브 우주죽 ============ -->
+    <div class="card">
+      <div class="card-head"><h3>🥫 튜브 우주죽</h3><span class="id">stube</span></div>
+      <div class="strip">
+        <div class="panel now"><div class="stage"><svg viewBox="0 0 120 120">
+          <rect x="44" y="34" width="32" height="56" rx="4" fill="#d8ece4"/>
+          <rect x="46" y="48" width="28" height="14" fill="#6fbf9f"/>
+          <rect x="52" y="22" width="16" height="13" rx="2" fill="#58b08e"/>
+          <rect x="43" y="90" width="34" height="5" fill="#b8ccc2"/>
+        </svg></div><div class="cap"><span class="dot"></span>현재</div></div>
+        <div class="panel goal"><div class="stage"><svg viewBox="0 0 120 120">
+          <path d="M46,38 Q46,32 52,31 L68,31 Q74,32 74,38 L75,88 L45,88 Z" fill="#e2f1ea"/>
+          <path d="M46,38 Q46,32 52,31 L57,31 L56,88 L45,88 Z" fill="#f0f8f4"/>
+          <path d="M45,88 L75,88 L77,95 L43,95 Z" fill="#a8c2b8"/>
+          <path d="M45.5,91.5 h29" stroke="#7fa093" stroke-width="1.3" stroke-dasharray="2.2 1.5"/>
+          <rect x="52" y="17" width="16" height="14" rx="3" fill="#58b08e"/>
+          <path d="M54.5,17.5 v13 M59.5,17.5 v13 M64.5,17.5 v13" stroke="#3d8a6a" stroke-width="1.6"/>
+          <rect x="46.5" y="47" width="27" height="24" rx="3" fill="#6fbf9f"/>
+          <circle cx="60" cy="56" r="6.4" fill="#e9f6f0"/>
+          <path d="M60,52.4 v7.2 M56.5,56 h7" stroke="#58b08e" stroke-width="1.7"/>
+          <path d="M52,66 l1,2.1 2.3,.3 -1.7,1.6 .4,2.3 -2,-1.1 -2,1.1 .4,-2.3 -1.7,-1.6 2.3,-.3 Z" fill="#ffe27a"/>
+        </svg></div><div class="cap"><span class="dot"></span>보완</div></div>
+        <div class="panel b1"><div class="stage"><svg viewBox="0 0 120 120">
+          <path d="M46,38 Q46,32 52,31 L68,31 Q74,32 74,38 L74.5,62 Q60,68 45.5,62 Z" fill="#e2f1ea"/>
+          <path d="M45.5,62 Q60,68 74.5,62 L73,80 Q60,85 47,80 Z" fill="#cfe4da"/>
+          <path d="M47,80 Q60,85 73,80 L74,88 L46,88 Z" fill="#bcd4c9"/>
+          <path d="M46,88 L74,88 L76,95 L44,95 Z" fill="#a8c2b8"/>
+          <rect x="52" y="17" width="16" height="14" rx="3" fill="#58b08e"/>
+          <path d="M54.5,17.5 v13 M59.5,17.5 v13 M64.5,17.5 v13" stroke="#3d8a6a" stroke-width="1.6"/>
+          <rect x="47.5" y="45" width="25" height="15" rx="3" fill="#6fbf9f"/>
+          <circle cx="60" cy="52.5" r="5" fill="#e9f6f0"/>
+          <path d="M49,70 q11,4 22,0" stroke="#9db8ac" stroke-width="1.6" fill="none"/>
+        </svg></div><div class="cap"><span class="dot"></span>1입</div></div>
+        <div class="panel b2"><div class="stage"><svg viewBox="0 0 120 120">
+          <path d="M47,38 Q47,32 53,31 L67,31 Q73,32 73,38 L73.5,50 Q60,55 46.5,50 Z" fill="#e2f1ea"/>
+          <path d="M46.5,50 Q60,55 73.5,50 L71,62 Q60,66 49,62 Z" fill="#c4dbd0"/>
+          <path d="M49,62 Q60,66 71,62 L72,72 L48,72 Z" fill="#aec8bd"/>
+          <path d="M48,72 L72,72 L74,80 L46,80 Z M47,80 L73,80 L75,88 L45,88 Z" fill="#9cb8ac"/>
+          <path d="M47.5,76 h25 M46.5,84 h27" stroke="#7fa093" stroke-width="1.4"/>
+          <rect x="52" y="17" width="16" height="14" rx="3" fill="#58b08e"/>
+          <path d="M54.5,17.5 v13 M59.5,17.5 v13 M64.5,17.5 v13" stroke="#3d8a6a" stroke-width="1.6"/>
+          <rect x="49" y="42" width="22" height="9" rx="3" fill="#6fbf9f"/>
+        </svg></div><div class="cap"><span class="dot"></span>2입</div></div>
+      </div>
+      <p class="note"><span>보완: <b>둥근 어깨 + 세로줄 캡 + 죽 그릇 아이콘 라벨 + 크림프 접힘단</b>.
+        짜먹는 음식이니 <b>아래부터 납작해지며 돌돌 말려 올라간다</b> — 1입=하단 눌림, 2입=하단 2/3이 접힌 주름, 윗볼록만 남음.</span></p>
+      <div class="swatches"><span class="sw"><i style="background:#e2f1ea"></i>튜브 e2f1ea</span><span class="sw"><i style="background:#6fbf9f"></i>라벨 6fbf9f</span><span class="sw"><i style="background:#58b08e"></i>캡 58b08e</span></div>
+    </div>
+
+    <!-- ============ 4. 별 쿠키 ============ -->
+    <div class="card">
+      <div class="card-head"><h3>🍪 별 쿠키</h3><span class="id">scookie</span></div>
+      <div class="strip">
+        <div class="panel now"><div class="stage"><svg viewBox="0 0 120 120">
+          <path d="M60,18 L70,46 L100,46 L76,64 L85,93 L60,75 L35,93 L44,64 L20,46 L50,46 Z" fill="#e8b45c"/>
+          <path d="M60,38 L66,54 L83,54 L69,64 L74,81 L60,70 L46,81 L51,64 L37,54 L54,54 Z" fill="#f8da84" transform="translate(0,-4) scale(.62) translate(23,26)"/>
+        </svg></div><div class="cap"><span class="dot"></span>현재</div></div>
+        <div class="panel goal"><div class="stage"><svg viewBox="0 0 120 120">
+          <path d="M60,16 L70.5,45 L101,45 L76.5,63.5 L86,93 L60,74.5 L34,93 L43.5,63.5 L19,45 L49.5,45 Z" fill="#e8b45c" stroke="#c48c3c" stroke-width="2.5" stroke-linejoin="round"/>
+          <path d="M60,34 L66,51 L84,51 L69.5,61.5 L75,79 L60,68.5 L45,79 L50.5,61.5 L36,51 L54,51 Z" fill="#f8da84"/>
+          <g fill="#8a5a30"><circle cx="52" cy="42" r="2.4"/><circle cx="73" cy="52" r="2.2"/><circle cx="60" cy="60" r="2.4"/><circle cx="45" cy="57" r="2"/><circle cx="66" cy="70" r="2.1"/></g>
+          <g fill="#fff" opacity=".75"><circle cx="64" cy="40" r="1.1"/><circle cx="49" cy="50" r="1"/><circle cx="70" cy="62" r="1"/></g>
+        </svg></div><div class="cap"><span class="dot"></span>보완</div></div>
+        <div class="panel b1"><div class="stage"><svg viewBox="0 0 120 120">
+          <defs><mask id="sckM1"><rect width="120" height="120" fill="#fff"/><circle cx="93" cy="38" r="22" fill="#000"/></mask></defs>
+          <g mask="url(#sckM1)">
+            <path d="M60,16 L70.5,45 L101,45 L76.5,63.5 L86,93 L60,74.5 L34,93 L43.5,63.5 L19,45 L49.5,45 Z" fill="#e8b45c" stroke="#c48c3c" stroke-width="2.5" stroke-linejoin="round"/>
+            <path d="M60,34 L66,51 L84,51 L69.5,61.5 L75,79 L60,68.5 L45,79 L50.5,61.5 L36,51 L54,51 Z" fill="#f8da84"/>
+            <g fill="#8a5a30"><circle cx="52" cy="42" r="2.4"/><circle cx="60" cy="60" r="2.4"/><circle cx="45" cy="57" r="2"/><circle cx="66" cy="70" r="2.1"/></g>
+          </g>
+          <path d="M73,30 q5,6 4,13 M80,49 q3,4 1,8" stroke="#d9a854" stroke-width="1.8" fill="none" opacity=".8"/>
+          <g fill="#e8b45c"><circle cx="97" cy="46" r="1.8"/><circle cx="102" cy="36" r="1.4"/><circle cx="94" cy="55" r="1.3"/></g>
+        </svg></div><div class="cap"><span class="dot"></span>1입</div></div>
+        <div class="panel b2"><div class="stage"><svg viewBox="0 0 120 120">
+          <defs><mask id="sckM2"><rect width="120" height="120" fill="#fff"/><circle cx="83" cy="34" r="30" fill="#000"/><circle cx="94" cy="66" r="24" fill="#000"/></mask></defs>
+          <g mask="url(#sckM2)">
+            <path d="M60,16 L70.5,45 L101,45 L76.5,63.5 L86,93 L60,74.5 L34,93 L43.5,63.5 L19,45 L49.5,45 Z" fill="#e8b45c" stroke="#c48c3c" stroke-width="2.5" stroke-linejoin="round"/>
+            <path d="M60,34 L66,51 L84,51 L69.5,61.5 L75,79 L60,68.5 L45,79 L50.5,61.5 L36,51 L54,51 Z" fill="#f8da84"/>
+            <g fill="#8a5a30"><circle cx="52" cy="42" r="2.4"/><circle cx="45" cy="57" r="2"/><circle cx="60" cy="66" r="2.1"/></g>
+          </g>
+          <path d="M60,26 q6,8 4,17 M67,53 q4,5 2,10" stroke="#d9a854" stroke-width="1.8" fill="none" opacity=".8"/>
+          <g fill="#e8b45c"><circle cx="76" cy="42" r="1.8"/><circle cx="84" cy="58" r="1.5"/><circle cx="70" cy="64" r="1.3"/></g>
+        </svg></div><div class="cap"><span class="dot"></span>2입</div></div>
+      </div>
+      <p class="note"><span>보완: <b>도톰한 테두리 + 아이싱 별 + 초코칩·설탕 반짝</b>.
+        베어물기는 <b>균일 축소 금지</b> — 1입=오른쪽 위 팔 하나가 베어문 원호로 사라짐(부스러기),
+        2입=오른쪽 절반이 없어져 <b>팔 두 개만</b> 남는다.</span></p>
+      <div class="swatches"><span class="sw"><i style="background:#e8b45c"></i>쿠키 e8b45c</span><span class="sw"><i style="background:#f8da84"></i>아이싱 f8da84</span><span class="sw"><i style="background:#8a5a30"></i>초코칩 8a5a30</span></div>
+    </div>
+
+    <!-- ============ 5. 골드 문크림빵 ============ -->
+    <div class="card">
+      <div class="card-head"><h3>🌟 골드 문크림빵</h3><span class="id">sgold</span></div>
+      <div class="strip">
+        <div class="panel now"><div class="stage"><svg viewBox="0 0 120 120">
+          <ellipse cx="60" cy="62" rx="40" ry="28" fill="#e9c256"/>
+          <path d="M52,58 a13,13 0 1 0 18,-8 a10.5,10.5 0 1 1 -18,8" fill="#fff4cc"/>
+        </svg></div><div class="cap"><span class="dot"></span>현재</div></div>
+        <div class="panel goal"><div class="stage"><svg viewBox="0 0 120 120">
+          <ellipse cx="60" cy="88" rx="34" ry="7" fill="#000" opacity=".28"/>
+          <path d="M22,74 Q22,38 60,38 Q98,38 98,74 Q98,84 86,84 L34,84 Q22,84 22,74 Z" fill="#f2c94c"/>
+          <path d="M26,70 Q28,44 58,42 Q42,46 36,58 Q30,66 30,74 Z" fill="#ffe89a"/>
+          <path d="M66,54 a12,12 0 1 0 16,-7 a9.5,9.5 0 1 1 -16,7" fill="#fff4cc"/>
+          <g fill="#fff"><path d="M40,30 l1.5,3.2 3.4,.5 -2.5,2.4 .6,3.4 -3,-1.6 -3,1.6 .6,-3.4 -2.5,-2.4 3.4,-.5 Z"/><path d="M87,28 l1.1,2.4 2.6,.4 -1.9,1.8 .5,2.6 -2.3,-1.2 -2.3,1.2 .5,-2.6 -1.9,-1.8 2.6,-.4 Z" opacity=".85"/><circle cx="99" cy="46" r="1.6" opacity=".8"/></g>
+          <path d="M34,84 h52" stroke="#d9a83c" stroke-width="2.4"/>
+        </svg></div><div class="cap"><span class="dot"></span>보완</div></div>
+        <div class="panel b1"><div class="stage"><svg viewBox="0 0 120 120">
+          <defs><mask id="sgM1"><rect width="120" height="120" fill="#fff"/><circle cx="95" cy="52" r="21" fill="#000"/></mask></defs>
+          <ellipse cx="58" cy="88" rx="32" ry="7" fill="#000" opacity=".28"/>
+          <path d="M80,44 Q90,58 88,74 Q86,82 78,82 Q84,64 76,48 Z" fill="#fff6df"/>
+          <ellipse cx="82" cy="64" rx="9" ry="15" fill="#ffedb8"/>
+          <g mask="url(#sgM1)">
+            <path d="M22,74 Q22,38 60,38 Q98,38 98,74 Q98,84 86,84 L34,84 Q22,84 22,74 Z" fill="#f2c94c"/>
+            <path d="M26,70 Q28,44 58,42 Q42,46 36,58 Q30,66 30,74 Z" fill="#ffe89a"/>
+            <path d="M56,54 a12,12 0 1 0 16,-7 a9.5,9.5 0 1 1 -16,7" fill="#fff4cc"/>
+          </g>
+          <path d="M40,30 l1.5,3.2 3.4,.5 -2.5,2.4 .6,3.4 -3,-1.6 -3,1.6 .6,-3.4 -2.5,-2.4 3.4,-.5 Z" fill="#fff"/>
+        </svg></div><div class="cap"><span class="dot"></span>1입</div></div>
+        <div class="panel b2"><div class="stage"><svg viewBox="0 0 120 120">
+          <defs><mask id="sgM2"><rect width="120" height="120" fill="#fff"/><circle cx="86" cy="46" r="28" fill="#000"/><circle cx="90" cy="76" r="23" fill="#000"/></mask></defs>
+          <ellipse cx="50" cy="88" rx="26" ry="6.5" fill="#000" opacity=".28"/>
+          <path d="M60,44 Q72,60 68,80 Q66,84 60,84 Q64,64 56,48 Z" fill="#fff6df"/>
+          <ellipse cx="62" cy="66" rx="8" ry="14" fill="#ffedb8"/>
+          <circle cx="63" cy="60" r="3.2" fill="#fffdf4"/>
+          <g mask="url(#sgM2)">
+            <path d="M22,74 Q22,38 60,38 Q98,38 98,74 Q98,84 86,84 L34,84 Q22,84 22,74 Z" fill="#f2c94c"/>
+            <path d="M26,70 Q28,44 58,42 Q42,46 36,58 Q30,66 30,74 Z" fill="#ffe89a"/>
+          </g>
+          <path d="M38,32 l1.2,2.6 2.8,.4 -2,2 .5,2.8 -2.5,-1.3 -2.5,1.3 .5,-2.8 -2,-2 2.8,-.4 Z" fill="#fff" opacity=".9"/>
+        </svg></div><div class="cap"><span class="dot"></span>2입</div></div>
+      </div>
+      <p class="note"><span>보완: <b>윤기 도는 금빛 돔(큰 하이라이트) + 초승달 스탬프 + 주변 반짝 별 + 바닥 라이너 선</b>.
+        레어템답게 광택이 정체성. 베어물면 <b>크림(달빛 크림색) 단면</b>이 드러난다 — 1입=옆구리 한 입, 2입=반쪽에 크림이 넓게.</span></p>
+      <div class="swatches"><span class="sw"><i style="background:#f2c94c"></i>빵 f2c94c</span><span class="sw"><i style="background:#ffe89a"></i>광택 ffe89a</span><span class="sw"><i style="background:#fff6df"></i>크림 fff6df</span><span class="sw"><i style="background:#fff4cc"></i>초승달 fff4cc</span></div>
+    </div>
+
+  </div>
+
+  <footer>
+    <b>읽는 법</b> — 각 행의 첫 칸(점선)이 지금 코드 그대로의 조형, 둘째 칸이 이번 보완 목표, 셋·넷째가 베어문 단계입니다.
+    공통 규율: 균일 축소 대신 <b>실제 자국</b>(스캘럽 베어물기 · 단면 노출 · 파우치 주름 · 튜브 말림), bakeGrad 정점색 + 병합,
+    부스러기 소품은 베어문 쪽에만. 골드 문크림빵은 광택 유지가 최우선. 이 기준으로 확정되면 모델링 들어갑니다.
+  </footer>
+</div>

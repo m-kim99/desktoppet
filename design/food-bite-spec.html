@@ -1,0 +1,532 @@
+<title>푸드 부스 · 먹기 3단계 기준</title>
+<style>
+  :root{
+    --paper:#efe9dc; --card:#faf6ec; --panel:#f4eddd; --ink:#2c261c; --ink-soft:#6d6252;
+    --hair:#ddd1bb; --hair-soft:#e7ddc9; --accent:#df473d; --accent2:#d8981f;
+    --tag:#efe3cb; --shadow:rgba(60,44,20,.14);
+    --sans:'Apple SD Gothic Neo','Pretendard',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    --mono:'SF Mono','JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#1d1a14; --card:#28241b; --panel:#211d16; --ink:#f2ead9; --ink-soft:#b0a488;
+      --hair:#3a3327; --hair-soft:#332d22; --accent:#f0655a; --accent2:#e6b23e;
+      --tag:#332c1e; --shadow:rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#efe9dc; --card:#faf6ec; --panel:#f4eddd; --ink:#2c261c; --ink-soft:#6d6252;
+    --hair:#ddd1bb; --hair-soft:#e7ddc9; --accent:#df473d; --accent2:#d8981f;
+    --tag:#efe3cb; --shadow:rgba(60,44,20,.14);
+  }
+  :root[data-theme="dark"]{
+    --paper:#1d1a14; --card:#28241b; --panel:#211d16; --ink:#f2ead9; --ink-soft:#b0a488;
+    --hair:#3a3327; --hair-soft:#332d22; --accent:#f0655a; --accent2:#e6b23e;
+    --tag:#332c1e; --shadow:rgba(0,0,0,.4);
+  }
+
+  *{box-sizing:border-box}
+  body{background:var(--paper); color:var(--ink); font-family:var(--sans);
+       -webkit-font-smoothing:antialiased; line-height:1.55;}
+  .sheet{max-width:1120px; margin:0 auto; padding:clamp(22px,5vw,54px) clamp(16px,4vw,40px) 64px;}
+
+  /* ---- header ---- */
+  .eyebrow{font-family:var(--mono); font-size:12px; letter-spacing:.14em; text-transform:uppercase;
+           color:var(--accent); font-weight:600; display:flex; align-items:center; gap:9px;}
+  .eyebrow::before{content:""; width:22px; height:2px; background:var(--accent);}
+  h1{font-size:clamp(28px,5.2vw,46px); font-weight:800; letter-spacing:-.02em; line-height:1.08;
+     margin:.5rem 0 .2rem; text-wrap:balance;}
+  h1 .em{color:var(--accent);}
+  .lede{max-width:60ch; color:var(--ink-soft); font-size:clamp(14px,1.6vw,16px); margin:.55rem 0 0;}
+  .rule{color:var(--ink); font-weight:600;}
+
+  /* ---- legend ---- */
+  .legend{display:flex; flex-wrap:wrap; gap:10px 20px; margin:26px 0 6px; padding:14px 18px;
+          background:var(--card); border:1px solid var(--hair); border-radius:14px;}
+  .legend b{font-weight:700;}
+  .legend .li{display:flex; align-items:baseline; gap:8px; font-size:13.5px; color:var(--ink-soft);}
+  .legend .k{font-family:var(--mono); font-weight:600; color:var(--ink); font-size:12.5px;
+             background:var(--tag); padding:2px 7px; border-radius:6px;}
+
+  /* ---- grid ---- */
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:16px; margin-top:22px;}
+  .card{background:var(--card); border:1px solid var(--hair); border-radius:16px; padding:16px 16px 15px;
+        display:flex; flex-direction:column; gap:12px;}
+  .card-head{display:flex; align-items:baseline; justify-content:space-between; gap:10px;}
+  .card-head h3{font-size:18px; font-weight:800; letter-spacing:-.01em; margin:0;}
+  .card-head .id{font-family:var(--mono); font-size:11px; letter-spacing:.08em; color:var(--ink-soft);
+                 text-transform:uppercase;}
+
+  .strip{display:grid; grid-template-columns:repeat(3,1fr); gap:8px;}
+  .panel{display:flex; flex-direction:column; align-items:center; gap:6px;}
+  .stage{width:100%; aspect-ratio:1/1; background:var(--panel); border:1px solid var(--hair-soft);
+         border-radius:12px; padding:6px; position:relative;}
+  .stage svg{width:100%; height:100%; display:block; filter:drop-shadow(0 3px 4px var(--shadow));}
+  .cap{font-size:11.5px; color:var(--ink-soft); display:flex; align-items:center; gap:5px; font-weight:600;}
+  .cap .dot{width:5px; height:5px; border-radius:50%; background:var(--ink-soft);}
+  .panel.base .cap .dot{background:var(--ink-soft);}
+  .panel.b1 .cap .dot{background:var(--accent2);}
+  .panel.b2 .cap .dot{background:var(--accent);}
+  .cap .mini{font-family:var(--mono); font-size:9.5px; color:var(--ink-soft); opacity:.75; letter-spacing:.04em;}
+
+  .note{font-size:13px; color:var(--ink); line-height:1.5; display:flex; gap:8px; align-items:flex-start;}
+  .note::before{content:"▸"; color:var(--accent); font-size:11px; line-height:1.7; flex:none;}
+  .note b{font-weight:700;}
+
+  .swatches{display:flex; flex-wrap:wrap; gap:6px; margin-top:1px;}
+  .sw{display:flex; align-items:center; gap:5px; font-family:var(--mono); font-size:10.5px;
+      color:var(--ink-soft); background:var(--panel); border:1px solid var(--hair-soft);
+      border-radius:20px; padding:2px 8px 2px 4px;}
+  .sw i{width:12px; height:12px; border-radius:50%; border:1px solid rgba(0,0,0,.12); display:inline-block;}
+
+  footer{margin-top:34px; padding-top:18px; border-top:1px solid var(--hair);
+          color:var(--ink-soft); font-size:12.5px; max-width:70ch;}
+  footer b{color:var(--ink);}
+
+  @media (prefers-reduced-motion:no-preference){
+    .card{opacity:0; transform:translateY(10px); animation:rise .5s ease forwards;}
+    .card:nth-child(2){animation-delay:.04s}.card:nth-child(3){animation-delay:.08s}
+    .card:nth-child(4){animation-delay:.12s}.card:nth-child(5){animation-delay:.16s}
+    .card:nth-child(6){animation-delay:.2s}.card:nth-child(7){animation-delay:.24s}
+    .card:nth-child(8){animation-delay:.28s}.card:nth-child(9){animation-delay:.32s}
+    @keyframes rise{to{opacity:1; transform:none}}
+  }
+</style>
+
+<div class="sheet">
+  <div class="eyebrow">먹기 3단계 모델링 기준 · Food Booth</div>
+  <h1>푸드 부스 9종, <span class="em">한 입 · 두 입</span> 뒤의 모습</h1>
+  <p class="lede">과일과 같은 규율입니다 — 색만 바꾸는 게 아니라 <span class="rule">실제로 파인 형태·베어문 단면</span>을 드러냅니다.
+     음식마다 먹는 방식이 달라서(끝을 베어물기 · 숟가락으로 뜨기 · 링을 베어물기 · 꼭짓점부터), 그 방식에 맞춰 결손을 잡았습니다.
+     <span class="rule">온전한 초기 형태는 기준으로 보존</span>하고, 1입·2입만 새로 만듭니다.</p>
+
+  <div class="legend">
+    <span class="li"><span class="k">온전</span> <b>기준</b> — 지금 모델 그대로 보존</span>
+    <span class="li"><span class="k">1입</span> 한 입 베어문 상태 — 또렷한 결손 + 단면</span>
+    <span class="li"><span class="k">2입</span> 거의 안 남은 상태 — 다음 입이면 소멸</span>
+  </div>
+
+  <div class="grid">
+
+    <!-- ===================== 1. TOAST ===================== -->
+    <div class="card">
+      <div class="card-head"><h3>토스트</h3><span class="id">toast</span></div>
+      <div class="strip">
+        <div class="panel base">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <rect x="22" y="26" width="80" height="70" rx="13" fill="#d9a95f"/>
+            <rect x="28" y="32" width="68" height="58" rx="9" fill="#f0d597"/>
+            <rect x="34" y="38" width="26" height="9" rx="4.5" fill="#f7e3b0" opacity=".7"/>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>온전</div>
+        </div>
+        <div class="panel b1">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <defs><mask id="m-toast-1"><rect width="120" height="120" fill="#fff"/><circle cx="103" cy="31" r="25" fill="#000"/></mask></defs>
+            <rect x="24" y="28" width="76" height="66" rx="11" fill="#f7ecd6"/>
+            <g mask="url(#m-toast-1)">
+              <rect x="22" y="26" width="80" height="70" rx="13" fill="#d9a95f"/>
+              <rect x="28" y="32" width="68" height="58" rx="9" fill="#f0d597"/>
+            </g>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>1입</div>
+        </div>
+        <div class="panel b2">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <defs><mask id="m-toast-2"><rect width="120" height="120" fill="#fff"/><circle cx="96" cy="35" r="31" fill="#000"/><circle cx="102" cy="76" r="22" fill="#000"/></mask></defs>
+            <rect x="24" y="28" width="76" height="66" rx="11" fill="#f7ecd6"/>
+            <g mask="url(#m-toast-2)">
+              <rect x="22" y="26" width="80" height="70" rx="13" fill="#d9a95f"/>
+              <rect x="28" y="32" width="68" height="58" rx="9" fill="#f0d597"/>
+            </g>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>2입</div>
+        </div>
+      </div>
+      <p class="note"><span><b>네모 모서리</b>를 베어문다 — 초승달 결손, 물린 자리에 뽀얀 속살. 2입이면 절반 이상.</span></p>
+      <div class="swatches">
+        <span class="sw"><i style="background:#e0b878"></i>겉 e0b878</span>
+        <span class="sw"><i style="background:#f2d9a0"></i>면 f2d9a0</span>
+        <span class="sw"><i style="background:#f7ecd6"></i>속 f7ecd6</span>
+      </div>
+    </div>
+
+    <!-- ===================== 2. OMURICE ===================== -->
+    <div class="card">
+      <div class="card-head"><h3>오므라이스</h3><span class="id">omurice</span></div>
+      <div class="strip">
+        <div class="panel base">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <ellipse cx="60" cy="93" rx="48" ry="12" fill="#e4ddcc"/>
+            <ellipse cx="60" cy="89" rx="43" ry="9" fill="#f2ecdf"/>
+            <path d="M22,87 Q60,35 98,87 Z" fill="#ffd54f"/>
+            <path d="M32,84 Q52,50 72,54" stroke="#ffe38a" stroke-width="5" fill="none" stroke-linecap="round" opacity=".8"/>
+            <path d="M40,73 q10,-8 20,-2 q10,6 18,-1" stroke="#e8484f" stroke-width="4.5" fill="none" stroke-linecap="round"/>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>온전</div>
+        </div>
+        <div class="panel b1">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <defs><mask id="m-omu-1"><rect width="120" height="120" fill="#fff"/><circle cx="82" cy="75" r="18" fill="#000"/></mask></defs>
+            <ellipse cx="60" cy="93" rx="48" ry="12" fill="#e4ddcc"/>
+            <ellipse cx="60" cy="89" rx="43" ry="9" fill="#f2ecdf"/>
+            <path d="M60,86 Q80,62 96,85 Z" fill="#efe3c6"/>
+            <circle cx="82" cy="79" r="2" fill="#e6a63a"/><circle cx="88" cy="83" r="1.6" fill="#d98f4e"/><circle cx="76" cy="82" r="1.6" fill="#e6b552"/>
+            <g mask="url(#m-omu-1)">
+              <path d="M22,87 Q60,35 98,87 Z" fill="#ffd54f"/>
+              <path d="M32,84 Q52,50 72,54" stroke="#ffe38a" stroke-width="5" fill="none" stroke-linecap="round" opacity=".8"/>
+              <path d="M40,73 q10,-8 20,-2 q10,6 18,-1" stroke="#e8484f" stroke-width="4.5" fill="none" stroke-linecap="round"/>
+            </g>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>1입</div>
+        </div>
+        <div class="panel b2">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <defs><mask id="m-omu-2"><rect width="120" height="120" fill="#fff"/><circle cx="86" cy="64" r="33" fill="#000"/></mask></defs>
+            <ellipse cx="60" cy="93" rx="48" ry="12" fill="#e4ddcc"/>
+            <ellipse cx="60" cy="89" rx="43" ry="9" fill="#f2ecdf"/>
+            <path d="M52,86 Q80,54 100,86 Z" fill="#efe3c6"/>
+            <circle cx="80" cy="76" r="2.2" fill="#e6a63a"/><circle cx="90" cy="82" r="1.8" fill="#d98f4e"/><circle cx="72" cy="80" r="1.8" fill="#e6b552"/><circle cx="86" cy="70" r="1.6" fill="#e6b552"/>
+            <g mask="url(#m-omu-2)">
+              <path d="M22,87 Q60,35 98,87 Z" fill="#ffd54f"/>
+              <path d="M40,73 q10,-8 20,-2 q10,6 18,-1" stroke="#e8484f" stroke-width="4.5" fill="none" stroke-linecap="round"/>
+            </g>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>2입</div>
+        </div>
+      </div>
+      <p class="note"><span><b>숟가락으로 떠먹는다</b> — 달걀돔이 우묵하게 파이고 볶음밥이 드러남. 2입이면 오른쪽 절반이 무너져 밥 언덕만.</span></p>
+      <div class="swatches">
+        <span class="sw"><i style="background:#ffd54f"></i>달걀 ffd54f</span>
+        <span class="sw"><i style="background:#e8484f"></i>케첩 e8484f</span>
+        <span class="sw"><i style="background:#efe3c6"></i>밥 efe3c6</span>
+      </div>
+    </div>
+
+    <!-- ===================== 3. BURRITO ===================== -->
+    <div class="card">
+      <div class="card-head"><h3>부리또</h3><span class="id">burrito</span></div>
+      <div class="strip">
+        <div class="panel base">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <rect x="12" y="48" width="96" height="30" rx="15" fill="#e3c78f"/>
+            <path d="M12,63 h92" stroke="#cdae74" stroke-width="2" opacity=".55"/>
+            <path d="M82,50 l11,26" stroke="#cdae74" stroke-width="2" opacity=".55"/>
+            <ellipse cx="103" cy="63" rx="6" ry="13" fill="#8fbf6a"/>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>온전</div>
+        </div>
+        <div class="panel b1">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <rect x="27" y="48" width="81" height="30" rx="15" fill="#e3c78f"/>
+            <path d="M82,50 l11,26" stroke="#cdae74" stroke-width="2" opacity=".55"/>
+            <ellipse cx="103" cy="63" rx="5" ry="12" fill="#8fbf6a"/>
+            <ellipse cx="28" cy="63" rx="7.5" ry="15" fill="#dcbe82"/>
+            <ellipse cx="28" cy="63" rx="4.8" ry="11" fill="#f2e6c8"/>
+            <ellipse cx="28" cy="63" rx="2.6" ry="7" fill="#8fbf6a"/>
+            <circle cx="27" cy="58" r="1.5" fill="#df6a4a"/>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>1입</div>
+        </div>
+        <div class="panel b2">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <rect x="58" y="48" width="50" height="30" rx="15" fill="#e3c78f"/>
+            <ellipse cx="103" cy="63" rx="5" ry="12" fill="#8fbf6a"/>
+            <ellipse cx="60" cy="63" rx="8.5" ry="15" fill="#dcbe82"/>
+            <ellipse cx="60" cy="63" rx="5.6" ry="11.5" fill="#f2e6c8"/>
+            <ellipse cx="60" cy="63" rx="3.3" ry="8" fill="#8fbf6a"/>
+            <circle cx="59" cy="57" r="1.7" fill="#df6a4a"/><circle cx="63" cy="66" r="1.3" fill="#e6b552"/>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>2입</div>
+        </div>
+      </div>
+      <p class="note"><span><b>한쪽 끝을 베어문다</b> — 짧아지고 단면에 또띠아 링 + 속(초록·밥). 2입이면 절반 길이, 단면이 커짐.</span></p>
+      <div class="swatches">
+        <span class="sw"><i style="background:#e8cf9e"></i>또띠아 e8cf9e</span>
+        <span class="sw"><i style="background:#8fbf6a"></i>속 8fbf6a</span>
+        <span class="sw"><i style="background:#f2e6c8"></i>밥 f2e6c8</span>
+      </div>
+    </div>
+
+    <!-- ===================== 4. HOTDOG ===================== -->
+    <div class="card">
+      <div class="card-head"><h3>핫도그</h3><span class="id">hotdog</span></div>
+      <div class="strip">
+        <div class="panel base">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <rect x="12" y="53" width="96" height="30" rx="15" fill="#e6bd80"/>
+            <rect x="20" y="48" width="80" height="15" rx="7.5" fill="#d1584e"/>
+            <path d="M26,55 q10,-4 20,0 q10,4 20,0 q10,-4 20,0" stroke="#e5a72c" stroke-width="3" fill="none" stroke-linecap="round"/>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>온전</div>
+        </div>
+        <div class="panel b1">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <rect x="12" y="53" width="82" height="30" rx="15" fill="#e6bd80"/>
+            <rect x="20" y="48" width="64" height="15" rx="7.5" fill="#d1584e"/>
+            <path d="M26,55 q10,-4 20,0 q10,4 20,0" stroke="#e5a72c" stroke-width="3" fill="none" stroke-linecap="round"/>
+            <ellipse cx="93" cy="68" rx="7.5" ry="15" fill="#dcae72"/>
+            <ellipse cx="93" cy="64" rx="4" ry="7.5" fill="#d1584e"/>
+            <ellipse cx="93" cy="64" rx="1.9" ry="4" fill="#e2795f"/>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>1입</div>
+        </div>
+        <div class="panel b2">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <rect x="12" y="53" width="48" height="30" rx="15" fill="#e6bd80"/>
+            <rect x="20" y="48" width="30" height="15" rx="7.5" fill="#d1584e"/>
+            <path d="M26,55 q9,-4 18,0" stroke="#e5a72c" stroke-width="3" fill="none" stroke-linecap="round"/>
+            <ellipse cx="59" cy="68" rx="8.5" ry="15" fill="#dcae72"/>
+            <ellipse cx="59" cy="64" rx="4.6" ry="8" fill="#d1584e"/>
+            <ellipse cx="59" cy="64" rx="2.2" ry="4.4" fill="#e2795f"/>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>2입</div>
+        </div>
+      </div>
+      <p class="note"><span><b>끝부터 베어문다</b> — 짧아지고 단면에 번 링 + 빨간 소시지 심. 2입이면 절반, 소시지 단면 더 크게.</span></p>
+      <div class="swatches">
+        <span class="sw"><i style="background:#e3b878"></i>번 e3b878</span>
+        <span class="sw"><i style="background:#d1584e"></i>소시지 d1584e</span>
+      </div>
+    </div>
+
+    <!-- ===================== 5. DONUT ===================== -->
+    <div class="card">
+      <div class="card-head"><h3>도넛</h3><span class="id">donut</span></div>
+      <div class="strip">
+        <div class="panel base">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <defs><mask id="m-donut-h0"><rect width="120" height="120" fill="#fff"/><circle cx="60" cy="60" r="15" fill="#000"/></mask></defs>
+            <circle cx="60" cy="60" r="38" fill="#f2a0b8" mask="url(#m-donut-h0)"/>
+            <path d="M34,50 A38,38 0 0,1 78,28" stroke="#f8bfd0" stroke-width="6" fill="none" stroke-linecap="round" opacity=".7"/>
+            <rect x="52" y="29" width="8" height="3" rx="1.5" fill="#df473d" transform="rotate(22 56 30)"/>
+            <rect x="76" y="42" width="8" height="3" rx="1.5" fill="#5aa9e0" transform="rotate(-34 80 43)"/>
+            <rect x="38" y="54" width="8" height="3" rx="1.5" fill="#e5a72c" transform="rotate(52 42 55)"/>
+            <rect x="70" y="74" width="8" height="3" rx="1.5" fill="#6bbf6a" transform="rotate(-12 74 75)"/>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>온전</div>
+        </div>
+        <div class="panel b1">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <defs><mask id="m-donut-1"><rect width="120" height="120" fill="#fff"/><circle cx="60" cy="60" r="15" fill="#000"/><circle cx="90" cy="38" r="16" fill="#000"/></mask></defs>
+            <ellipse cx="80" cy="34" rx="6" ry="5" fill="#efd7a6"/><ellipse cx="94" cy="52" rx="5" ry="6" fill="#efd7a6"/>
+            <circle cx="60" cy="60" r="38" fill="#f2a0b8" mask="url(#m-donut-1)"/>
+            <rect x="52" y="29" width="8" height="3" rx="1.5" fill="#df473d" transform="rotate(22 56 30)"/>
+            <rect x="38" y="54" width="8" height="3" rx="1.5" fill="#e5a72c" transform="rotate(52 42 55)"/>
+            <rect x="70" y="74" width="8" height="3" rx="1.5" fill="#6bbf6a" transform="rotate(-12 74 75)"/>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>1입</div>
+        </div>
+        <div class="panel b2">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <defs><mask id="m-donut-2"><rect width="120" height="120" fill="#fff"/><circle cx="60" cy="60" r="15" fill="#000"/><circle cx="84" cy="40" r="27" fill="#000"/></mask></defs>
+            <ellipse cx="62" cy="30" rx="6" ry="5" fill="#efd7a6"/><ellipse cx="96" cy="64" rx="5.5" ry="6.5" fill="#efd7a6"/>
+            <circle cx="60" cy="60" r="38" fill="#f2a0b8" mask="url(#m-donut-2)"/>
+            <rect x="38" y="56" width="8" height="3" rx="1.5" fill="#e5a72c" transform="rotate(52 42 57)"/>
+            <rect x="66" y="78" width="8" height="3" rx="1.5" fill="#6bbf6a" transform="rotate(-12 70 79)"/>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>2입</div>
+        </div>
+      </div>
+      <p class="note"><span><b>링을 베어문다</b> — 한 입은 바깥 테에 노치, 물린 양 끝에 뽀얀 도우. 2입이면 열린 <b>C자</b>로 3분의 1이 사라짐.</span></p>
+      <div class="swatches">
+        <span class="sw"><i style="background:#f5a3bb"></i>글레이즈 f5a3bb</span>
+        <span class="sw"><i style="background:#efd7a6"></i>도우 efd7a6</span>
+      </div>
+    </div>
+
+    <!-- ===================== 6. BUNGEO ===================== -->
+    <div class="card">
+      <div class="card-head"><h3>붕어빵</h3><span class="id">bungeo</span></div>
+      <div class="strip">
+        <div class="panel base">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <path d="M18,60 L38,47 L38,73 Z" fill="#d9ad6b"/>
+            <path d="M34,60 Q46,33 74,40 Q99,46 101,60 Q99,74 74,80 Q46,87 34,60 Z" fill="#e3b878"/>
+            <path d="M58,44 q4,16 0,32 M70,46 q4,14 0,28" stroke="#c99a5a" stroke-width="2.5" fill="none" opacity=".7"/>
+            <circle cx="87" cy="54" r="3.4" fill="#5a4632"/>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>온전</div>
+        </div>
+        <div class="panel b1">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <defs><mask id="m-bun-1"><rect width="120" height="120" fill="#fff"/><circle cx="36" cy="60" r="17" fill="#000"/></mask></defs>
+            <ellipse cx="42" cy="60" rx="12" ry="15" fill="#7a4a30"/><ellipse cx="42" cy="60" rx="6" ry="8" fill="#8a573a"/>
+            <g mask="url(#m-bun-1)">
+              <path d="M34,60 Q46,33 74,40 Q99,46 101,60 Q99,74 74,80 Q46,87 34,60 Z" fill="#e3b878"/>
+              <path d="M58,44 q4,16 0,32 M70,46 q4,14 0,28" stroke="#c99a5a" stroke-width="2.5" fill="none" opacity=".7"/>
+              <circle cx="87" cy="54" r="3.4" fill="#5a4632"/>
+            </g>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>1입</div>
+        </div>
+        <div class="panel b2">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <defs><mask id="m-bun-2"><rect width="120" height="120" fill="#fff"/><circle cx="52" cy="60" r="27" fill="#000"/></mask></defs>
+            <ellipse cx="64" cy="60" rx="16" ry="17" fill="#7a4a30"/><ellipse cx="64" cy="60" rx="8.5" ry="9" fill="#8a573a"/>
+            <g mask="url(#m-bun-2)">
+              <path d="M34,60 Q46,33 74,40 Q99,46 101,60 Q99,74 74,80 Q46,87 34,60 Z" fill="#e3b878"/>
+              <circle cx="87" cy="54" r="3.4" fill="#5a4632"/>
+            </g>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>2입</div>
+        </div>
+      </div>
+      <p class="note"><span><b>꼬리부터 베어문다</b> — 꼬리 결손 후 단면에 팥소. 2입이면 머리 반쪽만, 팥소가 넓게 드러남.</span></p>
+      <div class="swatches">
+        <span class="sw"><i style="background:#e3b878"></i>몸 e3b878</span>
+        <span class="sw"><i style="background:#7a4a30"></i>팥 7a4a30</span>
+      </div>
+    </div>
+
+    <!-- ===================== 7. GIMBAP ===================== -->
+    <div class="card">
+      <div class="card-head"><h3>삼각김밥</h3><span class="id">gimbap</span></div>
+      <div class="strip">
+        <div class="panel base">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <defs><clipPath id="c-gim-0"><path d="M60,22 L98,90 L22,90 Z"/></clipPath></defs>
+            <path d="M60,22 L98,90 L22,90 Z" fill="#f4f1ea"/>
+            <g clip-path="url(#c-gim-0)"><rect x="18" y="72" width="84" height="20" fill="#33322e"/></g>
+            <path d="M60,30 L72,52 L48,52 Z" fill="#faf7f0" opacity=".7"/>
+            <path d="M60,22 L98,90 L22,90 Z" fill="none" stroke="#e6dfcf" stroke-width="2"/>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>온전</div>
+        </div>
+        <div class="panel b1">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <defs><clipPath id="c-gim-1"><path d="M60,22 L98,90 L22,90 Z"/></clipPath>
+              <mask id="m-gim-1"><rect width="120" height="120" fill="#fff"/><circle cx="60" cy="27" r="15" fill="#000"/></mask></defs>
+            <path d="M60,32 L73,55 L47,55 Z" fill="#fbf8f1"/>
+            <circle cx="60" cy="47" r="4.5" fill="#e08a6a"/>
+            <g mask="url(#m-gim-1)">
+              <path d="M60,22 L98,90 L22,90 Z" fill="#f4f1ea"/>
+              <g clip-path="url(#c-gim-1)"><rect x="18" y="72" width="84" height="20" fill="#33322e"/></g>
+            </g>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>1입</div>
+        </div>
+        <div class="panel b2">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <defs><clipPath id="c-gim-2"><path d="M60,22 L98,90 L22,90 Z"/></clipPath>
+              <mask id="m-gim-2"><rect width="120" height="120" fill="#fff"/><circle cx="60" cy="40" r="25" fill="#000"/></mask></defs>
+            <path d="M40,58 L80,58 L74,68 L46,68 Z" fill="#fbf8f1"/>
+            <circle cx="60" cy="58" r="8" fill="#e08a6a"/><circle cx="60" cy="58" r="4" fill="#d9714f"/>
+            <g mask="url(#m-gim-2)">
+              <path d="M60,22 L98,90 L22,90 Z" fill="#f4f1ea"/>
+              <g clip-path="url(#c-gim-2)"><rect x="18" y="72" width="84" height="20" fill="#33322e"/></g>
+            </g>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>2입</div>
+        </div>
+      </div>
+      <p class="note"><span><b>위 꼭짓점부터 베어문다</b> — 삼각이 줄고 흰밥 단면 + 속(참치)이 드러남. 2입이면 절반, 속이 중앙에.</span></p>
+      <div class="swatches">
+        <span class="sw"><i style="background:#f4f1ea"></i>밥 f4f1ea</span>
+        <span class="sw"><i style="background:#2e2e34"></i>김 2e2e34</span>
+        <span class="sw"><i style="background:#e08a6a"></i>속 e08a6a</span>
+      </div>
+    </div>
+
+    <!-- ===================== 8. CHURROS ===================== -->
+    <div class="card">
+      <div class="card-head"><h3>츄러스</h3><span class="id">churros</span></div>
+      <div class="strip">
+        <div class="panel base">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <g transform="rotate(-16 60 60)">
+              <rect x="52" y="16" width="16" height="88" rx="8" fill="#b8823f"/>
+              <path d="M56,18 v84 M60,18 v84 M64,18 v84" stroke="#96682f" stroke-width="1.6" opacity=".5"/>
+              <circle cx="57" cy="34" r="1.4" fill="#f2e2bf"/><circle cx="63" cy="48" r="1.4" fill="#f2e2bf"/><circle cx="58" cy="66" r="1.4" fill="#f2e2bf"/><circle cx="63" cy="82" r="1.4" fill="#f2e2bf"/>
+            </g>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>온전</div>
+        </div>
+        <div class="panel b1">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <g transform="rotate(-16 60 60)">
+              <rect x="52" y="16" width="16" height="66" rx="8" fill="#b8823f"/>
+              <path d="M56,18 v62 M60,18 v62 M64,18 v62" stroke="#96682f" stroke-width="1.6" opacity=".5"/>
+              <ellipse cx="60" cy="82" rx="8" ry="4.4" fill="#f0dcae"/>
+              <ellipse cx="60" cy="82" rx="4" ry="2.2" fill="#e2c488"/>
+              <circle cx="57" cy="34" r="1.4" fill="#f2e2bf"/><circle cx="63" cy="52" r="1.4" fill="#f2e2bf"/>
+            </g>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>1입</div>
+        </div>
+        <div class="panel b2">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <g transform="rotate(-16 60 60)">
+              <rect x="52" y="16" width="16" height="40" rx="8" fill="#b8823f"/>
+              <path d="M56,18 v36 M60,18 v36 M64,18 v36" stroke="#96682f" stroke-width="1.6" opacity=".5"/>
+              <ellipse cx="60" cy="56" rx="8.5" ry="5" fill="#f0dcae"/>
+              <ellipse cx="60" cy="56" rx="4.6" ry="2.6" fill="#e2c488"/>
+              <circle cx="58" cy="34" r="1.4" fill="#f2e2bf"/>
+            </g>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>2입</div>
+        </div>
+      </div>
+      <p class="note"><span><b>끝부터 베어문다</b> — 막대가 짧아지고 단면에 폭신한 도우. 2입이면 절반 토막, 단면 더 큼.</span></p>
+      <div class="swatches">
+        <span class="sw"><i style="background:#b07840"></i>겉 b07840</span>
+        <span class="sw"><i style="background:#f0dcae"></i>도우 f0dcae</span>
+      </div>
+    </div>
+
+    <!-- ===================== 9. CUPCAKE ===================== -->
+    <div class="card">
+      <div class="card-head"><h3>컵케이크</h3><span class="id">cupcake</span></div>
+      <div class="strip">
+        <div class="panel base">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <path d="M40,66 L80,66 L74,98 L46,98 Z" fill="#b8823f"/>
+            <path d="M48,66 v32 M56,66 v32 M64,66 v32 M72,66 v32" stroke="#96682f" stroke-width="2" opacity=".5"/>
+            <path d="M38,66 Q33,50 46,48 Q41,36 58,37 Q54,26 70,32 Q85,35 78,49 Q90,53 81,64 Q60,72 38,66 Z" fill="#f5a3bb"/>
+            <path d="M44,52 Q52,46 62,49" stroke="#fbc4d4" stroke-width="4" fill="none" stroke-linecap="round" opacity=".7"/>
+            <circle cx="60" cy="30" r="6" fill="#e8484f"/><circle cx="58" cy="28" r="2" fill="#f2857a"/>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>온전</div>
+        </div>
+        <div class="panel b1">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <defs><mask id="m-cup-1"><rect width="120" height="120" fill="#fff"/><circle cx="76" cy="44" r="16" fill="#000"/></mask></defs>
+            <path d="M40,66 L80,66 L74,98 L46,98 Z" fill="#b8823f"/>
+            <path d="M48,66 v32 M56,66 v32 M64,66 v32 M72,66 v32" stroke="#96682f" stroke-width="2" opacity=".5"/>
+            <path d="M60,52 Q80,46 84,60 Q72,66 60,62 Z" fill="#f0d9a8"/>
+            <g mask="url(#m-cup-1)">
+              <path d="M38,66 Q33,50 46,48 Q41,36 58,37 Q54,26 70,32 Q85,35 78,49 Q90,53 81,64 Q60,72 38,66 Z" fill="#f5a3bb"/>
+            </g>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>1입</div>
+        </div>
+        <div class="panel b2">
+          <div class="stage"><svg viewBox="0 0 120 120">
+            <defs><mask id="m-cup-2"><rect width="120" height="120" fill="#fff"/><circle cx="76" cy="52" r="20" fill="#000"/></mask></defs>
+            <path d="M40,66 L80,66 L74,98 L46,98 Z" fill="#b8823f"/>
+            <path d="M48,66 v32 M56,66 v32 M64,66 v32 M72,66 v32" stroke="#96682f" stroke-width="2" opacity=".5"/>
+            <g mask="url(#m-cup-2)">
+              <path d="M40,64 Q42,48 60,47 Q78,48 80,64 Z" fill="#f0d9a8"/>
+              <path d="M38,66 Q35,54 44,50 Q42,42 52,42 Q49,50 50,60 Z" fill="#f5a3bb"/>
+            </g>
+            <circle cx="52" cy="60" r="1.6" fill="#d99a3f"/><circle cx="60" cy="63" r="1.4" fill="#d99a3f"/>
+          </svg></div>
+          <div class="cap"><span class="dot"></span>2입</div>
+        </div>
+      </div>
+      <p class="note"><span><b>위(체리·크림)부터 베어문다</b> — 체리 먼저 사라지고 크림이 파여 케이크가 보임. 2입이면 크림 거의 없고 케이크 반쪽.</span></p>
+      <div class="swatches">
+        <span class="sw"><i style="background:#f5a3bb"></i>크림 f5a3bb</span>
+        <span class="sw"><i style="background:#f0d9a8"></i>케이크 f0d9a8</span>
+        <span class="sw"><i style="background:#b07840"></i>컵 b07840</span>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    <b>읽는 법</b> — 각 카드의 왼쪽(온전)은 지금 모델 그대로, 가운데(1입)·오른쪽(2입)이 이번 모델링 목표입니다.
+    과일과 동일하게 <b>실제로 파인 형태 + 베어문 단면 노출</b>이 핵심이고, 3입째에 소멸합니다.
+    색 스와치는 현재 3D 모델의 실제 색이며, 속·단면 색은 이 시트의 제안값입니다. 이 기준으로 좋으면 모델링 들어가겠습니다.
+  </footer>
+</div>
