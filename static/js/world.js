@@ -7530,6 +7530,7 @@ if (statsOn) window.__worldDev = {
     balloonState: () => ({ mode: BALLOON.mode, x: +BALLOON.x.toFixed(2), y: +BALLOON.y.toFixed(2), z: +BALLOON.z.toFixed(2), riding: !!balloonRide, rider: balloonRide && balloonRide.p ? balloonRide.p.name : null, friend: balloonRide && balloonRide.friend ? balloonRide.friend.name : null, lap: balloonRide ? balloonRide.lap : 0, pois: balloonRide && balloonRide.route ? balloonRide.route.names.length : 0 }),
     rocketState: () => ({ mode: ROCKET.mode, x: +ROCKET.x.toFixed(2), y: +ROCKET.y.toFixed(2), z: +ROCKET.z.toFixed(2), pitch: +ROCKET.pitch.toFixed(2), lap: +ROCKET.lapAcc.toFixed(2), burn: +ROCKET.burn.toFixed(2), spaceF: +spaceF.toFixed(2), riding: !!rocketRide, empty: !!(rocketRide && rocketRide.empty), friend: !!(rocketRide && rocketRide.friend), ai: !!(rocketRide && rocketRide.isAI), walk: !!aiRocketWalk, hop: !!rocketHop, light: rocketLightOn, padK: +(ROCKET.padK || 0).toFixed(2), poi: ROCKET.poi ? ROCKET.poi.id : null, found: Object.keys(spacePoiFound).length, out: pets.filter((q) => q.poiWalk).length, course: ROCKET.route ? ROCKET.route.names.join('·') : null, wp: ROCKET.route ? `${ROCKET.route.i}/${ROCKET.route.pts.length}` : null, dwell: ROCKET.route ? +ROCKET.route.dwellT.toFixed(1) : 0, tether: rocketTether ? +rocketTether.off.length().toFixed(2) : null, reeling: !!(rocketTether && rocketTether.reeling) }),
     rocketJump: () => { doJump(); return !!rocketTether; },
+    petBounce: (name) => { const q = pets.find((o) => o.name === name); return q ? +q.pet.wrap.position.y.toFixed(3) : null; },
     rocketTp: (x, y, z) => { if (rocketRide && (ROCKET.mode === 'space' || ROCKET.mode === 'manual')) { ROCKET.mode = 'manual'; ROCKET.spd = 0; ROCKET.x = x; ROCKET.y = y; ROCKET.z = z; } return ROCKET.mode; },   // E2E — 수동 비행 워프
     rocketAiStart: () => {   // E2E 훅 — 부팅 직후 자율활동(물놀이·낚시 등)에 선점된 펫도 결정적으로 출발시킨다
         const q = pets.find((o) => o !== possessed);
@@ -14511,6 +14512,32 @@ function updateRocket(delta) {
 }
 const _rocketSeat = new THREE.Vector3(), _rocketZgV = new THREE.Vector3();
 function updateRocketPose(delta) {   // 엔티티 업데이트 뒤 덮어쓰기 (비행기 문법) — 앉아 창밖 구경, 우주에선 좌석을 떠나 무중력 유영
+    // 🧑‍🚀 EVA 무중력 걸음 오버레이 (바운딩 로코모션 — 수평 속도는 그대로, 수직·자세만 얹는다):
+    // 달 = 낮고 긴 도약 사이클(체공+행타임), 정거장 = 호버-글라이드. 조종·자율 공용, 점프 물리엔 양보.
+    for (const q of pets) {
+        if (!q.poiWalk) continue;
+        if (q === possessed && airborne) { if (q.zgGait) q.zgGait.ph = 9; continue; }   // Space 점프 중엔 점프가 소유
+        const g = q.zgGait || (q.zgGait = { ph: 9 });
+        const moon = !!q.poiWalk.R;
+        const period = moon ? 0.62 : 0.8;
+        if (q.pet.walking) {
+            if (g.ph >= 9) g.ph = 0;
+            g.ph += delta / period;
+            if (g.ph >= 1) g.ph = 0;
+        } else if (g.ph < 9) {   // 멈추면 진행 중인 도약만 마무리 착지
+            g.ph += delta / period;
+            if (g.ph >= 1) g.ph = 9;
+        }
+        const k = g.ph < 9 ? Math.sin(Math.min(g.ph, 1) * Math.PI) : 0;
+        // 바운스는 mover가 아니라 비주얼 래퍼에 — mover.y를 올리면 updatePlayer 물리가 "낙하"로
+        // 해석해 되끌어내린다(트램펄린 교훈). k>0일 때만 절대 덮어쓰기 — 엔티티가 매 프레임 재작성하므로
+        // 손 떼는 순간 소유권이 자동 복귀.
+        if (k > 0) {
+            q.pet.wrap.position.y = k * (moon ? 0.22 : 0.11);
+            q.mover.rotation.x = k * (moon ? 0.13 : 0.07);   // 살짝 앞기울임 (절대값 — 적분 누적 금지)
+            for (const er of q.pet.ears) er.rotation.x = (er.userData._restRotX || 0) - 0.2 * k;   // 귀가 둥실
+        }
+    }
     const r = rocketRide;
     if (!r || r.empty) return;
     const wind = ROCKET.mode === 'ascent' || ROCKET.mode === 'retro' ? Math.min(1, Math.abs(ROCKET.vy) / 3.5) : 0;
