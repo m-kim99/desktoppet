@@ -7267,12 +7267,13 @@ function recentEventsText() {
         })
         .join('\n');
 }
-// 그림일기용: 오늘(자정 이후)의 이벤트를 시각과 함께 전부.
-function todayEventsText() {
-    const dayStart = new Date();
+// 그림일기용: 해당 날짜(기본 오늘)의 이벤트를 시각과 함께 전부 — 밤을 넘긴 이월 작성은 어제로 부른다.
+function dayEventsText(d = new Date()) {
+    const dayStart = new Date(d);
     dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = dayStart.getTime() + 86400000;
     return worldEvents
-        .filter((e) => e.t >= dayStart.getTime())
+        .filter((e) => e.t >= dayStart.getTime() && e.t < dayEnd)
         .map((e) => {
             const d = new Date(e.t);
             return `- ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} ${e.text}`;
@@ -8011,9 +8012,11 @@ async function fetchDiary() {
         if (res.ok) diaryData = (await res.json()) || {};
     } catch (e) {}
 }
-async function writeDiary(petName, force = false, silent = false) {
+async function writeDiary(petName, force = false, silent = false, forDate = null) {
     const me = pets.find((q) => q.name === petName);
-    const events = todayEventsText();
+    const day = forDate || new Date();
+    const dstr = localDateStr(day);
+    const events = dayEventsText(day);
     if (!me || !events) {
         if (!silent) showToast('📔 오늘은 아직 일기에 쓸 만한 일이 없어요');
         return;
@@ -8024,11 +8027,11 @@ async function writeDiary(petName, force = false, silent = false) {
         const res = await fetch('/api/world_diary', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pet: petName, date: localDateStr(), events, snapshot: buildWorldSnapshot(me), force }),
+            body: JSON.stringify({ pet: petName, date: dstr, events, snapshot: buildWorldSnapshot(me), force }),
         });
         if (!res.ok) throw new Error(await res.text());
         const entry = await res.json();
-        (diaryData[localDateStr()] = diaryData[localDateStr()] || {})[petName] = entry;
+        (diaryData[dstr] = diaryData[dstr] || {})[petName] = entry;
     } catch (e) {
         console.error('[World] diary write failed', e);
         if (!silent) showToast('📔 일기 쓰기에 실패했어요 — 잠시 후 다시');
@@ -8052,15 +8055,31 @@ diaryBtn.addEventListener('click', () => {
     diaryPanel.style.display = open ? 'flex' : 'none';
 });
 // 밤 10시가 넘으면 하루 한 번, 두 펫이 나란히 그날의 일기를 쓴다 (animate가 부른다).
+// 22시 전에 창을 닫았으면 다음 오픈 때 어제 날짜로 이월 작성 — 밤에 앱을 꺼놔도 아침에 채워진다.
+// "쓴 날" 플래그는 실제로 썼을 때만 소모: 예전엔 검사 전에 플래그부터 찍어서, 22시 직후 GLB
+// 로딩이 끝나기 전에 열면 그날 일기가 영영 안 써졌다 (성공 확인 전 소진 금지).
+let diaryAutoAt = 0;   // 다음 검사 시각 — 매 프레임 스캔 방지 + 실패 백오프
 function maybeAutoDiary() {
-    if (currentHour() < 22.05) return;
-    const today = localDateStr();
-    try { if (localStorage.getItem('world-diary-auto') === today) return; } catch (e) {}
-    try { localStorage.setItem('world-diary-auto', today); worldSync('world-diary-auto'); } catch (e) {}
-    if (!todayEventsText() || !pets.length) return;
+    if (Date.now() < diaryAutoAt || !pets.length) return;
+    diaryAutoAt = Date.now() + 60000;
+    const isNight = currentHour() >= 22.05;
+    const targetDay = isNight ? new Date() : new Date(Date.now() - 86400000);
+    const target = localDateStr(targetDay);
+    try { if (localStorage.getItem('world-diary-auto') === target) return; } catch (e) {}
+    if (!dayEventsText(targetDay)) {
+        // 어제 몫은 이벤트가 더 생길 수 없다 — 빈 날로 확정. 오늘 몫은 자정까지 열어둔다.
+        if (!isNight) try { localStorage.setItem('world-diary-auto', target); worldSync('world-diary-auto'); } catch (e) {}
+        return;
+    }
     (async () => {
-        for (const p of pets) await writeDiary(p.name, false, true);   // 순차 — LLM 호출이 겹치지 않게
-        logWorldEvent('오늘의 그림일기를 썼다 📔');
+        diaryAutoAt = Infinity;   // 쓰는 동안 재진입 금지
+        for (const p of pets) await writeDiary(p.name, false, true, targetDay);   // 순차 — LLM 호출이 겹치지 않게
+        const ok = Object.keys(diaryData[target] || {}).length > 0;   // writeDiary는 실패를 삼킨다 — 결과로 판정
+        if (ok) {
+            try { localStorage.setItem('world-diary-auto', target); worldSync('world-diary-auto'); } catch (e) {}
+            logWorldEvent(isNight ? '오늘의 그림일기를 썼다 📔' : '어제 못 쓴 그림일기를 마저 썼다 📔');
+        }
+        diaryAutoAt = Date.now() + (ok ? 60000 : 600000);   // 실패 = 10분 뒤 재시도
     })();
 }
 function bindZoomBtn(b, dir) {
