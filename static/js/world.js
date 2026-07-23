@@ -411,7 +411,8 @@ function renderFrame() {
             statsLastT = now;
             let objs = 0;
             scene.traverse(() => objs++);
-            statsEl.textContent = `${fps} fps · ${renderer.info.render.calls} draws · ${(renderer.info.render.triangles / 1000).toFixed(1)}k tris · ${objs} objs`;
+            const acts = Object.entries(actStats).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => `${k} ${v}`).join(' · ');
+            statsEl.textContent = `${fps} fps · ${renderer.info.render.calls} draws · ${(renderer.info.render.triangles / 1000).toFixed(1)}k tris · ${objs} objs${acts ? `\nacts: ${acts}` : ''}`;
         }
     }
 }
@@ -6387,6 +6388,7 @@ const LEISURE_ACTS = [
 // 헛방이 그 활동의 다음 기회까지 지웠다 (성공 확인 전 소진 금지).
 const LEISURE_RATE = 0.40;
 const LEISURE_RETRY_MS = 3000;
+const actStats = {};   // 계측: 이번 세션의 자율활동 시작 횟수 — ?stats=1 오버레이 + __worldDev.actStats (튜닝을 관측 기반으로)
 function rollLeisure(p) {
     const now = Date.now(), h = currentHour();
     for (const a of LEISURE_ACTS) {                         // 첫 도달 시드 — 밤에도 심는다 (부팅 보호)
@@ -6404,6 +6406,7 @@ function rollLeisure(p) {
     for (let i = 0; i < pool.length; i++) { x -= w[i]; if (x <= 0) { pick = pool[i]; break; } }
     const ok = pick.fire(p) !== false;
     p[pick.cdKey] = now + (ok ? pick.cd[0] + Math.random() * (pick.cd[1] - pick.cd[0]) : LEISURE_RETRY_MS);
+    if (ok) actStats[pick.id] = (actStats[pick.id] || 0) + 1;
     return ok;
 }
 
@@ -6448,6 +6451,7 @@ function updatePollActs() {
         if (a.gate && !a.gate()) continue;
         if (Math.random() >= a.p) continue;
         a.fire();
+        actStats[a.id] = (actStats[a.id] || 0) + 1;
     }
 }
 
@@ -7567,6 +7571,7 @@ if (statsOn) window.__worldDev = {
     petScreenXY: () => pets.map((p) => { const a = fxPoint(p, 50, 45); return { x: Math.round(a.x), y: Math.round(a.y) }; }),
     fishState: () => (fishing ? fishing.state : null),   // 낚시 헤드리스 검증용
     aiFishState: () => (aiFishing ? aiFishing.state : null),   // 절친 자율 낚시 검증용
+    actStats: () => ({ ...actStats }),   // 자율활동 시작 카운터 — 분포 검증(레지스트리 weight와 대조)용
     wrapDrift: () => (possessed ? +(possessed.pet.wrap.rotation.y - Math.PI).toFixed(4) : null),   // 몸 비틀림 누적 감시 (기준 π)
     planeState: () => ({ mode: PLANE.mode, x: +PLANE.x.toFixed(2), z: +PLANE.z.toFixed(2), y: +PLANE.y.toFixed(2), vel: +PLANE.vel.toFixed(2), riding: !!planeRide, passenger: !!(planeRide && planeRide.passenger) }),
     groundAt: (x, z) => +world.groundHeightAt(x, z).toFixed(3),    // 지형 프로브 (배치·활주로 검증용)

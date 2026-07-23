@@ -5,6 +5,11 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Added (📊 자율활동 계측 — ?stats=1 오버레이 2행 + __worldDev.actStats)
+- 성공한 자율활동 시작마다 `actStats[id]` 카운트 — ?stats=1 오버레이에 `acts: dip 3 · swing 2 …`
+  둘째 줄, E2E/콘솔에선 `__worldDev.actStats()`. 이후 weight 튜닝을 추측이 아니라 관측으로.
+- world-smoke 10/10 · draws 206.
+
 ### Changed (🎹⛏️🙈 전역 폴링 활동도 레지스트리로 — 선언·소비 분리 패턴 청산)
 - 피아노(20분/8%)·보물발굴(15분/10%)·숨바꼭질(12분/12%)이 각자 들고 있던 `xAutoAt` 전역
   변수 + 흩어진 소비 블록을 `POLL_ACTS` 항목 + 공용 `updatePollActs()` 하나로 — gym/library
