@@ -18421,7 +18421,12 @@ mapPanel.addEventListener('pointerup', (e) => {   // 🧲 탈것 아이콘 탭 �
     const rect = mapPanel.getBoundingClientRect();
     const mx = (e.clientX - rect.left) * (mapPanel.width / rect.width);
     const my = (e.clientY - rect.top) * (mapPanel.height / rect.height);
-    const hit = mapIconPts.find((q) => Math.hypot(q.sx - mx, q.sy - my) < 20);
+    let hit = null;   // 최근접 매치 — 광장 ⛲과 곁에 주차된 차처럼 히트 원이 겹칠 때 탭한 쪽이 이긴다
+    let hd = 20;
+    for (const q of mapIconPts) {
+        const d = Math.hypot(q.sx - mx, q.sy - my);
+        if (d < hd) { hd = d; hit = q; }
+    }
     if (!hit) { mapMenu.style.display = 'none'; return; }
     if (hit.type === 'plaza') {   // ⛲ 패스트 트래블 — 회수와 같은 2단 확인
         mapMenuBtn.textContent = possessed ? `⛲ ${petKo(possessed)} 광장으로 순간이동` : '⛲ 광장 구경 가기';
