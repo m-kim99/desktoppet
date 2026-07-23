@@ -29,7 +29,7 @@ const savedLayout = await (async () => {
 // 🔄 월드 상태 KV 동기 (/api/world_kv — 폰·데탑 공유): 진행도·수집·월드 상태는 서버가 진실.
 // localStorage는 기기별이라 도감·조개·해금·발견이 접속 기기마다 갈렸다 (사용자 리포트 — 과일과 동일 원인).
 // 기기 유지: world-eco(성능)·world-layout(전용 API)·world-fruit-*(전용 API)·world-last-seen(기기별 리캡).
-const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked', 'world-pantry', 'world-icebox', 'world-market-used',
+const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked', 'world-pantry', 'world-icebox', 'world-market-used', 'world-recipes-unlocked', 'world-dishes-found',
     'world-sea-found', 'world-seabed-dug', 'world-islet-dug', 'world-discover', 'world-houselight', 'world-pets',
     'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-dex-seen-n', 'world-space-poi', 'world-moon-dug', 'world-last-seen'];   // last-seen 공유 = 기기 간 이중 정산 방지
 try {   // 부트 1회 — 서버 값이 로컬을 덮는다 (아래 모든 리더보다 먼저 실행되는 게 핵심)
@@ -4202,6 +4202,102 @@ function marketConsume(id, n = 1) {
     try { localStorage.setItem('world-market-used', JSON.stringify(marketUsed)); worldSync('world-market-used'); } catch (e) {}
     return true;
 }
+// ---- 🍳 레시피 — 재료는 {src, id, n}: src = fruit(바구니)|pantry(텃밭)|fish(아이스박스)|
+// seafood(잠수채집)|shell(조개)|market(장터)|staple(찬장, 무한). id '*' = 그 계보 아무거나.
+// tier: harvest(수확)·special(특별식)·heart(마음 요리 — 해금制, 7단계에서 트리거 연결). ----
+const RECIPES = [
+    { id: 'juice',      ko: '과일주스',      emoji: '🥤', tier: 'harvest', needs: [{ src: 'fruit', id: '*', n: 2 }] },
+    { id: 'smoothie',   ko: '코코넛 스무디', emoji: '🥥', tier: 'harvest', needs: [{ src: 'fruit', id: 'coconut', n: 1 }, { src: 'staple', id: 'milk', n: 1 }] },
+    { id: 'tomatosoup', ko: '토마토수프',    emoji: '🍲', tier: 'harvest', needs: [{ src: 'pantry', id: 'tomato', n: 2 }] },
+    { id: 'salad',      ko: '당근 샐러드',   emoji: '🥗', tier: 'harvest', needs: [{ src: 'pantry', id: 'carrot', n: 2 }, { src: 'staple', id: 'oil', n: 1 }] },
+    { id: 'jamtoast',   ko: '잼 토스트',     emoji: '🍞', tier: 'harvest', needs: [{ src: 'fruit', id: '*', n: 2 }, { src: 'staple', id: 'flour', n: 1 }, { src: 'staple', id: 'sugar', n: 1 }] },
+    { id: 'clamsteam',  ko: '조개찜',        emoji: '🦪', tier: 'harvest', needs: [{ src: 'shell', id: '*', n: 2 }] },
+    { id: 'grilledfish',ko: '생선구이',      emoji: '🐟', tier: 'harvest', needs: [{ src: 'fish', id: '*', n: 1 }, { src: 'staple', id: 'oil', n: 1 }] },
+    { id: 'fruitcake',  ko: '과일 케이크',   emoji: '🍰', tier: 'harvest', needs: [{ src: 'fruit', id: '*', n: 2 }, { src: 'staple', id: 'flour', n: 1 }, { src: 'staple', id: 'milk', n: 1 }] },
+    { id: 'burger',     ko: '햄버거',        emoji: '🍔', tier: 'special', needs: [{ src: 'market', id: 'meat', n: 1 }, { src: 'pantry', id: 'tomato', n: 1 }, { src: 'staple', id: 'flour', n: 1 }] },
+    { id: 'jajang',     ko: '자장면',        emoji: '🍜', tier: 'special', needs: [{ src: 'market', id: 'noodle', n: 1 }, { src: 'staple', id: 'jang', n: 1 }, { src: 'pantry', id: 'carrot', n: 1 }] },
+    { id: 'donkatsu',   ko: '돈까스 정식',   emoji: '🍱', tier: 'special', needs: [{ src: 'market', id: 'meat', n: 1 }, { src: 'staple', id: 'flour', n: 1 }, { src: 'pantry', id: 'carrot', n: 1 }] },
+    { id: 'takoyaki',   ko: '타코야끼',      emoji: '🐙', tier: 'special', needs: [{ src: 'seafood', id: 'octopus', n: 1 }, { src: 'staple', id: 'flour', n: 1 }] },
+    { id: 'bonebiscuit', ko: '뼈다귀 비스킷', emoji: '🦴', tier: 'heart', needs: [{ src: 'staple', id: 'flour', n: 1 }, { src: 'staple', id: 'milk', n: 1 }] },
+    { id: 'chickbiscuit',ko: '병아리 비스킷', emoji: '🐤', tier: 'heart', needs: [{ src: 'staple', id: 'flour', n: 1 }, { src: 'staple', id: 'sugar', n: 1 }] },
+    { id: 'bfwaffle',   ko: '베프 와플',     emoji: '🧇', tier: 'heart', needs: [{ src: 'staple', id: 'flour', n: 1 }, { src: 'staple', id: 'milk', n: 1 }, { src: 'fruit', id: '*', n: 1 }] },
+    { id: 'bfsteak',    ko: '베프 스테이크', emoji: '🥩', tier: 'heart', needs: [{ src: 'market', id: 'meat', n: 2 }] },
+    { id: 'eterncake',  ko: '영원 케이크',   emoji: '🎂', tier: 'heart', needs: [{ src: 'staple', id: 'flour', n: 1 }, { src: 'staple', id: 'sugar', n: 1 }, { src: 'staple', id: 'milk', n: 1 }, { src: 'fruit', id: '*', n: 1 }, { src: 'market', id: 'egg', n: 1 }] },
+];
+const ING_KO = { '*': '아무거나', octopus: '문어', meat: '고기', noodle: '생면', cheese: '치즈', egg: '달걀', carrot: '당근', tomato: '토마토', sunflower: '해바라기', flour: '밀가루', sugar: '설탕', milk: '우유', oil: '기름', jang: '춘장' };
+function ingKo(nd) {
+    if (nd.src === 'fruit') return nd.id === '*' ? '과일 아무거나' : (FRUITS[nd.id] ? FRUITS[nd.id].ko : nd.id);
+    if (nd.src === 'fish') return nd.id === '*' ? '물고기 아무거나' : nd.id;
+    if (nd.src === 'shell') return '조개';
+    return ING_KO[nd.id] || nd.id;
+}
+const sumVals = (o) => Object.values(o).reduce((a, b) => a + b, 0);
+function ingredientCount(src, id) {
+    if (src === 'staple') return Infinity;
+    if (src === 'fruit') return id === '*' ? sumVals(basketCounts) : (basketCounts[id] || 0);
+    if (src === 'pantry') return id === '*' ? sumVals(pantryCounts) : (pantryCounts[id] || 0);
+    if (src === 'fish') return id === '*' ? sumVals(iceboxCounts) : (iceboxCounts[id] || 0);
+    if (src === 'seafood') { const c = seafoodCounts(); return id === '*' ? sumVals(c) : (c[id] || 0); }
+    if (src === 'shell') { const c = shellCounts(); return id === '*' ? sumVals(c) : (c[id] || 0); }
+    if (src === 'market') { const g = marketStock().find((q) => q.id === id); return g ? g.left : 0; }
+    return 0;
+}
+const recipeMissing = (r) => r.needs.filter((nd) => ingredientCount(nd.src, nd.id) < nd.n);
+let recipesUnlocked = {};
+try { recipesUnlocked = JSON.parse(localStorage.getItem('world-recipes-unlocked') || '{}') || {}; } catch (e) {}
+const saveRecipesUnlocked = () => { try { localStorage.setItem('world-recipes-unlocked', JSON.stringify(recipesUnlocked)); worldSync('world-recipes-unlocked'); } catch (e) {} };
+let dishesFound = {};
+try { dishesFound = JSON.parse(localStorage.getItem('world-dishes-found') || '{}') || {}; } catch (e) {}
+const recipeLocked = (r) => r.tier === 'heart' && !recipesUnlocked[r.id];
+// 주방 패널 — 위 재고 스트립(살아있는 수확 4계보 + 오늘의 장터), 아래 레시피 카드.
+// 카드 3상태: 조리 가능(밝음) / 재료 부족(흐림 + 뭐가 없는지) / 마음 요리 잠금(??? + 힌트).
+let kitchenPanel = null;
+function refreshKitchenPanel() {
+    if (!kitchenPanel || kitchenPanel.style.display === 'none') return;
+    const strip = kitchenPanel.querySelector('.kc-stock');
+    const inv = [
+        ['🧺', sumVals(basketCounts)], ['🥕', pantryCounts.carrot || 0], ['🍅', pantryCounts.tomato || 0],
+        ['🐟', sumVals(iceboxCounts)], ['🐚', sumVals(shellCounts())], ['🐙', seafoodCounts().octopus || 0],
+    ];
+    const mk = marketStock().map((q) => `${q.emoji}${q.left}`).join(' ');
+    strip.textContent = `${inv.map(([e, n]) => `${e}${n}`).join(' ')}  ·  🛒 ${mk || '오늘 장은 쉬는 날'}`;
+    const body = kitchenPanel.querySelector('.kc-body');
+    body.innerHTML = '';
+    for (const r of RECIPES) {
+        const locked = recipeLocked(r);
+        const missing = recipeMissing(r);
+        const ok = !locked && !missing.length;
+        const row = document.createElement('div');
+        row.style.cssText = `display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:10px; margin-bottom:3px; background:rgba(255,255,255,${ok ? '0.1' : '0.03'}); opacity:${locked ? 0.55 : ok ? 1 : 0.6}; cursor:${ok ? 'pointer' : 'default'};`;
+        const needTxt = locked ? '우정이 깊어지면 떠오를 레시피…'
+            : r.needs.map((nd) => {
+                const has = ingredientCount(nd.src, nd.id) >= nd.n;
+                return `<span style="color:${has ? '#cfe3cf' : '#e89a9a'};">${ingKo(nd)}×${nd.n}</span>`;
+            }).join(' · ');
+        row.innerHTML = `<span style="font-size:21px; filter:${locked ? 'grayscale(1) brightness(0.5)' : 'none'};">${locked ? '❓' : r.emoji}</span>
+<div style="flex:1; min-width:0;"><div style="font-size:13px; font-weight:700;">${locked ? '???' : r.ko}${dishesFound[r.id] ? ' <span style="opacity:0.8;">✓</span>' : ''}</div>
+<div style="font-size:11px; opacity:0.85; line-height:1.35;">${needTxt}</div></div>`;
+        if (ok) row.onclick = () => { cookRecipe(r); };
+        body.appendChild(row);
+    }
+}
+function cookRecipe(r) {   // 6단계에서 조리 시퀀스로 교체 — 지금은 개업 준비 안내만
+    showToast(`🍳 ${r.ko} — 조리 기능 개업 준비 중이에요!`);
+}
+function toggleKitchenPanel() {
+    if (!kitchenPanel) {
+        kitchenPanel = document.createElement('div');
+        kitchenPanel.style.cssText = 'position:fixed; right:64px; bottom:calc(70px + env(safe-area-inset-bottom, 0px)); display:none; width:min(292px, calc(100vw - 90px)); max-height:62vh; overflow-y:auto; background:rgba(30,32,40,0.94); border-radius:12px; padding:10px; z-index:110; box-shadow:0 6px 24px rgba(0,0,0,0.4); font-family:sans-serif; color:#fff;';
+        kitchenPanel.innerHTML = `<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;"><span style="font-size:13px; font-weight:700;">🍳 야외 주방</span><span class="kc-x" style="color:#aab; font-size:13px; cursor:pointer; padding:2px 6px;">✕</span></div>
+<div class="kc-stock" style="font-size:11.5px; opacity:0.9; background:rgba(255,255,255,0.06); border-radius:8px; padding:6px 8px; margin-bottom:8px; line-height:1.4;"></div>
+<div class="kc-body"></div>`;
+        kitchenPanel.addEventListener('pointerdown', (e) => e.stopPropagation());
+        kitchenPanel.querySelector('.kc-x').onclick = () => { kitchenPanel.style.display = 'none'; };
+        document.body.appendChild(kitchenPanel);
+    }
+    kitchenPanel.style.display = (kitchenPanel.style.display === 'none' || !kitchenPanel.style.display) ? 'block' : 'none';
+    if (kitchenPanel.style.display !== 'none') refreshKitchenPanel();
+}
 const GARDEN_PLOTS_LOCAL = [[-0.32, -0.21], [0.32, -0.21], [-0.32, 0.26], [0.32, 0.26]];
 let gardenPlots = [null, null, null, null];   // { kind, plantedAt, boost, wateredStage } | null
 let gardenGroups = null;
@@ -4780,6 +4876,7 @@ function openCapsulePanel() {
 // 알려준다 (updateHoverPrompt). ----
 const PROP_CLICKS = {
     icebox: () => openIcebox(),
+    kitchen: () => toggleKitchenPanel(),
     pecktree: onPeckTreeClick,
     well: () => openWellPanel(),
     capsule: () => openCapsulePanel(),
@@ -4803,7 +4900,7 @@ const PROP_CLICKS = {
 // 호버 프롬프트: 클릭형은 "· 클릭", 몸이 필요한 것은 ⌘ 안내, 나머지는 이름표만.
 const HOVER_PROMPTS = {
     icebox: () => '🧊 어획 보관함 · 클릭',
-    kitchen: () => '🍳 주방 — 곧 개업!',
+    kitchen: () => '🍳 레시피 · 클릭',
     pecktree: () => '💗 쪼아쪼아 나무 · 클릭',
     well: () => '🪙 소원 빌기 · 클릭',
     capsule: () => '🕰️ 타임캡슐 · 클릭',
@@ -8048,6 +8145,9 @@ if (statsOn) window.__worldDev = {
     },
     icebox: () => ({ ...iceboxCounts }),
     market: () => marketStock(),
+    recipes: () => RECIPES.map((r) => ({ id: r.id, tier: r.tier, locked: recipeLocked(r), missing: recipeMissing(r).map((nd) => `${nd.src}:${nd.id}`) })),
+    kitchenOpen: () => { toggleKitchenPanel(); return !!(kitchenPanel && kitchenPanel.style.display !== 'none'); },
+    recipeUnlock: (id) => { recipesUnlocked[id] = true; saveRecipesUnlocked(); refreshKitchenPanel(); return { ...recipesUnlocked }; },
     marketAt: (dstr) => marketToday(dstr),
     marketUse: (id) => marketConsume(id),
     staples: () => PANTRY_STAPLES.map((g) => g.id),
