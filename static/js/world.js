@@ -31,7 +31,7 @@ const savedLayout = await (async () => {
 // 기기 유지: world-eco(성능)·world-layout(전용 API)·world-fruit-*(전용 API)·world-last-seen(기기별 리캡).
 const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked',
     'world-sea-found', 'world-seabed-dug', 'world-islet-dug', 'world-discover', 'world-houselight', 'world-pets',
-    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-dex-seen-n', 'world-space-poi', 'world-moon-dug'];
+    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-dex-seen-n', 'world-space-poi', 'world-moon-dug', 'world-last-seen'];   // last-seen 공유 = 기기 간 이중 정산 방지
 try {   // 부트 1회 — 서버 값이 로컬을 덮는다 (아래 모든 리더보다 먼저 실행되는 게 핵심)
     const r = await fetch('/api/world_kv', { signal: AbortSignal.timeout(1500) });
     if (r.ok) {
@@ -6327,10 +6327,12 @@ const LEISURE_ACTS = [
     // 물놀이 — 펫들이 같이 헤엄치게 (주인 포함). 연못/바다는 startDip이 코인플립.
     { id: 'dip', cdKey: 'nextDipAt', cd: [150000, 300000], weight: 100, dur: 45,
       fire: (p) => startDip(p) },
-    // 낚싯대를 메고 물가로 — 혼자 두어 캐스트.
+    // 낚싯대를 메고 물가로 — 혼자 두어 캐스트. offline = 로그만: AI 어획은 라이브에서도 도감에
+    // 안 오른다(주인 몫) — 정산이 라이브보다 후하면 안 된다.
     { id: 'fish', cdKey: 'nextFishAt', cd: [300000, 600000], weight: 27, dur: 90,
       gate: (p) => !aiFishing && !(fishing && fishing.p === p),
-      fire: (p) => startAiFishing(p) },
+      fire: (p) => startAiFishing(p),
+      offlineCap: 2, offline: (n, win) => offlineFishHook(n, win) },
     // 🟡 노랑호 잠수 투어 — 정박 중일 때만.
     { id: 'sub', cdKey: 'nextSubAt', seed: [360000, 960000], cd: [600000, 1200000], weight: 11, dur: 240,
       gate: () => !subRide && !aiSubWalk && SUB.mode === 'docked',
@@ -6348,14 +6350,16 @@ const LEISURE_ACTS = [
     { id: 'tramp', cdKey: 'nextTrampAt', seed: [180000, 480000], cd: [360000, 720000], weight: 14, dur: 40,
       gate: () => !aiTramp,
       fire: (p) => startAiTramp(p) === 'ok' },
-    // 과일 따기 — 먹거나, 주인에게 물어다 준다.
+    // 과일 따기 — 먹거나, 주인에게 물어다 준다. offline = 부재 중에도 따 먹고 몇 알 흘려둔다.
     { id: 'fruit', cdKey: 'nextFruitAt', seed: [240000, 600000], cd: [420000, 900000], weight: 11, dur: 60,
       gate: () => !aiFruit,
-      fire: (p) => startAiFruit(p) === 'ok' },
+      fire: (p) => startAiFruit(p) === 'ok',
+      offlineCap: 4, offline: (n, win) => offlineFruitHook(n, win) },
     // 낙과 정리 — 주워서 바구니에. 확률은 낮게: 줍느라 딴 놀이 못 하지 않게.
     { id: 'tidy', cdKey: 'nextTidyAt', seed: [300000, 600000], cd: [360000, 780000], weight: 9, dur: 60,
       gate: () => !aiTidy,
-      fire: (p) => startAiTidy(p) === 'ok' },
+      fire: (p) => startAiTidy(p) === 'ok',
+      offlineCap: 8, offline: (n, win) => offlineTidyHook(n, win) },
     // 통통호 뱃놀이 — 모래섬 찍고 오는 왕복.
     { id: 'ferry', cdKey: 'nextFerryAt', seed: [300000, 780000], cd: [480000, 960000], weight: 8, dur: 200,
       gate: () => !ferryRide && !aiFerryWalk && FERRY.mode === 'docked',
@@ -6452,6 +6456,78 @@ function updatePollActs() {
         if (Math.random() >= a.p) continue;
         a.fire();
         actStats[a.id] = (actStats[a.id] || 0) + 1;
+    }
+}
+
+// ---- 🕰️ 오프라인 정산 — 안 돌아간 시간을 되돌려 돌리지 않고, 결과만 분포에서 뽑는다 ----
+// 대상은 "상태를 남기는" 활동뿐: LEISURE_ACTS에 offline 훅이 있는 항목만 (없으면 연출이라
+// 정산할 것이 없다는 선언). 발동은 animate의 시간갭 감지 — 앱 재시작(부팅)과 창 가림(rAF
+// 정지 → 재개)이 한 문법으로 처리된다. 밤(22~06시) 부재는 정산하지 않는다: 펫들도 잤다.
+// 상한 원칙: "돌아왔을 때 반갑고, 2분이면 소비되고, 안 돌아와도 손해가 아닌 양" — 훅별
+// offlineCap + 낙과 실체화 ≤5(개당 1드로우 — draws 예산) + 주입 이벤트 ≤8줄(링버퍼 보호).
+const SETTLE_MIN_GAP_MS = 5 * 60000;               // 이보다 짧은 공백은 정산 없음
+const SETTLE_SPAN_MAX_MS = 7 * 86400000;           // 장기 부재는 최근 7일치로 클램프 (상한이 지배)
+let lastAliveMs = 0;                               // 마지막으로 프레임이 돈 시각 — 부팅 시 저장값에서 복원
+let lastSeenSavedAt = 0;
+let offlineLastSummary = null;                     // __worldDev.offlineLast — E2E·디버그 노출
+try { lastAliveMs = +localStorage.getItem('world-last-seen') || 0; } catch (e) {}
+
+function awakeOverlapSec(from, to) {               // [from,to) ∩ 매일 06~22시 — 초 단위
+    let s = 0;
+    const d = new Date(from);
+    d.setHours(0, 0, 0, 0);
+    for (let t = d.getTime(); t < to; t += 86400000) {
+        const a = Math.max(from, t + 6 * 3600000);
+        const b = Math.min(to, t + 22 * 3600000);
+        if (b > a) s += b - a;
+    }
+    return s / 1000;
+}
+function randAwakeTime(win) {                      // 부재 구간 안의 "깨어있는" 임의 시각 — 주입 이벤트용
+    for (let i = 0; i < 20; i++) {
+        const t = win.from + Math.random() * (win.to - win.from);
+        const h = new Date(t).getHours();
+        if (h >= 6 && h < 22) return t;
+    }
+    return win.to - 60000;
+}
+function injectWorldEvents(evs) {                  // 과거 타임스탬프 주입 — 시간순 유지 (일기 이월이 날짜별로 먹는다)
+    if (!evs.length) return;
+    worldEvents.push(...evs);
+    worldEvents.sort((a, b) => a.t - b.t);
+    if (worldEvents.length > 120) worldEvents.splice(0, worldEvents.length - 120);
+    try { localStorage.setItem('world-events', JSON.stringify(worldEvents)); worldSync('world-events'); } catch (e) {}
+}
+function settleOffline(from, to) {
+    const win = { from: Math.max(from, to - SETTLE_SPAN_MAX_MS), to };
+    const awakeSec = awakeOverlapSec(win.from, win.to);
+    if (awakeSec < 300) return;
+    const evs = [], parts = [];
+    for (const a of LEISURE_ACTS) {
+        if (!a.offline) continue;
+        // 기대 발생 횟수 ≈ 깨어있던 부재 초 / (평균 쿨다운 + 재발동 대기 어림 2분) — 정밀할
+        // 필요 없다: 상한(offlineCap)이 금방 지배하고, 감정 상한이 진짜 기준이다.
+        const cycleSec = (a.cd[0] + a.cd[1]) / 2000 + 120;
+        const n = Math.min(Math.floor(awakeSec / cycleSec + Math.random()), a.offlineCap || 3);
+        if (n <= 0) continue;
+        try {
+            const r = a.offline(n, win);           // 훅이 상태를 직접 적용하고 {events, summary}를 돌려준다
+            if (r && r.events) evs.push(...r.events);
+            if (r && r.summary) parts.push(r.summary);
+        } catch (e) { console.error('[World] offline settle failed', a.id, e); }
+    }
+    offlineLastSummary = { awakeMin: Math.round(awakeSec / 60), parts: [...parts] };
+    if (!parts.length) return;
+    injectWorldEvents(evs.slice(0, 8));
+    showToast(`🕰️ 다녀오셨네요 — 그동안 펫들이: ${parts.join(' · ')}`);
+}
+function tickOfflineSettle() {
+    const now = Date.now();
+    if (lastAliveMs && now - lastAliveMs > SETTLE_MIN_GAP_MS) settleOffline(lastAliveMs, now);   // 시계 역행은 음수 갭 — 자연 무시
+    lastAliveMs = now;
+    if (now - lastSeenSavedAt > 30000) {           // 30초 결이면 충분 — 종료 직전 ≤30초 유실은 무시 가능
+        lastSeenSavedAt = now;
+        try { localStorage.setItem('world-last-seen', String(now)); worldSync('world-last-seen'); } catch (e) {}
     }
 }
 
@@ -7572,6 +7648,9 @@ if (statsOn) window.__worldDev = {
     fishState: () => (fishing ? fishing.state : null),   // 낚시 헤드리스 검증용
     aiFishState: () => (aiFishing ? aiFishing.state : null),   // 절친 자율 낚시 검증용
     actStats: () => ({ ...actStats }),   // 자율활동 시작 카운터 — 분포 검증(레지스트리 weight와 대조)용
+    offlineLast: () => offlineLastSummary,   // 마지막 오프라인 정산 요약 — E2E(부재 재진입) 검증용
+    groundFruitN: () => groundFruits.length,   // 낙과 실체화 상한 검증용
+    settleNow: (h) => { settleOffline(Date.now() - h * 3600000, Date.now()); return offlineLastSummary; },   // 부재 h시간 강제 정산
     wrapDrift: () => (possessed ? +(possessed.pet.wrap.rotation.y - Math.PI).toFixed(4) : null),   // 몸 비틀림 누적 감시 (기준 π)
     planeState: () => ({ mode: PLANE.mode, x: +PLANE.x.toFixed(2), z: +PLANE.z.toFixed(2), y: +PLANE.y.toFixed(2), vel: +PLANE.vel.toFixed(2), riding: !!planeRide, passenger: !!(planeRide && planeRide.passenger) }),
     groundAt: (x, z) => +world.groundHeightAt(x, z).toFixed(3),    // 지형 프로브 (배치·활주로 검증용)
@@ -16521,6 +16600,60 @@ function clearFruitGroup(e) {
     fruitLayer.remove(e.group);
     e.group = null;
 }
+// ---- 🕰️ 오프라인 정산 훅 (과일·정리) — 라이브 자율 수확과 같은 규칙·같은 흔적 ----
+const OFFLINE_WHO = () => (Math.random() < 0.5 ? '병아리' : '강아지');
+function offlineFruitHook(n, win) {
+    const cands = fruitBearing.filter((e) => e.pr.type !== 'palm');   // 라이브와 동일 — 다리 없는 모래섬 야자 제외
+    if (!cands.length) return null;
+    const events = [];
+    let eaten = 0, dropped = 0, wilted = 0;
+    for (let i = 0; i < n; i++) {
+        const e = cands[Math.floor(Math.random() * cands.length)];
+        const t = randAwakeTime(win);
+        if ((fruitPicked[e.pr.layoutId] || 0) < t) fruitPicked[e.pr.layoutId] = t;   // 재성장 시계와 정합
+        eaten += 1;
+        if (events.length < 3) events.push({ t, text: `${OFFLINE_WHO()}가 ${FRUITS[e.type].ko}를 따 먹었다 ${FRUITS[e.type].emoji}` });
+        const spill = 1 + Math.floor(Math.random() * 2);   // 흘린 낙과 — 시들기 전(6h) 몫만 실체화
+        for (let k = 0; k < spill; k++) {
+            if (Date.now() - t > FRUIT_WILT_MS) { wilted += 1; continue; }
+            if (dropped >= 5) continue;                    // 실체화 상한 — 낙과는 개당 1드로우 (draws 예산)
+            dropped += 1;
+            const a = Math.random() * Math.PI * 2, rr = 0.35 + Math.random() * 0.3;
+            const x = e.pr.x + Math.cos(a) * rr, z = e.pr.z + Math.sin(a) * rr;
+            const mesh = makeFruitMesh(e.type, 1);
+            const gy = terrainHeight(x, z) + 0.005;
+            const fy = layFruitMesh(mesh, e.type, gy);
+            mesh.position.set(x, fy, z);
+            fruitLayer.add(mesh);
+            groundFruits.push({ type: e.type, x, z, y: fy, vy: 0, mesh, settled: true, gy, bounced: true, at: t });
+        }
+    }
+    if (!eaten) return null;
+    if (wilted) events.push({ t: win.to - 90000, text: '아무도 줍지 않은 과일 몇 알이 시들어 흙으로 돌아갔다 🍂' });
+    saveFruitPicked();
+    refreshFruit();
+    saveGroundFruits();
+    return { events, summary: `과일 ${eaten}알 냠냠` };
+}
+function offlineTidyHook(n, win) {
+    if (!PROPS.some((q) => q.type === 'fruitbasket')) return null;
+    let moved = 0;
+    for (let i = 0; i < n; i++) {
+        // 부재 전부터 굴러다니던 묵은 낙과만 — 이번 정산이 흘려둔 몫은 주인이 주울 몫으로 남긴다
+        const gi = groundFruits.findIndex((g) => g.settled && g.wilting === undefined && (g.at || 0) <= win.from);
+        if (gi < 0) break;
+        const g = groundFruits.splice(gi, 1)[0];
+        basketCounts[g.type] = (basketCounts[g.type] || 0) + 1;
+        g.mesh.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
+        fruitLayer.remove(g.mesh);
+        moved += 1;
+    }
+    if (!moved) return null;
+    saveBasket();
+    saveGroundFruits();
+    basketVisualRefresh();
+    return { events: [{ t: randAwakeTime(win), text: `${OFFLINE_WHO()}가 굴러다니던 낙과 ${moved}알을 바구니에 정리했다 🧹` }], summary: `낙과 ${moved}알 정리` };
+}
 function refreshFruit() {   // 로드·60초 틱·주간 변경 — 매달림 재구성
     for (const e of fruitBearing) clearFruitGroup(e);
     fruitBearing.length = 0;
@@ -19031,6 +19164,22 @@ function fishdexRecord(sp, len) {
     try { localStorage.setItem('world-fishdex', JSON.stringify(dex)); worldSync('world-fishdex'); } catch (e) {}
     return first;
 }
+// 🕰️ 오프라인 정산 훅 (낚시) — 로그만: AI 어획은 라이브에서도 도감에 안 오른다 (19644와 동일
+// 규칙 — 도감은 주인이 직접 낚은 것만). 조건 어종(밤/비/계절)은 부재 중 날씨를 모르니 제외.
+function offlineFishHook(n, win) {
+    const pool = FISH_SPECIES.filter((s) => s.rarity > 0 && !s.when);
+    if (!pool.length) return null;
+    const events = [];
+    for (let i = 0; i < n; i++) {
+        const w = pool.map((s) => (s.rarity === 1 ? 0.6 : s.rarity === 2 ? 0.3 : 0.1));
+        let x = Math.random() * w.reduce((a, b) => a + b, 0);
+        let sp = pool[0];
+        for (let k = 0; k < pool.length; k++) { x -= w[k]; if (x <= 0) { sp = pool[k]; break; } }
+        events.push({ t: randAwakeTime(win), text: `${OFFLINE_WHO()}가 혼자 낚시로 ${sp.ko}를 낚아 올렸다 🎣` });
+    }
+    if (!events.length) return null;
+    return { events, summary: `물고기 ${events.length}마리 낚음` };
+}
 function fishFanfare() {   // 잡았다! 차임 — 5도 상승 두 음
     if (audioCtx.state !== 'running') return;
     for (const [f, t0] of [[660, 0], [990, 0.11]]) {
@@ -20169,6 +20318,7 @@ function animate() {
     updateSeesaws(delta);
     updateHideSeek(delta);
     updatePollActs();                        // 🎹⛏️🙈 전역 폴링 활동 추첨 (레지스트리)
+    tickOfflineSettle();                     // 🕰️ 시간갭 감지 — 부팅·창 가림 복귀 시 부재 정산
     updateHugSpot(delta);
     updateMemorialIsland(delta);
     updateHoverPrompt(delta);

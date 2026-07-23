@@ -129,6 +129,34 @@ const browser = await chromium.launch({ headless: true, args: ['--use-angle=meta
     await ctx.close();
 }
 
+// ---- D. 오프라인 정산: 24시간 부재 재진입 — 정산 발생·상한 준수·draws 무손상 ----
+// 24h인 이유: awakeOverlapSec은 실제 시계 기준이라, 8h는 스모크를 새벽에 돌리면 깨어있는
+// 시간(06~22시)과 안 겹칠 수 있다. 24h면 어느 시각에 돌려도 꼬박 하루치(16h)가 겹친다.
+{
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on('pageerror', (e) => errs.push(String(e.message)));
+    await page.addInitScript(() => localStorage.setItem('world-last-seen', String(Date.now() - 24 * 3600000)));
+    await page.goto(URL0, { waitUntil: 'load' });
+    await page.waitForTimeout(8000);
+    const st = await page.evaluate(() => ({
+        last: window.__worldDev ? window.__worldDev.offlineLast() : null,
+        fruits: window.__worldDev ? window.__worldDev.groundFruitN() : -1,
+        traces: /따 먹었다|낚아 올렸다|바구니에 정리했다/.test(localStorage.getItem('world-events') || ''),
+        draws: (() => {
+            const t = [...document.querySelectorAll('div')].map((d) => d.textContent).find((s) => / draws · /.test(s)) || '';
+            return parseInt((t.match(/(\d+) draws/) || [])[1] || '0', 10);
+        })(),
+    }));
+    check('오프라인 정산 발생(24h 부재)', !!(st.last && st.last.parts.length), false, st.last ? `${st.last.awakeMin}분 · ${st.last.parts.join('/')}` : '요약 없음');
+    check('정산 낙과 실체화 상한(≤5)', st.fruits >= 0 && st.fruits <= 5, false, `${st.fruits}알`);
+    check('정산 이벤트 로그 주입(일기 소재)', st.traces);
+    check('정산 후 draws 상한', st.draws > 0 && st.draws <= 250, false, `${st.draws} draws`);
+    check('정산 JS 에러 없음', errs.length === 0, false, errs.slice(0, 2).join(' | '));
+    await ctx.close();
+}
+
 await browser.close();
 server.close();
 const fails = results.filter((r) => !r.ok && !r.warnOnly);
