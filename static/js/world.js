@@ -29,7 +29,7 @@ const savedLayout = await (async () => {
 // 🔄 월드 상태 KV 동기 (/api/world_kv — 폰·데탑 공유): 진행도·수집·월드 상태는 서버가 진실.
 // localStorage는 기기별이라 도감·조개·해금·발견이 접속 기기마다 갈렸다 (사용자 리포트 — 과일과 동일 원인).
 // 기기 유지: world-eco(성능)·world-layout(전용 API)·world-fruit-*(전용 API)·world-last-seen(기기별 리캡).
-const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked', 'world-pantry', 'world-icebox',
+const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked', 'world-pantry', 'world-icebox', 'world-market-used',
     'world-sea-found', 'world-seabed-dug', 'world-islet-dug', 'world-discover', 'world-houselight', 'world-pets',
     'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-dex-seen-n', 'world-space-poi', 'world-moon-dug', 'world-last-seen'];   // last-seen 공유 = 기기 간 이중 정산 방지
 try {   // 부트 1회 — 서버 값이 로컬을 덮는다 (아래 모든 리더보다 먼저 실행되는 게 핵심)
@@ -4011,6 +4011,50 @@ const GARDEN_T1 = 3600000, GARDEN_T2 = 14400000;
 let pantryCounts = {};
 try { pantryCounts = JSON.parse(localStorage.getItem('world-pantry') || '{}') || {}; } catch (e) {}
 const savePantry = () => { try { localStorage.setItem('world-pantry', JSON.stringify(pantryCounts)); worldSync('world-pantry'); } catch (e) {} };
+// 🛒 장터 — 페리가 아침 운항에서 봐 오는 특별 재료(월드에 안 나는 것들). 날짜 시드 로테이션:
+// 매일 2~3종 × 각 2~3개, 같은 날짜 = 같은 장(아발란치 재해시 — 달 보물 주기 시드와 같은 문법).
+// 소비량만 저장(world-market-used, 오늘 날짜 키만 유지) — 재고 자체는 언제나 시드에서 재계산.
+const MARKET_GOODS = [
+    { id: 'meat',   ko: '고기', emoji: '🥩' },
+    { id: 'noodle', ko: '생면', emoji: '🍜' },
+    { id: 'cheese', ko: '치즈', emoji: '🧀' },
+    { id: 'egg',    ko: '달걀', emoji: '🥚' },
+];
+const PANTRY_STAPLES = [   // 찬장 기본 재료 — 무한. 요리의 접착제라 프릭션은 장터·수확 몫.
+    { id: 'flour', ko: '밀가루', emoji: '🌾' },
+    { id: 'sugar', ko: '설탕', emoji: '🍬' },
+    { id: 'milk',  ko: '우유', emoji: '🥛' },
+    { id: 'oil',   ko: '기름', emoji: '🫗' },
+    { id: 'jang',  ko: '춘장', emoji: '🫙' },
+];
+function marketToday(dstr = localDateStr()) {
+    let h = 0;
+    for (let i = 0; i < dstr.length; i++) h = (Math.imul(h, 31) + dstr.charCodeAt(i)) >>> 0;
+    const rng = seededRand((Math.imul(h, 2654435761) >>> 0) % 2147483645 + 1);
+    const pool = [...MARKET_GOODS];
+    const n = 2 + Math.floor(rng() * 2);
+    const out = [];
+    for (let i = 0; i < n && pool.length; i++) {
+        const g = pool.splice(Math.floor(rng() * pool.length), 1)[0];
+        out.push({ ...g, total: 2 + Math.floor(rng() * 2) });
+    }
+    return out;
+}
+let marketUsed = {};
+try { marketUsed = JSON.parse(localStorage.getItem('world-market-used') || '{}') || {}; } catch (e) {}
+function marketStock() {
+    const d = localDateStr();
+    const used = marketUsed[d] || {};
+    return marketToday(d).map((g) => ({ ...g, left: Math.max(0, g.total - (used[g.id] || 0)) }));
+}
+function marketConsume(id, n = 1) {
+    const d = localDateStr();
+    const g = marketStock().find((q) => q.id === id);
+    if (!g || g.left < n) return false;
+    marketUsed = { [d]: { ...(marketUsed[d] || {}), [id]: ((marketUsed[d] || {})[id] || 0) + n } };   // 오늘 키만 유지 — 지난 장은 자연 소멸
+    try { localStorage.setItem('world-market-used', JSON.stringify(marketUsed)); worldSync('world-market-used'); } catch (e) {}
+    return true;
+}
 const GARDEN_PLOTS_LOCAL = [[-0.32, -0.21], [0.32, -0.21], [-0.32, 0.26], [0.32, 0.26]];
 let gardenPlots = [null, null, null, null];   // { kind, plantedAt, boost, wateredStage } | null
 let gardenGroups = null;
@@ -7855,6 +7899,10 @@ if (statsOn) window.__worldDev = {
         return gardenStage(gardenPlots[idx]);
     },
     icebox: () => ({ ...iceboxCounts }),
+    market: () => marketStock(),
+    marketAt: (dstr) => marketToday(dstr),
+    marketUse: (id) => marketConsume(id),
+    staples: () => PANTRY_STAPLES.map((g) => g.id),
     iceboxOffer: (id) => { const sp = FISH_SPECIES.find((q) => q.id === id); if (!sp) return false; offerIceboxKeep(sp, 20); return true; },
     iceboxOpen: () => { openIcebox(); return !!(iceboxPanel && iceboxPanel.style.display !== 'none'); },
     gardenPick: (idx) => {   // E2E: 밭 칸 클릭 경로 그대로 수확
