@@ -12402,13 +12402,15 @@ function makeFoodGeo(f, bites = 0) {
         if (b < 2) {   // 면 더미 — 노란 중화면(짜장면 면발색) + 깊은 가닥 골(릴리프·골 음영), 1입부턴 춘장 마블
             const nd = new THREE.SphereGeometry(rN, 48, 24, 0, Math.PI * 2, 0, Math.PI * 0.5); nd.scale(1, 0.42, 1); nd.translate(0, yN, 0);
             const g2 = bakeGrad(nd, 0xf0d68c, 0xd2a850, { curve: 1.1 });
-            const pos = g2.attributes.position, col = g2.attributes.color, cc = new THREE.Color(), SA = new THREE.Color(0x2e2015), GRV = new THREE.Color(0xc79a42);
+            const pos = g2.attributes.position, col = g2.attributes.color, cc = new THREE.Color(), SA = new THREE.Color(0x2e2015), GRV = new THREE.Color(0xa87c2e);
             for (let i = 0; i < pos.count; i++) {
                 const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-                const s = Math.sin(x * 300 + Math.sin(z * 68) * 3.2);
-                pos.setY(i, y + s * 0.001);
-                cc.setRGB(col.getX(i), col.getY(i), col.getZ(i)); cc.offsetHSL(0, 0, s * 0.055 + Math.sin(x * 900 + z * 45) * 0.014);
-                if (s < -0.35) cc.lerp(GRV, Math.min(1, (-s - 0.35) * 0.9));   // 가닥 사이 골 — 면발 경계가 또렷해진다
+                const ph2 = x * 340 + Math.sin(z * 74) * 3.6 + Math.sin(x * 42 + z * 120) * 0.9;   // 굽이치는 가닥 흐름
+                const sv = Math.sin(ph2);
+                const groove = Math.pow((1 - sv) / 2, 3.6);   // 가닥 경계에서만 1 — 가늘고 진한 골 선
+                pos.setY(i, y + sv * 0.0011 - groove * 0.0014);
+                cc.setRGB(col.getX(i), col.getY(i), col.getZ(i)); cc.offsetHSL(0, 0, sv * 0.04 + Math.sin(x * 900 + z * 45) * 0.012);
+                cc.lerp(GRV, Math.min(1, groove * 1.15));   // 또렷한 면발 경계선
                 if (b >= 1) { const m = Math.sin(x * 150 + z * 190 + 1.2) * Math.sin(x * 65 - z * 235); if (m > 0.3) cc.lerp(SA, Math.min(1, (m - 0.3) * 1.5)); }   // 비벼진 마블
                 col.setXYZ(i, cc.r, cc.g, cc.b);
             }
@@ -12551,17 +12553,18 @@ function makeFoodGeo(f, bites = 0) {
                 sp3.setZ(i, 0.0023 * Math.cos(rr * Math.PI / 2) + Math.sin(x * 14 + yv * 11) * 0.0004);
             }
             sc2.rotateX(-Math.PI / 2); sc2.rotateY(-0.16); sc2.translate(b ? 0.020 : 0.018, 0.0201, 0.010);
-            glossParts.push(bakeGrad(sc2, 0x4a2814, 0x2c1608, { curve: 1 }));
-            for (const [dx2, dy2, dz2] of b ? [[0.020, 0.0138, 0.0225]] : [[0.0135, 0.0135, 0.025], [0.0225, 0.0142, 0.0235]]) { const dr2 = new THREE.SphereGeometry(0.0026, 7, 5); dr2.scale(0.7, 1.5, 0.6); dr2.translate(dx2, dy2, dz2); glossParts.push(bakeGrad(dr2, 0x3c2010, 0x241005, { curve: 1 })); }
-        } else { const sm2 = new THREE.SphereGeometry(0.009, 9, 6); sm2.scale(1.9, 0.14, 0.8); sm2.rotateY(-0.3); sm2.translate(0.008, 0.0078, 0.014); glossParts.push(bakeGrad(sm2, 0x5c3014, 0x38200c, { curve: 1 })); }   // 소스 끌린 자국
-        const cabN = b >= 2 ? 6 : b >= 1 ? 11 : 16;
-        for (let i = 0; i < cabN; i++) {   // 양배추채 — 3층 수북한 리본 컬 더미 (연녹·흰 교대, 사용자 확정: 풍성하게)
-            const a = i * 1.7 + 0.4, lay = i % 3;
-            const rb = new THREE.TorusGeometry(0.005 + (i % 4) * 0.0016, 0.001, 4, 10, Math.PI * (0.9 + (i % 2) * 0.5));
-            rb.scale(1, 1, 0.45); rb.rotateX(Math.PI / 2 - 0.25 - lay * 0.1); rb.rotateY(a);
-            rb.translate(-0.035 + Math.cos(a) * (0.010 + (i % 2) * 0.003), 0.009 + lay * 0.0042, -0.013 + Math.sin(a) * 0.008);
+            glossParts.push(bakeGrad(sc2, 0x96421a, 0x561f08, { curve: 1 }));   // 데미그라스 — 붉은기 도는 고채도 브라운(사용자 확정)
+            for (const [dx2, dy2, dz2] of b ? [[0.020, 0.0138, 0.0225]] : [[0.0135, 0.0135, 0.025], [0.0225, 0.0142, 0.0235]]) { const dr2 = new THREE.SphereGeometry(0.0026, 7, 5); dr2.scale(0.7, 1.5, 0.6); dr2.translate(dx2, dy2, dz2); glossParts.push(bakeGrad(dr2, 0x7a3210, 0x461a06, { curve: 1 })); }
+        } else { const sm2 = new THREE.SphereGeometry(0.009, 9, 6); sm2.scale(1.9, 0.14, 0.8); sm2.rotateY(-0.3); sm2.translate(0.008, 0.0078, 0.014); glossParts.push(bakeGrad(sm2, 0x8a3a16, 0x50200a, { curve: 1 })); }   // 소스 끌린 자국
+        const cabN = b >= 2 ? 8 : b >= 1 ? 16 : 24;
+        for (let i = 0; i < cabN; i++) {   // 양배추채 — 3층 수북한 리본 컬 더미 (연녹·흰 교대, 사용자 확정: 푸짐하게)
+            const a = i * 1.55 + 0.4, lay = i % 3;
+            const rb = new THREE.TorusGeometry(0.005 + (i % 4) * 0.0017, 0.001, 4, 10, Math.PI * (0.9 + (i % 2) * 0.5));
+            rb.scale(1, 1, 0.45); rb.rotateX(Math.PI / 2 - 0.25 - lay * 0.12); rb.rotateY(a);
+            rb.translate(-0.035 + Math.cos(a) * (0.011 + (i % 2) * 0.004), 0.009 + lay * 0.0048, -0.012 + Math.sin(a) * 0.009);
             add(rb, i % 2 ? 0xdff0c4 : 0xc8e69a, i % 2 ? 0xb4d494 : 0x94bd6a, { curve: 1 });
         }
+        if (b < 2) for (const [hx, hz, ha] of [[-0.030, -0.008, 0.5], [-0.040, -0.016, 1.8], [-0.033, -0.020, 3.1]]) { const cr3 = new THREE.BoxGeometry(0.011, 0.0016, 0.0018); cr3.rotateZ(0.1); cr3.rotateY(ha); cr3.translate(hx, 0.0218, hz); add(cr3, 0xff9a3e, 0xdc6b1c, { curve: 1 }); }   // 당근채 포인트
         if (b < 2) {   // 밥 돔 — 밥알 스펙클 + 낱알 범프 + 깨, 1입엔 주걱 크레이터
             const rice = new THREE.SphereGeometry(0.0165, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.5); rice.scale(1.12, 0.6, 1); rice.translate(-0.032, 0.007, 0.020);
             const g2 = bakeGrad(rice, 0xfdfcf8, 0xe8e2d4, { curve: 1 });
@@ -23474,19 +23477,27 @@ if (location.search.includes('dishlab')) {
         }
     });
     scene.background = new THREE.Color(0xeef0ea);
-    const labWant = LAB_IDS.indexOf((location.search.match(/dishlab=([a-z]+)/) || [])[1]);
-    if (labWant >= 0) {   // ?dishlab=<id> — 작업 중인 요리 3단계 앞에서 시작(드래그 불필요)
-        const cx = Math.floor(labWant / 4) * 4.6, cy = 20.6 - (labWant % 4) * 1.3;
+    controls.minDistance = 1.2;   // 랩은 접사 허용
+    const labGo = (id) => {   // 요리 3단계 앞으로 점프 — 콘솔에서 __foodlab.go('jajang')도 가능
+        const wi = LAB_IDS.indexOf(id);
+        if (wi < 0) return false;
+        const cx = Math.floor(wi / 4) * 4.6, cy = 20.6 - (wi % 4) * 1.3;
         camera.position.set(cx, cy + 0.85, 2.4);
         controls.target.set(cx, cy + 0.05, 0);
-        controls.minDistance = 1.2;   // 랩은 접사 허용
-    } else {
+        zoomTargetDist = camera.position.distanceTo(controls.target);   // ⚠️ 휠줌 글라이드가 매 프레임 끌어당긴다 — 동기 필수(망원경 실측)
+        controls.update();
+        return true;
+    };
+    let labWant = (location.search.match(/dishlab=([a-z]+)/) || [])[1];
+    if (labWant) { try { localStorage.setItem('world-dishlab-focus', labWant); } catch (e) {} }
+    else { try { labWant = localStorage.getItem('world-dishlab-focus') || 'jajang'; } catch (e) {} }   // 맨 ?dishlab=1도 마지막 편집 요리 앞에서 시작
+    if (!labGo(labWant)) {
         camera.position.set(2.3, 21.4, 8.2);
         controls.target.set(2.3, 19.4, 0);
+        zoomTargetDist = camera.position.distanceTo(controls.target);
+        controls.update();
     }
-    zoomTargetDist = camera.position.distanceTo(controls.target);   // ⚠️ 휠줌 글라이드가 매 프레임 끌어당긴다 — 동기 필수(망원경 실측)
-    controls.update();
-    window.__foodlab = { camera, renderer, scene, controls };
+    window.__foodlab = { camera, renderer, scene, controls, go: labGo };
 }
 
 // TEMP SNACK LAB — ?snacklab: 우주식 5종 × 베어물기 0/1/2 격자 (검수용, 커밋 전 제거)
