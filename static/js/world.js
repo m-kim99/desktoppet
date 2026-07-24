@@ -9391,7 +9391,7 @@ if (statsOn) window.__worldDev = {
     petPos: (name) => { const q = pets.find((o) => o.name === name); return q ? { x: +q.mover.position.x.toFixed(2), y: +q.mover.position.y.toFixed(2), z: +q.mover.position.z.toFixed(2) } : null; },
     planeSummon: () => { summonPlanePassenger(); return !!planeHop; },   // 절친 뒷좌석 소환 (E2E)
     balloonState: () => ({ mode: BALLOON.mode, x: +BALLOON.x.toFixed(2), y: +BALLOON.y.toFixed(2), z: +BALLOON.z.toFixed(2), riding: !!balloonRide, rider: balloonRide && balloonRide.p ? balloonRide.p.name : null, friend: balloonRide && balloonRide.friend ? balloonRide.friend.name : null, lap: balloonRide ? balloonRide.lap : 0, pois: balloonRide && balloonRide.route ? balloonRide.route.names.length : 0 }),
-    rocketState: () => ({ mode: ROCKET.mode, x: +ROCKET.x.toFixed(2), y: +ROCKET.y.toFixed(2), z: +ROCKET.z.toFixed(2), pitch: +ROCKET.pitch.toFixed(2), lap: +ROCKET.lapAcc.toFixed(2), burn: +ROCKET.burn.toFixed(2), spaceF: +spaceF.toFixed(2), riding: !!rocketRide, empty: !!(rocketRide && rocketRide.empty), friend: !!(rocketRide && rocketRide.friend), ai: !!(rocketRide && rocketRide.isAI), walk: !!aiRocketWalk, hop: !!rocketHop, light: rocketLightOn, padK: +(ROCKET.padK || 0).toFixed(2), poi: ROCKET.poi ? ROCKET.poi.id : null, found: Object.keys(spacePoiFound).length, out: pets.filter((q) => q.poiWalk).length, course: ROCKET.route ? ROCKET.route.names.join('·') : null, wp: ROCKET.route ? `${ROCKET.route.i}/${ROCKET.route.pts.length}` : null, dwell: ROCKET.route ? +ROCKET.route.dwellT.toFixed(1) : 0, tether: rocketTether ? +rocketTether.off.length().toFixed(2) : null, reeling: !!(rocketTether && rocketTether.reeling), evaT: +(ROCKET.aiEvaT || 0).toFixed(1), land: ROCKET.aiLand ? ROCKET.aiLand.id : null }),
+    rocketState: () => ({ mode: ROCKET.mode, x: +ROCKET.x.toFixed(2), y: +ROCKET.y.toFixed(2), z: +ROCKET.z.toFixed(2), pitch: +ROCKET.pitch.toFixed(2), lap: +ROCKET.lapAcc.toFixed(2), burn: +ROCKET.burn.toFixed(2), spaceF: +spaceF.toFixed(2), riding: !!rocketRide, empty: !!(rocketRide && rocketRide.empty), friend: !!(rocketRide && rocketRide.friend), ai: !!(rocketRide && rocketRide.isAI), walk: !!aiRocketWalk, hop: !!rocketHop, light: rocketLightOn, padK: +(ROCKET.padK || 0).toFixed(2), padDir: ROCKET.padDir || 0, aiDwell: (!ROCKET.aiDwell || ROCKET.aiDwell > 1e8) ? null : +ROCKET.aiDwell.toFixed(1), poi: ROCKET.poi ? ROCKET.poi.id : null, found: Object.keys(spacePoiFound).length, out: pets.filter((q) => q.poiWalk).length, course: ROCKET.route ? ROCKET.route.names.join('·') : null, wp: ROCKET.route ? `${ROCKET.route.i}/${ROCKET.route.pts.length}` : null, dwell: ROCKET.route ? +ROCKET.route.dwellT.toFixed(1) : 0, tether: rocketTether ? +rocketTether.off.length().toFixed(2) : null, reeling: !!(rocketTether && rocketTether.reeling), evaT: +(ROCKET.aiEvaT || 0).toFixed(1), land: ROCKET.aiLand ? ROCKET.aiLand.id : null }),
     rocketJump: () => { doJump(); return !!rocketTether; },
     petBounce: (name) => { const q = pets.find((o) => o.name === name); return q ? +q.pet.wrap.position.y.toFixed(3) : null; },
     moonTp: (nx, ny, nz) => { const p = possessed; if (!p || !p.poiWalk || !p.poiWalk.R) return false; const poi = p.poiWalk; const L = Math.hypot(nx, ny, nz) || 1; p.mover.position.set(poi.x + (nx / L) * poi.R, poi.y + (ny / L) * poi.R, poi.z + (nz / L) * poi.R); return true; },   // E2E — 구면 워프
@@ -17589,6 +17589,12 @@ function updateRocket(delta) {
         if (r.p === possessed || (r.friend && r.friend === possessed)) {
             r.isAI = false;
             if (ROCKET.mode === 'space') ROCKET.camGlide = 1.8;
+            // 자율 도킹의 자동 이륙(aiDwell)이 이미 시작됐어도 주인이 잡으면 되돌려 재정박 —
+            // "도킹 완료 토스트를 읽는 사이 떠나버리는" 레이스 수리 (모바일 리포트 2차)
+            if ((ROCKET.mode === 'moonland' || ROCKET.mode === 'dock') && ROCKET.padDir < 0 && ROCKET.padK > 0.1) {
+                ROCKET.padDir = 1;
+                ROCKET.padDone = ROCKET.padK >= 1;
+            }
             wakeSoft(5000);
         } else if (r.p.ai.state !== 'busy') { r.p = null; r.friend = null; r.empty = true; }
     }
@@ -17753,7 +17759,7 @@ function updateRocket(delta) {
         ROCKET.burn = ROCKET.padK > 0 && ROCKET.padK < 1 ? 0.3 : 0.12;
         if (ROCKET.padDir > 0 && ROCKET.padK >= 1 && !ROCKET.padDone) {
             ROCKET.padDone = true;
-            ROCKET.aiDwell = 4;
+            ROCKET.aiDwell = 10;   // 자율 정차 — 주인이 개입할 여유 (4초는 토스트 읽는 사이 떠났다)
             playBuffer(swishBuf, { vol: 0.35, rate: 0.5, filterFreq: 600 });
             if (r && !r.empty) recordSpacePoi(poi, r.p);
             if (ROCKET.dropAtDock) { ROCKET.dropAtDock = false; disembarkPoi(); }   // 이징 중 해제 예약 — 도킹을 마쳤으니 내려준다 (귀환 금지)
