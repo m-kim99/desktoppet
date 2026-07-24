@@ -12485,18 +12485,17 @@ function makeFoodGeo(f, bites = 0) {
                 add(sp2, 0x4a7d2c, 0x2f5518, { curve: 1 });
             }
         }
-        // 가츠오부시 — 반투명 대팻밥(liquidMat 자식): 가장자리 말림 + 웨이브, 알마다 수북이 얹혀 춤추듯. 갈수록 줄어든다 (14→7→3)
-        const flakes = b >= 2 ? [[0, 0.5, 0.8, 1], [0, 2.4, 2.1, 0.8], [0, 4.1, 3.4, 0.7]]
-            : b >= 1 ? [[0, 0.5, 0.8, 1], [0, 2.6, 2.9, 0.75], [1, 2.2, 1.9, 1.05], [2, 3.6, 0.6, 0.9], [2, 1.4, 2.2, 0.7], [3, 1.2, 2.8, 1], [3, 4.4, 0.4, 0.8]]
-            : [[0, 0.5, 0.8, 1], [0, 2.6, 2.9, 0.75], [1, 2.2, 1.9, 1.05], [1, 4.5, 0.3, 0.7], [2, 3.6, 0.6, 0.9], [2, 1.4, 2.2, 0.75], [3, 1.2, 2.8, 1], [3, 4.4, 0.4, 0.8], [4, 4.3, 1.5, 1.1], [4, 1.9, 3.2, 0.7], [5, 2.9, 3.3, 0.95], [5, 0.8, 1.2, 0.75], [2, 5.3, 4.1, 0.6], [4, 0.2, 5.0, 0.65]];
-        for (const [ci, a, ph, kf] of flakes) {
-            if (!alive.includes(ci)) continue;
+        // 가츠오부시 — 반투명 대팻밥(liquidMat 자식): 알마다 수북이 춤추듯(사용자 확정 ×3 = 42→20→9), 해시 산포로 크기·말림·기울기 지터
+        const perBall = b >= 2 ? 9 : b >= 1 ? 5 : 7;
+        for (const ci of alive) for (let fi = 0; fi < perBall; fi++) {
             const [cx, cz] = CELLS[ci], R = 0.0102 * kJ[ci];
+            const ph = hsh2(fi * 5.3, ci * 11.9) * 6.3, kf = 0.6 + hsh2(ci * 3.1 + fi, fi * 2.7 + ci) * 0.55;
             const fl = new THREE.BoxGeometry(0.0064 * kf, 0.00028, 0.004 * kf, 6, 1, 2);
             const fp = fl.attributes.position;
             for (let i = 0; i < fp.count; i++) fp.setY(i, fp.getY(i) + Math.sin(fp.getX(i) * 820 + ph) * 0.0014 + Math.abs(fp.getZ(i)) * (0.3 + 0.25 * Math.sin(ph)));
-            fl.computeVertexNormals(); fl.rotateY(a); fl.rotateZ(0.12 + Math.sin(ph * 2) * 0.14);
-            fl.translate(cx + Math.cos(a + 1) * R * (0.16 + 0.24 * Math.sin(ph)), 0.0032 + R * (1.88 + 0.1 * Math.cos(ph)), cz + Math.sin(a + 1) * R * (0.16 + 0.24 * Math.cos(ph)));
+            fl.computeVertexNormals(); fl.rotateY(hsh2(ci * 17.3 + fi * 7.1, fi * 13.7) * Math.PI * 2); fl.rotateZ(0.12 + Math.sin(ph * 2) * 0.16);
+            const rr2 = R * (0.12 + 0.4 * hsh2(fi * 9.7, ci * 4.3)), aa = hsh2(ci + fi * 3.3, fi * 1.7) * Math.PI * 2;
+            fl.translate(cx + Math.cos(aa) * rr2, 0.0032 + R * (1.84 + 0.16 * hsh2(fi * 2.9, ci * 6.1)), cz + Math.sin(aa) * rr2);
             clearParts.push(bakeGrad(fl, 0xe8cfa0, 0xc2996a, { curve: 1 }));
         }
         {   // 소스·마요 드리즐 — 남은 알 전체를 한 번에 가로지르는 연속 지그재그 (광택)
