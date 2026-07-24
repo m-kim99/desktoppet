@@ -5,6 +5,13 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Changed (🍳 주방 패널 타일 — 이모지 → 실물 3D 스냅샷)
+- 조형 완성 8종(MODELED_DISHES)은 타일 이모지 대신 **실물 조형 스냅샷**(도감 문법 그대로: 첫 열람 1회
+  오프스크린 96px 렌더 → dataURL 캐시 → 컨텍스트 즉시 폐기, 발열 0). 유리컵·광택 자식까지 자동 포함
+  (makeFoodMesh 경유), 접시류 위주라 카메라 앙각 ~36°. **흰 타일 배경 유지**(투명 PNG), 재료부족
+  grayscale·잠금 ❓·미조형(특별·마음) 이모지 폴백은 종전 그대로.
+
+
 ### Changed (🚀 우주 자판기 간식 5종 고퀄 리모델 — 스펙 "보완" 컬럼 구현 + 각도 반응 광택)
 - **광택 재질 2종 신설**: `gradMatFoil`(은박 — metalness 0.92·roughness 0.16)·`gradMatGloss`(클리어코트
   글레이즈). 정점색 틴트는 유지, **RoomEnvironment 텍스처를 재질 envMap에 직접 참조** — scene.environmentIntensity

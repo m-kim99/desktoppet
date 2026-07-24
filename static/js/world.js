@@ -4464,6 +4464,43 @@ function maybeUnlockHearts() {
 }
 // 주방 패널 — 위 재고 스트립(살아있는 수확 4계보 + 오늘의 장터), 아래 레시피 카드.
 // 카드 3상태: 조리 가능(밝음) / 재료 부족(흐림 + 뭐가 없는지) / 마음 요리 잠금(??? + 힌트).
+// 🍳 요리 타일 아이콘 — 조형 완성 8종(MODELED_DISHES)은 실물 스냅샷. 도감 문법 그대로:
+// 첫 열람 때 1회 오프스크린 렌더 → dataURL 캐시 → 컨텍스트 즉시 폐기(발열 0). 흰 타일 위 투명 PNG.
+let _dishIcons = null;
+function dishIcons() {
+    if (_dishIcons) return _dishIcons;
+    _dishIcons = {};
+    const rd = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    rd.setSize(96, 96);
+    rd.setPixelRatio(1);
+    const sc = new THREE.Scene();
+    const cam = new THREE.PerspectiveCamera(26, 1, 0.01, 10);
+    cam.position.set(0.30, 0.50, 0.62);   // 접시류가 많아 도감보다 앙각 높게(~36°)
+    cam.lookAt(0, -0.01, 0);
+    sc.add(new THREE.AmbientLight(0xffffff, 1.3));
+    const sun = new THREE.DirectionalLight(0xfff2dd, 1.9);
+    sun.position.set(1, 2, 1.5);
+    sc.add(sun);
+    const holder = new THREE.Group();
+    sc.add(holder);
+    for (const id of MODELED_DISHES) {
+        const mesh = makeFoodMesh({ id, name: id });   // 유리컵·광택 자식까지 자동 부착
+        holder.add(mesh);
+        const box = new THREE.Box3().setFromObject(holder);
+        const c = box.getCenter(new THREE.Vector3());
+        const k = 0.34 / (box.getSize(new THREE.Vector3()).length() || 1);
+        holder.scale.setScalar(k);
+        holder.position.set(-c.x * k, -c.y * k, -c.z * k);
+        rd.render(sc, cam);
+        _dishIcons[id] = rd.domElement.toDataURL('image/png');
+        holder.remove(mesh);
+        holder.scale.setScalar(1);
+        holder.position.set(0, 0, 0);
+    }
+    rd.dispose();
+    rd.forceContextLoss();
+    return _dishIcons;
+}
 let kitchenPanel = null;
 let kitchenView = 'recipes';   // recipes | lab
 function expStockList() {   // 실험 탭 재료 타일 — 재고 있는 계보 전부 + 찬장(무한)
@@ -4575,7 +4612,11 @@ function refreshKitchenPanel() {
         const tile = document.createElement('div');
         tile.title = label;
         tile.style.cssText = `position:relative; aspect-ratio:1; background:${locked ? 'rgba(255,255,255,0.55)' : '#fff'}; border-radius:11px; display:flex; align-items:center; justify-content:center; font-size:26px; cursor:pointer; user-select:none; -webkit-user-select:none; box-shadow:0 2px 6px rgba(0,0,0,0.25);`;
-        tile.innerHTML = `<span style="filter:${locked ? 'grayscale(1) opacity(0.5)' : missing.length ? 'grayscale(0.75) opacity(0.45)' : 'none'};">${locked ? '❓' : r.emoji}</span>${dishesFound[r.id] ? '<span style="position:absolute; top:3px; right:5px; font-size:10px; color:#3d9950;">✓</span>' : ''}`;
+        const dimF = locked ? 'grayscale(1) opacity(0.5)' : missing.length ? 'grayscale(0.75) opacity(0.45)' : 'none';
+        const face = (!locked && MODELED_DISHES.has(r.id))
+            ? `<img src="${dishIcons()[r.id]}" draggable="false" style="width:88%; height:88%; object-fit:contain; filter:${dimF}; pointer-events:none;">`   // 조형 스냅샷 (흰 타일 배경 유지)
+            : `<span style="filter:${dimF};">${locked ? '❓' : r.emoji}</span>`;
+        tile.innerHTML = `${face}${dishesFound[r.id] ? '<span style="position:absolute; top:3px; right:5px; font-size:10px; color:#3d9950;">✓</span>' : ''}`;
         tile.onmouseenter = () => { tile.style.boxShadow = '0 0 0 2px #ffd54f, 0 2px 6px rgba(0,0,0,0.25)'; };
         tile.onmouseleave = () => { tile.style.boxShadow = '0 2px 6px rgba(0,0,0,0.25)'; };
         let lpT = null, lpFired = false;
