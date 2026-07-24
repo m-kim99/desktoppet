@@ -57,7 +57,7 @@ function worldSync(key) {   // 변경 키만 900ms 디바운스 POST — 원시 
     }, 900);
 }
 // 이동 가능한 타입 (연못=지형 함몰이라 고정, furniture=집 내부 파생이라 집을 따라감)
-const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'vine', 'fruitbasket', 'library', 'flowerbasket', 'pond', 'portal', 'icebox', 'kitchen']);
+const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'vine', 'fruitbasket', 'library', 'flowerbasket', 'pond', 'portal', 'icebox', 'kitchen', 'bonfire']);
 // 섬 정의 지문 — 섬을 옮기거나 크기를 바꾸면 값이 달라진다(재발 방지: 저장 배치의 "섬 이사" 자동 감지).
 // 'v2|' 접두 = 배치 리뉴얼 세대: 섬 기하가 그대로여도 접두를 올리면 위성섬 소품이 전부 새 기본값으로
 // 리셋된다. 좌표 테이블(MOVED_DEFAULTS)은 클라이언트별 사본(서버 파일/localStorage 오리진들)의
@@ -2442,6 +2442,125 @@ function makeKitchen() {
     g.add(aboard);
     return g;
 }
+// 🔥 해변 모닥불 — 휴양지 모래섬의 구이 스팟. 불꽃은 분수 물방울 문법(Points + wxTime 위상
+// 루프 — CPU 0, 드로우 2: 겉불꽃+속불꽃)으로 위로 흔들리며 솟다 줄어든다. 해질녘(17.5시)~새벽
+// 점화, 낮엔 잉걸불만 — 굽는 동안엔 강제 점화. 동적 파츠(불꽃·발광 플리커)라 병합 제외 타입.
+let bonfirePr = null;
+let bonfireFx = null;   // { flames: [Points,Points], halo, ember, litK }
+function makeFirePoints(N, col, size0, rise, spread) {
+    const pos = new Float32Array(N * 3), vel = new Float32Array(N * 3);
+    const phase = new Float32Array(N), life = new Float32Array(N), sz = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+        const a = Math.random() * Math.PI * 2, rr = Math.random() * spread;
+        pos[i * 3] = Math.cos(a) * rr;
+        pos[i * 3 + 1] = 0.1;
+        pos[i * 3 + 2] = Math.sin(a) * rr;
+        vel[i * 3] = (Math.random() - 0.5) * 0.1;
+        vel[i * 3 + 1] = rise * (0.75 + Math.random() * 0.5);
+        vel[i * 3 + 2] = (Math.random() - 0.5) * 0.1;
+        life[i] = 0.55 + Math.random() * 0.5;
+        phase[i] = Math.random() * life[i];
+        sz[i] = size0 * (0.7 + Math.random() * 0.6) * 2.414;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('aVel', new THREE.BufferAttribute(vel, 3));
+    geo.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1));
+    geo.setAttribute('aLife', new THREE.BufferAttribute(life, 1));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(sz, 1));
+    const mat = new THREE.PointsMaterial({
+        map: glowTex, color: col, size: 1, transparent: true, opacity: 0.9,
+        blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+    });
+    mat.onBeforeCompile = (sh) => {
+        sh.uniforms.uWxT = wxTime;
+        sh.vertexShader = 'uniform float uWxT;\nattribute vec3 aVel;\nattribute float aPhase;\nattribute float aLife;\nattribute float aSize;\nvarying float vK;\n'
+            + sh.vertexShader
+                .replace('#include <begin_vertex>',
+                    '#include <begin_vertex>\n'
+                    + 'float fT = mod(uWxT + aPhase, aLife);\n'
+                    + 'float fK = fT / aLife;\nvK = fK;\n'
+                    + 'transformed += vec3(aVel.x * fT + sin(uWxT * 6.5 + aPhase * 23.0) * 0.055 * fK, aVel.y * fT, aVel.z * fT + cos(uWxT * 5.7 + aPhase * 19.0) * 0.055 * fK);')
+                .replace('gl_PointSize = size;', 'gl_PointSize = size * aSize * (1.0 - vK * 0.82);');
+    };
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;
+    return pts;
+}
+function makeBonfire(pr) {
+    bonfirePr = pr;
+    const g = new THREE.Group();
+    // 그을린 모래 자국 + 잿바닥
+    const scorch = new THREE.Mesh(new THREE.CircleGeometry(0.42, 20).rotateX(-Math.PI / 2), M(0x6b5c4e));
+    scorch.position.y = 0.012;
+    g.add(scorch);
+    const ash = new THREE.Mesh(new THREE.CircleGeometry(0.2, 14).rotateX(-Math.PI / 2), M(0x8d8478));
+    ash.position.y = 0.02;
+    g.add(ash);
+    // 둘레 돌 9개 — 크기·기울기 불규칙 (연못 돌 문법)
+    for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2 + (i % 2) * 0.18;
+        const st = GM(new THREE.DodecahedronGeometry(0.055 + (i % 3) * 0.012, 0), 0xb9aa96, 0x84775f);
+        st.position.set(Math.cos(a) * 0.36, 0.035, Math.sin(a) * 0.36);
+        st.scale.y = 0.62;
+        st.rotation.y = i * 1.3;
+        g.add(st);
+    }
+    // 장작 5개 티피형 — 껍질(우드텍스처)·밝은 단면·불 쪽 그을림
+    for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + 0.4;
+        const log = new THREE.Group();
+        const bark = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.042, 0.42, 9), M(0x6e5238, { map: woodTex }));
+        log.add(bark);
+        const cut = new THREE.Mesh(new THREE.CircleGeometry(0.041, 9), M(0xd9bd92));
+        cut.position.y = -0.211;
+        cut.rotation.x = Math.PI / 2;
+        log.add(cut);
+        const char = new THREE.Mesh(new THREE.CylinderGeometry(0.037, 0.037, 0.13, 9), M(0x2a2422));
+        char.position.y = 0.13;
+        log.add(char);
+        log.position.set(Math.cos(a) * 0.15, 0.2, Math.sin(a) * 0.15);
+        log.rotation.z = Math.cos(a) * 0.62;
+        log.rotation.x = -Math.sin(a) * 0.62;
+        g.add(log);
+    }
+    for (const [cx, cz, cs] of [[-0.06, 0.05, 1], [0.08, -0.03, 0.8], [0.0, -0.09, 0.7]]) {   // 속 숯덩이
+        const coal = new THREE.Mesh(new THREE.DodecahedronGeometry(0.05 * cs, 0), M(0x1f1b19));
+        coal.position.set(cx, 0.08, cz);
+        g.add(coal);
+    }
+    // 잉걸불 — 낮에도 은은, 밤·조리 중 플리커 (updateBonfire가 몬다)
+    const ember = new THREE.Mesh(new THREE.CircleGeometry(0.14, 12).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xff7a35, transparent: true, opacity: 0.5 }));
+    ember.position.y = 0.055;
+    g.add(ember);
+    // 불꽃 — 겉(주황)·속(노랑) Points + 헤일로
+    const flameOut = makeFirePoints(26, 0xff8a3d, 0.17, 1.05, 0.1);
+    const flameIn = makeFirePoints(13, 0xffd98a, 0.11, 1.3, 0.05);
+    g.add(flameOut);
+    g.add(flameIn);
+    const halo = glowSprite(0xff9a4d, 0.75, 0.32);
+    halo.position.y = 0.32;
+    g.add(halo);
+    // 꼬치 거치대 — Y자 가지 둘 + 가로 막대
+    for (const sx of [-0.3, 0.3]) {
+        const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.018, 0.36, 7), M(0x7a5c3e, { map: woodTex }));
+        stick.position.set(sx, 0.18, 0.3);
+        stick.rotation.z = sx * -0.15;
+        g.add(stick);
+        for (const yb of [-0.5, 0.5]) {
+            const branch = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.011, 0.1, 6), M(0x7a5c3e));
+            branch.position.set(sx + yb * 0.035, 0.38, 0.3);
+            branch.rotation.z = yb * 0.55;
+            g.add(branch);
+        }
+    }
+    const rackBar = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.72, 7), M(0x8a6844, { map: woodTex }));
+    rackBar.rotation.z = Math.PI / 2;
+    rackBar.position.set(0, 0.4, 0.3);
+    g.add(rackBar);
+    bonfireFx = { flames: [flameOut, flameIn], halo, ember, litK: 0 };
+    return g;
+}
 // 🧊 아이스박스 — 잔교 곁 캠핑 쿨러(조과 보관함·요리 재료). 뚜껑을 뒤 힌지로 빼꼼 열어
 // 얼음 큐브와 물고기 꼬리가 내다보이게 — "생선 보관함"이 조형만으로 읽힌다. 정적 = 병합 대상.
 function makeIcebox() {
@@ -4571,6 +4690,153 @@ function cookRecipe(r) {
     chef.ai.onArrive = cooking.ownArrive;
     return true;
 }
+// 🔥 모닥불 구이 — 조종 펫이 모닥불 곁에서 ⌘: 꼬치를 들고 불에 대는 모션(소품이 연기 — 꼬치가
+// 딥 사이클로 담갔다 들렸다), 중간에 익힘 색 전환, 치익+불티. 굽는 동안 불은 강제 점화.
+const GRILL_RECIPES = [
+    { id: 'fishskewer',  ko: '생선 꼬치구이',  emoji: '🍢', needs: [{ src: 'fish', id: '*', n: 1 }] },
+    { id: 'grilledclam', ko: '조개구이',      emoji: '🐚', needs: [{ src: 'shell', id: '*', n: 2 }] },
+    { id: 'marshmallow', ko: '마시멜로 꼬치', emoji: '🍡', needs: [{ src: 'staple', id: 'sugar', n: 1 }, { src: 'staple', id: 'milk', n: 1 }] },
+];
+let grilling = null;   // { p, r, t, grp, chunks, swapped, sizzAt }
+let grillPanel = null;
+function refreshGrillPanel() {
+    if (!grillPanel || grillPanel.style.display === 'none') return;
+    const body = grillPanel.querySelector('.gp-body');
+    body.innerHTML = '';
+    for (const r of GRILL_RECIPES) {
+        const missing = recipeMissing(r);
+        const row = document.createElement('div');
+        row.style.cssText = `display:flex; align-items:center; gap:8px; padding:7px 9px; border-radius:10px; margin-bottom:3px; background:rgba(255,255,255,${missing.length ? '0.03' : '0.1'}); opacity:${missing.length ? 0.6 : 1}; cursor:pointer;`;
+        const needTxt = r.needs.map((nd) => {
+            const has = ingredientCount(nd.src, nd.id) >= nd.n;
+            return `<span style="color:${has ? '#cfe3cf' : '#e89a9a'};">${ingKo(nd)}×${nd.n}</span>`;
+        }).join(' · ');
+        row.innerHTML = `<span style="font-size:20px;">${r.emoji}</span><div style="flex:1;"><div style="font-size:13px; font-weight:700;">${r.ko}${dishesFound[r.id] ? ' <span style="opacity:0.8; color:#8fc98f;">✓</span>' : ''}</div><div style="font-size:11px; opacity:0.85;">${needTxt}</div></div>`;
+        row.onclick = () => { startGrill(r); };
+        body.appendChild(row);
+    }
+}
+function toggleGrillPanel() {
+    if (!grillPanel) {
+        grillPanel = document.createElement('div');
+        grillPanel.style.cssText = 'position:fixed; right:64px; bottom:calc(70px + env(safe-area-inset-bottom, 0px)); display:none; width:min(250px, calc(100vw - 90px)); background:rgba(30,32,40,0.94); border-radius:12px; padding:10px; z-index:110; box-shadow:0 6px 24px rgba(0,0,0,0.4); font-family:sans-serif; color:#fff;';
+        grillPanel.innerHTML = `<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;"><span style="font-size:13px; font-weight:700;">🔥 모닥불 구이</span><span class="gp-x" style="color:#aab; font-size:13px; cursor:pointer; padding:2px 6px;">✕</span></div>
+<div class="gp-body"></div>
+<div style="opacity:0.55; font-size:11px; margin-top:6px;">조종 중인 펫이 모닥불 곁에 있어야 구울 수 있어요</div>`;
+        grillPanel.addEventListener('pointerdown', (e) => e.stopPropagation());
+        grillPanel.querySelector('.gp-x').onclick = () => { grillPanel.style.display = 'none'; };
+        document.body.appendChild(grillPanel);
+    }
+    grillPanel.style.display = (grillPanel.style.display === 'none' || !grillPanel.style.display) ? 'block' : 'none';
+    if (grillPanel.style.display !== 'none') refreshGrillPanel();
+}
+function buildSkewer(r) {
+    const grp = new THREE.Group();
+    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.011, 0.62, 7), M(0x9a7a54));
+    stick.rotation.x = Math.PI / 2;
+    stick.position.z = 0.31;
+    grp.add(stick);
+    const chunks = [];
+    const cols = r.id === 'fishskewer' ? [0xf2b8ad, 0xefa899, 0xf2b8ad]
+        : r.id === 'grilledclam' ? [0xf0c2cc, 0xf5d3da, 0xf0c2cc]
+        : [0xfffdf8, 0xfff4e4, 0xfffdf8];
+    for (let i = 0; i < 3; i++) {
+        const m = new THREE.MeshLambertMaterial({ color: cols[i] });   // 유니크 재질 — 익힘 색 전환용 (공유 M 변이 금지)
+        const geo = r.id === 'marshmallow' ? new THREE.CylinderGeometry(0.028, 0.028, 0.042, 10) : new THREE.SphereGeometry(0.032, 10, 8);
+        const c = new THREE.Mesh(geo, m);
+        if (r.id === 'marshmallow') c.rotation.x = Math.PI / 2;
+        if (r.id === 'fishskewer') c.scale.set(1, 0.72, 1.5);
+        c.position.z = 0.36 + i * 0.082;
+        c.castShadow = true;
+        grp.add(c);
+        chunks.push(c);
+    }
+    return { grp, chunks };
+}
+function startGrill(r) {
+    if (!possessed) { showToast('🔥 굽기는 조종 중인 펫의 몫이에요'); return false; }
+    if (grilling || cooking) { showToast('🔥 이미 뭔가 만드는 중이에요'); return false; }
+    const pr = bonfirePr;
+    if (!pr || Math.hypot(possessed.mover.position.x - pr.x, possessed.mover.position.z - pr.z) > 1.6) { showToast('🔥 모닥불 곁에서만 구울 수 있어요'); return false; }
+    if (recipeMissing(r).length) { showToast('🔥 재료가 부족해요'); refreshGrillPanel(); return false; }
+    for (const nd of r.needs) for (let k = 0; k < nd.n; k++) consumeUnit(nd.src, nd.id);
+    refreshGrillPanel();
+    if (grillPanel) grillPanel.style.display = 'none';
+    const p = possessed;
+    p.mover.rotation.y = Math.atan2(pr.x - p.mover.position.x, pr.z - p.mover.position.z);
+    const sk = buildSkewer(r);
+    scene.add(sk.grp);
+    grilling = { p, r, t: 0, grp: sk.grp, chunks: sk.chunks, swapped: false, sizzAt: 0 };
+    logWorldEvent(`${petKo(p)}가 모닥불에 ${r.ko}를 굽기 시작했다 🔥`);
+    return true;
+}
+function endGrill(dropped) {
+    if (!grilling) return;
+    grilling.grp.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); if (o.material && o.material !== undefined && !o.material.map) o.material.dispose && o.material.dispose(); } });
+    scene.remove(grilling.grp);
+    if (dropped) logWorldEvent(`${petKo(grilling.p)}가 꼬치를 모래에 떨어뜨렸다… 💧`);
+    grilling = null;
+}
+function updateGrill(delta) {
+    if (!grilling) return;
+    const { p, r } = grilling;
+    if (p !== possessed) { endGrill(true); return; }   // 해제·스위치 — 꼬치는 모래로
+    grilling.t += delta;
+    const pr = bonfirePr;
+    const dx = pr.x - p.mover.position.x, dz = pr.z - p.mover.position.z;
+    const d = Math.hypot(dx, dz) || 1;
+    const ux = dx / d, uz = dz / d;
+    grilling.grp.position.set(p.mover.position.x + ux * 0.17, p.mover.position.y + p.height * 0.42, p.mover.position.z + uz * 0.17);
+    grilling.grp.rotation.y = Math.atan2(ux, uz);
+    const dip = Math.sin(grilling.t * 2.6);
+    grilling.grp.rotation.x = 0.3 + dip * 0.24;   // 꼬치 끝을 불에 대었다 들었다 — 굽기 모션의 본체
+    if (dip > 0.85 && grilling.t - grilling.sizzAt > 0.9) {   // 딥 바닥 — 치익 + 불티
+        grilling.sizzAt = grilling.t;
+        playBuffer(swishBuf, { vol: 0.3 * attAtPoint(pr.x, pr.z), rate: 1.5 + Math.random() * 0.4, filterFreq: 2900 });
+        const spr = glowSprite(0xffb066, 0.06, 0.85);
+        spr.position.set(pr.x + (Math.random() - 0.5) * 0.15, terrainHeight(pr.x, pr.z) + 0.35, pr.z + (Math.random() - 0.5) * 0.15);
+        scene.add(spr);
+        hugBurst.push({ spr, vx: (Math.random() - 0.5) * 0.3, vy: 0.7 + Math.random() * 0.4, vz: (Math.random() - 0.5) * 0.3, t: 0.5 });
+    }
+    if (!grilling.swapped && grilling.t > 3.6) {   // 반환점 — 노릇하게 익는다
+        grilling.swapped = true;
+        const cooked = r.id === 'fishskewer' ? 0xd9853f : r.id === 'grilledclam' ? 0xe0a25a : 0xd9a066;
+        for (const c of grilling.chunks) c.material.color.setHex(cooked);
+    }
+    if (grilling.t > 7) {   // 완성
+        const first = !dishesFound[r.id];
+        dishesFound[r.id] = (dishesFound[r.id] || 0) + 1;
+        try { localStorage.setItem('world-dishes-found', JSON.stringify(dishesFound)); worldSync('world-dishes-found'); } catch (e) {}
+        endGrill(false);
+        giveFood(p, { id: 'cloche', name: r.ko }, '모닥불에서');
+        if (!p.pet.action) p.pet.action = { id: 'happy', t: 0 };
+        logWorldEvent(`${petKo(p)}가 모닥불에 ${r.ko}를 노릇하게 구웠다 🔥`);
+        if (first) {
+            fishFanfare();
+            showToast(`🔥✨ 새 요리 — ${r.ko}!`);
+            maybeProactive(null, `방금 모닥불에 ${r.ko}를 구웠다! 밤바다 앞에서 먹는 맛!`);
+        }
+        maybeUnlockHearts();
+    }
+}
+function updateBonfire(delta) {
+    if (!bonfireFx || !bonfirePr) return;
+    const h = currentHour();
+    const lit = !!grilling || h >= 17.5 || h < 6;
+    bonfireFx.litK = THREE.MathUtils.lerp(bonfireFx.litK, lit ? 1 : 0, Math.min(1, delta * 2.2));
+    const k = bonfireFx.litK;
+    const flick = 0.75 + Math.sin(wxTime.value * 9.3) * 0.15 + Math.sin(wxTime.value * 23.7) * 0.1;
+    for (const f of bonfireFx.flames) f.visible = k > 0.08;
+    bonfireFx.flames[0].material.opacity = 0.88 * k;
+    bonfireFx.flames[1].material.opacity = 0.95 * k;
+    bonfireFx.halo.material.opacity = 0.3 * k * flick;
+    bonfireFx.ember.material.opacity = 0.22 + 0.5 * k * flick;
+    if (k > 0.5 && wxTime.value > (bonfireFx.crackleAt || 0)) {   // 타닥 — 가까이서만 들린다
+        bonfireFx.crackleAt = wxTime.value + 1.2 + Math.random() * 1.9;
+        const vol = 0.42 * attAtPoint(bonfirePr.x, bonfirePr.z);
+        if (vol > 0.02) playBuffer(munchBuf, { vol, rate: 1.9 + Math.random() * 0.8, filterFreq: 3400 });
+    }
+}
 // 🧪 실험: 재료 2~3개(비찬장 ≥1) 자유 조합 → 도착 시 소비·결과 확정(매칭=발견/실패=탄 요리)
 let expSel = [];   // 실험 탭 선택 [{src,id}]
 function expValidate(sel) {
@@ -4934,7 +5200,7 @@ function updateCooking(delta) {
             saveRecipesUnlocked();
             dishesFound[res.id] = (dishesFound[res.id] || 0) + 1;
             try { localStorage.setItem('world-dishes-found', JSON.stringify(dishesFound)); worldSync('world-dishes-found'); } catch (e) {}
-            giveFood(chef, { id: 'cloche', name: res.ko }, '주방에서');
+            giveFood(chef, dishDef(res.id, res.ko), '주방에서');
             if (!chef.pet.action) chef.pet.action = { id: 'happy', t: 0 };
             if (first) {
                 fishFanfare();
@@ -4962,7 +5228,7 @@ function updateCooking(delta) {
         const first = !dishesFound[r.id];
         dishesFound[r.id] = (dishesFound[r.id] || 0) + 1;
         try { localStorage.setItem('world-dishes-found', JSON.stringify(dishesFound)); worldSync('world-dishes-found'); } catch (e) {}
-        giveFood(p, { id: 'cloche', name: r.id === 'eterncake' ? '영원 케이크 (반쪽)' : r.ko }, '주방에서');
+        giveFood(p, dishDef(r.id, r.id === 'eterncake' ? '영원 케이크 (반쪽)' : r.ko), '주방에서');
         if (!p.pet.action) p.pet.action = { id: 'happy', t: 0 };
         if (cooking.meal) {
             const mh = +String(cooking.meal).split('-')[1];
@@ -5577,6 +5843,7 @@ function openCapsulePanel() {
 // 알려준다 (updateHoverPrompt). ----
 const PROP_CLICKS = {
     icebox: () => openIcebox(),
+    bonfire: () => toggleGrillPanel(),
     kitchen: (pr, hit) => {
         let o = hit && hit.object;
         while (o) {   // 📋 A-보드 메뉴판 — 바로 레시피 패널 (접시 회수보다 우선하지 않는 별도 문)
@@ -5609,6 +5876,7 @@ const PROP_CLICKS = {
 // 호버 프롬프트: 클릭형은 "· 클릭", 몸이 필요한 것은 ⌘ 안내, 나머지는 이름표만.
 const HOVER_PROMPTS = {
     icebox: () => '🧊 어획 보관함 · 클릭',
+    bonfire: () => '🔥 모닥불 — 곁에서 ⌘ 꼬치 굽기',
     kitchen: () => '🍳 레시피 · 클릭',
     pecktree: () => '💗 쪼아쪼아 나무 · 클릭',
     well: () => '🪙 소원 빌기 · 클릭',
@@ -5646,7 +5914,7 @@ const HOVER_PROMPTS = {
     sandcastle: () => '🏰 모래성 — 클릭하면 펫이 모래놀이 · 조종 중 ⌘ = 직접 앉기',
     palm: () => '🌴 야자수',
 };
-const HOVER_H = { icebox: 0.62, kitchen: 1.5, pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, piano: 1.05, photoboard: 1.55, mailbox: 0.75, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, balloon: 2.1, ferry: 1.3, sandcastle: 0.65, palm: 1.2 };
+const HOVER_H = { icebox: 0.62, kitchen: 1.5, bonfire: 0.95, pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, piano: 1.05, photoboard: 1.55, mailbox: 0.75, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, balloon: 2.1, ferry: 1.3, sandcastle: 0.65, palm: 1.2 };
 const hoverEl = document.createElement('div');
 hoverEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); z-index:88; pointer-events:none; background:rgba(30,32,40,0.88); color:#fff; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
 document.body.appendChild(hoverEl);
@@ -5762,7 +6030,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointerleave', () => { hoverActive = false; });
 fetchCapsules();   // 부팅 시 한 번 — 개봉 알림용
 
-const PROP_BUILDERS = { icebox: makeIcebox, kitchen: makeKitchen, tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, trampoline: makeTrampoline, vine: makeVine, fruitbasket: makeFruitBasket, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket, palm: makePalm, sandcastle: makeSandcastle };
+const PROP_BUILDERS = { icebox: makeIcebox, kitchen: makeKitchen, bonfire: makeBonfire, tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, trampoline: makeTrampoline, vine: makeVine, fruitbasket: makeFruitBasket, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket, palm: makePalm, sandcastle: makeSandcastle };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -5780,7 +6048,7 @@ const blobTex = (() => {
 })();
 const blobGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-const BLOB_SIZE = { icebox: 0.48, kitchen: 1.25, tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62, pecktree: 0.55, well: 0.75, capsule: 0.5, boulder: 0.75, garden: 1.5, piano: 0.8, photoboard: 0.8, mailbox: 0.35, gym: 1.5, library: 1.35 };
+const BLOB_SIZE = { icebox: 0.48, kitchen: 1.25, bonfire: 0.85, tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62, pecktree: 0.55, well: 0.75, capsule: 0.5, boulder: 0.75, garden: 1.5, piano: 0.8, photoboard: 0.8, mailbox: 0.35, gym: 1.5, library: 1.35 };
 // Beds register a lying spot (on the furniture, with a lean-back tilt + heading) and an
 // approach point just outside their collider that the pet walks to before climbing on.
 // 🔨 함수로 분리: 로드 시 프롭 루프가 굽고, 공사모드에서 프롭이 이사하면 unbake→bake로 다시
@@ -8620,7 +8888,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { icebox: '아이스박스', kitchen: '주방', tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호' };
+const PROP_KO = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -8994,6 +9262,10 @@ if (statsOn) window.__worldDev = {
     kitchenClick: () => { if (claimLeftover()) return 'claimed'; toggleKitchenPanel(); return 'panel'; },
     menuClick: () => { PROP_CLICKS.kitchen(null, { object: { userData: { menuBoard: true } } }); return !!(kitchenPanel && kitchenPanel.style.display !== 'none'); },
     expTry: (arr) => cookExperiment(arr.map(([src, id]) => ({ src, id }))),
+    grillTry: (id) => { const r = GRILL_RECIPES.find((q) => q.id === id); return r ? startGrill(r) : null; },
+    grillState: () => (grilling ? { pet: grilling.p.name, id: grilling.r.id, t: +grilling.t.toFixed(1), swapped: grilling.swapped } : null),
+    bonfireState: () => (bonfireFx ? { lit: bonfireFx.litK > 0.5, k: +bonfireFx.litK.toFixed(2) } : null),
+    grillOpen: () => { toggleGrillPanel(); return !!(grillPanel && grillPanel.style.display !== 'none'); },
     expState: () => ({ hidden: EXP_RECIPES.filter((r) => recipeLocked(r)).length, burnt: dishesFound.burnt || 0, unlocked: EXP_RECIPES.filter((r) => !recipeLocked(r)).map((r) => r.id) }),
     labOpen: () => {
         kitchenView = 'lab';
@@ -9813,7 +10085,7 @@ document.body.appendChild(dockUI);
 // 배치는 서버(/api/world_layout)+localStorage에 저장되고 다음 접속 때 씬을 짓기 전에 적용된다
 // (파일 상단 savedLayout). 지형 평탄화 패드는 섬 메시에 구워져 있어 리로드 후에야 새 위치를
 // 따라간다 — 그때까지 잔디가 살짝 울퉁불퉁할 수 있는 게 유일한 시각적 타협점.
-const PROP_LABELS = { icebox: '아이스박스', kitchen: '주방', tree: '나무', bowl: '밥그릇', fence: '울타리', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', house: '집', car: '자동차' };
+const PROP_LABELS = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', bowl: '밥그릇', fence: '울타리', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', house: '집', car: '자동차' };
 const buildRingMat = new THREE.MeshBasicMaterial({ color: 0x66d9ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
 const buildRing = new THREE.Mesh(new THREE.RingGeometry(0.82, 1.0, 40), buildRingMat);
 buildRing.rotation.x = -Math.PI / 2;
@@ -11521,6 +11793,144 @@ function makeFoodGeo(f, bites = 0) {
         const liner = new THREE.TorusGeometry(0.0345, 0.0024, 6, 24); liner.rotateX(Math.PI / 2); liner.scale(1.1, 1, 0.94); liner.translate(0, 0.006, 0);
         add(liner, 0xd9a83c, 0xac8028, { curve: 1 });
         topH = 0.075;
+    } else if (f.id === 'juice' || f.id === 'smoothie') {   // 🥤🥥 컵 요리 — 수위가 내려간다(아이스컵 문법)
+        const thick = f.id === 'smoothie';
+        const LV = thick ? [0.062, 0.042, 0.022] : [0.066, 0.044, 0.023], yT = LV[b];
+        const rAt = (y) => 0.0205 + (y / 0.082) * 0.0075, rT = rAt(yT) - 0.0012;
+        const jc0 = thick ? 0xf2ebdb : 0xea7a42, jc1 = thick ? 0xdccbb0 : 0xc85526;
+        const rL = rAt(yT);
+        const lowW = new THREE.CylinderGeometry(rL, 0.0205, yT, 20, 1, true); lowW.translate(0, yT / 2, 0);   // 수위 아래 = 음료가 비쳐 보이는 구간
+        add(lowW, jc0, jc1, { curve: 1.15 });
+        const upW = new THREE.CylinderGeometry(0.028, rL, 0.082 - yT, 20, 1, true); upW.translate(0, (0.082 + yT) / 2, 0);
+        add(upW, 0xeef5f9, 0xd6e4ec, { curve: 1.05 });
+        const cupBot = new THREE.CylinderGeometry(0.0207, 0.0207, 0.003, 20); cupBot.translate(0, 0.0015, 0); add(cupBot, jc0, jc1, { curve: 1 });
+        const well = new THREE.CylinderGeometry(0.0278, rL * 0.99, 0.082 - yT, 20, 1, true); well.scale(-1, 1, 1); well.translate(0, (0.082 + yT) / 2, 0);
+        add(well, 0xa8b4bc, 0x6b767d, { curve: 1.35 });
+        const rim = new THREE.TorusGeometry(0.0276, 0.0018, 6, 22); rim.rotateX(Math.PI / 2); rim.translate(0, 0.0818, 0); add(rim, 0xf6fbfd, 0xd2e0e8, { curve: 1 });
+        const jc = thick ? 0xf7f0e2 : 0xf0834a, jc2 = thick ? 0xe9dcc2 : 0xd85f2c;
+        const surf = thick ? new THREE.SphereGeometry(rT, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5) : new THREE.CylinderGeometry(rT, rT * 0.97, 0.003, 20);
+        if (thick) surf.scale(1, 0.34, 1);
+        surf.translate(0, yT, 0); add(surf, thick ? 0xfdf9f0 : 0xf79c66, jc, { curve: 1 });
+        if (thick) { for (let i = 0; i < 5; i++) { const a = i * 2.4, rr = rT * (0.3 + (i % 3) * 0.2); const fl = new THREE.BoxGeometry(0.0095, 0.0022, 0.0042); fl.rotateY(a * 1.3); fl.translate(Math.cos(a) * rr, yT + 0.0035, Math.sin(a) * rr); add(fl, 0xa08056, 0x74593a, { curve: 1 }); } }
+        else { const lem = new THREE.CylinderGeometry(0.011, 0.011, 0.0028, 16, 1, false, 0, Math.PI); lem.rotateX(Math.PI / 2); lem.rotateZ(0.4); lem.translate(0.0225, yT + 0.006, 0.0075); add(lem, 0xffdf6e, 0xefc648, { curve: 1 });
+               const lin = new THREE.CylinderGeometry(0.0079, 0.0079, 0.0036, 16, 1, false, 0, Math.PI); lin.rotateX(Math.PI / 2); lin.rotateZ(0.4); lin.translate(0.0225, yT + 0.006, 0.0075); add(lin, 0xfff5c4, 0xffe999, { curve: 1 }); }
+        const stc = thick ? 0xeec98a : 0x7fc4e8;
+        const straw = new THREE.CylinderGeometry(0.0033, 0.0033, 0.094, 8); straw.rotateZ(-0.18); straw.translate(0.0095, 0.058, 0.0015);
+        add(straw, stc, ((stc & 0xfefefe) >> 1) | 0x303030, { curve: 1 });
+        topH = 0.086;
+    } else if (f.id === 'tomatosoup' || f.id === 'clamsteam') {   // 🍲🦪 깊은 볼 — 줄면 안쪽 그늘이 넓어진다
+        const clam = f.id === 'clamsteam';
+        const LV = [0.0335, 0.0285, 0.0235], yT = LV[b], rT = (b >= 2 ? 0.026 : b >= 1 ? 0.033 : 0.0395);
+        const bowl = new THREE.SphereGeometry(0.05, 22, 12, 0, Math.PI * 2, Math.PI * 0.46, Math.PI * 0.54); bowl.scale(1, 0.6, 1); bowl.translate(0, 0.0335, 0);
+        add(bowl, clam ? 0xeef2f4 : 0xfbf7ee, clam ? 0xc3cdd2 : 0xd8d2c4, { curve: 1.1 });
+        const foot = new THREE.CylinderGeometry(0.021, 0.024, 0.005, 18); foot.translate(0, 0.0025, 0); add(foot, 0xe6e2d6, 0xc8c2b4, { curve: 1 });
+        const well = new THREE.SphereGeometry(0.0455, 20, 11, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5); well.scale(-1, 0.58, 1); well.translate(0, 0.0332, 0);
+        add(well, 0x8b7c62, 0x413628, { curve: 1.45 });
+        const rim = new THREE.TorusGeometry(0.0498, 0.0022, 7, 24); rim.rotateX(Math.PI / 2); rim.translate(0, 0.0336, 0); add(rim, 0xfefcf6, 0xd6d0c2, { curve: 1 });
+        const liq = new THREE.CylinderGeometry(rT, rT * 0.9, 0.004, 22); liq.translate(0, yT, 0);
+        add(liq, clam ? 0xdfeef4 : 0xea5a30, clam ? 0xa8c4ce : 0xb8331a, { curve: 1.05 });
+        if (clam) {
+            const shells = b >= 2 ? [[0.002, -0.012, -0.16, 0.86, 1]] : b >= 1 ? [[0.010, -0.010, 0.18, 0.9, 0], [-0.013, -0.014, -0.38, 0.84, 1]] : [[-0.014, -0.013, -0.26, 1, 0], [0.014, -0.008, 0.22, 0.94, 0]];
+            for (const [sx, sz, rot, k, empty] of shells) {
+                const sh = new THREE.SphereGeometry(0.016 * k, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.5); sh.scale(1, 0.62, 0.84); sh.rotateY(rot); sh.translate(sx, yT + 0.001, sz);
+                add(sh, empty ? 0xdccdb2 : 0xfdf8ec, empty ? 0xa08d70 : 0xb9a684, { curve: 1.25 });
+                for (let g = 0; g < 2; g++) { const gr = new THREE.TorusGeometry(0.0072 * k + g * 0.0042 * k, 0.0007, 5, 14, Math.PI); gr.rotateX(-Math.PI / 2 + 0.2); gr.rotateY(rot); gr.translate(sx, yT + 0.0072 * k, sz); add(gr, 0xcbbca2, 0xa8977c, { curve: 1 }); }
+                if (!empty) { const mt = new THREE.SphereGeometry(0.0082 * k, 10, 7); mt.scale(1, 0.42, 0.78); mt.rotateY(rot); mt.translate(sx, yT + 0.004, sz); add(mt, 0xffd0a8, 0xdc8a5c, { curve: 1.2 }); }
+            }
+            if (b < 2) { const hb = new THREE.SphereGeometry(0.004, 7, 5); hb.scale(1.5, 0.4, 1); hb.translate(-0.004, yT + 0.0028, 0.014); add(hb, 0x8fc95a, 0x4d8228, { curve: 1 }); }
+        } else {
+            const sw = new THREE.TorusGeometry(rT * 0.5, 0.0022, 6, 16, Math.PI * 1.35); sw.rotateX(Math.PI / 2); sw.rotateZ(0.5); sw.translate(-0.002, yT + 0.0028, 0.001);
+            add(sw, 0xfff4e6, 0xf0dcc2, { curve: 1 });
+            if (b < 2) { const bs = new THREE.SphereGeometry(0.0045, 8, 6); bs.scale(1.5, 0.36, 1); bs.rotateY(-0.3); bs.translate(-0.011, yT + 0.003, -0.004); add(bs, 0xa8d96e, 0x4d8228, { curve: 1 }); }
+            if (!b) { for (const [cx, cz] of [[0.013, -0.006], [-0.006, -0.018]]) { const cr = new THREE.BoxGeometry(0.0075, 0.0058, 0.0075); cr.rotateY(cx); cr.translate(cx, yT + 0.0032, cz); add(cr, 0xf0d49a, 0xd0a860, { curve: 1 }); } }
+        }
+        topH = 0.046;
+    } else if (f.id === 'salad') {   // 🥗 넓은 접시 — 잎·당근채가 개수로 줄어든다
+        const plate = new THREE.CylinderGeometry(0.062, 0.05, 0.007, 24); plate.translate(0, 0.0035, 0); add(plate, 0xfdfcf8, 0xdedace, { curve: 1 });
+        const wall = new THREE.CylinderGeometry(0.062, 0.056, 0.009, 24, 1, true); wall.scale(-1, 1, 1); wall.translate(0, 0.0115, 0); add(wall, 0x9a9484, 0x5c5749, { curve: 1.3 });
+        const rim = new THREE.TorusGeometry(0.0618, 0.0024, 7, 26); rim.rotateX(Math.PI / 2); rim.translate(0, 0.0158, 0); add(rim, 0xfefdfa, 0xd8d4c8, { curve: 1 });
+        const leaves = b >= 2 ? [[0.001, 0.002, -0.2, 0.62]] : b >= 1 ? [[-0.006, 0.004, -0.3, 0.82], [0.014, -0.008, 0.35, 0.7]] : [[-0.019, 0.004, -0.32, 1], [0.017, -0.009, 0.36, 0.94], [0.0, 0.014, 0.08, 0.86]];
+        for (const [lx, lz, rot, k] of leaves) {
+            const lf = new THREE.SphereGeometry(0.019 * k, 12, 8); lf.scale(1.15, 0.4, 0.86); lf.rotateY(rot); lf.rotateZ(0.12); lf.translate(lx, 0.0135, lz);
+            add(lf, 0xa8d96e, 0x4d8228, { curve: 1.25 });
+            const vn = new THREE.BoxGeometry(0.026 * k, 0.0016, 0.0022); vn.rotateY(rot); vn.translate(lx, 0.0135 + 0.0075 * k, lz); add(vn, 0x6d9c3e, 0x4a7028, { curve: 1 });
+        }
+        const sticks = b >= 2 ? [[0.002, -0.003, -0.2, 0.7]] : b >= 1 ? [[-0.008, 0.006, -0.35, 0.85], [0.012, -0.01, 0.42, 0.75]] : [[-0.014, 0.002, -0.45, 1], [0.014, -0.006, 0.35, 0.92], [-0.002, 0.015, -0.1, 0.88], [0.018, 0.012, 0.62, 0.78]];
+        for (const [cx, cz, rot, k] of sticks) {
+            const st = new THREE.BoxGeometry(0.028 * k, 0.0052, 0.0052); st.rotateY(rot); st.rotateZ(0.06); st.translate(cx, 0.0165, cz);
+            add(st, 0xffab5e, 0xd9691f, { curve: 1.15 });
+        }
+        if (b < 2) for (let i = 0; i < 3; i++) { const a = i * 2.1; const pp = new THREE.SphereGeometry(0.0016, 5, 4); pp.translate(Math.cos(a) * 0.024, 0.019, Math.sin(a) * 0.024); add(pp, 0x4e4436, 0x2e2820, { curve: 1 }); }
+        topH = 0.03;
+    } else if (f.id === 'jamtoast') {   // 🍞 그을린 뒷면 + 촉촉한 잼 — 모서리부터 베어문다
+        const c = { cy: 0.046, ry: 0.05, ft: 0xfbf4e4, fb: 0xf2e6c8 };
+        const sph = b >= 2 ? [{ x: 0.024, y: 0.062, z: 0, r: 0.037 }, { x: 0.002, y: 0.03, z: 0, r: 0.032 }] : b >= 1 ? [{ x: 0.03, y: 0.068, z: 0, r: 0.034 }] : null;
+        const crust = new RoundedBoxGeometry(0.092, 0.088, 0.026, 6, 0.012); crust.translate(0, 0.046, 0);
+        addB(crust, 0xf3d79c, 0xd7a75a, { curve: 1.2 }, c, sph);
+        const charred = new RoundedBoxGeometry(0.0928, 0.022, 0.0266, 4, 0.010); charred.translate(0, 0.014, 0);   // 아랫면 진하게 그을림
+        addB(charred, 0x9a6b2c, 0x513413, { curve: 1.35 }, c, sph);
+        for (const [sx, sy, sz] of [[-0.022, 0.014, 0.0138], [0.018, 0.024, 0.0138], [0.004, 0.01, -0.0138]]) { const sp = new THREE.SphereGeometry(0.008, 8, 6); sp.scale(1.5, 0.55, 0.28); sp.translate(sx, sy, sz); add(sp, 0x4a2f10, 0x2c1a08, { curve: 1 }); }
+        const jamC = { cy: 0.05, ry: 0.045, ft: 0xf07a92, fb: 0xb62440 };
+        const jsh = new THREE.Shape();   // 발라놓은 잼 — 반듯한 사각형이 아니라 가장자리가 울렁이는 덩어리
+        for (let i = 0; i <= 26; i++) {
+            const a = (i / 26) * Math.PI * 2;
+            const rr = 0.0242 + Math.sin(a * 3 + 0.7) * 0.0028 + Math.sin(a * 5 + 2.1) * 0.0016;
+            const px = Math.cos(a) * rr, py = Math.sin(a) * rr * 0.93;
+            if (i === 0) jsh.moveTo(px, py); else jsh.lineTo(px, py);
+        }
+        jsh.closePath();
+        const jam = new THREE.ExtrudeGeometry(jsh, { depth: 0.0042, bevelEnabled: true, bevelThickness: 0.0011, bevelSize: 0.0012, bevelSegments: 2, curveSegments: 3 });
+        jam.translate(0, 0.05, 0.0126);   // 앞면에만 (뒷면은 그냥 빵)
+        addB(jam, 0xf2617f, 0xa81a36, { curve: 1.3 }, jamC, sph);
+        const drip = new THREE.SphereGeometry(0.0068, 9, 7); drip.scale(1.6, 0.8, 0.4); drip.translate(-0.006, 0.0205, 0.0152);
+        addB(drip, 0xe04a68, 0xa81a36, { curve: 1.2 }, jamC, sph);
+        if (b < 2) for (const [gx, gy] of [[-0.010, 0.060], [0.009, 0.044]]) { const gl = new THREE.SphereGeometry(0.0058, 8, 6); gl.scale(1.5, 0.55, 0.2); gl.rotateZ(-0.22); gl.translate(gx, gy, 0.0186); add(gl, 0xffb4c4, 0xf07a92, { curve: 1 }); }
+        topH = 0.062;
+    } else if (f.id === 'grilledfish') {   // 🐟 접시 + 그릴 자국 — 꼬리부터 발라 마지막엔 가시만
+        const plate = new THREE.CylinderGeometry(0.072, 0.058, 0.0075, 24); plate.translate(0, 0.00375, 0); add(plate, 0xfdfcf8, 0xdedace, { curve: 1 });
+        const rim = new THREE.TorusGeometry(0.0716, 0.0026, 7, 26); rim.rotateX(Math.PI / 2); rim.translate(0, 0.0072, 0); add(rim, 0xfefdfa, 0xd8d4c8, { curve: 1 });
+        const headR = 0.052, xL = b >= 2 ? 0.026 : b >= 1 ? -0.024 : -0.044;
+        if (b < 2) {
+            const sx2 = (headR - xL) / 2 / 0.026, cx = (headR + xL) / 2;
+            const body = new THREE.SphereGeometry(0.026, 18, 12); body.scale(sx2, 0.84, 0.62); body.translate(cx, 0.021, 0);
+            add(body, 0xefc794, 0xa97b41, { curve: 1.3 });
+            for (let i = 0; i < 4; i++) { const gx = xL + 0.012 + i * 0.016; if (gx < headR - 0.008) { const gm = new THREE.BoxGeometry(0.0035, 0.004, 0.03); gm.rotateY(0.22); gm.translate(gx, 0.032, 0); add(gm, 0x8a6034, 0x5a3d1c, { curve: 1 }); } }
+            if (!b) { const tail = new THREE.ConeGeometry(0.019, 0.026, 6); tail.scale(1, 1, 0.4); tail.rotateZ(Math.PI / 2); tail.translate(-0.056, 0.021, 0); add(tail, 0xd6a768, 0xa97b41, { curve: 1.2 }); }
+            else { const cs = new THREE.CircleGeometry(0.0125, 16); cs.scale(1, 0.8, 1); cs.rotateY(-Math.PI / 2); cs.translate(xL + 0.0015, 0.021, 0); add(cs, 0xfffaf2, 0xecdcc6, { curve: 1 });
+                   for (let i = 0; i < 3; i++) { const fk = new THREE.BoxGeometry(0.0014, 0.019, 0.0014); fk.translate(xL + 0.0028, 0.021, -0.005 + i * 0.005); add(fk, 0xdccbb2, 0xbaa88e, { curve: 1 }); } }
+            const eye = new THREE.SphereGeometry(0.0035, 8, 6); eye.translate(0.04, 0.026, 0.012); add(eye, 0x3c2c1c, 0x1e1409, { curve: 1 });
+        } else {
+            const head = new THREE.SphereGeometry(0.019, 14, 10); head.scale(1.05, 0.82, 0.6); head.translate(0.04, 0.021, 0); add(head, 0xefc794, 0xa97b41, { curve: 1.3 });
+            const eye = new THREE.SphereGeometry(0.0035, 8, 6); eye.translate(0.048, 0.026, 0.011); add(eye, 0x3c2c1c, 0x1e1409, { curve: 1 });
+            const tail = new THREE.ConeGeometry(0.017, 0.023, 6); tail.scale(1, 1, 0.38); tail.rotateZ(Math.PI / 2); tail.translate(-0.05, 0.021, 0); add(tail, 0xd6a768, 0xa97b41, { curve: 1.2 });
+            const spine = new THREE.CylinderGeometry(0.0022, 0.0022, 0.068, 7); spine.rotateZ(Math.PI / 2); spine.translate(-0.006, 0.021, 0); add(spine, 0xdccbb2, 0xb8a68c, { curve: 1 });
+            for (let i = 0; i < 7; i++) { const rx = -0.036 + i * 0.011; for (const zf of [1, -1]) { const rb = new THREE.CylinderGeometry(0.0013, 0.0013, 0.018, 5); rb.rotateX(zf * 0.5); rb.translate(rx, 0.021, zf * 0.007); add(rb, 0xe4d5bd, 0xc0ae94, { curve: 1 }); } }
+        }
+        const lemR = b >= 2 ? 0.012 : 0.015;
+        const lem = new THREE.CylinderGeometry(lemR, lemR, 0.004, 16, 1, false, 0, Math.PI); lem.rotateX(Math.PI / 2); lem.rotateZ(-0.3); lem.translate(-0.044, 0.011, 0.03); add(lem, 0xffdf6e, 0xefc648, { curve: 1 });
+        const lin2 = new THREE.CylinderGeometry(lemR * 0.72, lemR * 0.72, 0.005, 16, 1, false, 0, Math.PI); lin2.rotateX(Math.PI / 2); lin2.rotateZ(-0.3); lin2.translate(-0.044, 0.011, 0.03); add(lin2, 0xfff5c4, 0xffe999, { curve: 1 });
+        if (b < 2) { const hb = new THREE.SphereGeometry(0.005, 8, 6); hb.scale(1.6, 0.4, 1); hb.rotateY(0.3); hb.translate(0.042, 0.011, -0.03); add(hb, 0x8fc95a, 0x4d8228, { curve: 1 }); }
+        topH = 0.042;
+    } else if (f.id === 'fruitcake') {   // 🍰 조각 케이크 — 팁부터 베어물면 층이 무너진다
+        const plate = new THREE.CylinderGeometry(0.062, 0.05, 0.006, 22); plate.translate(0, 0.003, 0); add(plate, 0xfdfcf8, 0xdedace, { curve: 1 });
+        const R = 0.056, HW = 0.021;                       // 웨지: 팁(-x) → 바깥 호(+x)
+        const wedge = (yb, h, tipK) => { const sh = new THREE.Shape(); const k = tipK; sh.moveTo(-R * 0.52 + (1 - k) * R * 0.9, 0); sh.lineTo(R * 0.48, -HW); sh.quadraticCurveTo(R * 0.62, 0, R * 0.48, HW); sh.closePath(); const g = new THREE.ExtrudeGeometry(sh, { depth: h, bevelEnabled: false, curveSegments: 6 }); g.rotateX(-Math.PI / 2); g.translate(0, yb + h, 0); return g; };
+        const tipK = [1, 0.62, 0.3][b];
+        const bands = [[0.006, 0.010, 0xfdf0d6, 0xf0dcb2], [0.016, 0.0055, 0xf2617f, 0xa81a36], [0.0215, 0.010, 0xfdf0d6, 0xf0dcb2], [0.0315, 0.0055, 0xf2617f, 0xa81a36], [0.037, 0.009, 0xfdf0d6, 0xf0dcb2]];
+        for (const [yb, h, ct, cb] of bands) add(wedge(yb, h, tipK), ct, cb, { curve: 1.15 });
+        add(wedge(0.046, 0.0075, tipK), 0xfffdf8, 0xf2e8d6, { curve: 1 });   // 생크림 윗면
+        const side = new THREE.CylinderGeometry(0.0272, 0.0272, 0.0475, 18, 1, true, -0.42, 0.84); side.scale(1, 1, 0.78); side.translate(R * 0.335, 0.0298, 0);
+        add(side, 0xfffdf8, 0xf0e2c8, { curve: 1.1 });                      // 바깥 호 프로스팅
+        if (b < 2) {
+            const bx = -0.004 + (1 - tipK) * 0.016;
+            const bry = new THREE.SphereGeometry(0.0092, 12, 9); bry.scale(0.92, 1.15, 0.92); bry.translate(bx + 0.012, 0.062, 0.002);
+            add(bry, 0xf4586f, 0xb71e38, { curve: 1.3 });
+            const cal = new THREE.SphereGeometry(0.0042, 7, 5); cal.scale(1.5, 0.4, 1.5); cal.translate(bx + 0.012, 0.0695, 0.002); add(cal, 0x8fc95a, 0x4d8228, { curve: 1 });
+            const kiwi = new THREE.CylinderGeometry(0.0072, 0.0072, 0.0032, 14); kiwi.translate(bx - 0.008, 0.0555, -0.008); add(kiwi, 0x9ad063, 0x5f9634, { curve: 1 });
+            const kin = new THREE.CylinderGeometry(0.0032, 0.0032, 0.0038, 12); kin.translate(bx - 0.008, 0.0555, -0.008); add(kin, 0xf2f7e4, 0xdbe8c4, { curve: 1 });
+        }
+        if (b >= 1) for (let i = 0; i < (b >= 2 ? 4 : 2); i++) { const a = 2.1 + i * 1.3; const cm = new THREE.SphereGeometry(0.0035, 6, 5); cm.scale(1, 0.7, 1); cm.translate(-0.03 - (i % 2) * 0.008, 0.0085, Math.sin(a) * 0.016); add(cm, 0xf2e0c0, 0xd8bd90, { curve: 1 }); }
+        topH = 0.072;
     } else if (f.id === 'cloche') {   // 🍽️ 클로슈 — 요리 완성품 임시 그릇 (요리별 조형은 디자인 확정 후 dish 분기로). burnt = 실험 실패작(그을림)
         const burnt = !!f.burnt;
         const tray = new THREE.CylinderGeometry(0.075, 0.082, 0.014, 18);
@@ -12683,6 +13093,9 @@ function doInteract() {
         const gf = nearestGroundFruit(0.85);
         if (gf) { pickGroundFruit(possessed, gf); return; }
     }
+    {   // 🔥 모닥불 곁 ⌘ = 구이 메뉴
+        if (bonfirePr && Math.hypot(possessed.mover.position.x - bonfirePr.x, possessed.mover.position.z - bonfirePr.z) < 1.5) { toggleGrillPanel(); return; }
+    }
     {   // 🍳 주방 곁 ⌘ = 레시피 패널
         const pr = PROPS.find((q) => q.type === 'kitchen');
         if (pr && Math.hypot(possessed.mover.position.x - pr.x, possessed.mover.position.z - pr.z) < 1.3) { toggleKitchenPanel(); return; }
@@ -13019,6 +13432,7 @@ function updatePlayer(delta) {
         return;
     }
     if (cooking && cooking.p === p && cooking.phase !== 'walk') { p.pet.walking = false; return; }   // 🍳 조리 중 입력 잠금 (낚시 파이팅 문법 — 6~7초)
+    if (grilling && grilling.p === p) { p.pet.walking = false; return; }   // 🔥 굽는 중 — 꼬치를 든 손은 못 움직인다 (7초)
     // 🎣 낚시 입력 규칙: 대기·입질 중 이동 입력 = 조용히 걷어들이고 걷기 재개, 시전·파이팅·연출 중 = 입력 잠금
     if (fishing && fishing.p === p && fishing.state !== 'idle') {
         const moveInput = heldKeys.has('ArrowUp') || heldKeys.has('ArrowDown') || heldKeys.has('ArrowLeft') || heldKeys.has('ArrowRight') || touchMove.active;
@@ -15848,6 +16262,9 @@ const SPACE_SNACKS = [
     { id: 'scookie', name: '별 쿠키', emoji: '🍪', w: 23 },
     { id: 'sgold', name: '골드 문크림빵', emoji: '🌟', w: 8, gold: true },
 ];
+// 🍽️ 조형이 있는 요리는 실제 id로 서빙 — 나머지(특별·마음 티어)는 아직 클로슈 임시 그릇.
+const MODELED_DISHES = new Set(['juice', 'smoothie', 'tomatosoup', 'salad', 'jamtoast', 'clamsteam', 'grilledfish', 'fruitcake']);
+const dishDef = (id, name, extra) => Object.assign({ id: MODELED_DISHES.has(id) ? id : 'cloche', name }, extra || {});
 let vendPending = null, vendBusyUntil = 0, vendFly = null;
 function giveSnack(p, f) {   // giveFood 미러 — 자판기는 받자마자 그 자리에서 냠냠
     removeFood(p);
@@ -22303,6 +22720,8 @@ function animate() {
     updateAiTreat(delta);                    // ☕🍞 부스 간식 — 커피 산책 홀짝·간식 명당 냠냠
     updateAiBoat(delta);                     // 🚣 나룻배 자율 뱃놀이 — 웨이포인트 노젓기
     updateAiRadio(delta);                    // 📻 라디오 리듬타기 — 곁 댄스·한 곡 틀기
+    updateBonfire(delta);                    // 🔥 모닥불 점화·플리커·타닥
+    updateGrill(delta);                      // 🍢 꼬치 굽기 — 딥 모션·익힘·완성
     updateCooking(delta);                    // 🍳 조리 시퀀스 — 손질·웍·플레이팅
     updateEternScene(delta);                 // 🎂 영원 케이크 나눠 먹기
     updateAiCookPost(delta);                 // 🍳 자율 요리사 후처리 — 대접/셀프 냠냠
@@ -22362,6 +22781,8 @@ function animate() {
 }
 worldBake();   // 씬이 전부 지어진 뒤 첫 베이크 — 이후엔 공사모드 종료 때마다 재베이크
 renderer.setAnimationLoop(animate);
+}
+
 // TEMP SNACK LAB — ?snacklab: 우주식 5종 × 베어물기 0/1/2 격자 (검수용, 커밋 전 제거)
 if (location.search.includes('snacklab')) {
     const _sl = new THREE.DirectionalLight(0xffffff, 1.6); _sl.position.set(4, 26, 12); scene.add(_sl);
