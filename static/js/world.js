@@ -2253,151 +2253,193 @@ function makeRadio() {
     return g;
 }
 
-// 🍳 야외 주방 — 카페 거리의 요리 무대: 크림 카운터(수납장 문 2짝) + 나무 상판 + 벽돌 화덕
-// (아치 입구·불 글로우·굴뚝·구리 냄비) + 도구 바(팬·국자·뒤집개) + 도마·칼 + 양념병 3형제 +
-// 스트라이프 어닝 + KITCHEN 간판. 전부 정적(조리 연출은 오버레이 별도) = worldBake 병합.
+// 🍳 야외 주방 v2 — 은색 아일랜드(사용자 리디자인 확정): 스테인리스 상판 + 차콜 바디의
+// 독립 조리대, 벽돌 화덕 퇴역 → 빌트인 오븐(발광 창). 야외라 천장 후드 대신 양끝 스틸 포스트
+// + 크로스바 + 루버 쉐이드(파빌리온 문법) — 펜던트 2개와 도구가 바에 매달린다. 곁의 A-보드
+// 메뉴판은 전용 클릭(userData.menuBoard → 바로 레시피 패널). 전부 정적 = worldBake 병합.
 function makeKitchen() {
     const g = new THREE.Group();
-    const wood = M(0xb08a60, { map: woodTex });
-    const woodDark = M(0x8a6844, { map: woodTex });
-    const cream = M(0xfff2dd, { map: plasterTex });
-    const steel = M(0xcfd6dd);
-    // 카운터 몸통 + 수납장 문 2짝(패널 홈·손잡이) — 부스 결
-    const counter = new THREE.Mesh(new RoundedBoxGeometry(1.0, 0.42, 0.46, 3, 0.03), cream);
-    counter.position.y = 0.21;
-    g.add(counter);
-    for (const dx of [-0.24, 0.24]) {
-        const door = new THREE.Mesh(new RoundedBoxGeometry(0.34, 0.28, 0.02, 2, 0.008), M(0xf3e2c8));
-        door.position.set(dx, 0.19, 0.235);
-        g.add(door);
-        const knob = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 8), woodDark);
-        knob.position.set(dx + (dx < 0 ? 0.12 : -0.12), 0.19, 0.25);
-        g.add(knob);
+    const steelDark = M(0x3a4046);
+    const brass = M(0xc9a35a);
+    const wood = M(0xc9a06b, { map: woodTex });
+    // 타일 데크 — 주방 존 바닥 앵커 (잔디 위에 스틸만 서면 붕 뜬다)
+    const deck = new THREE.Mesh(bakeGrad(new THREE.BoxGeometry(2.05, 0.03, 1.5), 0xd8dde2, 0xb9c0c8, { curve: 1 }), gradMatDS);
+    deck.position.y = 0.015;
+    g.add(deck);
+    for (const gx of [-0.51, 0.17, 0.85]) {   // 타일 줄눈
+        const groove = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.032, 1.5), M(0xaab2ba));
+        groove.position.set(gx, 0.015, 0);
+        g.add(groove);
     }
-    const top = new THREE.Mesh(new RoundedBoxGeometry(1.08, 0.05, 0.54, 2, 0.02), wood);
-    top.position.y = 0.445;
+    // 아일랜드 바디 — 차콜, 토킥을 살짝 물려 떠 있는 인상
+    const kick = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.07, 0.44), M(0x23282d));
+    kick.position.y = 0.065;
+    g.add(kick);
+    const body = new THREE.Mesh(bakeGrad(new RoundedBoxGeometry(1.22, 0.34, 0.52, 3, 0.025), 0x454c53, 0x30363c, { curve: 1.1 }), gradMatDS);
+    body.position.y = 0.27;
+    g.add(body);
+    // 스테인리스 상판 — 밝은 쿨그레이 그라디언트, 큰 라운드
+    const top = new THREE.Mesh(bakeGrad(new RoundedBoxGeometry(1.32, 0.06, 0.6, 3, 0.028), 0xeaeff4, 0xaeb8c2, { curve: 1.4 }), gradMatDS);
+    top.position.y = 0.47;
     g.add(top);
-    // 🔥 벽돌 화덕 — 오른쪽: 돔 몸통 + 아치 입구 + 불 글로우(발광 Basic — 밤에 스스로 빛나 보인다) + 굴뚝
-    const brick = M(0xc96f4a);
-    const brickDark = M(0xa85838);
-    const oven = new THREE.Mesh(new THREE.SphereGeometry(0.24, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.52), brick);
-    oven.position.set(0.32, 0.47, -0.04);
-    oven.scale.set(1, 0.9, 1);
-    g.add(oven);
-    const ovenBase = new THREE.Mesh(new THREE.CylinderGeometry(0.245, 0.26, 0.09, 14), brickDark);
-    ovenBase.position.set(0.32, 0.5, -0.04);
-    g.add(ovenBase);
-    const arch = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.105, 0.05, 12, 1, false, -Math.PI / 2, Math.PI), brickDark);
-    arch.rotation.x = Math.PI / 2;
-    arch.position.set(0.32, 0.545, 0.15);
-    g.add(arch);
-    const ember = new THREE.Mesh(new THREE.CircleGeometry(0.085, 12), new THREE.MeshBasicMaterial({ color: 0xff9a4d }));
-    ember.position.set(0.32, 0.545, 0.148);
-    g.add(ember);
-    const emberCore = new THREE.Mesh(new THREE.CircleGeometry(0.045, 10), new THREE.MeshBasicMaterial({ color: 0xffd98a }));
-    emberCore.position.set(0.32, 0.53, 0.149);
-    g.add(emberCore);
-    const chimney = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.22, 10), brickDark);
-    chimney.position.set(0.4, 0.72, -0.12);
-    g.add(chimney);
-    const chimCap = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.03, 10), M(0x6a5244));
-    chimCap.position.set(0.4, 0.84, -0.12);
-    g.add(chimCap);
-    // 구리 냄비 — 화덕 위
-    const copper = M(0xc98a5a);
-    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.075, 0.09, 14), copper);
-    pot.position.set(0.19, 0.71, -0.1);
+    // 쿡탑 — 검은 유리 + 히트링 2 (하나는 달궈진 오렌지 발광, 하나는 쉬는 회색)
+    const glass = new THREE.Mesh(new RoundedBoxGeometry(0.36, 0.014, 0.42, 2, 0.006), M(0x14181c));
+    glass.position.set(-0.36, 0.505, 0);
+    g.add(glass);
+    const ringHot = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.008, 8, 22), new THREE.MeshBasicMaterial({ color: 0xff7a3d }));
+    ringHot.rotation.x = -Math.PI / 2;
+    ringHot.position.set(-0.42, 0.514, -0.09);
+    g.add(ringHot);
+    const ringCold = new THREE.Mesh(new THREE.TorusGeometry(0.056, 0.007, 8, 20), M(0x5a626a));
+    ringCold.rotation.x = -Math.PI / 2;
+    ringCold.position.set(-0.28, 0.514, 0.11);
+    g.add(ringCold);
+    // 싱크 + 브라스 구즈넥 수전 — 고급감의 킬러 디테일
+    const sink = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.035, 0.26), M(0x8f99a2));
+    sink.position.set(0.02, 0.485, 0.02);
+    g.add(sink);
+    const faucetBase = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.018, 0.15, 8), brass);
+    faucetBase.position.set(0.02, 0.55, -0.21);
+    g.add(faucetBase);
+    const faucetArc = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.011, 8, 14, Math.PI), brass);
+    faucetArc.position.set(0.02, 0.625, -0.135);
+    faucetArc.rotation.y = Math.PI / 2;
+    g.add(faucetArc);
+    const faucetTip = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.012, 0.05, 8), brass);
+    faucetTip.position.set(0.02, 0.6, -0.06);
+    g.add(faucetTip);
+    // 도마 스테이션 — 우드 액센트 한 점
+    const board = new THREE.Mesh(new RoundedBoxGeometry(0.3, 0.03, 0.22, 2, 0.012), wood);
+    board.position.set(0.42, 0.5, 0.04);
+    board.rotation.y = 0.1;
+    g.add(board);
+    const knife = new THREE.Mesh(new RoundedBoxGeometry(0.11, 0.008, 0.026, 1, 0.004), M(0xcfd6dd));
+    knife.position.set(0.38, 0.52, 0.14);
+    knife.rotation.y = -0.4;
+    g.add(knife);
+    const knifeGrip = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.05, 8), steelDark);
+    knifeGrip.rotation.z = Math.PI / 2;
+    knifeGrip.rotation.y = -0.4;
+    knifeGrip.position.set(0.455, 0.52, 0.107);
+    g.add(knifeGrip);
+    // 빌트인 오븐 — 전면: 짙은 창 + 안쪽 웜글로우(화덕의 후계), 스틸 핸들
+    const ovenWin = new THREE.Mesh(new RoundedBoxGeometry(0.34, 0.2, 0.02, 2, 0.01), M(0x171b1f));
+    ovenWin.position.set(-0.28, 0.27, 0.265);
+    g.add(ovenWin);
+    const ovenGlow = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.12), new THREE.MeshBasicMaterial({ color: 0xff9a4d }));
+    ovenGlow.position.set(-0.28, 0.26, 0.276);
+    g.add(ovenGlow);
+    const ovenHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.3, 8), M(0xcfd6dd));
+    ovenHandle.rotation.z = Math.PI / 2;
+    ovenHandle.position.set(-0.28, 0.4, 0.285);
+    g.add(ovenHandle);
+    // 뒷면 오픈 선반 — 구리 냄비·스틸 볼 스택
+    const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.02, 0.1), M(0x8f99a2));
+    shelf.position.set(0.28, 0.3, -0.24);
+    g.add(shelf);
+    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.062, 0.08, 14), M(0xc98a5a));
+    pot.position.set(0.16, 0.35, -0.24);
     g.add(pot);
-    const potLid = new THREE.Mesh(new THREE.SphereGeometry(0.082, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.4), M(0x8a6844));
-    potLid.position.set(0.19, 0.75, -0.1);
-    g.add(potLid);
-    const potKnob = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 8), woodDark);
-    potKnob.position.set(0.19, 0.785, -0.1);
-    g.add(potKnob);
-    // 도구 바 — 뒤 기둥 2 + 가로봉 + 팬·국자·뒤집개 매달기
-    for (const px of [-0.5, 0.5]) {
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.95, 8), wood);
-        post.position.set(px, 0.85, -0.2);
+    for (let i = 0; i < 2; i++) {
+        const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.055 - i * 0.01, 0.04 - i * 0.008, 0.035, 12), M(0xdde3e8));
+        bowl.position.set(0.4, 0.32 + i * 0.032, -0.24);
+        g.add(bowl);
+    }
+    // 서빙 선반 — 완성 접시(클로슈·친구 몫)가 앉는 자리
+    const serve = new THREE.Mesh(bakeGrad(new RoundedBoxGeometry(0.3, 0.035, 0.42, 2, 0.015), 0xe2e8ee, 0xaab4be, { curve: 1.2 }), gradMatDS);
+    serve.position.set(0.78, 0.445, 0);
+    g.add(serve);
+    const serveLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.02, 0.42, 8), steelDark);
+    serveLeg.position.set(0.78, 0.22, 0);
+    g.add(serveLeg);
+    // 파빌리온 — 양끝 슬림 포스트 + 크로스바 + 루버 쉐이드 (야외라 매달 천장이 없다 — 기둥이 받친다)
+    for (const px of [-0.6, 0.6]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.028, 1.38, 10), M(0x9aa4ad));
+        post.position.set(px, 0.69, -0.2);
         g.add(post);
     }
-    const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 1.0, 8), steel);
-    rail.rotation.z = Math.PI / 2;
-    rail.position.set(0, 1.12, -0.2);
-    g.add(rail);
-    const hang = (x, maker) => { const item = maker(); item.position.x += x; g.add(item); };
-    hang(-0.34, () => {   // 프라이팬
-        const grp = new THREE.Group();
-        const pan = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.075, 0.028, 14), M(0x4c545c));
-        pan.position.set(0, 0.94, -0.2);
-        grp.add(pan);
-        const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.14, 8), woodDark);
-        handle.position.set(0, 1.05, -0.2);
-        grp.add(handle);
-        return grp;
-    });
-    hang(0.0, () => {   // 국자
-        const grp = new THREE.Group();
-        const bowl = new THREE.Mesh(new THREE.SphereGeometry(0.042, 10, 8, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.55), steel);
-        bowl.position.set(0, 0.95, -0.2);
-        grp.add(bowl);
-        const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.17, 8), steel);
-        stick.position.set(0, 1.045, -0.2);
-        grp.add(stick);
-        return grp;
-    });
-    hang(0.34, () => {   // 뒤집개
-        const grp = new THREE.Group();
-        const blade = new THREE.Mesh(new RoundedBoxGeometry(0.07, 0.09, 0.012, 2, 0.006), steel);
-        blade.position.set(0, 0.95, -0.2);
-        grp.add(blade);
-        const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.15, 8), woodDark);
-        stick.position.set(0, 1.06, -0.2);
-        grp.add(stick);
-        return grp;
-    });
-    // 도마 + 칼 — 왼쪽 상판
-    const board = new THREE.Mesh(new RoundedBoxGeometry(0.26, 0.025, 0.18, 2, 0.01), M(0xd9b98c, { map: woodTex }));
-    board.position.set(-0.28, 0.48, 0.03);
-    board.rotation.y = 0.14;
-    g.add(board);
-    const knife = new THREE.Mesh(new RoundedBoxGeometry(0.1, 0.008, 0.028, 1, 0.004), steel);
-    knife.position.set(-0.24, 0.5, 0.09);
-    knife.rotation.y = -0.35;
-    g.add(knife);
-    const knifeGrip = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.05, 8), woodDark);
-    knifeGrip.rotation.z = Math.PI / 2;
-    knifeGrip.rotation.y = -0.35;
-    knifeGrip.position.set(-0.31, 0.5, 0.115);
-    g.add(knifeGrip);
-    // 양념병 3형제 — 상판 안쪽
-    for (const [i, col] of [[0, 0xd8574a], [1, 0xe8b64f], [2, 0x8a6844]].values()) {
-        const jar = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.03, 0.075, 10), M(col));
-        jar.position.set(-0.03 + i * 0.075, 0.485, -0.15);
-        g.add(jar);
-        const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.02, 10), cream);
-        cap.position.set(-0.03 + i * 0.075, 0.53, -0.15);
-        g.add(cap);
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1.28, 8), M(0x9aa4ad));
+    bar.rotation.z = Math.PI / 2;
+    bar.position.set(0, 1.36, -0.2);
+    g.add(bar);
+    for (let i = 0; i < 3; i++) {   // 루버 쉐이드 — 스트라이프 어닝의 모던 대체
+        const slat = new THREE.Mesh(bakeGrad(new THREE.BoxGeometry(1.42, 0.014, 0.15), 0xe6ebf0, 0xb4bdc6, { curve: 1 }), gradMatDS);
+        slat.position.set(0, 1.43 + i * 0.045, -0.32 + i * 0.13);
+        slat.rotation.x = 0.42;
+        g.add(slat);
     }
-    // 어닝 + 간판 — 부스 패밀리의 결
-    const awning = new THREE.Mesh(new THREE.BoxGeometry(1.14, 0.03, 0.6), new THREE.MeshStandardMaterial({ map: awningTex, roughness: 1, metalness: 0 }));
-    awning.position.set(0, 1.3, 0.05);
-    awning.rotation.x = 0.24;
-    g.add(awning);
-    const signCv = document.createElement('canvas');
-    signCv.width = 128;
-    signCv.height = 64;
-    const sctx = signCv.getContext('2d');
-    sctx.fillStyle = '#7a4a33';
-    sctx.fillRect(0, 0, 128, 64);
-    sctx.fillStyle = '#ffe9c9';
-    sctx.font = 'bold 24px sans-serif';
-    sctx.textAlign = 'center';
-    sctx.fillText('🍳 KITCHEN', 64, 40);
-    const signTex = new THREE.CanvasTexture(signCv);
-    signTex.colorSpace = THREE.SRGBColorSpace;
-    const sign = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.17, 0.03), new THREE.MeshStandardMaterial({ map: signTex, roughness: 1, metalness: 0 }));
-    sign.position.set(0, 1.06, -0.02);
-    g.add(sign);
+    // 브라스 펜던트 2 — 크로스바에서 내려온 웜글로우 (밤 담당)
+    for (const px of [-0.3, 0.3]) {
+        const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.16, 6), steelDark);
+        wire.position.set(px, 1.28, -0.2);
+        g.add(wire);
+        const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.055, 0.06, 12), brass);
+        shade.position.set(px, 1.18, -0.2);
+        g.add(shade);
+        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.022, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffd9a0 }));
+        bulb.position.set(px, 1.15, -0.2);
+        g.add(bulb);
+    }
+    // 크로스바에 매달린 도구 3형제 — 스테인리스 톤
+    const hangTool = (x, maker) => { const t = maker(); t.position.x += x; g.add(t); };
+    hangTool(-0.06, () => {
+        const grp = new THREE.Group();
+        const pan = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.066, 0.024, 14), M(0x4c545c));
+        pan.position.set(0, 1.2, -0.2);
+        grp.add(pan);
+        const hd = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.13, 8), M(0xcfd6dd));
+        hd.position.set(0, 1.3, -0.2);
+        grp.add(hd);
+        return grp;
+    });
+    hangTool(0.09, () => {
+        const grp = new THREE.Group();
+        const bowl = new THREE.Mesh(new THREE.SphereGeometry(0.038, 10, 8, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.55), M(0xcfd6dd));
+        bowl.position.set(0, 1.21, -0.2);
+        grp.add(bowl);
+        const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.15, 8), M(0xcfd6dd));
+        stick.position.set(0, 1.29, -0.2);
+        grp.add(stick);
+        return grp;
+    });
+    hangTool(0.52, () => {
+        const grp = new THREE.Group();
+        const blade = new THREE.Mesh(new RoundedBoxGeometry(0.065, 0.08, 0.01, 2, 0.005), M(0xcfd6dd));
+        blade.position.set(0, 1.2, -0.2);
+        grp.add(blade);
+        const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.13, 8), steelDark);
+        stick.position.set(0, 1.3, -0.2);
+        grp.add(stick);
+        return grp;
+    });
+    // 📋 A-보드 메뉴판 — 전용 클릭(userData.menuBoard): 누르면 바로 레시피 패널
+    const menuCv = document.createElement('canvas');
+    menuCv.width = 96;
+    menuCv.height = 128;
+    const mc = menuCv.getContext('2d');
+    mc.fillStyle = '#2e3338';
+    mc.fillRect(0, 0, 96, 128);
+    mc.fillStyle = '#f4efe6';
+    mc.font = 'bold 17px sans-serif';
+    mc.textAlign = 'center';
+    mc.fillText("TODAY'S", 48, 34);
+    mc.fillText('MENU', 48, 56);
+    mc.font = '30px sans-serif';
+    mc.fillText('🍳', 48, 100);
+    const menuTex = new THREE.CanvasTexture(menuCv);
+    menuTex.colorSpace = THREE.SRGBColorSpace;
+    const aboard = new THREE.Group();
+    for (const side of [-1, 1]) {
+        const panel = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.36, 0.014),
+            side === 1 ? new THREE.MeshStandardMaterial({ map: menuTex, roughness: 1, metalness: 0 }) : M(0x2e3338));
+        panel.position.set(0, 0.19, side * 0.075);
+        panel.rotation.x = side * -0.38;
+        aboard.add(panel);
+    }
+    aboard.position.set(0.92, 0.02, 0.42);
+    aboard.rotation.y = 0.5;
+    aboard.traverse((o) => { o.userData.menuBoard = true; });
+    g.add(aboard);
     return g;
 }
 // 🧊 아이스박스 — 잔교 곁 캠핑 쿨러(조과 보관함·요리 재료). 뚜껑을 뒤 힌지로 빼꼼 열어
@@ -4353,7 +4395,7 @@ function spawnCookFx(pr, r) {
     const beads = [];
     for (const [dx, dz] of [[-0.05, 0.02], [0.01, -0.03], [0.05, 0.04]]) {
         const bd = new THREE.Mesh(new THREE.SphereGeometry(0.028, 10, 8), M(col));
-        bd.position.set(-0.28 + dx, 0.52, 0.03 + dz);
+        bd.position.set(0.42 + dx, 0.545, 0.04 + dz);   // 아일랜드 도마 위
         bd.userData.vy = 0;
         grp.add(bd);
         beads.push(bd);
@@ -4365,7 +4407,7 @@ function spawnCookFx(pr, r) {
     grip2.rotation.z = Math.PI / 2;
     grip2.position.set(0.12, 0.005, 0);
     pan.add(grip2);
-    pan.position.set(0.19, 0.62, 0.02);
+    pan.position.set(-0.42, 0.56, -0.09);   // 달궈진 히트링 위
     pan.visible = false;
     grp.add(pan);
     scene.add(grp);
@@ -4382,7 +4424,7 @@ function puffSteam(k) {
     if (!cookFx) return;
     for (let i = 0; i < 2 + k * 2; i++) {
         const spr = glowSprite(0xe8eef0, 0.06 + Math.random() * 0.05, 0.7);
-        _steamV.set(0.16 + (Math.random() - 0.5) * 0.14, 0.64, 0.05);
+        _steamV.set(-0.42 + (Math.random() - 0.5) * 0.14, 0.62, -0.09);
         cookFx.grp.localToWorld(_steamV);
         spr.position.copy(_steamV);
         scene.add(spr);
@@ -4452,7 +4494,7 @@ function syncLeftoverMesh() {
         leftoverGrp = new THREE.Group();
         leftoverGrp.position.set(pr.x, terrainHeight(pr.x, pr.z), pr.z);
         leftoverGrp.rotation.y = pr.rotY || 0;
-        mesh.position.set(-0.28, 0.47, 0.03);
+        mesh.position.set(0.78, 0.475, 0);   // 서빙 선반 — 완성 접시의 지정석
         leftoverGrp.add(mesh);
         scene.add(leftoverGrp);
     } else if (!kitchenLeftover && leftoverGrp) {
@@ -4683,7 +4725,7 @@ function updateCooking(delta) {
             if (bd.userData.vy) {
                 bd.position.y += bd.userData.vy * delta;
                 bd.userData.vy -= 3.4 * delta;
-                if (bd.position.y <= 0.52) { bd.position.y = 0.52; bd.userData.vy = 0; }
+                if (bd.position.y <= 0.545) { bd.position.y = 0.545; bd.userData.vy = 0; }
             }
         }
     }
@@ -4699,7 +4741,7 @@ function updateCooking(delta) {
     }
     if (cooking.phase === 'wok') {
         if (cookFx) {
-            cookFx.pan.position.y = 0.62 + Math.abs(Math.sin(cooking.t * 7)) * 0.045;
+            cookFx.pan.position.y = 0.56 + Math.abs(Math.sin(cooking.t * 7)) * 0.045;
             cookFx.pan.rotation.z = Math.sin(cooking.t * 7) * 0.22;
         }
         if (cooking.t - cooking.act > 0.9) {
@@ -5329,7 +5371,15 @@ function openCapsulePanel() {
 // 알려준다 (updateHoverPrompt). ----
 const PROP_CLICKS = {
     icebox: () => openIcebox(),
-    kitchen: () => { if (claimLeftover()) return; toggleKitchenPanel(); },
+    kitchen: (pr, hit) => {
+        let o = hit && hit.object;
+        while (o) {   // 📋 A-보드 메뉴판 — 바로 레시피 패널 (접시 회수보다 우선하지 않는 별도 문)
+            if (o.userData && o.userData.menuBoard) { toggleKitchenPanel(); return; }
+            o = o.parent;
+        }
+        if (claimLeftover()) return;
+        toggleKitchenPanel();
+    },
     pecktree: onPeckTreeClick,
     well: () => openWellPanel(),
     capsule: () => openCapsulePanel(),
@@ -5524,7 +5574,7 @@ const blobTex = (() => {
 })();
 const blobGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-const BLOB_SIZE = { icebox: 0.48, kitchen: 1.05, tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62, pecktree: 0.55, well: 0.75, capsule: 0.5, boulder: 0.75, garden: 1.5, piano: 0.8, photoboard: 0.8, mailbox: 0.35, gym: 1.5, library: 1.35 };
+const BLOB_SIZE = { icebox: 0.48, kitchen: 1.25, tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62, pecktree: 0.55, well: 0.75, capsule: 0.5, boulder: 0.75, garden: 1.5, piano: 0.8, photoboard: 0.8, mailbox: 0.35, gym: 1.5, library: 1.35 };
 // Beds register a lying spot (on the furniture, with a lean-back tilt + heading) and an
 // approach point just outside their collider that the pet walks to before climbing on.
 // 🔨 함수로 분리: 로드 시 프롭 루프가 굽고, 공사모드에서 프롭이 이사하면 unbake→bake로 다시
@@ -8736,6 +8786,7 @@ if (statsOn) window.__worldDev = {
         return true;
     },
     kitchenClick: () => { if (claimLeftover()) return 'claimed'; toggleKitchenPanel(); return 'panel'; },
+    menuClick: () => { PROP_CLICKS.kitchen(null, { object: { userData: { menuBoard: true } } }); return !!(kitchenPanel && kitchenPanel.style.display !== 'none'); },
     hsSpots: () => PROPS.filter((pr) => HIDE_STANDOFF[pr.type]).map((pr) => ({ type: pr.type, x: +pr.x.toFixed(2), z: +pr.z.toFixed(2), off: HIDE_STANDOFF[pr.type] })),
     routeProbe: (x1, z1, x2, z2) => ({ from: islandOf(x1, z1), to: islandOf(x2, z2), route: buildRoute({ x: x1, z: z1 }, { x: x2, z: z2 }).map((w) => [+w.x.toFixed(1), +w.z.toFixed(1), w.tp ? 'tp' : '']) }),
     blockedProbe: (x1, z1, x2, z2, step = 0.3) => {
