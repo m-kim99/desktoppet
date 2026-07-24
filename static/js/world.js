@@ -8046,8 +8046,8 @@ async function worldHideSeek(clicked) {
         g.phase = 'seek';
         if (playerHides) showToast('👀 술래가 찾기 시작했어요!');
         // 수색: 숨을 만한 프롭들을 가까운 곳부터(약간 뒤섞어) 순회 — 시야 판정은 updateHideSeek가 맡는다.
-        const spots = PROPS.filter((pr) => HIDE_STANDOFF[pr.type])
-            .map((pr) => {   // 프롭 중심(콜라이더 안 — 비비다 헛돎)이 아니라, 하이더가 실제 서는 반대편 스탠드오프 지점으로
+        const spots = PROPS.filter((pr) => HIDE_STANDOFF[pr.type] && Math.hypot(pr.x - HS_COUNT_SPOT.x, pr.z - HS_COUNT_SPOT.z) <= 8)
+            .map((pr) => {   // 프롭 중심(콜라이더 안 — 비비다 헛돎)이 아니라, 하이더가 실제 서는 반대편 스탠드오프 지점으로. 본섬(≤8m)만 — 무인도까지 넣으면 한 바퀴가 90초 예산을 넘긴다
                 const off = HIDE_STANDOFF[pr.type];
                 const dx = pr.x - HS_COUNT_SPOT.x, dz = pr.z - HS_COUNT_SPOT.z;
                 const dd = Math.hypot(dx, dz) || 1;
@@ -8056,18 +8056,32 @@ async function worldHideSeek(clicked) {
             .filter((wp) => !world.isBlocked(wp.x, wp.z))
             .sort((a, b) => a.d - b.d);
         const done = () => g.found || g.cancel || g.seekT > 90;
+        const footstep = async () => {   // 발소리 수색 — 하이더 부근 ±1.4 (마무리는 촉각 0.95)
+            await Promise.race([
+                gotoAsync(seeker, g.hider.mover.position.x + (Math.random() - 0.5) * 2.8, g.hider.mover.position.z + (Math.random() - 0.5) * 2.8),
+                waitFor(done, 30000),
+            ]);
+        };
         for (const wp of spots) {
             if (done()) break;
+            // 몸이 풀린 술래 — 시간이 갈수록 발소리를 순찰 사이에 끼워 넣는다: 25초부터 절반, 60초부터 거의 매번.
+            // 순찰 순서 랜덤에 따라 구석 은신처가 90초 안에 방문 안 되던 "가끔 못 찾음"의 해답 (107초 무발견 실측).
+            const fsP = g.seekT > 60 ? 0.85 : g.seekT > 25 ? 0.5 : 0;
+            if (Math.random() < fsP) {
+                await footstep();
+                if (done()) break;
+            }
             await Promise.race([
                 gotoAsync(seeker, wp.x + (Math.random() - 0.5) * 0.3, wp.z + (Math.random() - 0.5) * 0.3),
                 waitFor(done, 30000),
             ]);
         }
-        while (!done()) {   // 코스를 다 돌고도 못 찾았으면 재수색 — 절반은 발소리(하이더 부근 ±1.2)를 따라간다
-            const wp = Math.random() < 0.5
-                ? spots[Math.floor(Math.random() * spots.length)]
-                : { x: g.hider.mover.position.x + (Math.random() - 0.5) * 2.4, z: g.hider.mover.position.z + (Math.random() - 0.5) * 2.4 };
-            await Promise.race([gotoAsync(seeker, wp.x, wp.z), waitFor(done, 30000)]);
+        while (!done()) {   // 코스를 다 돌고도 못 찾았으면 — 이제는 발소리 위주로 좁혀 온다
+            if (Math.random() < 0.75) await footstep();
+            else {
+                const wp = spots[Math.floor(Math.random() * spots.length)];
+                await Promise.race([gotoAsync(seeker, wp.x, wp.z), waitFor(done, 30000)]);
+            }
         }
         if (g.cancel) return;
         g.phase = 'end';
@@ -8598,6 +8612,7 @@ if (statsOn) window.__worldDev = {
     mealDoneOf: (name) => { const p = pets.find((q) => q.name === name); return p ? p.mealDone || null : null; },
     leftover: () => (kitchenLeftover ? { ...kitchenLeftover, mesh: !!leftoverGrp } : null),
     kitchenClick: () => { if (claimLeftover()) return 'claimed'; toggleKitchenPanel(); return 'panel'; },
+    hsSpots: () => PROPS.filter((pr) => HIDE_STANDOFF[pr.type]).map((pr) => ({ type: pr.type, x: +pr.x.toFixed(2), z: +pr.z.toFixed(2), off: HIDE_STANDOFF[pr.type] })),
     hsGo: () => {   // 숨바꼭질 강제 시작 (부팅 선점 청산)
         for (const q0 of pets) {
             if (q0 === possessed) continue;
@@ -8607,7 +8622,8 @@ if (statsOn) window.__worldDev = {
             releaseAI(q0);
             q0.ai.state = 'idle';
         }
-        window.__worldDev.tp && pets.forEach((q, i) => {   // E2E 결정화 — 참가자를 광장 근처로 (endDip이 바다에 둔 채 시작하던 함정)
+        pets.forEach((q, i) => {   // E2E 결정화 — AI 참가자만 광장 근처로 (endDip이 바다에 둔 채 시작하던 함정). 빙의 하이더는 숨은 자리 존중!
+            if (q === possessed) return;
             q.mover.position.set(0.6 - i * 1.1, world.groundHeightAt(0.6 - i * 1.1, 0.7), 0.7);
         });
         worldHideSeek(pets[0]);
