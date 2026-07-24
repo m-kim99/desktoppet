@@ -4590,17 +4590,18 @@ function refreshKitchenPanel() {
     }
 }
 const pickMaxKey = (o) => { const e = Object.entries(o).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1])[0]; return e ? e[0] : null; };
-function lineConsume(key, counts, id, save) {   // 카운트 계보 공용 차감 ('*' = 제일 많은 것부터)
+function lineConsume(key, counts, id, save) {   // 카운트 계보 공용 차감 ('*' = 제일 많은 것부터) — 실제로 쓴 id 반환
     const use = id === '*' ? pickMaxKey(counts) : id;
     if (!use || !counts[use]) return false;
     counts[use] -= 1;
     if (counts[use] <= 0) delete counts[use];
     save(counts);
-    return true;
+    return use;
 }
+let lastCookFruit = null;   // 🥤 과일주스 색: 방금 조리에 실제로 쓴 과일 id (없으면 기본 주황)
 function consumeUnit(src, id) {   // 계보 무관 1단위 차감 — 정규 조리·실험 공용
     if (src === 'staple') return true;
-    if (src === 'fruit') return lineConsume('fruit', basketCounts, id, () => saveBasket());
+    if (src === 'fruit') { const u = lineConsume('fruit', basketCounts, id, () => saveBasket()); if (u) lastCookFruit = u; return u; }
     if (src === 'pantry') return lineConsume('pantry', pantryCounts, id, () => savePantry());
     if (src === 'fish') return lineConsume('fish', iceboxCounts, id, () => { saveIcebox(); refreshIceboxPanel(); });
     if (src === 'seafood') { const c = seafoodCounts(); return lineConsume('seafood', c, id, () => { try { localStorage.setItem('world-seafood', JSON.stringify(c)); worldSync('world-seafood'); } catch (e) {} }); }
@@ -16477,7 +16478,15 @@ const SPACE_SNACKS = [
 ];
 // 🍽️ 조형이 있는 요리는 실제 id로 서빙 — 나머지(특별·마음 티어)는 아직 클로슈 임시 그릇.
 const MODELED_DISHES = new Set(['juice', 'smoothie', 'tomatosoup', 'salad', 'jamtoast', 'clamsteam', 'grilledfish', 'fruitcake']);
-const dishDef = (id, name, extra) => Object.assign({ id: MODELED_DISHES.has(id) ? id : 'cloche', name }, extra || {});
+const JUICE_TINT = {   // 🥤 과일주스 즙 색 — 넣은 과일에 따라 딸기=분홍, 포도=보라…
+    apple: 0xea5442, orange: 0xf2894a, lemon: 0xf1d24a, banana: 0xf1de98, strawberry: 0xf2647f,
+    grape: 0x9a5ad8, peach: 0xf7a674, cherry: 0xd83a54, tomato: 0xe8543a, eggplant: 0x8a5ac0, coconut: 0xf3ecd8,
+};
+const dishDef = (id, name, extra) => {
+    const d = Object.assign({ id: MODELED_DISHES.has(id) ? id : 'cloche', name }, extra || {});
+    if (id === 'juice' && lastCookFruit && JUICE_TINT[lastCookFruit]) d.tint = JUICE_TINT[lastCookFruit];   // 방금 쓴 과일 색을 결과에
+    return d;
+};
 let vendPending = null, vendBusyUntil = 0, vendFly = null;
 function giveSnack(p, f) {   // giveFood 미러 — 자판기는 받자마자 그 자리에서 냠냠
     removeFood(p);
@@ -22994,27 +23003,6 @@ function animate() {
 }
 worldBake();   // 씬이 전부 지어진 뒤 첫 베이크 — 이후엔 공사모드 종료 때마다 재베이크
 renderer.setAnimationLoop(animate);
-// TEMP DISH LAB — ?dishlab: 수확 요리 8종 × 먹기 0/1/2 격자 (검수용, 커밋 전 제거)
-if (location.search.includes('dishlab')) {
-    const _l = new THREE.DirectionalLight(0xffffff, 1.55); _l.position.set(4, 26, 12); scene.add(_l);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-    ['juice', 'smoothie', 'tomatosoup', 'salad', 'jamtoast', 'clamsteam', 'grilledfish', 'fruitcake'].forEach((id, i) => {
-        for (let bt = 0; bt <= 2; bt++) {
-            try {
-                const m = new THREE.Mesh(makeFoodGeo({ id, name: id }, bt), gradMat);
-                if (id === 'juice' || id === 'smoothie') { const g = new THREE.CylinderGeometry(0.028, 0.0205, 0.082, 20, 1, true); g.translate(0, 0.041, 0); m.add(new THREE.Mesh(g, glassMat)); }
-                m.scale.setScalar(9);
-                m.position.set((bt - 1) * 1.15 + Math.floor(i / 4) * 4.6, 20.6 - (i % 4) * 1.3, 0);
-                scene.add(m);
-            } catch (e) { console.error('dishlab', id, bt, e); }
-        }
-    });
-    scene.background = new THREE.Color(0xeef0ea);
-    camera.position.set(2.3, 21.4, 8.2);
-    controls.target.set(2.3, 19.4, 0);
-    controls.update();
-    window.__foodlab = { camera, renderer, scene, controls };
-}
 
 // TEMP SNACK LAB — ?snacklab: 우주식 5종 × 베어물기 0/1/2 격자 (검수용, 커밋 전 제거)
 if (location.search.includes('snacklab')) {
