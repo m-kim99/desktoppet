@@ -11688,7 +11688,8 @@ function makeFoodGeo(f, bites = 0) {
         const ring = new THREE.TorusGeometry(0.0105, 0.0013, 5, 14); ring.rotateX(1.25); ring.rotateZ(0.4); ring.translate(-0.006, hh * 0.52, dep / 2 + 0.0055); add(ring, 0xdcebfa, 0xb8d2ef, { curve: 1 });
         const st = new THREE.ExtrudeGeometry(starShape(0.0052, 0.0023), { depth: 0.0018, bevelEnabled: false }); st.translate(0.013, hh * 0.52 + 0.006, dep / 2 + 0.004); add(st, 0xffe27a, 0xf0c94e, { curve: 1 });
         const straw = new THREE.CylinderGeometry(0.0042, 0.0042, 0.026, 7); straw.rotateZ(-0.26); straw.translate(-0.015, hh + 0.014, 0); add(straw, 0xf47272, 0xd85555, { curve: 1 });
-        const elbow = new THREE.CylinderGeometry(0.0042, 0.0042, 0.013, 7); elbow.rotateZ(-0.95); elbow.translate(-0.0245, hh + 0.0255, 0); add(elbow, 0xe86060, 0xc84a4a, { curve: 1 });
+        const knee = new THREE.SphereGeometry(0.0042, 8, 6); knee.translate(-0.0117, hh + 0.0265, 0); add(knee, 0xee6a6a, 0xd05050, { curve: 1 });   // 꺾임 관절 — 두 마디를 잇는다(끊김 리포트)
+        const elbow = new THREE.CylinderGeometry(0.0042, 0.0042, 0.013, 7); elbow.rotateZ(0.95); elbow.translate(-0.017, hh + 0.0303, 0); add(elbow, 0xe86060, 0xc84a4a, { curve: 1 });   // 관절점에서 좌상향 — 원래 좌측 꺾임(사용자 확정)
         topH = hh + 0.02;
     } else if (f.id === 'sice') {   // 🍦 동결건조 아이스크림 샌드 — 진짜 4단 조립: 라운드 웨하스 상·하판(도트 딤플) 사이 바닐라·딸기 인셋, 오른쪽에서 층별 크레이터 베어물기
         const W2 = 0.037, D2 = 0.0165, IN = 0.004;
@@ -11832,8 +11833,7 @@ function makeFoodGeo(f, bites = 0) {
         }
         if (b) fruitBiteDent(bun, { cy: 0.042, ry: 0.036, ft: 0xfff6df, fb: 0xffe9b0 }, b === 1 ? [{ x: 0.038, y: 0.052, z: 0.022, r: 0.03 }] : [{ x: 0.024, y: 0.05, z: 0.018, r: 0.044 }, { x: 0.048, y: 0.032, z: -0.012, r: 0.034 }], true);
         glossParts.push(bun);   // 빵 돔 = 클리어코트 글레이즈 — 카메라 각도 따라 윤기가 흐른다. 크림 단면은 덴트 정점색이 전담(별도 조형물 금지 — "계란" 리포트)
-        const moon = new THREE.TorusGeometry(0.016, 0.0048, 7, 14, Math.PI * 1.25); moon.rotateZ(0.55); moon.translate(b >= 2 ? -0.021 : b === 1 ? -0.008 : 0.002, 0.05, b >= 2 ? 0.029 : 0.035);
-        add(moon, 0xfff4cc, 0xe8cc80, { curve: 1 });
+        // 초승달 없음 — 토러스는 음영으로 "어두운 고리"가 되어 제거(사용자 확정: 대체 스탬프도 넣지 말 것)
         for (const [sx3, sy3, sz3, sc3] of b >= 2 ? [[-0.046, 0.074, 0.01, 1]] : [[-0.046, 0.077, 0.012, 1], [0.05, 0.069, -0.004, 0.72]]) {   // 반짝 별(4각)
             const sp3 = new THREE.ExtrudeGeometry(starShape(0.006 * sc3, 0.0022 * sc3, 4), { depth: 0.0016, bevelEnabled: false });
             sp3.rotateX(-0.5); sp3.translate(sx3, sy3, sz3); addF(sp3, 0xffffff, 0xe8eef6, { curve: 1 });   // 반짝별 = 은박, 위로 기울여 밝은 천장 반사를 받는다
@@ -12324,7 +12324,7 @@ function makeFoodGeo(f, bites = 0) {
         }
         topH = 0.08;
     }
-    const merged = mergeGeometries(parts.map((p) => (p.index ? p.toNonIndexed() : p)), false);
+    const merged = parts.length ? mergeGeometries(parts.map((p) => (p.index ? p.toNonIndexed() : p)), false) : new THREE.BufferGeometry();   // 매트 파트 0(전부 광택 자식인 간식)도 안전 — 빈 병합은 null이라 던진다
     merged.userData = { topH };
     if (foilParts.length) merged.userData.foilGeo = mergeGeometries(foilParts.map((p) => (p.index ? p.toNonIndexed() : p)), false);
     if (glossParts.length) merged.userData.glossGeo = mergeGeometries(glossParts.map((p) => (p.index ? p.toNonIndexed() : p)), false);
