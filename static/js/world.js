@@ -11849,19 +11849,45 @@ function makeFoodGeo(f, bites = 0) {
         const plate = new THREE.CylinderGeometry(0.062, 0.05, 0.007, 24); plate.translate(0, 0.0035, 0); add(plate, 0xfdfcf8, 0xdedace, { curve: 1 });
         const wall = new THREE.CylinderGeometry(0.062, 0.056, 0.009, 24, 1, true); wall.scale(-1, 1, 1); wall.translate(0, 0.0115, 0); add(wall, 0x9a9484, 0x5c5749, { curve: 1.3 });
         const rim = new THREE.TorusGeometry(0.0618, 0.0024, 7, 26); rim.rotateX(Math.PI / 2); rim.translate(0, 0.0158, 0); add(rim, 0xfefdfa, 0xd8d4c8, { curve: 1 });
-        const leaves = b >= 2 ? [[0.001, 0.002, -0.2, 0.62]] : b >= 1 ? [[-0.006, 0.004, -0.3, 0.82], [0.014, -0.008, 0.35, 0.7]] : [[-0.019, 0.004, -0.32, 1], [0.017, -0.009, 0.36, 0.94], [0.0, 0.014, 0.08, 0.86]];
-        for (const [lx, lz, rot, k] of leaves) {
-            const lf = new THREE.SphereGeometry(0.019 * k, 12, 8); lf.scale(1.15, 0.4, 0.86); lf.rotateY(rot); lf.rotateZ(0.12); lf.translate(lx, 0.0135, lz);
-            add(lf, 0xa8d96e, 0x4d8228, { curve: 1.25 });
-            const vn = new THREE.BoxGeometry(0.026 * k, 0.0016, 0.0022); vn.rotateY(rot); vn.translate(lx, 0.0135 + 0.0075 * k, lz); add(vn, 0x6d9c3e, 0x4a7028, { curve: 1 });
+        // 🥬 주름진 잎사귀 — 가장자리를 물결치게 접은 얇은 잎(구가 아니라 진짜 잎처럼)
+        const leafGeo = (R, ripple) => {
+            const sh = new THREE.Shape();
+            for (let i = 0; i <= 30; i++) { const a = (i / 30) * Math.PI * 2; const rr = R * (0.72 + 0.28 * Math.abs(Math.cos(a * 2.5))) * (1 + ripple * 0.12 * Math.sin(a * 6)); const px = Math.cos(a) * rr, py = Math.sin(a) * rr * 0.82; if (i === 0) sh.moveTo(px, py); else sh.lineTo(px, py); }
+            sh.closePath();
+            const g = new THREE.ExtrudeGeometry(sh, { depth: 0.0018, bevelEnabled: true, bevelThickness: 0.001, bevelSize: 0.0012, bevelSegments: 1, curveSegments: 5 });
+            const pos = g.attributes.position;   // 물결지게 접기 — 잎맥 방향으로 y를 흔든다
+            for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), yv = pos.getY(i); pos.setZ(i, pos.getZ(i) + Math.sin(x * 95 + ripple) * 0.0022 + Math.cos(yv * 80) * 0.0016); }
+            pos.needsUpdate = true; g.computeVertexNormals(); g.rotateX(-Math.PI / 2);
+            return g;
+        };
+        const leaves = b >= 2 ? [[0.0, 0.0, -0.2, 0.017, 0xb2df74, 0x5e9636]]
+            : b >= 1 ? [[-0.008, 0.006, -0.4, 0.019, 0xb2df74, 0x5e9636], [0.014, -0.01, 0.5, 0.017, 0x9fd45f, 0x4d8228]]
+            : [[-0.02, 0.006, -0.5, 0.023, 0xb2df74, 0x5e9636], [0.019, -0.012, 0.6, 0.021, 0x9fd45f, 0x4d8228], [-0.004, 0.017, 0.1, 0.02, 0xc2e690, 0x6ea63c], [0.01, 0.01, 2.4, 0.017, 0xa8d96e, 0x4d8228]];
+        for (const [lx, lz, rot, R, ct, cb] of leaves) {
+            const lf = leafGeo(R, rot * 3); lf.scale(1, 1, 1); lf.rotateZ(0.1); lf.rotateY(rot); lf.translate(lx, 0.014, lz);
+            add(lf, ct, cb, { curve: 1.3 });
+            const vn = new THREE.CylinderGeometry(0.0007, 0.0011, R * 1.5, 5); vn.rotateZ(Math.PI / 2); vn.rotateY(rot); vn.translate(lx, 0.0138, lz); add(vn, 0xe8f2d0, 0xcadfa4, { curve: 1 });
         }
-        const sticks = b >= 2 ? [[0.002, -0.003, -0.2, 0.7]] : b >= 1 ? [[-0.008, 0.006, -0.35, 0.85], [0.012, -0.01, 0.42, 0.75]] : [[-0.014, 0.002, -0.45, 1], [0.014, -0.006, 0.35, 0.92], [-0.002, 0.015, -0.1, 0.88], [0.018, 0.012, 0.62, 0.78]];
+        // 🥒 어슷 썬 오이 — 타원 슬라이스(초록 테 + 연둣빛 속 + 씨)
+        const cukes = b >= 2 ? [] : b >= 1 ? [[0.006, 0.014, 0.5]] : [[-0.006, -0.016, 0.4], [0.022, 0.006, -0.7], [0.014, 0.02, 1.1]];
+        for (const [cx, cz, rot] of cukes) {
+            const sk = new THREE.CylinderGeometry(0.0092, 0.0092, 0.0032, 18); sk.scale(1, 1, 0.72); sk.rotateX(1.15); sk.rotateY(rot); sk.translate(cx, 0.0165, cz); add(sk, 0x4f9e3e, 0x336b24, { curve: 1.1 });
+            const fl = new THREE.CylinderGeometry(0.0072, 0.0072, 0.0036, 18); fl.scale(1, 1, 0.72); fl.rotateX(1.15); fl.rotateY(rot); fl.translate(cx, 0.0166, cz); add(fl, 0xdff0c4, 0xbcd99a, { curve: 1 });
+            for (let i = 0; i < 3; i++) { const sd = new THREE.SphereGeometry(0.0008, 5, 4); sd.translate(cx + Math.cos(i * 2) * 0.0026, 0.0184, cz + Math.sin(i * 2) * 0.0021); add(sd, 0xeef6df, 0xd2e3b4, { curve: 1 }); }
+        }
+        // 🍅 방울토마토 반쪽 — 윤기 나는 빨강 + 하이라이트
+        const toms = b >= 2 ? [[0.002, 0.0]] : b >= 1 ? [[-0.012, -0.006], [0.016, 0.014]] : [[-0.018, 0.014], [0.02, -0.014], [0.004, -0.006]];
+        for (const [tx, tz] of toms) {
+            const tm = new THREE.SphereGeometry(0.0082, 12, 9, 0, Math.PI * 2, 0, Math.PI * 0.62); tm.scale(1, 0.82, 1); tm.rotateX(-0.25); tm.translate(tx, 0.0168, tz); add(tm, 0xf24b3a, 0xc02818, { curve: 1.35 });
+            const hl = new THREE.SphereGeometry(0.0026, 7, 6); hl.scale(1.4, 0.5, 1); hl.translate(tx - 0.0022, 0.0226, tz + 0.0016); add(hl, 0xffb0a2, 0xf2604e, { curve: 1 });
+        }
+        // 🥕 당근 채 — 가는 주황 막대
+        const sticks = b >= 2 ? [[0.008, -0.006, -0.2, 0.7]] : b >= 1 ? [[-0.01, 0.008, -0.35, 0.85], [0.014, -0.012, 0.42, 0.75]] : [[-0.016, 0.0, -0.45, 1], [0.016, -0.004, 0.35, 0.92], [-0.002, 0.017, -0.1, 0.88], [0.006, -0.014, 0.7, 0.8]];
         for (const [cx, cz, rot, k] of sticks) {
-            const st = new THREE.BoxGeometry(0.028 * k, 0.0052, 0.0052); st.rotateY(rot); st.rotateZ(0.06); st.translate(cx, 0.0165, cz);
-            add(st, 0xffab5e, 0xd9691f, { curve: 1.15 });
+            const st = new THREE.BoxGeometry(0.026 * k, 0.0034, 0.0034); st.rotateY(rot); st.rotateZ(0.05); st.translate(cx, 0.0172, cz); add(st, 0xff9a3e, 0xdc6b1c, { curve: 1.15 });
         }
-        if (b < 2) for (let i = 0; i < 3; i++) { const a = i * 2.1; const pp = new THREE.SphereGeometry(0.0016, 5, 4); pp.translate(Math.cos(a) * 0.024, 0.019, Math.sin(a) * 0.024); add(pp, 0x4e4436, 0x2e2820, { curve: 1 }); }
-        topH = 0.03;
+        if (b < 2) for (let i = 0; i < 4; i++) { const a = i * 1.7; const pp = new THREE.SphereGeometry(0.0013, 5, 4); pp.translate(Math.cos(a) * 0.026, 0.019, Math.sin(a) * 0.022); add(pp, 0x4e4436, 0x2e2820, { curve: 1 }); }
+        topH = 0.032;
     } else if (f.id === 'jamtoast') {   // 🍞 그을린 뒷면 + 촉촉한 잼 — 모서리부터 베어문다
         const c = { cy: 0.046, ry: 0.05, ft: 0xfbf4e4, fb: 0xf2e6c8 };
         const sph = b >= 2 ? [{ x: 0.024, y: 0.062, z: 0, r: 0.037 }, { x: 0.002, y: 0.03, z: 0, r: 0.032 }] : b >= 1 ? [{ x: 0.03, y: 0.068, z: 0, r: 0.034 }] : null;
