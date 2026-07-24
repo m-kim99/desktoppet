@@ -4267,6 +4267,34 @@ const RECIPES = [
     { id: 'bfsteak',    ko: '베프 스테이크', emoji: '🥩', tier: 'heart', needs: [{ src: 'market', id: 'meat', n: 2 }] },
     { id: 'eterncake',  ko: '영원 케이크',   emoji: '🎂', tier: 'heart', needs: [{ src: 'staple', id: 'flour', n: 1 }, { src: 'staple', id: 'sugar', n: 1 }, { src: 'staple', id: 'milk', n: 1 }, { src: 'fruit', id: '*', n: 1 }, { src: 'market', id: '*', n: 1 }] },
 ];
+// ---- 🧪 실험 레시피 — 숨겨진 조합(멀티셋/술어 매칭). 발견하면 recipesUnlocked에 등록돼
+// 정식 레시피 카드로 승격(이후 원클릭 조리·자율 요리사도 만들 수 있다). 매칭 실패 = 정체불명
+// 탄 요리(도감 1칸, 횟수 카운트). 실험은 주인 몫 — 자율 요리사는 실험하지 않는다. ----
+const expKey = (u) => `${u.src}:${u.id}`;
+const matchSet = (sel, keys) => {
+    if (sel.length !== keys.length) return false;
+    const a = sel.map(expKey).sort();
+    const b = [...keys].sort();
+    return a.every((k, i) => k === b[i]);
+};
+const EXP_RECIPES = [
+    { id: 'mixjuice',  ko: '무지개 믹스주스', emoji: '🍹', tier: 'exp', needs: [{ src: 'fruit', id: '*', n: 3 }],
+      match: (sel) => sel.length === 3 && sel.every((u) => u.src === 'fruit') && new Set(sel.map((u) => u.id)).size === 3 },
+    { id: 'octogratin', ko: '문어 그라탕', emoji: '🧀', tier: 'exp', needs: [{ src: 'seafood', id: 'octopus', n: 1 }, { src: 'market', id: 'cheese', n: 1 }],
+      match: (sel) => matchSet(sel, ['seafood:octopus', 'market:cheese']) },
+    { id: 'seastew',   ko: '해물탕', emoji: '🍲', tier: 'exp', needs: [{ src: 'fish', id: '*', n: 1 }, { src: 'shell', id: '*', n: 1 }],
+      match: (sel) => sel.length === 2 && sel.some((u) => u.src === 'fish') && sel.some((u) => u.src === 'shell') },
+    { id: 'tomatojam', ko: '달콤 토마토잼', emoji: '🍯', tier: 'exp', needs: [{ src: 'pantry', id: 'tomato', n: 1 }, { src: 'staple', id: 'sugar', n: 1 }],
+      match: (sel) => sel.length === 2 && sel.some((u) => u.id === 'tomato') && sel.some((u) => u.src === 'staple' && u.id === 'sugar') },
+    { id: 'carrotcake', ko: '당근 케이크', emoji: '🥕', tier: 'exp', needs: [{ src: 'pantry', id: 'carrot', n: 1 }, { src: 'staple', id: 'flour', n: 1 }, { src: 'market', id: 'egg', n: 1 }],
+      match: (sel) => matchSet(sel, ['pantry:carrot', 'staple:flour', 'market:egg']) },
+    { id: 'cococurry', ko: '코코넛 카레', emoji: '🍛', tier: 'exp', needs: [{ src: 'fruit', id: 'coconut', n: 1 }, { src: 'market', id: 'meat', n: 1 }],
+      match: (sel) => matchSet(sel, ['fruit:coconut', 'market:meat']) },
+    { id: 'pearlsoup', ko: '진주 크림수프', emoji: '🫧', tier: 'exp', needs: [{ src: 'shell', id: 'pearl', n: 1 }, { src: 'staple', id: 'milk', n: 1 }],
+      match: (sel) => matchSet(sel, ['shell:pearl', 'staple:milk']) },
+];
+RECIPES.push(...EXP_RECIPES);
+const SEAFOOD_EMOJI = { octopus: '🐙', shrimp: '🦐', oyster: '🦪', urchin: '🟣', starfish: '⭐', wakame: '🌿', seacuke: '🥒', seasquirt: '🍊' };
 const ING_KO = { '*': '아무거나', octopus: '문어', meat: '고기', noodle: '생면', cheese: '치즈', egg: '달걀', carrot: '당근', tomato: '토마토', sunflower: '해바라기', flour: '밀가루', sugar: '설탕', milk: '우유', oil: '기름', jang: '춘장' };
 function ingKo(nd) {
     if (nd.src === 'fruit') return nd.id === '*' ? '과일 아무거나' : (FRUITS[nd.id] ? FRUITS[nd.id].ko : nd.id);
@@ -4291,7 +4319,7 @@ try { recipesUnlocked = JSON.parse(localStorage.getItem('world-recipes-unlocked'
 const saveRecipesUnlocked = () => { try { localStorage.setItem('world-recipes-unlocked', JSON.stringify(recipesUnlocked)); worldSync('world-recipes-unlocked'); } catch (e) {} };
 let dishesFound = {};
 try { dishesFound = JSON.parse(localStorage.getItem('world-dishes-found') || '{}') || {}; } catch (e) {}
-const recipeLocked = (r) => r.tier === 'heart' && !recipesUnlocked[r.id];
+const recipeLocked = (r) => (r.tier === 'heart' || r.tier === 'exp') && !recipesUnlocked[r.id];
 // 마음 요리 해금 = 요리 도감 마일스톤(서로 다른 요리 종수): 주방과 친해질수록 마음이 담긴
 // 레시피가 떠오른다. 비스킷 형제(1종) → 베프 와플(3) → 베프 스테이크(6) → 영원 케이크(10).
 const HEART_UNLOCKS = [
@@ -4312,8 +4340,94 @@ function maybeUnlockHearts() {
 // 주방 패널 — 위 재고 스트립(살아있는 수확 4계보 + 오늘의 장터), 아래 레시피 카드.
 // 카드 3상태: 조리 가능(밝음) / 재료 부족(흐림 + 뭐가 없는지) / 마음 요리 잠금(??? + 힌트).
 let kitchenPanel = null;
+let kitchenView = 'recipes';   // recipes | lab
+function expStockList() {   // 실험 탭 재료 타일 — 재고 있는 계보 전부 + 찬장(무한)
+    const out = [];
+    for (const [id, n] of Object.entries(basketCounts)) if (n > 0 && FRUITS[id]) out.push({ src: 'fruit', id, ko: FRUITS[id].ko, emoji: FRUITS[id].emoji, n });
+    for (const [id, n] of Object.entries(pantryCounts)) if (n > 0) { const c = GARDEN_CROPS.find((q) => q.id === id); out.push({ src: 'pantry', id, ko: c ? c.ko : id, emoji: c ? c.emoji : '🥬', n }); }
+    for (const [id, n] of Object.entries(iceboxCounts)) if (n > 0) { const sp = FISH_SPECIES.find((q) => q.id === id); out.push({ src: 'fish', id, ko: sp ? sp.ko : id, emoji: '🐟', n }); }
+    const sc = seafoodCounts();
+    for (const [id, n] of Object.entries(sc)) if (n > 0) { const sp = SEAFOOD.find((q) => q.id === id); out.push({ src: 'seafood', id, ko: sp ? sp.ko : id, emoji: SEAFOOD_EMOJI[id] || '🌊', n }); }
+    const shc = shellCounts();
+    for (const [id, n] of Object.entries(shc)) if (n > 0) { const t = SHELL_TYPES.find((q) => q.id === id); out.push({ src: 'shell', id, ko: t ? t.ko : id, emoji: id === 'pearl' ? '🫧' : '🐚', n }); }
+    for (const m of marketStock()) if (m.left > 0) out.push({ src: 'market', id: m.id, ko: m.ko, emoji: m.emoji, n: m.left });
+    for (const st of PANTRY_STAPLES) out.push({ src: 'staple', id: st.id, ko: st.ko, emoji: st.emoji, n: Infinity });
+    return out;
+}
+function refreshKitchenLab() {
+    const lab = kitchenPanel.querySelector('.kc-lab');
+    lab.innerHTML = '';
+    // 선택 슬롯 3 + 끓여보기
+    const selRow = document.createElement('div');
+    selRow.style.cssText = 'display:flex; align-items:center; gap:6px; margin-bottom:8px;';
+    for (let i = 0; i < 3; i++) {
+        const slot = document.createElement('div');
+        const u = expSel[i];
+        slot.style.cssText = `width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:21px; background:${u ? '#fff' : 'rgba(255,255,255,0.07)'}; border:1.5px dashed ${u ? 'transparent' : 'rgba(255,255,255,0.25)'}; cursor:${u ? 'pointer' : 'default'};`;
+        if (u) {
+            slot.textContent = u.emoji;
+            slot.title = `${u.ko} — 빼기`;
+            slot.onclick = () => { expSel.splice(i, 1); refreshKitchenLab(); };
+        }
+        selRow.appendChild(slot);
+    }
+    const cookBtn = document.createElement('button');
+    const err = expValidate(expSel);
+    cookBtn.textContent = '🧪 끓여보기';
+    cookBtn.disabled = !!err;
+    cookBtn.title = err || '무슨 맛이 날까?';
+    cookBtn.style.cssText = `flex:1; margin-left:2px; padding:9px 8px; border:none; border-radius:10px; font-size:13px; font-weight:700; font-family:sans-serif; cursor:${err ? 'default' : 'pointer'}; background:${err ? 'rgba(255,255,255,0.08)' : '#ffd54f'}; color:${err ? '#889' : '#3d2f18'};`;
+    cookBtn.onclick = () => {
+        if (expValidate(expSel)) return;
+        if (cookExperiment(expSel.map((u) => ({ src: u.src, id: u.id })))) {
+            expSel = [];
+            refreshKitchenLab();
+        }
+    };
+    selRow.appendChild(cookBtn);
+    lab.appendChild(selRow);
+    // 재료 타일 그리드
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid; grid-template-columns:repeat(4, 1fr); gap:7px;';
+    for (const it of expStockList()) {
+        const picked = expSel.filter((u) => u.src === it.src && u.id === it.id).length;
+        const tile = document.createElement('div');
+        tile.title = `${it.ko}${it.n === Infinity ? ' (찬장)' : ` ×${it.n}`}`;
+        tile.style.cssText = `position:relative; aspect-ratio:1; background:#fff; border-radius:11px; display:flex; align-items:center; justify-content:center; font-size:23px; cursor:pointer; user-select:none; -webkit-user-select:none; box-shadow:${picked ? '0 0 0 2.5px #ffd54f,' : ''} 0 2px 6px rgba(0,0,0,0.25);`;
+        tile.innerHTML = `<span>${it.emoji}</span><span style="position:absolute; bottom:2px; right:5px; font-size:9.5px; color:#667;">${it.n === Infinity ? '∞' : it.n}</span>${picked ? `<span style="position:absolute; top:2px; left:5px; font-size:10px; font-weight:800; color:#b8860b;">${picked}</span>` : ''}`;
+        let lpT = null, lpFired = false;
+        tile.addEventListener('pointerdown', () => {
+            lpFired = false;
+            if (IS_TOUCH) lpT = setTimeout(() => { lpFired = true; showMenuTip(tile, tile.title); }, 480);
+        });
+        const lpClear = () => clearTimeout(lpT);
+        tile.addEventListener('pointerup', lpClear);
+        tile.addEventListener('pointercancel', lpClear);
+        tile.addEventListener('pointerleave', lpClear);
+        tile.onclick = () => {
+            if (lpFired) { lpFired = false; return; }
+            if (expSel.length >= 3) { showToast('🧪 세 가지면 충분해요'); return; }
+            if (it.n !== Infinity && picked >= it.n) { showToast('🧪 재고가 그만큼 없어요'); return; }
+            expSel.push(it);
+            refreshKitchenLab();
+        };
+        grid.appendChild(tile);
+    }
+    lab.appendChild(grid);
+    // 푸터 — 숨은 조합·정체불명 카운트
+    const hidden = EXP_RECIPES.filter((r) => recipeLocked(r)).length;
+    const foot = document.createElement('div');
+    foot.style.cssText = 'margin-top:8px; font-size:11.5px; opacity:0.75; line-height:1.5;';
+    foot.textContent = `${hidden ? `아직 ${hidden}가지 맛이 숨어 있어요` : '숨은 맛을 전부 찾았어요! 🎉'} · 💨 정체불명 요리 ${dishesFound.burnt || 0}회`;
+    lab.appendChild(foot);
+}
 function refreshKitchenPanel() {
     if (!kitchenPanel || kitchenPanel.style.display === 'none') return;
+    kitchenPanel.querySelector('.kc-body').style.display = kitchenView === 'recipes' ? 'grid' : 'none';
+    kitchenPanel.querySelector('.kc-lab').style.display = kitchenView === 'lab' ? 'block' : 'none';
+    const labBtn = kitchenPanel.querySelector('.kc-labbtn');
+    labBtn.style.background = kitchenView === 'lab' ? 'rgba(255,213,79,0.25)' : 'none';
+    if (kitchenView === 'lab') refreshKitchenLab();
     const strip = kitchenPanel.querySelector('.kc-stock');
     const inv = [
         ['🧺', sumVals(basketCounts)], ['🥕', pantryCounts.carrot || 0], ['🍅', pantryCounts.tomato || 0],
@@ -4326,6 +4440,7 @@ function refreshKitchenPanel() {
     // 타일 그리드 — 요리는 흰 바탕 정사각 이미지(지금은 이모지 대체, 조형 확정 후 아이콘 스냅샷).
     // 이름·재료는 펫 모션 메뉴 문법: 데탑 = title 툴팁, 터치 = 길게 눌러 라벨(짧은 탭 = 실행).
     for (const r of RECIPES) {
+        if (r.tier === 'exp' && recipeLocked(r)) continue;   // 미발견 실험 레시피는 메인에 안 보인다 — 실험 탭의 ??? 몫
         const locked = recipeLocked(r);
         const missing = recipeMissing(r);
         const ok = !locked && !missing.length;
@@ -4364,19 +4479,19 @@ function lineConsume(key, counts, id, save) {   // 카운트 계보 공용 차�
     save(counts);
     return true;
 }
+function consumeUnit(src, id) {   // 계보 무관 1단위 차감 — 정규 조리·실험 공용
+    if (src === 'staple') return true;
+    if (src === 'fruit') return lineConsume('fruit', basketCounts, id, () => saveBasket());
+    if (src === 'pantry') return lineConsume('pantry', pantryCounts, id, () => savePantry());
+    if (src === 'fish') return lineConsume('fish', iceboxCounts, id, () => { saveIcebox(); refreshIceboxPanel(); });
+    if (src === 'seafood') { const c = seafoodCounts(); return lineConsume('seafood', c, id, () => { try { localStorage.setItem('world-seafood', JSON.stringify(c)); worldSync('world-seafood'); } catch (e) {} }); }
+    if (src === 'shell') { const c = shellCounts(); return lineConsume('shell', c, id, () => { try { localStorage.setItem('world-shells', JSON.stringify(c)); worldSync('world-shells'); } catch (e) {} }); }
+    if (src === 'market') return marketConsume(id, 1);
+    return false;
+}
 function consumeIngredients(r) {
     if (recipeMissing(r).length) return false;
-    for (const nd of r.needs) {
-        for (let k = 0; k < nd.n; k++) {
-            if (nd.src === 'staple') continue;
-            else if (nd.src === 'fruit') lineConsume('fruit', basketCounts, nd.id, () => saveBasket());
-            else if (nd.src === 'pantry') lineConsume('pantry', pantryCounts, nd.id, () => savePantry());
-            else if (nd.src === 'fish') lineConsume('fish', iceboxCounts, nd.id, () => { saveIcebox(); refreshIceboxPanel(); });
-            else if (nd.src === 'seafood') { const c = seafoodCounts(); lineConsume('seafood', c, nd.id, () => { try { localStorage.setItem('world-seafood', JSON.stringify(c)); worldSync('world-seafood'); } catch (e) {} }); }
-            else if (nd.src === 'shell') { const c = shellCounts(); lineConsume('shell', c, nd.id, () => { try { localStorage.setItem('world-shells', JSON.stringify(c)); worldSync('world-shells'); } catch (e) {} }); }
-            else if (nd.src === 'market') marketConsume(nd.id, 1);
-        }
-    }
+    for (const nd of r.needs) for (let k = 0; k < nd.n; k++) consumeUnit(nd.src, nd.id);
     refreshBasketPanel();
     return true;
 }
@@ -4420,10 +4535,10 @@ function endCookFx() {
     cookFx = null;
 }
 const _steamV = new THREE.Vector3();
-function puffSteam(k) {
+function puffSteam(k, col = 0xe8eef0) {
     if (!cookFx) return;
     for (let i = 0; i < 2 + k * 2; i++) {
-        const spr = glowSprite(0xe8eef0, 0.06 + Math.random() * 0.05, 0.7);
+        const spr = glowSprite(col, 0.06 + Math.random() * 0.05, 0.7);
         _steamV.set(-0.42 + (Math.random() - 0.5) * 0.14, 0.62, -0.09);
         cookFx.grp.localToWorld(_steamV);
         spr.position.copy(_steamV);
@@ -4455,6 +4570,62 @@ function cookRecipe(r) {
     cooking.ownArrive = () => { if (cooking && cooking.p === chef) beginCookSeq(chef, r, pr); };
     chef.ai.onArrive = cooking.ownArrive;
     return true;
+}
+// 🧪 실험: 재료 2~3개(비찬장 ≥1) 자유 조합 → 도착 시 소비·결과 확정(매칭=발견/실패=탄 요리)
+let expSel = [];   // 실험 탭 선택 [{src,id}]
+function expValidate(sel) {
+    if (!sel || sel.length < 2 || sel.length > 3) return '재료를 2~3개 골라요';
+    if (!sel.some((u) => u.src !== 'staple')) return '찬장 재료만으론 안 돼요 — 수확물을 하나쯤';
+    const cnt = {};
+    for (const u of sel) cnt[expKey(u)] = (cnt[expKey(u)] || 0) + 1;
+    for (const k in cnt) {
+        const [src, id] = k.split(':');
+        if (src !== 'staple' && ingredientCount(src, id) < cnt[k]) return '재고가 모자라요';
+    }
+    return null;
+}
+const matchExp = (sel) => EXP_RECIPES.find((r) => r.match(sel)) || null;
+function cookExperiment(sel) {
+    if (cooking) { showToast('🍳 주방이 바빠요 — 한 접시 끝나고요!'); return false; }
+    const err = expValidate(sel);
+    if (err) { showToast(`🧪 ${err}`); return false; }
+    const pr = PROPS.find((q) => q.type === 'kitchen');
+    if (!pr) return false;
+    if (possessed && nearestPropDist(possessed, 'kitchen') < 1.6) { beginExpSeq(possessed, sel, pr); return true; }
+    const chef = pets.find((q) => q !== possessed && !q.pet.sleeping && !q.bed && !q.dip && !q.drink && !q.food
+        && q.ai.state !== 'held' && q.ai.state !== 'busy' && q.ai.state !== 'goto');
+    if (!chef) { showToast('🍳 지금 요리할 펫이 없어요'); return false; }
+    if (kitchenPanel) kitchenPanel.style.display = 'none';
+    showToast(`🧪 ${petKo(chef)}가 실험하러 가요`);
+    releaseAI(chef);
+    chef.ai.state = 'goto';
+    const spot = { x: pr.x + Math.sin(pr.rotY || 0) * 0.8, z: pr.z + Math.cos(pr.rotY || 0) * 0.8 };
+    const open = nearestOpenSpot(spot.x, spot.z) || spot;
+    chef.ai.target = { x: open.x, z: open.z };
+    chef.ai.waypoints = buildRoute(chef.mover.position, chef.ai.target);
+    chef.ai.stall = 0;
+    cooking = { p: chef, pr, phase: 'walk', t: 0, act: 0, exp: sel };
+    cooking.ownArrive = () => { if (cooking && cooking.p === chef) beginExpSeq(chef, sel, pr); };
+    chef.ai.onArrive = cooking.ownArrive;
+    return true;
+}
+function beginExpSeq(p, sel, pr) {
+    const err = expValidate(sel);
+    if (err) {   // 걷는 사이 재고가 사라졌을 수도
+        showToast(`🧪 ${err}`);
+        if (p !== possessed) releaseAI(p);
+        cooking = null;
+        return;
+    }
+    for (const u of sel) consumeUnit(u.src, u.id);
+    refreshKitchenPanel();
+    const result = matchExp(sel);   // 결과는 재료가 냄비에 들어간 순간 확정
+    if (p !== possessed) p.ai.state = 'busy';
+    p.mover.rotation.y = Math.atan2(pr.x - p.mover.position.x, pr.z - p.mover.position.z);
+    cooking = { p, pr, phase: 'chop', t: 0, act: 0, exp: sel, expResult: result,
+        r: result || { id: 'burnt', ko: '정체불명 요리', emoji: '💀', needs: sel.map((u) => ({ src: u.src, id: u.id, n: 1 })) } };
+    spawnCookFx(pr, cooking.r);
+    logWorldEvent(`${petKo(p)}가 알 수 없는 조합으로 요리 실험을 시작했다 🧪`);
 }
 function beginCookSeq(p, r, pr, carry) {
     if (recipeMissing(r).length) {   // 걷는 사이 재료가 사라졌을 수도 — 차감은 도착 후에만
@@ -4753,6 +4924,39 @@ function updateCooking(delta) {
         if (cooking.t > 3.0) { cooking.phase = 'plate'; cooking.t = 0; puffSteam(2); }
         return;
     }
+    if (cooking.t > 1.3 && cooking.exp) {   // 🧪 실험 플레이팅 — 발견 or 정체불명
+        endCookFx();
+        const res = cooking.expResult;
+        const chef = p;
+        if (res) {
+            const first = !recipesUnlocked[res.id];
+            recipesUnlocked[res.id] = true;
+            saveRecipesUnlocked();
+            dishesFound[res.id] = (dishesFound[res.id] || 0) + 1;
+            try { localStorage.setItem('world-dishes-found', JSON.stringify(dishesFound)); worldSync('world-dishes-found'); } catch (e) {}
+            giveFood(chef, { id: 'cloche', name: res.ko }, '주방에서');
+            if (!chef.pet.action) chef.pet.action = { id: 'happy', t: 0 };
+            if (first) {
+                fishFanfare();
+                showToast(`🧪✨ 새 레시피 발견 — ${res.ko}! 레시피북에 등록됐어요`);
+                logWorldEvent(`실험으로 ${res.ko} 레시피를 발견했다 🧪✨`);
+                maybeProactive(null, `방금 요리 실험으로 ${res.ko}를 발견했다! 천재적인 조합이었다!`);
+            } else logWorldEvent(`${petKo(chef)}가 실험 재현으로 ${res.ko}를 만들었다 🧪`);
+            maybeUnlockHearts();
+        } else {
+            dishesFound.burnt = (dishesFound.burnt || 0) + 1;
+            try { localStorage.setItem('world-dishes-found', JSON.stringify(dishesFound)); worldSync('world-dishes-found'); } catch (e) {}
+            puffSteam(3, 0x3f3b38);   // 탄 연기 퍽
+            giveFood(chef, { id: 'cloche', name: '정체불명 요리', burnt: true }, '주방에서');
+            if (!chef.pet.action) chef.pet.action = { id: 'think', t: 0 };
+            showToast(`💨 퍽! …정체불명 요리가 되어버렸다 (${dishesFound.burnt}번째)`);
+            logWorldEvent(`${petKo(chef)}의 실험이 정체불명 요리로 끝났다 💨`);
+        }
+        refreshKitchenPanel();
+        cooking = null;
+        if (chef !== possessed) releaseAI(chef, 2);
+        return;
+    }
     if (cooking.t > 1.3) {   // 플레이팅 — 클로슈 팝 + 도감 + 팡파레(첫 요리)
         endCookFx();
         const first = !dishesFound[r.id];
@@ -4783,11 +4987,13 @@ function toggleKitchenPanel() {
     if (!kitchenPanel) {
         kitchenPanel = document.createElement('div');
         kitchenPanel.style.cssText = 'position:fixed; right:64px; bottom:calc(70px + env(safe-area-inset-bottom, 0px)); display:none; width:min(292px, calc(100vw - 90px)); max-height:62vh; overflow-y:auto; background:rgba(30,32,40,0.94); border-radius:12px; padding:10px; z-index:110; box-shadow:0 6px 24px rgba(0,0,0,0.4); font-family:sans-serif; color:#fff;';
-        kitchenPanel.innerHTML = `<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;"><span style="font-size:13px; font-weight:700;">🍳 야외 주방</span><span class="kc-x" style="color:#aab; font-size:13px; cursor:pointer; padding:2px 6px;">✕</span></div>
+        kitchenPanel.innerHTML = `<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;"><span style="font-size:13px; font-weight:700;">🍳 야외 주방</span><span style="display:flex; gap:4px; align-items:center;"><span class="kc-labbtn" title="요리 실험" style="font-size:14px; cursor:pointer; padding:2px 7px; border-radius:7px;">🧪</span><span class="kc-x" style="color:#aab; font-size:13px; cursor:pointer; padding:2px 6px;">✕</span></span></div>
 <div class="kc-stock" style="font-size:11.5px; opacity:0.9; background:rgba(255,255,255,0.06); border-radius:8px; padding:6px 8px; margin-bottom:8px; line-height:1.4;"></div>
-<div class="kc-body" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:7px;"></div>`;
+<div class="kc-body" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:7px;"></div>
+<div class="kc-lab" style="display:none;"></div>`;
         kitchenPanel.addEventListener('pointerdown', (e) => e.stopPropagation());
         kitchenPanel.querySelector('.kc-x').onclick = () => { kitchenPanel.style.display = 'none'; };
+        kitchenPanel.querySelector('.kc-labbtn').onclick = () => { kitchenView = kitchenView === 'lab' ? 'recipes' : 'lab'; refreshKitchenPanel(); };
         document.body.appendChild(kitchenPanel);
     }
     kitchenPanel.style.display = (kitchenPanel.style.display === 'none' || !kitchenPanel.style.display) ? 'block' : 'none';
@@ -8787,6 +8993,14 @@ if (statsOn) window.__worldDev = {
     },
     kitchenClick: () => { if (claimLeftover()) return 'claimed'; toggleKitchenPanel(); return 'panel'; },
     menuClick: () => { PROP_CLICKS.kitchen(null, { object: { userData: { menuBoard: true } } }); return !!(kitchenPanel && kitchenPanel.style.display !== 'none'); },
+    expTry: (arr) => cookExperiment(arr.map(([src, id]) => ({ src, id }))),
+    expState: () => ({ hidden: EXP_RECIPES.filter((r) => recipeLocked(r)).length, burnt: dishesFound.burnt || 0, unlocked: EXP_RECIPES.filter((r) => !recipeLocked(r)).map((r) => r.id) }),
+    labOpen: () => {
+        kitchenView = 'lab';
+        if (!kitchenPanel || kitchenPanel.style.display === 'none') toggleKitchenPanel();
+        else refreshKitchenPanel();
+        return kitchenPanel.querySelectorAll('.kc-lab [title]').length;
+    },
     hsSpots: () => PROPS.filter((pr) => HIDE_STANDOFF[pr.type]).map((pr) => ({ type: pr.type, x: +pr.x.toFixed(2), z: +pr.z.toFixed(2), off: HIDE_STANDOFF[pr.type] })),
     routeProbe: (x1, z1, x2, z2) => ({ from: islandOf(x1, z1), to: islandOf(x2, z2), route: buildRoute({ x: x1, z: z1 }, { x: x2, z: z2 }).map((w) => [+w.x.toFixed(1), +w.z.toFixed(1), w.tp ? 'tp' : '']) }),
     blockedProbe: (x1, z1, x2, z2, step = 0.3) => {
@@ -11307,29 +11521,30 @@ function makeFoodGeo(f, bites = 0) {
         const liner = new THREE.TorusGeometry(0.0345, 0.0024, 6, 24); liner.rotateX(Math.PI / 2); liner.scale(1.1, 1, 0.94); liner.translate(0, 0.006, 0);
         add(liner, 0xd9a83c, 0xac8028, { curve: 1 });
         topH = 0.075;
-    } else if (f.id === 'cloche') {   // 🍽️ 클로슈 — 요리 완성품 임시 그릇 (요리별 조형은 디자인 확정 후 dish 분기로)
+    } else if (f.id === 'cloche') {   // 🍽️ 클로슈 — 요리 완성품 임시 그릇 (요리별 조형은 디자인 확정 후 dish 분기로). burnt = 실험 실패작(그을림)
+        const burnt = !!f.burnt;
         const tray = new THREE.CylinderGeometry(0.075, 0.082, 0.014, 18);
         tray.translate(0, 0.007, 0);
-        add(tray, 0xf2f5f8, 0xb9c2cc, { curve: 1 });
-        if (!b) {   // 닫힌 은돔 + 꼭지
+        add(tray, burnt ? 0x57504a : 0xf2f5f8, burnt ? 0x332e2a : 0xb9c2cc, { curve: 1 });
+        if (!b) {   // 닫힌 돔 + 꼭지
             const dome = new THREE.SphereGeometry(0.062, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.5);
             dome.translate(0, 0.016, 0);
-            add(dome, 0xf6f9fb, 0xc3ccd4, { curve: 1.4 });
+            add(dome, burnt ? 0x4a443f : 0xf6f9fb, burnt ? 0x2b2724 : 0xc3ccd4, { curve: 1.4 });
             const knob = new THREE.SphereGeometry(0.012, 10, 8);
             knob.translate(0, 0.082, 0);
-            add(knob, 0xf6f9fb, 0xcfd6dd, { curve: 1 });
+            add(knob, burnt ? 0x57504a : 0xf6f9fb, burnt ? 0x332e2a : 0xcfd6dd, { curve: 1 });
             topH = 0.1;
-        } else if (b === 1) {   // 돔 열림 — 김 나는 무언가 (범용 크림 무더기)
+        } else if (b === 1) {   // 돔 열림 — 김 나는 무언가 (범용 무더기)
             const mound = new THREE.SphereGeometry(0.045, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
             mound.scale(1, 0.8, 1);
             mound.translate(0, 0.014, 0);
-            add(mound, 0xf6e9d4, 0xdec49e, { curve: 1.2 });
+            add(mound, burnt ? 0x3b342f : 0xf6e9d4, burnt ? 0x241f1b : 0xdec49e, { curve: 1.2 });
             topH = 0.055;
         } else {   // 부스러기
             for (const [cx, cz] of [[-0.028, 0.01], [0.02, -0.02], [0.012, 0.03]]) {
                 const crumb = new THREE.SphereGeometry(0.012, 8, 6);
                 crumb.translate(cx, 0.018, cz);
-                add(crumb, 0xf6e9d4, 0xdec49e, { curve: 1 });
+                add(crumb, burnt ? 0x3b342f : 0xf6e9d4, burnt ? 0x241f1b : 0xdec49e, { curve: 1 });
             }
             topH = 0.03;
         }
@@ -11689,7 +11904,7 @@ function updateHeldPose(p, key, delta) {
                     showToast(`${FRUITS[fr].emoji} ${FRUITS[fr].ko} 다 먹었다 — 맛있다!!`);
                     logWorldEvent(`${petKo(p)}가 ${FRUITS[fr].ko}를 냠냠 다 먹었다 ${FRUITS[fr].emoji}`);
                     maybeProactive(p, `방금 ${FRUITS[fr].ko}를 먹었다! 달고 맛있었다!`);
-                } else showToast(isDrink ? '☕ 다 마셨다!' : '🍞 잘 먹었다!');
+                } else showToast(isDrink ? '☕ 다 마셨다!' : (it.def && it.def.burnt ? '💦 으엑… 이건 다신 만들지 말자' : '🍞 잘 먹었다!'));
                 return;
             }
         }
