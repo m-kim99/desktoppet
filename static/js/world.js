@@ -4517,17 +4517,48 @@ function startAiCook(p, opts = {}) {
     logWorldEvent(`${petKo(p)}가 출출한지 주방으로 향했다 🍳`);
     return 'ok';
 }
+// 배달은 절친이 본섬에 있을 때만(사용자 확정) — 아니면 조리대에 "네 몫"을 남겨둔다.
+// 도착 후 근접 검증 필수: 예전엔 기슭에서 포기해도 접시가 원격 순간이동했다 (잠복 버그).
+function leavePlateFor(chef, forName, r) {
+    if (!chef.food) { if (chef !== possessed && chef.ai.state === 'busy') releaseAI(chef, 1.5); aiCookPost = null; return; }
+    removeHeldItem(chef, 'food');
+    kitchenLeftover = { id: r.id, name: r.ko, t: Date.now(), for: forName };
+    saveLeftover();
+    syncLeftoverMesh();
+    chef.pet.action = { id: 'happy', t: 0 };
+    logWorldEvent(`${petKo(chef)}가 ${forName === 'chick' ? '병아리' : '강아지'} 몫의 ${r.ko}를 조리대에 남겨뒀다 🍳💌`);
+    if (chef !== possessed && chef.ai.state === 'busy') releaseAI(chef, 1.5);
+    aiCookPost = null;
+}
 function startAiCookPost(chef, intent, r) {
-    const friend = intent === 'serve'
-        ? pets.find((q) => q !== chef && q !== possessed && !q.pet.sleeping && !q.bed && !q.dip && (q.ai.state === 'idle' || q.ai.state === 'walk'))
-        : null;
     chef.ai.state = 'busy';
-    if (!friend) { aiCookPost = { p: chef, mode: 'eat', t: 0 }; return; }   // 절친이 바쁘면 내가 냠 (intent 'eat' 포함)
+    const cand = pets.find((q) => q !== chef && q !== possessed);
+    const candFree = cand && !cand.pet.sleeping && !cand.bed && !cand.dip && (cand.ai.state === 'idle' || cand.ai.state === 'walk');
+    const candHome = cand && islandOf(cand.mover.position.x, cand.mover.position.z) === 0;
+    if (intent !== 'serve' || !cand) { aiCookPost = { p: chef, mode: 'eat', t: 0 }; return; }
+    if (!candFree || !candHome) {   // 절친이 바쁘거나 본섬 밖 — 조리대에 몫을 남긴다 (자리 차 있으면 내가 냠)
+        if (!kitchenLeftover) { leavePlateFor(chef, cand.name, r); return; }
+        aiCookPost = { p: chef, mode: 'eat', t: 0 };
+        return;
+    }
+    const friend = cand;
     aiCookPost = { p: chef, friend, mode: 'carry', t: 0 };
     (async () => {
         await gotoAsync(chef, friend.mover.position.x + 0.55, friend.mover.position.z + 0.15);
         if (!aiCookPost || aiCookPost.p !== chef) return;
-        if (!chef.food || !friend || friend.pet.sleeping || friend.bed || friend.dip || friend === possessed) {   // 걸어오는 사이 사정이 바뀌었다 — 내가 냠
+        const near = Math.hypot(chef.mover.position.x - friend.mover.position.x, chef.mover.position.z - friend.mover.position.z) < 1.8;
+        if (!chef.food) { aiCookPost = null; if (chef.ai.state === 'busy') releaseAI(chef, 1.5); return; }
+        if (!near || friend.pet.sleeping || friend.bed || friend.dip || friend === possessed
+            || islandOf(friend.mover.position.x, friend.mover.position.z) !== 0) {
+            // 걸어오는 사이 사정이 바뀌었다(멀어짐·섬 이탈·취침…) — 주방으로 돌아가 몫을 남긴다
+            const pr = PROPS.find((q) => q.type === 'kitchen');
+            if (pr && !kitchenLeftover) {
+                chef.ai.state = 'busy';
+                await gotoAsync(chef, pr.x + Math.sin(pr.rotY || 0) * 0.8, pr.z + Math.cos(pr.rotY || 0) * 0.8);
+                if (!aiCookPost || aiCookPost.p !== chef) return;
+                leavePlateFor(chef, friend.name, r);
+                return;
+            }
             aiCookPost = { p: chef, mode: 'eat', t: 0 };
             chef.ai.state = 'busy';
             return;
@@ -4542,6 +4573,37 @@ function startAiCookPost(chef, intent, r) {
         logWorldEvent(`${petKo(chef)}가 ${petKo(friend)}에게 ${r.ko}를 대접했다 🍳💗`);
         maybeProactive(null, `방금 ${petKo(chef)}가 만든 ${r.ko}를 대접받았다! 맛있다!`);
         aiCookPost = { p: friend, chefDone: chef, mode: 'eat', t: 0 };
+    })();
+}
+// 💌 절친 몫 접시 — 이름 주인이 본섬에 한가하게 돌아오면 찾아와서 먹는다 (20초 결 폴링)
+let plateErrandAt = 0;
+function updatePlateErrand() {
+    if (!kitchenLeftover || !kitchenLeftover.for) return;
+    const now = Date.now();
+    if (now < plateErrandAt) return;
+    plateErrandAt = now + 20000;
+    if (cooking || aiCookPost) return;
+    const p = pets.find((q) => q.name === kitchenLeftover.for);
+    if (!p || p === possessed || p.pet.sleeping || p.bed || p.dip || p.food || p.drink) return;
+    if (p.ai.state !== 'idle' && p.ai.state !== 'walk') return;
+    if (islandOf(p.mover.position.x, p.mover.position.z) !== 0) return;
+    const pr = PROPS.find((q) => q.type === 'kitchen');
+    if (!pr) return;
+    releaseAI(p);
+    aiCookPost = { p, mode: 'carry', t: 0 };   // carry 모드 재사용 — 스틸 감지 공유
+    (async () => {
+        await gotoAsync(p, pr.x + Math.sin(pr.rotY || 0) * 0.8, pr.z + Math.cos(pr.rotY || 0) * 0.8);
+        if (!aiCookPost || aiCookPost.p !== p) return;
+        if (!kitchenLeftover) { aiCookPost = null; if (p.ai.state === 'busy') releaseAI(p, 1); return; }
+        const name = kitchenLeftover.name;
+        kitchenLeftover = null;
+        saveLeftover();
+        syncLeftoverMesh();
+        p.ai.state = 'busy';
+        giveFood(p, { id: 'cloche', name }, '조리대에서');
+        logWorldEvent(`${petKo(p)}가 조리대에 남겨진 제 몫의 ${name}를 발견했다 💌`);
+        maybeProactive(null, `조리대에 내 몫으로 남겨진 ${name}가 있었다! 고마워서 더 맛있다!`);
+        aiCookPost = { p, mode: 'eat', t: 0 };
     })();
 }
 function updateAiCookPost(delta) {
@@ -8661,6 +8723,18 @@ if (statsOn) window.__worldDev = {
     mealReset: (name) => { const p = pets.find((q) => q.name === name); if (!p) return null; p.mealDone = null; return true; },
     mealDoneOf: (name) => { const p = pets.find((q) => q.name === name); return p ? p.mealDone || null : null; },
     leftover: () => (kitchenLeftover ? { ...kitchenLeftover, mesh: !!leftoverGrp } : null),
+    plateErrandNow: () => { plateErrandAt = 0; return true; },
+    petsOrder: () => pets.map((q) => q.name),
+    petFree: (name) => {   // E2E: 펫 하나를 결정적으로 한가하게
+        const p = pets.find((q) => q.name === name);
+        if (!p) return null;
+        if (p.bed) forceEndBed(p);
+        if (p.dip) endDip(p);
+        if (aiFishing && aiFishing.p === p) endAiFishing();
+        releaseAI(p);
+        p.ai.state = 'idle';
+        return true;
+    },
     kitchenClick: () => { if (claimLeftover()) return 'claimed'; toggleKitchenPanel(); return 'panel'; },
     hsSpots: () => PROPS.filter((pr) => HIDE_STANDOFF[pr.type]).map((pr) => ({ type: pr.type, x: +pr.x.toFixed(2), z: +pr.z.toFixed(2), off: HIDE_STANDOFF[pr.type] })),
     routeProbe: (x1, z1, x2, z2) => ({ from: islandOf(x1, z1), to: islandOf(x2, z2), route: buildRoute({ x: x1, z: z1 }, { x: x2, z: z2 }).map((w) => [+w.x.toFixed(1), +w.z.toFixed(1), w.tp ? 'tp' : '']) }),
@@ -21802,6 +21876,7 @@ function updateMeals() {
         if (Math.random() < MEAL_COOK_P && !cooking && !aiCookPost && aiCookableRecipes().length
             && startAiCook(p, { intent: 'eat', meal: key }) === 'ok') {
             p.mealDone = key;
+            p.nextCookAt = Date.now() + 600000 + Math.random() * 600000;   // 여가 요리와 쿨다운 공유 — 끼니 요리 직후 또 요리하는 클러스터 방지
             continue;
         }
         p.eatSpot = pickEatSpot(p);
@@ -21965,6 +22040,7 @@ function animate() {
     updateCooking(delta);                    // 🍳 조리 시퀀스 — 손질·웍·플레이팅
     updateEternScene(delta);                 // 🎂 영원 케이크 나눠 먹기
     updateAiCookPost(delta);                 // 🍳 자율 요리사 후처리 — 대접/셀프 냠냠
+    updatePlateErrand();                     // 💌 절친 몫 접시 회수 심부름
     updateFruitThrows(delta);                // 🧺 원거리 휙 담기 아크
     updateBalloon(delta);                    // 🎈 열기구 — 계류 살랑임/스플라인 투어/귀환
     updateBalloonHop(delta);                 // 절친 승선 큰 아크 — 데크에서 바구니로
