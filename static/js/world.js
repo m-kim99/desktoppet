@@ -22781,7 +22781,6 @@ function animate() {
 }
 worldBake();   // 씬이 전부 지어진 뒤 첫 베이크 — 이후엔 공사모드 종료 때마다 재베이크
 renderer.setAnimationLoop(animate);
-}
 
 // TEMP SNACK LAB — ?snacklab: 우주식 5종 × 베어물기 0/1/2 격자 (검수용, 커밋 전 제거)
 if (location.search.includes('snacklab')) {
