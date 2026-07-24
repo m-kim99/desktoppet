@@ -21,7 +21,7 @@ export const ISLANDS = [
     { x: 10.12,  z: -7.17, r: 3.5 },     // SE island — 모험의 섬 (언덕·동굴·전망대·보물 모래밭), 간격 2.7m
     // 휴양지 모래섬 — 다리 없음(보트/수영으로만): kind:'sand'가 지면 텍스처·해변 경사·발소리를
     // 가른다. buildRouteWalk는 다리 없는 섬에서 직선 폴백(가드 있음) — AI 배회는 여길 목표로 안 잡는다.
-    { x: -3.2,   z: 11.8,  r: 2.6, kind: 'sand' },   // 본섬 확장 후 간격 3.4m
+    { x: -3.2,   z: 11.8,  r: 2.9, kind: 'sand' },   // 본섬 확장 후 간격 3.4m — 모닥불 추가로 2.6→2.9 확장(놀이터 확장 선례)
 ];
 // 주의: buildRoute가 BRIDGES[섬 인덱스-1]로 다리를 찾는다 — 다리 순서는 위 위성섬 순서와 같아야 한다.
 // 공식(섬 중심선 방사축): A = u·(본섬R−0.5), B = 위성중심 − u·(위성R−0.5), inner = A−0.4u, outer = B+0.4u
@@ -41,7 +41,7 @@ export const FERRY_PIERS = [
 ];
 export const FERRY_SEA_POINTS = [   // 외해 링 (시계방향) — 전부 열린 물, 수평선 경계 19.6 안.
     // 첫 점은 모래섬 정박 후 북동으로 크게 도는 턴 부표 (섬 북면 야자수 위를 안 가로지르게)
-    { x: -1.5, z: 16.5 }, { x: -4.5, z: 16 }, { x: -11, z: 12 }, { x: -16, z: 2 }, { x: -14.5, z: -11 },
+    { x: -0.6, z: 16.6 }, { x: -4.5, z: 16 }, { x: -11, z: 12 }, { x: -16, z: 2 }, { x: -14.5, z: -11 },
     { x: 0, z: -14.5 }, { x: 13, z: -13 }, { x: 18, z: -4 }, { x: 16, z: 1.5 }, { x: 17, z: 8 }, { x: 7, z: 14 },
 ];
 
@@ -69,7 +69,7 @@ export const FLAT_SPOTS = [
     { x: 9.9, z: 3.9, r: 1.1, follow: 'trampoline-1' },  // NE island trampoline pad — 확장된 남쪽 새 공간
     { x: -10.72, z: -4.69, r: 1.55 },  // 추억의 섬 중앙 뜰 — 기념비·소원우물·타임캡슐이 반듯하게 선다
     { x: 9.77, z: -7.12, r: 1.15 },    // 모험의 섬 동굴 포켓 — 언덕 남서면을 파서 만든 평탄 바닥
-    { x: -3.3, z: 11.6, r: 0.6 },      // 휴양지 섬 모래성 받침 — 사구 굴곡 위에 반듯하게
+    { x: -2.75, z: 11.95, r: 0.6 },      // 휴양지 섬 모래성 받침 — 사구 굴곡 위에 반듯하게 (모래성 이동 동기)
 ];
 
 // Props: type + position + blocking radius (`r` is the circle collider pets steer around; the
@@ -103,6 +103,7 @@ export const PROPS = [
     { type: 'food', x: -1.771, z: 1.903, rotY: 2.73, r: 0.5 },   // NW 카페 거리 — 간식 부스 (Ctrl/⌘로 주문)
     { type: 'icebox', x: -0.38, z: 5.5, rotY: 3.05, r: 0.3 },   // 본섬 북 잔교 곁 — 어획 보관함 (요리 재료, 조과 '보관' 선택의 목적지)
     { type: 'kitchen', x: -2.52, z: -0.5, rotY: 1.62, r: 0.55 },   // NW 카페 거리 끝 — 야외 주방 (커피 부스 옆, 요리 기능의 무대)
+    { type: 'bonfire', x: -4.35, z: 11.35, rotY: -0.7, r: 0.4 },   // 휴양지 모래섬 — 해변 모닥불 (구이 스팟, 해질녘 점화)
     // Satellite islands: a tree and a lamp at each bridgehead (otherwise open feature ground)
     { type: 'tree',  x: 11.136, z: 2.463, rotY: -0.085, r: 0.45, big: true  },   // NE 남쪽 공터 (섬 델타 동반)
     { type: 'tree',  x: -12.369, z: -3.32,  rotY: 2.9, r: 0.45, big: false },   // 추억의 섬 북서
@@ -158,9 +159,9 @@ export const PROPS = [
     // 휴양지 모래섬 (다리 없음 — 보트/수영 전용): 야자수는 해변 가장자리(중심에서 2.0m, 지면이
     // 물 쪽으로 내려가기 시작하는 띠)에 서서 바다로 기운다 — rotY는 트렁크 커브(+x)가 바깥을
     // 보도록 계산한 값. 모래성은 중앙 사구. 이동 불가(MOVABLE_TYPES 밖). 겹침 검산 완료.
-    { type: 'palm', x: -5.08, z: 11.12, rotY: 2.80,  r: 0.4 },
+    { type: 'palm', x: -5.2, z: 12.5, rotY: 2.80,  r: 0.4 },   // 모닥불 자리를 위해 서안으로 이동
     { type: 'palm', x: -2.58, z: 13.7,  rotY: -1.25, r: 0.4 },
     { type: 'palm', x: -1.4,  z: 10.92, rotY: 0.46,  r: 0.4 },
     { type: 'palm', x: -4.08, z: 13.6,  rotY: -2.03, r: 0.4 },
-    { type: 'sandcastle', x: -3.3, z: 11.6, rotY: 0.9, r: 0.38 },
+    { type: 'sandcastle', x: -2.75, z: 11.95, rotY: 0.9, r: 0.38 },   // 모닥불 자리를 위해 동쪽으로 이동
 ];
