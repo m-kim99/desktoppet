@@ -11886,31 +11886,70 @@ function makeFoodGeo(f, bites = 0) {
         addB(drip, 0xe04a68, 0xa81a36, { curve: 1.2 }, jamC, sph);
         if (b < 2) for (const [gx, gy] of [[-0.010, 0.060], [0.009, 0.044]]) { const gl = new THREE.SphereGeometry(0.0058, 8, 6); gl.scale(1.5, 0.55, 0.2); gl.rotateZ(-0.22); gl.translate(gx, gy, 0.0186); add(gl, 0xffb4c4, 0xf07a92, { curve: 1 }); }
         topH = 0.062;
-    } else if (f.id === 'grilledfish') {   // 🐟 접시 + 그릴 자국 — 꼬리부터 발라 마지막엔 가시만
+    } else if (f.id === 'grilledfish') {   // 🐟 접시 + 그릴 생선 — 꼬리부터 발라 마지막엔 가시만
         const plate = new THREE.CylinderGeometry(0.072, 0.058, 0.0075, 24); plate.translate(0, 0.00375, 0); add(plate, 0xfdfcf8, 0xdedace, { curve: 1 });
-        const rim = new THREE.TorusGeometry(0.0716, 0.0026, 7, 26); rim.rotateX(Math.PI / 2); rim.translate(0, 0.0072, 0); add(rim, 0xfefdfa, 0xd8d4c8, { curve: 1 });
-        const headR = 0.052, xL = b >= 2 ? 0.026 : b >= 1 ? -0.024 : -0.044;
+        const prim = new THREE.TorusGeometry(0.0716, 0.0026, 7, 26); prim.rotateX(Math.PI / 2); prim.translate(0, 0.0072, 0); add(prim, 0xfefdfa, 0xd8d4c8, { curve: 1 });
+        const BY = 0.023;                                  // 생선 중심 높이
+        // 몸통 프로파일 (t=길이축, r=반지름): 꼬리자루는 가늘고 앞쪽 1/3이 가장 통통 — 진짜 생선 실루엣
+        const PF = [[-0.050, 0.0016], [-0.044, 0.0062], [-0.034, 0.0118], [-0.021, 0.0172], [-0.007, 0.0204], [0.006, 0.0209], [0.019, 0.0190], [0.031, 0.0148], [0.042, 0.0090], [0.050, 0.0030], [0.0525, 0.0009]];
+        const rAt = (t) => { if (t <= PF[0][0]) return PF[0][1]; for (let i = 1; i < PF.length; i++) if (t <= PF[i][0]) { const [t0, r0] = PF[i - 1], [t1, r1] = PF[i]; return r0 + (r1 - r0) * (t - t0) / (t1 - t0); } return PF[PF.length - 1][1]; };
+        const cut = b >= 2 ? null : b >= 1 ? -0.012 : -0.050;   // 베어문 경계(꼬리쪽)
+        const finShape = (L, H, notch) => { const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(-L, H); sh.quadraticCurveTo(-L * 0.62, 0, -L, -H); sh.closePath(); return sh; };
         if (b < 2) {
-            const sx2 = (headR - xL) / 2 / 0.026, cx = (headR + xL) / 2;
-            const body = new THREE.SphereGeometry(0.026, 18, 12); body.scale(sx2, 0.84, 0.62); body.translate(cx, 0.021, 0);
-            add(body, 0xefc794, 0xa97b41, { curve: 1.3 });
-            for (let i = 0; i < 4; i++) { const gx = xL + 0.012 + i * 0.016; if (gx < headR - 0.008) { const gm = new THREE.BoxGeometry(0.0035, 0.004, 0.03); gm.rotateY(0.22); gm.translate(gx, 0.032, 0); add(gm, 0x8a6034, 0x5a3d1c, { curve: 1 }); } }
-            if (!b) { const tail = new THREE.ConeGeometry(0.019, 0.026, 6); tail.scale(1, 1, 0.4); tail.rotateZ(Math.PI / 2); tail.translate(-0.056, 0.021, 0); add(tail, 0xd6a768, 0xa97b41, { curve: 1.2 }); }
-            else { const cs = new THREE.CircleGeometry(0.0125, 16); cs.scale(1, 0.8, 1); cs.rotateY(-Math.PI / 2); cs.translate(xL + 0.0015, 0.021, 0); add(cs, 0xfffaf2, 0xecdcc6, { curve: 1 });
-                   for (let i = 0; i < 3; i++) { const fk = new THREE.BoxGeometry(0.0014, 0.019, 0.0014); fk.translate(xL + 0.0028, 0.021, -0.005 + i * 0.005); add(fk, 0xdccbb2, 0xbaa88e, { curve: 1 }); } }
-            const eye = new THREE.SphereGeometry(0.0035, 8, 6); eye.translate(0.04, 0.026, 0.012); add(eye, 0x3c2c1c, 0x1e1409, { curve: 1 });
-        } else {
-            const head = new THREE.SphereGeometry(0.019, 14, 10); head.scale(1.05, 0.82, 0.6); head.translate(0.04, 0.021, 0); add(head, 0xefc794, 0xa97b41, { curve: 1.3 });
-            const eye = new THREE.SphereGeometry(0.0035, 8, 6); eye.translate(0.048, 0.026, 0.011); add(eye, 0x3c2c1c, 0x1e1409, { curve: 1 });
-            const tail = new THREE.ConeGeometry(0.017, 0.023, 6); tail.scale(1, 1, 0.38); tail.rotateZ(Math.PI / 2); tail.translate(-0.05, 0.021, 0); add(tail, 0xd6a768, 0xa97b41, { curve: 1.2 });
-            const spine = new THREE.CylinderGeometry(0.0022, 0.0022, 0.068, 7); spine.rotateZ(Math.PI / 2); spine.translate(-0.006, 0.021, 0); add(spine, 0xdccbb2, 0xb8a68c, { curve: 1 });
-            for (let i = 0; i < 7; i++) { const rx = -0.036 + i * 0.011; for (const zf of [1, -1]) { const rb = new THREE.CylinderGeometry(0.0013, 0.0013, 0.018, 5); rb.rotateX(zf * 0.5); rb.translate(rx, 0.021, zf * 0.007); add(rb, 0xe4d5bd, 0xc0ae94, { curve: 1 }); } }
+            const pts = [new THREE.Vector2(rAt(cut), cut)];
+            for (const [t, r] of PF) if (t > cut) pts.push(new THREE.Vector2(r, t));
+            const body = new THREE.LatheGeometry(pts, 20); body.rotateZ(-Math.PI / 2); body.scale(1, 1, 0.6); body.translate(0, BY, 0);
+            add(body, 0xefc794, 0xa97b41, { curve: 1.35 });
+            const gill = new THREE.TorusGeometry(0.0125, 0.0016, 6, 12, Math.PI * 1.15); gill.rotateY(Math.PI / 2); gill.rotateX(0.4); gill.translate(0.030, BY, 0.0);
+            add(gill, 0xb98c52, 0x7d5a2c, { curve: 1 });
+            for (let i = 0; i < 5; i++) {   // 그릴 자국 — 몸통 굵기 따라 길이가 달라진다
+                const gx = cut + 0.012 + i * 0.0145; if (gx > 0.044) break;
+                const rr = rAt(gx) * 0.6;
+                const gm = new THREE.BoxGeometry(0.0032, rr * 2.05, 0.0032); gm.rotateZ(0.26); gm.translate(gx, BY + rr * 0.12, rr * 0.92);
+                add(gm, 0x8a6034, 0x543818, { curve: 1 });
+            }
+            for (let i = 0; i < 4; i++) { const sx2 = -0.006 + i * 0.012; if (sx2 > cut + 0.006) { const sc = new THREE.TorusGeometry(0.0052, 0.0008, 5, 8, Math.PI); sc.rotateZ(Math.PI); sc.translate(sx2, BY + 0.006, rAt(sx2) * 0.58); add(sc, 0xd8ab6e, 0xb0813f, { curve: 1 }); } }
+            const dors = new THREE.ExtrudeGeometry(finShape(0.030, 0.011), { depth: 0.0032, bevelEnabled: false, curveSegments: 4 });
+            dors.translate(0, 0, -0.0016); dors.translate(0.017, BY + 0.0158, 0);   // 몸통과 같은 평면(XY) — 뒤로 누운 등지느러미
+            add(dors, 0xd6a768, 0x9c7038, { curve: 1.15 });
+            const pect = new THREE.ExtrudeGeometry(finShape(0.014, 0.007), { depth: 0.0026, bevelEnabled: false, curveSegments: 4 });
+            pect.rotateZ(0.5); pect.translate(0.026, BY - 0.005, 0.0112);
+            add(pect, 0xd6a768, 0x9c7038, { curve: 1.15 });
+            if (!b) {   // 갈래 꼬리 — 몸통에 붙는 쪽이 가늘고 바깥이 벌어진다(원뿔 반대 방향 버그 수정)
+                const tsh = new THREE.Shape(); tsh.moveTo(0, 0); tsh.lineTo(-0.021, 0.017); tsh.quadraticCurveTo(-0.013, 0, -0.021, -0.017); tsh.closePath();
+                const tail = new THREE.ExtrudeGeometry(tsh, { depth: 0.0034, bevelEnabled: false, curveSegments: 5 });
+                tail.translate(0, 0, -0.0017); tail.translate(-0.049, BY, 0);
+                add(tail, 0xd6a768, 0x9c7038, { curve: 1.2 });
+            } else {   // 베어문 단면 — 결이 보이는 흰 속살
+                const cs = new THREE.CircleGeometry(rAt(cut), 16); cs.scale(1, 0.6, 1); cs.rotateY(-Math.PI / 2); cs.translate(cut + 0.0012, BY, 0);
+                add(cs, 0xfffaf2, 0xe4d2b8, { curve: 1 });
+                for (let i = 0; i < 3; i++) { const fk = new THREE.BoxGeometry(0.0012, rAt(cut) * 1.05, 0.0012); fk.translate(cut + 0.0026, BY, -0.004 + i * 0.004); add(fk, 0xdccbb2, 0xb8a68c, { curve: 1 }); }
+            }
+            const eye = new THREE.SphereGeometry(0.0036, 9, 7); eye.translate(0.041, BY + 0.005, 0.0088); add(eye, 0x3c2c1c, 0x1a1208, { curve: 1 });
+            const gl = new THREE.SphereGeometry(0.0013, 6, 5); gl.translate(0.0398, BY + 0.0064, 0.0112); add(gl, 0xffffff, 0xdfe6ea, { curve: 1 });
+            const mouth = new THREE.BoxGeometry(0.0055, 0.0016, 0.0075); mouth.rotateZ(-0.22); mouth.translate(0.0492, BY - 0.0022, 0); add(mouth, 0x9c6f38, 0x6b4820, { curve: 1 });
+        } else {   // 🦴 다 발라먹은 뒤 — 머리·꼬리지느러미·등뼈·갈비
+            const hpts = [new THREE.Vector2(rAt(0.020), 0.020)];
+            for (const [t, r] of PF) if (t > 0.020) hpts.push(new THREE.Vector2(r, t));
+            const head = new THREE.LatheGeometry(hpts, 18); head.rotateZ(-Math.PI / 2); head.scale(1, 1, 0.6); head.translate(0, BY, 0);
+            add(head, 0xefc794, 0xa97b41, { curve: 1.35 });
+            const eye = new THREE.SphereGeometry(0.0036, 9, 7); eye.translate(0.041, BY + 0.005, 0.0088); add(eye, 0x3c2c1c, 0x1a1208, { curve: 1 });
+            const gl = new THREE.SphereGeometry(0.0013, 6, 5); gl.translate(0.0398, BY + 0.0064, 0.0112); add(gl, 0xffffff, 0xdfe6ea, { curve: 1 });
+            const tsh = new THREE.Shape(); tsh.moveTo(0, 0); tsh.lineTo(-0.019, 0.015); tsh.quadraticCurveTo(-0.012, 0, -0.019, -0.015); tsh.closePath();
+            const tail = new THREE.ExtrudeGeometry(tsh, { depth: 0.003, bevelEnabled: false, curveSegments: 5 });
+            tail.translate(0, 0, -0.0015); tail.translate(-0.046, BY, 0);
+            add(tail, 0xcfa062, 0x8f6530, { curve: 1.2 });
+            const spine = new THREE.CylinderGeometry(0.0021, 0.0021, 0.068, 7); spine.rotateZ(Math.PI / 2); spine.translate(0.006, BY, 0); add(spine, 0xdccbb2, 0xb8a68c, { curve: 1 });
+            for (let i = 0; i < 8; i++) {
+                const rx = -0.026 + i * 0.0092, sp = 0.0135 * (1 - Math.abs(rx - 0.004) / 0.048);
+                for (const zf of [1, -1]) { const rb = new THREE.CylinderGeometry(0.0011, 0.0009, sp * 2, 5); rb.rotateX(zf * 0.42); rb.translate(rx, BY - 0.0008, zf * sp * 0.22); add(rb, 0xe6d8c2, 0xc0ae94, { curve: 1 }); }
+            }
         }
         const lemR = b >= 2 ? 0.012 : 0.015;
         const lem = new THREE.CylinderGeometry(lemR, lemR, 0.004, 16, 1, false, 0, Math.PI); lem.rotateX(Math.PI / 2); lem.rotateZ(-0.3); lem.translate(-0.044, 0.011, 0.03); add(lem, 0xffdf6e, 0xefc648, { curve: 1 });
         const lin2 = new THREE.CylinderGeometry(lemR * 0.72, lemR * 0.72, 0.005, 16, 1, false, 0, Math.PI); lin2.rotateX(Math.PI / 2); lin2.rotateZ(-0.3); lin2.translate(-0.044, 0.011, 0.03); add(lin2, 0xfff5c4, 0xffe999, { curve: 1 });
         if (b < 2) { const hb = new THREE.SphereGeometry(0.005, 8, 6); hb.scale(1.6, 0.4, 1); hb.rotateY(0.3); hb.translate(0.042, 0.011, -0.03); add(hb, 0x8fc95a, 0x4d8228, { curve: 1 }); }
-        topH = 0.042;
+        topH = 0.048;
     } else if (f.id === 'fruitcake') {   // 🍰 조각 케이크 — 팁부터 베어물면 층이 무너진다
         const plate = new THREE.CylinderGeometry(0.062, 0.05, 0.006, 22); plate.translate(0, 0.003, 0); add(plate, 0xfdfcf8, 0xdedace, { curve: 1 });
         const R = 0.056, HW = 0.021;                       // 웨지: 팁(-x) → 바깥 호(+x)
