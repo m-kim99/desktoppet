@@ -140,7 +140,8 @@ const scene = new THREE.Scene();
 // sheen instead of dead-flat shading. Kept subtle; the sun/hemisphere still carry the scene.
 {
     const pmrem = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.userData.envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;   // 은박/글레이즈 재질이 직접 참조 — 전역 environmentIntensity(0.15)와 분리된 제 밝기
+    scene.environment = scene.userData.envTex;
     scene.environmentIntensity = 0.15;
     pmrem.dispose();
 }
@@ -1248,6 +1249,11 @@ const gradMatWood = new THREE.MeshStandardMaterial({ vertexColors: true, map: wo
 const gradMatDS = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, side: THREE.DoubleSide });
 // 아이스컵 유리벽: 안의 음료·얼음이 비쳐야 하므로 이것만 반투명 양면 (음료 파트 본체는 gradMat 병합).
 const glassMat = new THREE.MeshStandardMaterial({ color: 0xdcecf5, transparent: true, opacity: 0.3, roughness: 0.12, metalness: 0, side: THREE.DoubleSide, depthWrite: false });
+// 우주 간식 전용 광택 2종: 은박(파우치·크림프·설탕/별 반짝)과 글레이즈(문크림빵 돔) — 정점색 틴트를 유지한 채
+// 카메라 각도 따라 반사가 흐르는 재질. 간식 하나당 광택 자식 메시 +1 드로우(아이스컵 유리와 같은 관례).
+// scene.environmentIntensity(0.15)가 어두워 envMapIntensity로 보상.
+const gradMatFoil = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.16, metalness: 0.92, envMap: scene.userData.envTex, envMapIntensity: 1.35 });
+const gradMatGloss = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.35, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.15, envMap: scene.userData.envTex, envMapIntensity: 1.0 });
 // 비치는 음료(아이스티처럼 맑은 것)용 — bakeGrad 정점색 그대로 쓰되 반투명.
 const liquidMat = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.68, roughness: 0.18, metalness: 0, depthWrite: false });
 const liquidSoftMat = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.9, roughness: 0.22, metalness: 0, depthWrite: false });
@@ -11457,8 +11463,9 @@ function makeSeafoodMesh(id, scale = 1) {
 // bites 0=온전 · 1=한 입 · 2=거의 안 남음 (일러스트 기준). 음식별 방식: 모서리/꼭짓점=스쿱 카빙,
 // 긴 것=짧아짐+단면, 도넛=부분 링, 컵케이크=토핑 제거+케이크. 원점=바닥, +y로 쌓는다.
 function makeFoodGeo(f, bites = 0) {
-    const b = bites, parts = [];
+    const b = bites, parts = [], foilParts = [], glossParts = [];   // foil/gloss = 광택 자식 메시로 분리될 파트(우주 간식)
     const add = (geo, top, bottom, opts) => { parts.push(bakeGrad(geo, top, bottom, opts || { curve: 1.1 })); };
+    const addF = (geo, top, bottom, opts) => { foilParts.push(bakeGrad(geo, top, bottom, opts || { curve: 1.1 })); };
     const addB = (geo, top, bottom, opts, c, sph, sharp) => { const g = bakeGrad(geo, top, bottom, opts || { curve: 1.1 }); if (b && sph) fruitBiteDent(g, c, sph, sharp); parts.push(g); };
     const csFace = (r, seg, x, y, z, top, bottom) => { const cs = new THREE.CircleGeometry(r, seg); cs.rotateY(-Math.PI / 2); cs.translate(x, y, z); add(cs, top, bottom, { curve: 1 }); };   // 단면 원판(-x 향)
     const starShape = (R, r2, n = 5) => { const s2 = new THREE.Shape(); for (let i = 0; i < n * 2; i++) { const a = (i / (n * 2)) * Math.PI * 2 + Math.PI / 2; const rr = i % 2 === 0 ? R : r2; if (i === 0) s2.moveTo(Math.cos(a) * rr, Math.sin(a) * rr); else s2.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } s2.closePath(); return s2; };
@@ -11644,7 +11651,7 @@ function makeFoodGeo(f, bites = 0) {
         sp.closePath();
         const pouch = new THREE.ExtrudeGeometry(sp, { depth: dep, bevelEnabled: true, bevelThickness: 0.0035, bevelSize: 0.0045, bevelSegments: 3, curveSegments: 8, steps: 4 });
         pouch.translate(0, 0.003, -dep / 2);
-        bakeGrad(pouch, 0xeef2f8, 0xa6b0be, { curve: 1.1 });
+        bakeGrad(pouch, 0xf8fbff, 0xb9c4d2, { curve: 1.1 });   // 은박 재질(gradMatFoil) 틴트 — 밝을수록 반사가 산다
         {   // 은박: 세로 하이라이트 시트 + (b≥1) 주름 크랙/크럼플 변위 + 면별 밝기 지터 → 법선 재계산으로 포일 셰이딩
             const pos = pouch.attributes.position, col = pouch.attributes.color, cc = new THREE.Color(), WHT = new THREE.Color(0xffffff);
             const hsh = (x, y, z) => { const t = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453; return t - Math.floor(t); };
@@ -11657,19 +11664,21 @@ function makeFoodGeo(f, bites = 0) {
                     for (const cyr of creases) pinch += Math.exp(-Math.pow((y - cyr) / 0.0075, 2));
                     const n = (hsh(Math.round(x * 240) / 240, Math.round(y * 240) / 240, Math.round(z * 240) / 240) - 0.5) * 2;
                     z = z * (1 - Math.min(0.6, pinch * (b === 1 ? 0.26 : 0.44))) + n * amp * Math.min(1, Math.abs(z) / (dep * 0.5));
+                    x *= 1 - Math.sin(THREE.MathUtils.clamp(y / hh, 0, 1) * Math.PI) * (b === 1 ? 0.10 : 0.22);   // 허리 홀쭉 — 정면(x)에서 보이는 축
                     x += (hsh(y * 91.7, z * 45.2, x * 12.9) - 0.5) * amp * 0.9 * Math.min(1, y / 0.02);
                     pos.setXYZ(i, x, y, z);
                 }
                 cc.setRGB(col.getX(i), col.getY(i), col.getZ(i));
                 if (x < -0.006 && x > -0.028) cc.lerp(WHT, 0.2);                              // 세로 시트 광
                 if (b) { const j = (hsh(x * 53.7, y * 97.3, z * 71.1) - 0.5) * (b === 1 ? 0.1 : 0.2); cc.offsetHSL(0, 0, j * 0.35); }
+                if (amp) for (const cyr of creases) { const g2 = Math.exp(-Math.pow((y - cyr) / 0.004, 2)); if (g2 > 0.15) cc.offsetHSL(0, 0, -0.11 * g2); }   // 주름 골 음영 — 정면에서도 접힘이 읽힌다
                 col.setXYZ(i, cc.r, cc.g, cc.b);
             }
             pos.needsUpdate = true; col.needsUpdate = true; pouch.computeVertexNormals();
         }
-        parts.push(pouch);
-        const crimp = new THREE.BoxGeometry(0.058, 0.0075, dep + 0.007); crimp.translate(0, hh + 0.0055, 0); add(crimp, 0xb6c0cc, 0x8e99a8, { curve: 1 });
-        const crLine = new THREE.BoxGeometry(0.052, 0.0016, dep + 0.008); crLine.translate(0, hh + 0.0055, 0); add(crLine, 0x7e8a99, 0x6a7686, { curve: 1 });
+        foilParts.push(pouch);   // 파우치 몸통 = 은박 재질 자식 — 각도 따라 반사
+        const crimp = new THREE.BoxGeometry(0.058, 0.0075, dep + 0.007); crimp.translate(0, hh + 0.0055, 0); addF(crimp, 0xd6dee8, 0xa8b2c0, { curve: 1 });
+        const crLine = new THREE.BoxGeometry(0.052, 0.0016, dep + 0.008); crLine.translate(0, hh + 0.0055, 0); addF(crLine, 0x8e9aa9, 0x76828f, { curve: 1 });
         const lab = new THREE.BoxGeometry(0.046, 0.03, 0.004); lab.translate(0, hh * 0.52, dep / 2 + 0.0032); add(lab, 0x5c8fd6, 0x3e6cb0, { curve: 1 });
         const pl = new THREE.SphereGeometry(0.0075, 10, 8); pl.translate(-0.006, hh * 0.52, dep / 2 + 0.0052); add(pl, 0x8ab8ec, 0x5a8fd0, { curve: 1 });
         const ring = new THREE.TorusGeometry(0.0105, 0.0013, 5, 14); ring.rotateX(1.25); ring.rotateZ(0.4); ring.translate(-0.006, hh * 0.52, dep / 2 + 0.0055); add(ring, 0xdcebfa, 0xb8d2ef, { curve: 1 });
@@ -11682,10 +11691,11 @@ function makeFoodGeo(f, bites = 0) {
         const mk = () => {
             const s2 = new THREE.Shape(), xR = 0.038;
             s2.moveTo(xL + 0.006, yB);
-            if (!b) { s2.lineTo(xR - 0.006, yB); s2.quadraticCurveTo(xR, yB, xR, yB + 0.006); s2.lineTo(xR, yT2 - 0.006); s2.quadraticCurveTo(xR, yT2, xR - 0.006, yT2); }
+            if (!b) { s2.lineTo(xR - 0.006, yB); s2.quadraticCurveTo(xR, yB, xR, yB + 0.006); s2.lineTo(xR, 0.0285); s2.lineTo(xR, 0.0295); s2.lineTo(xR, 0.0575); s2.lineTo(xR, 0.0585); s2.lineTo(xR, yT2 - 0.006); s2.quadraticCurveTo(xR, yT2, xR - 0.006, yT2); }   // 직선 변에 층 경계 경유점 — 인셋 접힘용
             else if (b === 1) { s2.lineTo(0.03, yB); s2.quadraticCurveTo(0.005, yB + 0.004, 0.011, 0.037); s2.quadraticCurveTo(-0.003, 0.041, 0.007, yT2); }
             else { s2.lineTo(0.002, yB); s2.quadraticCurveTo(-0.025, yB + 0.005, -0.017, 0.032); s2.quadraticCurveTo(-0.035, 0.037, -0.025, 0.055); s2.quadraticCurveTo(-0.034, 0.059, -0.027, yT2); }
             s2.lineTo(xL + 0.006, yT2); s2.quadraticCurveTo(xL, yT2, xL, yT2 - 0.006);
+            s2.lineTo(xL, 0.0585); s2.lineTo(xL, 0.0575); s2.lineTo(xL, 0.0295); s2.lineTo(xL, 0.0285);
             s2.lineTo(xL, yB + 0.006); s2.quadraticCurveTo(xL, yB, xL + 0.006, yB);
             s2.closePath(); return s2;
         };
@@ -11696,16 +11706,17 @@ function makeFoodGeo(f, bites = 0) {
             const pos = slab.attributes.position, col = slab.attributes.color, cc = new THREE.Color();
             const CW1 = new THREE.Color(0xecd5a6), CW2 = new THREE.Color(0xdfc28c), CV = new THREE.Color(0xfdf4e6), CS = new THREE.Color(0xf4b8c8);
             for (let i = 0; i < pos.count; i++) {
-                const y = pos.getY(i);
+                const y = pos.getY(i), z = pos.getZ(i);
                 cc.copy(y < 0.0285 ? CW2 : y < 0.0435 ? CS : y < 0.0585 ? CV : CW1);
                 col.setXYZ(i, cc.r, cc.g, cc.b);
+                if (!b && y > 0.0295 && y < 0.0575 && Math.abs(z) > 0.011) pos.setZ(i, Math.sign(z) * 0.0125);   // 온전 단계만: 속층 구간 캡 후퇴 → 패널(±0.0158)이 앞에. 물린 단계는 스캘럽 곡선 정점까지 끌려가 대형 사선 덮개가 생기므로 금지
             }
-            col.needsUpdate = true;
+            pos.needsUpdate = true; col.needsUpdate = true; slab.computeVertexNormals();
         }
         parts.push(slab);
-        const xStrip = [0.0335, 0.004, -0.022][b];   // 속층 스트립 오른끝(물린 스캘럽 직전까지)
+        const xStrip = [0.0335, 0.004, -0.022][b];   // 속층 패널 — 인셋 면과 플러시(정면에서 딸기·바닐라 층이 읽힌다)
         for (const [sy, sh2, ct, cb] of [[0.036, 0.0148, 0xf6c2d0, 0xe8a2b8], [0.051, 0.0148, 0xfdf4e6, 0xf2e2c6]]) {
-            const strip = new THREE.BoxGeometry(xStrip + 0.034, sh2, 0.0368); strip.translate((xStrip - 0.034) / 2, sy, 0);
+            const strip = new THREE.BoxGeometry(xStrip + 0.034, sh2, 0.0316); strip.translate((xStrip - 0.034) / 2, sy, 0);   // 인셋면보다 1.6mm 앞, 웨하스 원면보다 2.2mm 뒤 = 차양 밑 속층
             add(strip, ct, cb, { curve: 1 });
         }
         const xEnd = [0.033, 0.002, -0.028][b];
@@ -11719,19 +11730,20 @@ function makeFoodGeo(f, bites = 0) {
         const cap = new THREE.CylinderGeometry(0.0105, 0.0115, 0.015, 12); cap.translate(0, 0.0955, 0); add(cap, 0x58b08e, 0x3d8a6a, { curve: 1 });
         const capTop = new THREE.CylinderGeometry(0.0105, 0.0105, 0.002, 12); capTop.translate(0, 0.1035, 0); add(capTop, 0x6fc4a0, 0x4a9a78, { curve: 1 });
         for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; const rg = new THREE.BoxGeometry(0.0018, 0.0135, 0.0018); rg.translate(Math.cos(a) * 0.0112, 0.0955, Math.sin(a) * 0.0112); add(rg, 0x3d8a6a, 0x2e6b52, { curve: 1 }); }
-        const sh = new THREE.CylinderGeometry(0.0115, 0.02, 0.009, 14); sh.translate(0, 0.0845, 0); add(sh, 0xd8ece4, 0xa8c8ba, { curve: 1 });
+        const sh = new THREE.SphereGeometry(0.02, 16, 9, 0, Math.PI * 2, 0, Math.PI * 0.5); sh.scale(1, 0.55, 1); sh.translate(0, 0.079, 0); add(sh, 0xd8ece4, 0xa8c8ba, { curve: 1 });   // 둥근 어깨 — 각진 테이퍼 금지(스펙)
         if (!b) { const body = new THREE.CylinderGeometry(0.02, 0.0195, 0.066, 14); body.translate(0, 0.047, 0); add(body, 0xd8ece4, 0x9cc2b2, { curve: 1.1 }); }
         else if (b === 1) {   // 하단 눌림 + 접힘 1단
             const up = new THREE.CylinderGeometry(0.02, 0.0185, 0.034, 14); up.translate(0, 0.063, 0); add(up, 0xd8ece4, 0xa4c8b8, { curve: 1.1 });
-            const low = new THREE.CylinderGeometry(0.0185, 0.019, 0.026, 14); low.scale(1, 1, 0.55); low.translate(0, 0.033, 0); add(low, 0xdcebe3, 0xa8c6b8, { curve: 1 });
-            const fold = new THREE.CylinderGeometry(0.0196, 0.0196, 0.0055, 14); fold.scale(1, 1, 0.4); fold.translate(0, 0.0185, 0); add(fold, 0xc4dcd1, 0x92b2a4, { curve: 1 });
-        } else {   // 하단 2/3이 접힌 주름 — 윗볼록만 남음
-            const up = new THREE.CylinderGeometry(0.02, 0.0185, 0.02, 14); up.translate(0, 0.07, 0); add(up, 0xd8ece4, 0xa4c8b8, { curve: 1.1 });
-            for (let i = 0; i < 3; i++) { const band = new THREE.CylinderGeometry(0.0196 - i * 0.0005, 0.02, 0.0088, 14); band.scale(1, 1, 0.34 - i * 0.04); band.translate(0, 0.0515 - i * 0.0125, 0); add(band, i % 2 ? 0xc4dcd1 : 0xd6e8de, i % 2 ? 0x92b2a4 : 0xa4c0b2, { curve: 1 }); }
+            const low = new THREE.CylinderGeometry(0.0185, 0.019, 0.026, 14); low.scale(1.16, 1, 0.5); low.translate(0, 0.033, 0); add(low, 0xdcebe3, 0xa8c6b8, { curve: 1 });   // 납작해지면 옆(x)으로 퍼진다 — 정면에서 보이는 변형
+            const fold = new THREE.CylinderGeometry(0.0196, 0.0196, 0.0055, 14); fold.scale(1.32, 1, 0.36); fold.translate(0, 0.0185, 0); add(fold, 0xc4dcd1, 0x92b2a4, { curve: 1 });
+        } else {   // 하단 2/3이 접힌 주름 — 윗볼록만 남음. 밴드는 서로 밀착(케이크 층 교훈: 뜨면 분리로 읽힌다)
+            const up = new THREE.CylinderGeometry(0.02, 0.0185, 0.02, 14); up.translate(0, 0.066, 0); add(up, 0xd8ece4, 0xa4c8b8, { curve: 1.1 });
+            for (let i = 0; i < 4; i++) { const band = new THREE.CylinderGeometry(0.0196 - i * 0.0005, 0.02, 0.0092, 14); band.scale(1.15 + i * 0.11, 1, 0.36 - i * 0.045); band.translate(0, 0.0518 - i * 0.0086, 0); add(band, i % 2 ? 0xc4dcd1 : 0xd6e8de, i % 2 ? 0x92b2a4 : 0xa4c0b2, { curve: 1 }); }   // 말릴수록 옆으로 퍼지는 콘서티나
         }
-        const crimp = new THREE.BoxGeometry(0.042, 0.007, 0.009); crimp.translate(0, 0.0105, 0); add(crimp, 0xb0c6bb, 0x84a094, { curve: 1 });
-        const crLine2 = new THREE.BoxGeometry(0.038, 0.0018, 0.0102); crLine2.translate(0, 0.0105, 0); add(crLine2, 0x7fa093, 0x6a8a7d, { curve: 1 });
-        const ly2 = b >= 2 ? 0.069 : b === 1 ? 0.061 : 0.052, lh = b >= 2 ? 0.015 : b === 1 ? 0.021 : 0.027;   // 라벨 — 죽그릇 아이콘 + 별
+        const cy3 = b >= 2 ? 0.0155 : b === 1 ? 0.012 : 0.0105;   // 크림프도 접힘단에 붙게 단계별 상승
+        const crimp = new THREE.BoxGeometry(b >= 2 ? 0.052 : 0.042, 0.007, 0.009); crimp.translate(0, cy3, 0); add(crimp, 0xb0c6bb, 0x84a094, { curve: 1 });
+        const crLine2 = new THREE.BoxGeometry(b >= 2 ? 0.048 : 0.038, 0.0018, 0.0102); crLine2.translate(0, cy3, 0); add(crLine2, 0x7fa093, 0x6a8a7d, { curve: 1 });
+        const ly2 = b >= 2 ? 0.066 : b === 1 ? 0.061 : 0.052, lh = b >= 2 ? 0.015 : b === 1 ? 0.021 : 0.027;   // 라벨 — 죽그릇 아이콘 + 별, 윗볼록 안에 감기게
         const lab2 = new THREE.CylinderGeometry(0.0208, 0.0206, lh, 14); lab2.translate(0, ly2, 0); add(lab2, 0x6fbf9f, 0x4f9f7f, { curve: 1 });   // 몸통을 감는 밴드 라벨
         const bowl = new THREE.CylinderGeometry(0.0056, 0.0056, 0.0026, 12, 1, false, Math.PI, Math.PI); bowl.rotateX(Math.PI / 2); bowl.translate(0, ly2 - 0.0008, 0.0206); add(bowl, 0xf4faf7, 0xdcece4, { curve: 1 });   // 죽 그릇(하반원)
         const rice2 = new THREE.SphereGeometry(0.0044, 8, 6); rice2.scale(1, 0.5, 0.6); rice2.translate(0, ly2 - 0.0004, 0.0208); add(rice2, 0xfdf6e8, 0xeadfc8, { curve: 1 });   // 죽 봉긋
@@ -11764,7 +11776,7 @@ function makeFoodGeo(f, bites = 0) {
             if (!circles.some((c2) => Math.hypot(cx2 - c2.x, cy2 - c2.y) < c2.r + 0.004)) { const ch = new THREE.SphereGeometry(0.0031, 7, 5); ch.scale(1, 1, 0.55); ch.translate(cx2, 0.055 + cy2, 0.0112); add(ch, 0x8a5a30, 0x63401e, { curve: 1 }); }
         }
         for (const [sx2, sy2] of [[0.006, 0.009], [-0.018, -0.016], [0.021, 0.014]]) {   // 설탕 반짝
-            if (!circles.some((c2) => Math.hypot(sx2 - c2.x, sy2 - c2.y) < c2.r + 0.003)) { const sg2 = new THREE.SphereGeometry(0.0014, 5, 4); sg2.translate(sx2, 0.055 + sy2, 0.0122); add(sg2, 0xffffff, 0xefe8d4, { curve: 1 }); }
+            if (!circles.some((c2) => Math.hypot(sx2 - c2.x, sy2 - c2.y) < c2.r + 0.003)) { const sg2 = new THREE.SphereGeometry(0.0014, 5, 4); sg2.translate(sx2, 0.055 + sy2, 0.0122); addF(sg2, 0xffffff, 0xdfe8f2, { curve: 1 }); }   // 설탕 = 은박 반짝 — 각도 따라 글린트
         }
         if (b) { const bc = circles[0]; for (let i = 0; i < (b === 1 ? 2 : 3); i++) { const crm2 = new THREE.SphereGeometry(0.002 + (i % 2) * 0.0009, 6, 5); crm2.translate(bc.x + 0.008 + i * 0.006, 0.055 + bc.y - 0.005 + (i % 2) * 0.01, (i % 3 - 1) * 0.008); add(crm2, 0xe8b45c, 0xc48c3c, { curve: 1 }); } }
         topH = 0.105;
@@ -11783,13 +11795,13 @@ function makeFoodGeo(f, bites = 0) {
             col.needsUpdate = true;
         }
         if (b) fruitBiteDent(bun, { cy: 0.042, ry: 0.036, ft: 0xfff6df, fb: 0xffe9b0 }, b === 1 ? [{ x: 0.038, y: 0.052, z: 0.022, r: 0.03 }] : [{ x: 0.024, y: 0.05, z: 0.018, r: 0.044 }, { x: 0.048, y: 0.032, z: -0.012, r: 0.034 }], true);
-        parts.push(bun);
-        if (b) { const cream = new THREE.SphereGeometry(b === 1 ? 0.011 : 0.016, 12, 9); cream.scale(1, 0.8, 0.9); cream.translate(b === 1 ? 0.027 : 0.02, 0.044, b === 1 ? 0.015 : 0.008); add(cream, 0xfffdf4, 0xffedb8, { curve: 1 }); }
+        glossParts.push(bun);   // 빵 돔 = 클리어코트 글레이즈 — 카메라 각도 따라 윤기가 흐른다
+        if (b) { const cream = new THREE.SphereGeometry(b === 1 ? 0.013 : 0.019, 14, 10); cream.scale(1, 0.72, 0.5); cream.rotateY(b === 1 ? -0.5 : -0.35); cream.translate(b === 1 ? 0.029 : 0.023, 0.043, b === 1 ? 0.016 : 0.009); add(cream, 0xfff8e6, 0xf3daa0, { curve: 1.1 }); }   // 크림 = 단면에 드러난 납작 패치(공 아님)
         const moon = new THREE.TorusGeometry(0.016, 0.0048, 7, 14, Math.PI * 1.25); moon.rotateZ(0.55); moon.translate(b >= 2 ? -0.021 : b === 1 ? -0.008 : 0.002, 0.05, b >= 2 ? 0.029 : 0.035);
         add(moon, 0xfff4cc, 0xe8cc80, { curve: 1 });
         for (const [sx3, sy3, sz3, sc3] of b >= 2 ? [[-0.046, 0.074, 0.01, 1]] : [[-0.046, 0.077, 0.012, 1], [0.05, 0.069, -0.004, 0.72]]) {   // 반짝 별(4각)
             const sp3 = new THREE.ExtrudeGeometry(starShape(0.006 * sc3, 0.0022 * sc3, 4), { depth: 0.0016, bevelEnabled: false });
-            sp3.translate(sx3, sy3, sz3); add(sp3, 0xffffff, 0xf2ead2, { curve: 1 });
+            sp3.rotateX(-0.5); sp3.translate(sx3, sy3, sz3); addF(sp3, 0xffffff, 0xe8eef6, { curve: 1 });   // 반짝별 = 은박, 위로 기울여 밝은 천장 반사를 받는다
         }
         const liner = new THREE.TorusGeometry(0.0345, 0.0024, 6, 24); liner.rotateX(Math.PI / 2); liner.scale(1.1, 1, 0.94); liner.translate(0, 0.006, 0);
         add(liner, 0xd9a83c, 0xac8028, { curve: 1 });
@@ -12281,7 +12293,21 @@ function makeFoodGeo(f, bites = 0) {
     }
     const merged = mergeGeometries(parts.map((p) => (p.index ? p.toNonIndexed() : p)), false);
     merged.userData = { topH };
+    if (foilParts.length) merged.userData.foilGeo = mergeGeometries(foilParts.map((p) => (p.index ? p.toNonIndexed() : p)), false);
+    if (glossParts.length) merged.userData.glossGeo = mergeGeometries(glossParts.map((p) => (p.index ? p.toNonIndexed() : p)), false);
     return merged;
+}
+// 광택 자식 메시 동기화 — makeFoodGeo가 userData에 실어둔 은박/글레이즈 파트를 자식으로 부착/교체/제거.
+// makeFoodMesh 생성·먹기 단계 지오 스왑·랩 훅이 공용으로 쓴다. (과일 지오처럼 userData가 없으면 no-op)
+function syncShinyParts(mesh, geo) {
+    for (const [key, mat] of [['foilGeo', gradMatFoil], ['glossGeo', gradMatGloss]]) {
+        const ch = mesh.children && mesh.children.find((c) => c.userData && c.userData.shinyKey === key);
+        const ng = geo && geo.userData ? geo.userData[key] : null;
+        if (ng) {
+            if (ch) { if (ch.geometry !== ng) { ch.geometry.dispose(); ch.geometry = ng; } }
+            else { const m = new THREE.Mesh(ng, mat); m.userData.shinyKey = key; m.castShadow = true; mesh.add(m); }
+        } else if (ch) { ch.geometry.dispose(); mesh.remove(ch); }
+    }
 }
 function makeFoodMesh(f) {
     const geo = makeFoodGeo(f, 0);
@@ -12289,6 +12315,7 @@ function makeFoodMesh(f) {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.userData.topH = geo.userData.topH;
+    syncShinyParts(mesh, geo);
     if (f.id === 'juice' || f.id === 'smoothie') {   // 🥤 유리컵 = 반투명 별도 메시(내용물이 비친다). 먹기 단계엔 안 변하니 자식으로 고정
         const g = new THREE.CylinderGeometry(0.028, 0.0205, 0.082, 20, 1, true); g.translate(0, 0.041, 0);
         mesh.add(new THREE.Mesh(g, glassMat));
@@ -12597,6 +12624,7 @@ function updateHeldPose(p, key, delta) {
                     it.bites += 1;
                     it.mesh.geometry.dispose();
                     it.mesh.geometry = (it.def && it.def.fruit) ? makeFruitGeo(it.def.fruit, Math.min(2, it.bites)) : makeFoodGeo(it.def, Math.min(2, it.bites));
+                    syncShinyParts(it.mesh, it.mesh.geometry);   // 우주 간식 은박/글레이즈 자식도 단계 따라 교체
                 }
                 playBuffer(munchBuf, { vol: 0.55, rate: 0.85 + Math.random() * 0.3, filterFreq: 950 });
             }
@@ -23120,6 +23148,7 @@ if (location.search.includes('snacklab')) {
         for (let bt = 0; bt <= 2; bt++) {
             try {
                 const m = new THREE.Mesh(makeFoodGeo(sn, bt), gradMat);
+                syncShinyParts(m, m.geometry);
                 m.scale.setScalar(9);
                 m.position.set((bt - 1) * 1.15 + (i % 3) * 3.9, 20.3 - Math.floor(i / 3) * 1.75, 0);
                 scene.add(m);
