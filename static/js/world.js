@@ -7405,16 +7405,52 @@ function updateWander(p, delta) {
 
 // Cross-island trips are routed through the right bridge (each satellite has exactly one), so a
 // straight-line steer never tries to cross open water.
+// 집은 회전 사각형 차단이라 스텝퍼의 슬립(작은 원용)으로 못 돈다 — 직선 다리가 집 벽을
+// 관통하면 어깨 지점(집 중심 ± 진행 수직 2.4m)을 한 번 끼워 우회한다. 광장→NE 다리 직선이
+// 집 모서리에 막혀 술래가 무한 왕복하던 실측 수리 — goto 전체가 혜택.
+function legHitsHouse(ax, az, bx, bz) {
+    const d = Math.hypot(bx - ax, bz - az);
+    const n = Math.max(2, Math.ceil(d / 0.3));
+    for (let i = 0; i <= n; i++) {
+        if (houseBlocked(ax + (bx - ax) * (i / n), az + (bz - az) * (i / n))) return true;
+    }
+    return false;
+}
+function dodgeHouse(from, wps) {
+    const out = [];
+    let px = from.x, pz = from.z;
+    for (const w of wps) {
+        if (!w.tp && legHitsHouse(px, pz, w.x, w.z)) {
+            const dx = w.x - px, dz = w.z - pz;
+            const L = Math.hypot(dx, dz) || 1;
+            const mx = (px + w.x) / 2, mz = (pz + w.z) / 2;
+            let best = null, bestD = Infinity;
+            for (const side of [1, -1]) {
+                for (const rr of [2.4, 3.0]) {
+                    const cx = HOUSE.x - (dz / L) * rr * side, cz = HOUSE.z + (dx / L) * rr * side;
+                    if (world.isBlocked(cx, cz)) continue;
+                    const dd = Math.hypot(cx - mx, cz - mz);
+                    if (dd < bestD) { bestD = dd; best = { x: cx, z: cz }; }
+                }
+            }
+            if (best) out.push(best);
+        }
+        out.push(w);
+        px = w.x;
+        pz = w.z;
+    }
+    return out;
+}
 function buildRouteWalk(from, to) {
     const a = islandOf(from.x, from.z), b = islandOf(to.x, to.z);
-    if (a === b || a === -1 || b === -1) return [{ x: to.x, z: to.z }];
+    if (a === b || a === -1 || b === -1) return dodgeHouse(from, [{ x: to.x, z: to.z }]);
     // 다리 없는 섬(휴양지 모래섬) — 직선 폴백: 물가에서 blocked → arrive-anyway가 곱게 포기한다
-    if ((a !== 0 && !BRIDGES[a - 1]) || (b !== 0 && !BRIDGES[b - 1])) return [{ x: to.x, z: to.z }];
+    if ((a !== 0 && !BRIDGES[a - 1]) || (b !== 0 && !BRIDGES[b - 1])) return dodgeHouse(from, [{ x: to.x, z: to.z }]);
     const route = [];
     if (a !== 0) { const br = BRIDGES[a - 1]; route.push({ ...br.outer }, { ...br.inner }); }
     if (b !== 0) { const br = BRIDGES[b - 1]; route.push({ ...br.inner }, { ...br.outer }); }
     route.push({ x: to.x, z: to.z });
-    return route;
+    return dodgeHouse(from, route);
 }
 function routeLen(from, wps) {
     let len = 0, px = from.x, pz = from.z;
@@ -8057,15 +8093,29 @@ async function worldHideSeek(clicked) {
             .sort((a, b) => a.d - b.d);
         const done = () => g.found || g.cancel || g.seekT > 90;
         const footstep = async () => {   // 발소리 수색 — 하이더 부근 ±1.4 (마무리는 촉각 0.95)
+            const sx = seeker.mover.position.x, sz = seeker.mover.position.z;
             await Promise.race([
                 gotoAsync(seeker, g.hider.mover.position.x + (Math.random() - 0.5) * 2.8, g.hider.mover.position.z + (Math.random() - 0.5) * 2.8),
                 waitFor(done, 30000),
             ]);
+            if (done()) return;
+            // 한 발짝도 못 뗐다(경로 재발급이 슬립을 리셋해 분수 곁에서 얼어붙던 실측) — 짧은 무작위 우회로 몸을 빼고 재시도
+            if (Math.hypot(seeker.mover.position.x - sx, seeker.mover.position.z - sz) < 0.5) {
+                const a = Math.random() * Math.PI * 2;
+                await Promise.race([gotoAsync(seeker, sx + Math.sin(a) * 3, sz + Math.cos(a) * 3), waitFor(done, 15000)]);
+            }
         };
+        // 하이더가 본섬 밖(원정 은신)이면 25초부터는 발소리 전용 — 순찰 다리가 하나라도 끼면
+        // 술래가 왕복 20초씩 본토로 끌려가 원정 예산이 다 탄다 (추억의 섬 1.68m 접근 후 무발견 실측).
+        const hiderFar = () => Math.hypot(g.hider.mover.position.x - HS_COUNT_SPOT.x, g.hider.mover.position.z - HS_COUNT_SPOT.z) > 7;
         for (const wp of spots) {
             if (done()) break;
             // 몸이 풀린 술래 — 시간이 갈수록 발소리를 순찰 사이에 끼워 넣는다: 25초부터 절반, 60초부터 거의 매번.
             // 순찰 순서 랜덤에 따라 구석 은신처가 90초 안에 방문 안 되던 "가끔 못 찾음"의 해답 (107초 무발견 실측).
+            if (g.seekT > 25 && hiderFar()) {
+                while (!done()) await footstep();
+                break;
+            }
             const fsP = g.seekT > 60 ? 0.85 : g.seekT > 25 ? 0.5 : 0;
             if (Math.random() < fsP) {
                 await footstep();
@@ -8076,8 +8126,8 @@ async function worldHideSeek(clicked) {
                 waitFor(done, 30000),
             ]);
         }
-        while (!done()) {   // 코스를 다 돌고도 못 찾았으면 — 이제는 발소리 위주로 좁혀 온다
-            if (Math.random() < 0.75) await footstep();
+        while (!done()) {   // 코스를 다 돌고도 못 찾았으면 — 이제는 발소리 위주로 좁혀 온다 (원정이면 전부 발소리)
+            if (hiderFar() || Math.random() < 0.75) await footstep();
             else {
                 const wp = spots[Math.floor(Math.random() * spots.length)];
                 await Promise.race([gotoAsync(seeker, wp.x, wp.z), waitFor(done, 30000)]);
@@ -8613,6 +8663,18 @@ if (statsOn) window.__worldDev = {
     leftover: () => (kitchenLeftover ? { ...kitchenLeftover, mesh: !!leftoverGrp } : null),
     kitchenClick: () => { if (claimLeftover()) return 'claimed'; toggleKitchenPanel(); return 'panel'; },
     hsSpots: () => PROPS.filter((pr) => HIDE_STANDOFF[pr.type]).map((pr) => ({ type: pr.type, x: +pr.x.toFixed(2), z: +pr.z.toFixed(2), off: HIDE_STANDOFF[pr.type] })),
+    routeProbe: (x1, z1, x2, z2) => ({ from: islandOf(x1, z1), to: islandOf(x2, z2), route: buildRoute({ x: x1, z: z1 }, { x: x2, z: z2 }).map((w) => [+w.x.toFixed(1), +w.z.toFixed(1), w.tp ? 'tp' : '']) }),
+    blockedProbe: (x1, z1, x2, z2, step = 0.3) => {
+        const out = [];
+        const d = Math.hypot(x2 - x1, z2 - z1);
+        const n = Math.max(1, Math.ceil(d / step));
+        for (let i = 0; i <= n; i++) {
+            const x = x1 + (x2 - x1) * (i / n), z = z1 + (z2 - z1) * (i / n);
+            if (world.isBlocked(x, z)) out.push([+x.toFixed(2), +z.toFixed(2)]);
+        }
+        return out;
+    },
+    propsNear: (x, z, r = 1.2) => PROPS.filter((q) => Math.hypot(q.x - x, q.z - z) < r).map((q) => ({ t: q.type, x: +q.x.toFixed(2), z: +q.z.toFixed(2), r: q.r })),
     hsGo: () => {   // 숨바꼭질 강제 시작 (부팅 선점 청산)
         for (const q0 of pets) {
             if (q0 === possessed) continue;
@@ -8629,6 +8691,7 @@ if (statsOn) window.__worldDev = {
         worldHideSeek(pets[0]);
         return !!hideSeekGame;
     },
+    aiOf: (name) => { const p = pets.find((q) => q.name === name); return p ? { st: p.ai.state, wp: p.ai.waypoints ? p.ai.waypoints.length : 0, tg: p.ai.target ? [+p.ai.target.x.toFixed(1), +p.ai.target.z.toFixed(1)] : null, act: p.pet.action ? p.pet.action.id : null, bed: !!p.bed } : null; },
     hsState: () => {
         const g = hideSeekGame;
         if (!g) return null;
