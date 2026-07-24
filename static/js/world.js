@@ -9391,7 +9391,7 @@ if (statsOn) window.__worldDev = {
     petPos: (name) => { const q = pets.find((o) => o.name === name); return q ? { x: +q.mover.position.x.toFixed(2), y: +q.mover.position.y.toFixed(2), z: +q.mover.position.z.toFixed(2) } : null; },
     planeSummon: () => { summonPlanePassenger(); return !!planeHop; },   // 절친 뒷좌석 소환 (E2E)
     balloonState: () => ({ mode: BALLOON.mode, x: +BALLOON.x.toFixed(2), y: +BALLOON.y.toFixed(2), z: +BALLOON.z.toFixed(2), riding: !!balloonRide, rider: balloonRide && balloonRide.p ? balloonRide.p.name : null, friend: balloonRide && balloonRide.friend ? balloonRide.friend.name : null, lap: balloonRide ? balloonRide.lap : 0, pois: balloonRide && balloonRide.route ? balloonRide.route.names.length : 0 }),
-    rocketState: () => ({ mode: ROCKET.mode, x: +ROCKET.x.toFixed(2), y: +ROCKET.y.toFixed(2), z: +ROCKET.z.toFixed(2), pitch: +ROCKET.pitch.toFixed(2), lap: +ROCKET.lapAcc.toFixed(2), burn: +ROCKET.burn.toFixed(2), spaceF: +spaceF.toFixed(2), riding: !!rocketRide, empty: !!(rocketRide && rocketRide.empty), friend: !!(rocketRide && rocketRide.friend), ai: !!(rocketRide && rocketRide.isAI), walk: !!aiRocketWalk, hop: !!rocketHop, light: rocketLightOn, padK: +(ROCKET.padK || 0).toFixed(2), padDir: ROCKET.padDir || 0, aiDwell: (!ROCKET.aiDwell || ROCKET.aiDwell > 1e8) ? null : +ROCKET.aiDwell.toFixed(1), poi: ROCKET.poi ? ROCKET.poi.id : null, found: Object.keys(spacePoiFound).length, out: pets.filter((q) => q.poiWalk).length, course: ROCKET.route ? ROCKET.route.names.join('·') : null, wp: ROCKET.route ? `${ROCKET.route.i}/${ROCKET.route.pts.length}` : null, dwell: ROCKET.route ? +ROCKET.route.dwellT.toFixed(1) : 0, tether: rocketTether ? +rocketTether.off.length().toFixed(2) : null, reeling: !!(rocketTether && rocketTether.reeling), evaT: +(ROCKET.aiEvaT || 0).toFixed(1), land: ROCKET.aiLand ? ROCKET.aiLand.id : null }),
+    rocketState: () => ({ mode: ROCKET.mode, x: +ROCKET.x.toFixed(2), y: +ROCKET.y.toFixed(2), z: +ROCKET.z.toFixed(2), pitch: +ROCKET.pitch.toFixed(2), lap: +ROCKET.lapAcc.toFixed(2), burn: +ROCKET.burn.toFixed(2), spaceF: +spaceF.toFixed(2), riding: !!rocketRide, empty: !!(rocketRide && rocketRide.empty), friend: !!(rocketRide && rocketRide.friend), ai: !!(rocketRide && rocketRide.isAI), walk: !!aiRocketWalk, hop: !!rocketHop, light: rocketLightOn, padK: +(ROCKET.padK || 0).toFixed(2), padDir: ROCKET.padDir || 0, aiDwell: (!ROCKET.aiDwell || ROCKET.aiDwell > 1e8) ? null : +ROCKET.aiDwell.toFixed(1), graceT: +(ROCKET.poiGraceT || 0).toFixed(1), poi: ROCKET.poi ? ROCKET.poi.id : null, found: Object.keys(spacePoiFound).length, out: pets.filter((q) => q.poiWalk).length, course: ROCKET.route ? ROCKET.route.names.join('·') : null, wp: ROCKET.route ? `${ROCKET.route.i}/${ROCKET.route.pts.length}` : null, dwell: ROCKET.route ? +ROCKET.route.dwellT.toFixed(1) : 0, tether: rocketTether ? +rocketTether.off.length().toFixed(2) : null, reeling: !!(rocketTether && rocketTether.reeling), evaT: +(ROCKET.aiEvaT || 0).toFixed(1), land: ROCKET.aiLand ? ROCKET.aiLand.id : null }),
     rocketJump: () => { doJump(); return !!rocketTether; },
     petBounce: (name) => { const q = pets.find((o) => o.name === name); return q ? +q.pet.wrap.position.y.toFixed(3) : null; },
     moonTp: (nx, ny, nz) => { const p = possessed; if (!p || !p.poiWalk || !p.poiWalk.R) return false; const poi = p.poiWalk; const L = Math.hypot(nx, ny, nz) || 1; p.mover.position.set(poi.x + (nx / L) * poi.R, poi.y + (ny / L) * poi.R, poi.z + (nz / L) * poi.R); return true; },   // E2E — 구면 워프
@@ -9405,6 +9405,7 @@ if (statsOn) window.__worldDev = {
         return 'ok';
     },
     aiEvaShort: () => { if (ROCKET.aiEvaT > 0) ROCKET.aiEvaT = 5; return +(ROCKET.aiEvaT || 0).toFixed(1); },
+    graceShort: () => { if (ROCKET.poiGraceT > 0) ROCKET.poiGraceT = 2; return +(ROCKET.poiGraceT || 0).toFixed(1); },   // 🌙 밤 귀항 유예 단축 (E2E)
     teleGo: () => { startTeleView(); return !!teleView; },
     plazaGo: () => { const was = possessed ? possessed.name : 'cam'; goPlaza(); return was; },
     teleState: () => teleView ? { i: teleView.vistas.i, n: teleView.vistas.list.length, cam: [+camera.position.x.toFixed(1), +camera.position.y.toFixed(1), +camera.position.z.toFixed(1)] } : null,
@@ -13679,6 +13680,7 @@ document.body.appendChild(controlHint);
 const touchMove = { x: 0, z: 0, mag: 0, active: false };
 let touchUI = null;
 let touchDiveBtns = null;   // 🤿 딥 다이브 전용 🔼🔽 (마크 모바일식 버튼 스왑 — syncDiveBtn이 켠다)
+let touchInteractBtn = null;   // ✋ — 도킹 완료 시 '하선'으로 잠시 스왑 (syncDisembarkBtn)
 let resetTouchStick = () => {};
 if (IS_TOUCH) {
     touchUI = document.createElement('div');
@@ -13735,7 +13737,8 @@ if (IS_TOUCH) {
     };
     actionBtn('✕', 44, () => escapeAction());                     // Esc
     const jumpBtn = actionBtn('🦘', 48, () => doJump());          // Space
-    actionBtn('✋', 48, () => doInteract());                      // Ctrl/⌘ — 독(📷) 버튼과 같은 크기
+    touchInteractBtn = actionBtn('✋', 48, () => doInteract());   // Ctrl/⌘ — 독(📷) 버튼과 같은 크기
+    touchInteractBtn.id = 'world-touch-interact';
     // 🤿 수심 홀드 버튼 — 잠수 중 🦘 자리에 스왑 (마크 모바일 문법: 수영·비행 시 점프↔상승 교체).
     // 누르는 동안 heldKeys에 KeyW/KeyS 주입 — 데탑 W/S와 완전히 같은 경로라 별도 물리 없음.
     const holdBtn = (label, code) => {
@@ -13802,7 +13805,7 @@ function releasePossession() {
     if (planeRide) exitPlane(true); // 강제 하기 — 공중이면 비상 착륙 후 내려준다
     if (balloonRide && !balloonRide.isAI) exitBalloonForce(); // 라이더는 계류장으로, 빈 열기구는 자율 귀환
     if (rocketRide && (rocketRide.p === p || rocketRide.friend === p)) exitRocketForce(); // 🚀 착륙 중=하선 유지, 비행 중=오토파일럿
-    if (p.poiWalk) { releaseAI(p); p.ai.state = 'held'; }   // 🧑‍🚀 산책은 계속(자율 어슬렁) — 밤이 되면 알아서 귀항
+    if (p.poiWalk) { releaseAI(p); p.ai.state = 'held'; ROCKET.poiGraceT = 90; }   // 🧑‍🚀 산책은 계속(자율 어슬렁) — 밤이어도 유예 후 귀항
     if (ferryRide && !ferryRide.isAI && (ferryRide.p === p || ferryRide.friend === p)) exitFerryForce(); // 본섬 잔교로
     if (subRide && !subRide.isAI && (subRide.p === p || subRide.friend === p)) exitSubForce(); // 🟡 물로 하차, 빈 배 귀항
     cancelPhoneCall();   // 통화 중이었으면 끊는다
@@ -14246,9 +14249,9 @@ function updatePlayer(delta) {
             : ROCKET.mode === 'count' || ROCKET.mode === 'ignite'
             ? '🚀 카운트다운! — Ctrl/⌘ 발사 취소'
             : ROCKET.mode === 'moonland'
-                ? (ROCKET.padK >= 0.99 ? `🌕 달 착륙 완료 — 크레이터와 빨간 깃발 · ${IS_TOUCH ? '✋' : '⌘'} 이륙` : '🌕 착륙 시퀀스 — 사뿐히…')
+                ? (ROCKET.padK >= 0.99 ? `🌕 달 착륙 완료 — 크레이터와 빨간 깃발 · ${IS_TOUCH ? '✋' : '⌘'} 하선 (재탑승하면 이륙)` : '🌕 착륙 시퀀스 — 사뿐히…')
             : ROCKET.mode === 'dock'
-                ? (ROCKET.padK >= 0.99 ? `🛰️ 도킹 완료 — 무중력 휴식 · ${IS_TOUCH ? '✋' : '⌘'} 언도킹` : '🛰️ 도킹 시퀀스 — 클램프 정렬…')
+                ? (ROCKET.padK >= 0.99 ? `🛰️ 도킹 완료 — 무중력 휴식 · ${IS_TOUCH ? '✋' : '⌘'} 하선 (재탑승하면 언도킹)` : '🛰️ 도킹 시퀀스 — 클램프 정렬…')
             : ROCKET.mode === 'manual'
                 ? (nearPoi ? `${nearPoi.emoji} ${nearPoi.ko} 곁 — ${IS_TOUCH ? '✋' : '⌘'} ${nearPoi.id === 'moon' ? '착륙' : '도킹'}!`
                     : (IS_TOUCH ? `🚀 ${petKo(p)} 우주 조종 중${rocketRide.friend ? ' 👥' : ''} — 스틱 추진·방향 · ✋ 재진입`
@@ -17031,6 +17034,7 @@ function disembarkPoi() {
     place(r.p, 1);
     place(r.friend, -1);
     rocketRide = null;
+    ROCKET.poiGraceT = 90;   // 🌙 하선 직후 밤이어도 최소 산책 유예 — 즉시 재탑승·귀항 금지 (리포트 3차)
     if (manned) {
         wakeSoft(5000);
         showToast(poi.id === 'moon' ? '🌕 달 위에 첫 발! 낮은 중력 산책 — 로켓 곁 ⌘ = 재탑승·이륙' : '🛰️ 갑판 산책! — 로켓 곁 ⌘ = 재탑승·이륙');
@@ -17067,6 +17071,7 @@ function applySpaceRestore(tok) {
         ROCKET.mode = poi.id === 'moon' ? 'moonland' : 'dock';
         ROCKET.poi = poi;
         ROCKET.padK = 1; ROCKET.padDir = 1; ROCKET.padDone = true; ROCKET.aiDwell = 9e9;
+        ROCKET.poiGraceT = 120;   // 밤 부팅 복원 — 이어진 산책을 즉시 귀항으로 끊지 않는다
         ROCKET.burn = 0;
         ROCKET.x = poi.padPos.x; ROCKET.y = poi.padPos.y; ROCKET.z = poi.padPos.z;
         // 이륙 이징 시작점(free*) 필수 — 안 채우면 pad lerp가 undefined→NaN으로 좌표 전체 오염 (실측)
@@ -17508,6 +17513,28 @@ function requestRocketExit() {   // ⌘: 유영 중 = 줄 감기, 카운트다�
     }
     showToast('🚀 비행 중이에요 — 착륙까지 조금만! (Esc = 긴급 하차)');
 }
+// ⬇️ 문맥 하선 버튼 — 착륙/도킹 완료 + 빙의 라이더일 때만 (GTA류 '탈것 컨텍스트 액션' 문법).
+// 모바일 = ✋ 버튼이 잠시 '하선'으로 바뀌고, 데탑 = 우측에 알약 버튼. 액션은 ⌘와 같은 경로(doInteract).
+const disembarkBtn = document.createElement('div');
+disembarkBtn.id = 'world-disembark-btn';
+disembarkBtn.textContent = '⬇️ 하선하기';
+disembarkBtn.style.cssText = 'position:fixed; right:84px; bottom:158px; z-index:95; display:none; padding:11px 16px; border-radius:13px; background:rgba(30,32,40,0.88); border:2px solid rgba(140,220,255,0.55); color:#fff; font-family:sans-serif; font-size:14px; cursor:pointer; box-shadow:0 3px 10px rgba(0,0,0,0.3); user-select:none; -webkit-user-select:none;';
+disembarkBtn.addEventListener('click', () => doInteract());
+document.body.appendChild(disembarkBtn);
+let disembarkOn = false;
+function syncDisembarkBtn() {
+    const r = rocketRide;
+    const on = !!(r && !r.empty && possessed && (r.p === possessed || r.friend === possessed)
+        && (ROCKET.mode === 'moonland' || ROCKET.mode === 'dock') && ROCKET.padDir > 0 && ROCKET.padK >= 0.99);
+    if (on === disembarkOn) return;
+    disembarkOn = on;
+    if (touchInteractBtn) {
+        touchInteractBtn.textContent = on ? '하선' : '✋';
+        touchInteractBtn.style.fontSize = on ? '15px' : `${Math.round(48 * 0.44)}px`;
+        touchInteractBtn.style.borderColor = on ? 'rgba(140,220,255,0.85)' : 'rgba(255,255,255,0.4)';
+    }
+    if (!IS_TOUCH) disembarkBtn.style.display = on ? 'block' : 'none';
+}
 function exitRocketForce() {   // 빙의 해제 — 발사 전=취소, 착륙·도킹 중=하선(로켓 유지), 비행 중=오토파일럿 전환 (순간이동 없음)
     const r = rocketRide;
     if (!r) return;
@@ -17580,6 +17607,7 @@ function rocketTurnHeading(target, maxStep) {
     ROCKET.heading += THREE.MathUtils.clamp(diff, -maxStep, maxStep);
 }
 function updateRocket(delta) {
+    syncDisembarkBtn();
     const ud = rocketGroup.userData;
     const r = rocketRide;
     // AI 도보 소유권: 다른 디렉터가 goto를 덮어쓰면 접는다 (열기구 규칙)
@@ -18215,9 +18243,12 @@ function updateRocket(delta) {
             poiAutoReturn();
         }
     }
-    // 🌙 밤 자동 귀항 — 무빙의 산책자만 남았고 로켓이 곁에 착륙해 있으면, 알아서 타고 집으로
+    // 🌙 밤 자동 귀항 — 무빙의 산책자만 남았고 로켓이 곁에 착륙해 있으면, 알아서 타고 집으로.
+    // 단 하선·해제 직후엔 유예(poiGraceT) 필수 — 없으면 밤(SLEEP_START 22시)에 빙의를 풀자마자
+    // 같은 프레임에 재탑승·귀환해 "펫 조종 해제 = 강제 송환"으로 보인다 (모바일 리포트 3차 실측).
+    if (ROCKET.poiGraceT > 0) ROCKET.poiGraceT -= delta;
     if (poiWalkers && !poiLeaderOn && !rocketRide && (ROCKET.mode === 'moonland' || ROCKET.mode === 'dock')
-        && ROCKET.padK >= 0.99 && isSleepTime(currentHour())) {
+        && ROCKET.padK >= 0.99 && ROCKET.poiGraceT <= 0 && isSleepTime(currentHour())) {
         poiAutoReturn();
     }
 }
