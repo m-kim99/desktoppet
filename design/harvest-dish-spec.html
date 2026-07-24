@@ -1,0 +1,560 @@
+<title>수확 요리 8종 · 먹기 3단계 기준</title>
+<style>
+  :root{
+    --paper:#eef0ea; --card:#fafbf7; --panel:#f2f4ec; --ink:#252b23; --ink-soft:#606b5c;
+    --hair:#d7dccf; --hair-soft:#e4e8dc; --accent:#5c8a3c; --accent2:#c8813a;
+    --tag:#e6ebda; --shadow:rgba(40,52,32,.13);
+    --sans:'Apple SD Gothic Neo','Pretendard',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    --mono:'SF Mono','JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --paper:#171a15; --card:#212520; --panel:#1b1f19; --ink:#eaeee4; --ink-soft:#a3ad9c;
+           --hair:#333a2f; --hair-soft:#2c322a; --accent:#8dbf63; --accent2:#dfa45e; --tag:#2a3123; --shadow:rgba(0,0,0,.45); }
+  }
+  :root[data-theme="light"]{ --paper:#eef0ea; --card:#fafbf7; --panel:#f2f4ec; --ink:#252b23; --ink-soft:#606b5c;
+    --hair:#d7dccf; --hair-soft:#e4e8dc; --accent:#5c8a3c; --accent2:#c8813a; --tag:#e6ebda; --shadow:rgba(40,52,32,.13); }
+  :root[data-theme="dark"]{ --paper:#171a15; --card:#212520; --panel:#1b1f19; --ink:#eaeee4; --ink-soft:#a3ad9c;
+    --hair:#333a2f; --hair-soft:#2c322a; --accent:#8dbf63; --accent2:#dfa45e; --tag:#2a3123; --shadow:rgba(0,0,0,.45); }
+
+  *{box-sizing:border-box}
+  body{background:var(--paper); color:var(--ink); font-family:var(--sans); -webkit-font-smoothing:antialiased; line-height:1.55;}
+  .sheet{max-width:1160px; margin:0 auto; padding:clamp(22px,5vw,54px) clamp(16px,4vw,40px) 64px;}
+  .eyebrow{font-family:var(--mono); font-size:11.5px; letter-spacing:.18em; text-transform:uppercase;
+           color:var(--accent); font-weight:600; display:flex; align-items:center; gap:9px;}
+  .eyebrow::before{content:""; width:26px; height:1.5px; background:var(--accent);}
+  h1{font-size:clamp(27px,5vw,44px); font-weight:750; letter-spacing:-.02em; line-height:1.1; margin:.55rem 0 .2rem; text-wrap:balance;}
+  h1 .em{color:var(--accent);}
+  .lede{max-width:64ch; color:var(--ink-soft); font-size:clamp(14px,1.6vw,15.5px); margin:.55rem 0 0;}
+  .rule{color:var(--ink); font-weight:650;}
+  .callout{margin:24px 0 4px; padding:15px 18px; background:var(--card); border:1px solid var(--hair);
+           border-left:3px solid var(--accent); border-radius:12px; font-size:13.5px; color:var(--ink-soft);}
+  .callout b{color:var(--ink); font-weight:700;}
+  .legend{display:flex; flex-wrap:wrap; gap:10px 22px; margin:14px 0 6px; padding:13px 18px;
+          background:var(--card); border:1px solid var(--hair); border-radius:12px;}
+  .legend .li{display:flex; align-items:baseline; gap:8px; font-size:13.5px; color:var(--ink-soft);}
+  .legend .k{font-family:var(--mono); font-weight:600; color:var(--ink); font-size:12px;
+             background:var(--tag); padding:2px 8px; border-radius:20px; letter-spacing:.03em;}
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:16px; margin-top:22px;}
+  .card{background:var(--card); border:1px solid var(--hair); border-radius:16px; padding:16px 16px 15px;
+        display:flex; flex-direction:column; gap:11px;}
+  .card-head{display:flex; align-items:baseline; justify-content:space-between; gap:10px;}
+  .card-head h3{font-size:17.5px; font-weight:750; letter-spacing:-.01em; margin:0;}
+  .card-head .id{font-family:var(--mono); font-size:10.5px; letter-spacing:.09em; color:var(--ink-soft); text-transform:uppercase;}
+  .ing{font-size:11.5px; color:var(--ink-soft); font-family:var(--mono); letter-spacing:.01em;
+       background:var(--panel); border:1px solid var(--hair-soft); border-radius:8px; padding:5px 9px;}
+  .strip{display:grid; grid-template-columns:repeat(3,1fr); gap:8px;}
+  .panel{display:flex; flex-direction:column; align-items:center; gap:6px;}
+  .stage{width:100%; aspect-ratio:1/1; background:var(--panel); border:1px solid var(--hair-soft); border-radius:12px; padding:5px;}
+  .stage svg{width:100%; height:100%; display:block; filter:drop-shadow(0 3px 4px var(--shadow));}
+  .cap{font-size:11.5px; color:var(--ink-soft); display:flex; align-items:center; gap:5px; font-weight:600;}
+  .cap .dot{width:5px; height:5px; border-radius:50%;}
+  .panel.s0 .dot{background:var(--ink-soft);} .panel.s1 .dot{background:var(--accent2);} .panel.s2 .dot{background:var(--accent);}
+  .note{font-size:12.8px; color:var(--ink); line-height:1.5; display:flex; gap:8px; align-items:flex-start;}
+  .note::before{content:"▸"; color:var(--accent); font-size:11px; line-height:1.7; flex:none;}
+  .note b{font-weight:700;}
+  .swatches{display:flex; flex-wrap:wrap; gap:6px;}
+  .sw{display:flex; align-items:center; gap:5px; font-family:var(--mono); font-size:10px; color:var(--ink-soft);
+      background:var(--panel); border:1px solid var(--hair-soft); border-radius:20px; padding:2px 8px 2px 4px;}
+  .sw i{width:11px; height:11px; border-radius:50%; border:1px solid rgba(0,0,0,.13); display:inline-block;}
+  footer{margin-top:34px; padding-top:18px; border-top:1px solid var(--hair); color:var(--ink-soft); font-size:12.5px; max-width:74ch;}
+  footer b{color:var(--ink);}
+  @media (prefers-reduced-motion:no-preference){
+    .card{opacity:0; transform:translateY(9px); animation:rise .5s ease forwards;}
+    .card:nth-child(2){animation-delay:.04s}.card:nth-child(3){animation-delay:.08s}
+    .card:nth-child(4){animation-delay:.12s}.card:nth-child(5){animation-delay:.16s}
+    .card:nth-child(6){animation-delay:.2s}.card:nth-child(7){animation-delay:.24s}.card:nth-child(8){animation-delay:.28s}
+    @keyframes rise{to{opacity:1; transform:none}}
+  }
+</style>
+
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <linearGradient id="gBowl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#dcd8cc"/></linearGradient>
+  <radialGradient id="gSoup" cx="0.38" cy="0.3" r="0.85"><stop offset="0" stop-color="#ff8a5c"/><stop offset="0.55" stop-color="#ee6238"/><stop offset="1" stop-color="#c93c1f"/></radialGradient>
+  <linearGradient id="gPlate" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e4e0d4"/></linearGradient>
+  <linearGradient id="gLeaf" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="#a8d96e"/><stop offset="1" stop-color="#5f9634"/></linearGradient>
+  <linearGradient id="gLeaf2" x1="0" y1="0" x2="0.5" y2="1"><stop offset="0" stop-color="#8fc95a"/><stop offset="1" stop-color="#4d8228"/></linearGradient>
+  <linearGradient id="gCarrot" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffab5e"/><stop offset="1" stop-color="#e0742a"/></linearGradient>
+  <linearGradient id="gBroth" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e7f2f5"/><stop offset="1" stop-color="#b9d2da"/></linearGradient>
+  <linearGradient id="gShell" x1="0" y1="0" x2="0.3" y2="1"><stop offset="0" stop-color="#fdf8ec"/><stop offset="1" stop-color="#cdbda2"/></linearGradient>
+  <linearGradient id="gClamMeat" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd0a8"/><stop offset="1" stop-color="#e79263"/></linearGradient>
+  <linearGradient id="gFishSkin" x1="0" y1="0" x2="0.2" y2="1"><stop offset="0" stop-color="#efc794"/><stop offset="0.55" stop-color="#d6a768"/><stop offset="1" stop-color="#a97b41"/></linearGradient>
+  <linearGradient id="gFishMeat" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fffaf2"/><stop offset="1" stop-color="#ecdcc6"/></linearGradient>
+  <linearGradient id="gToast" x1="0.1" y1="0" x2="0.6" y2="1"><stop offset="0" stop-color="#f6dda0"/><stop offset="0.6" stop-color="#e2bb72"/><stop offset="1" stop-color="#b98840"/></linearGradient>
+  <linearGradient id="gChar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a2712f"/><stop offset="1" stop-color="#5d3d17"/></linearGradient>
+  <linearGradient id="gJam" x1="0.2" y1="0" x2="0.7" y2="1"><stop offset="0" stop-color="#f2617f"/><stop offset="0.5" stop-color="#d8304f"/><stop offset="1" stop-color="#a81a36"/></linearGradient>
+  <linearGradient id="gSponge" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf0d6"/><stop offset="1" stop-color="#f0dcb2"/></linearGradient>
+  <linearGradient id="gCream" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fffdf8"/><stop offset="1" stop-color="#f2e8d6"/></linearGradient>
+  <linearGradient id="gBerry" x1="0.3" y1="0" x2="0.7" y2="1"><stop offset="0" stop-color="#f4586f"/><stop offset="1" stop-color="#b71e38"/></linearGradient>
+</defs></svg>
+<div class="sheet">
+  <div class="eyebrow">먹기 3단계 모델링 기준 · Harvest Recipes</div>
+  <h1>수확 요리 8종, <span class="em">온전 · 1입 · 2입</span></h1>
+  <p class="lede">지금은 전부 <span class="rule">임시 클로슈</span> 하나로만 나옵니다. 과일·음식·음료와 같은 규율로
+     각 요리를 실제 조형으로 만들고, <span class="rule">재료가 결과물에서 읽히게</span> 합니다 —
+     잼은 쓴 과일색, 수프는 토마토, 샐러드는 당근. 3입째에 소멸합니다.</p>
+
+  <div class="callout">
+    <b>먹는 방식이 요리마다 다릅니다</b> — 컵에 담긴 건 <b>수위가 내려가고</b>, 접시 요리는 <b>덜어내 빈 접시가 드러나며</b>,
+    케이크·토스트는 <b>베어물어 단면</b>이 보입니다. 음료에서 쓴 <b>어두운 그릇 안쪽</b> 문법을 그대로 써서
+    내용물이 줄어드는 게 낮은 시선각에서도 읽히게 합니다.
+  </div>
+
+  <div class="legend">
+    <span class="li"><span class="k">온전</span> 갓 만든 상태 — 조형 기준</span>
+    <span class="li"><span class="k">1입</span> 한 입 — 뚜렷하게 줄어듦</span>
+    <span class="li"><span class="k">2입</span> 거의 안 남음 — 다음이면 소멸</span>
+  </div>
+
+  <div class="grid">
+
+    <!-- ========== 1. 과일주스 ========== -->
+    <div class="card">
+      <div class="card-head"><h3>과일주스</h3><span class="id">juice</span></div>
+      <div class="ing">과일 아무거나 ×2</div>
+      <div class="strip">
+        <div class="panel s0"><div class="stage"><svg viewBox="0 0 120 120">
+          <path d="M36,30 L84,30 L78,104 L42,104 Z" fill="#eaf2f7" opacity=".5"/>
+          <path d="M38.4,42 L81.6,42 L78,104 L42,104 Z" fill="#f0834a"/>
+          <ellipse cx="60" cy="42" rx="21.6" ry="5.4" fill="#f79c66"/>
+          <ellipse cx="60" cy="30" rx="24" ry="6" fill="none" stroke="#d6e4ec" stroke-width="2.6"/>
+          <g transform="translate(78,36) rotate(24)"><path d="M0,-9 A9,9 0 0,1 0,9 Z" fill="#ffd85e"/><path d="M0,-6.6 A6.6,6.6 0 0,1 0,6.6 Z" fill="#fff0b8"/></g>
+          <path d="M70,14 L64,96" stroke="#7fc4e8" stroke-width="5" stroke-linecap="round"/>
+          <g fill="#fff" opacity=".45"><circle cx="45" cy="60" r="2"/><circle cx="47" cy="76" r="1.6"/></g>
+        </svg></div><div class="cap"><span class="dot"></span>온전</div></div>
+        <div class="panel s1"><div class="stage"><svg viewBox="0 0 120 120">
+          <path d="M36,30 L84,30 L78,104 L42,104 Z" fill="#eaf2f7" opacity=".5"/>
+          <path d="M40.6,70 L79.4,70 L78,104 L42,104 Z" fill="#f0834a"/>
+          <ellipse cx="60" cy="70" rx="19.4" ry="4.8" fill="#f79c66"/>
+          <ellipse cx="60" cy="30" rx="24" ry="6" fill="none" stroke="#d6e4ec" stroke-width="2.6"/>
+          <g transform="translate(76,66) rotate(24)"><path d="M0,-7.6 A7.6,7.6 0 0,1 0,7.6 Z" fill="#ffd85e"/><path d="M0,-5.4 A5.4,5.4 0 0,1 0,5.4 Z" fill="#fff0b8"/></g>
+          <path d="M70,14 L64,96" stroke="#7fc4e8" stroke-width="5" stroke-linecap="round"/>
+        </svg></div><div class="cap"><span class="dot"></span>1입</div></div>
+        <div class="panel s2"><div class="stage"><svg viewBox="0 0 120 120">
+          <path d="M36,30 L84,30 L78,104 L42,104 Z" fill="#eaf2f7" opacity=".5"/>
+          <path d="M41.7,90 L78.3,90 L78,104 L42,104 Z" fill="#f0834a"/>
+          <ellipse cx="60" cy="90" rx="18.3" ry="4.5" fill="#f79c66"/>
+          <ellipse cx="60" cy="30" rx="24" ry="6" fill="none" stroke="#d6e4ec" stroke-width="2.6"/>
+          <path d="M70,14 L64,96" stroke="#7fc4e8" stroke-width="5" stroke-linecap="round"/>
+        </svg></div><div class="cap"><span class="dot"></span>2입</div></div>
+      </div>
+      <p class="note"><span><b>유리컵 + 빨대 + 레몬 반달</b>. 아이스컵 문법 재사용 — 수위가 그대로 보인다.
+        <b>색은 쓴 과일에서 뽑아</b> 딸기면 분홍, 포도면 보라로(레시피가 `*`라 재료에 따라 달라짐).</span></p>
+      <div class="swatches"><span class="sw"><i style="background:#f0834a"></i>주스 f0834a</span><span class="sw"><i style="background:#ffd85e"></i>레몬 ffd85e</span><span class="sw"><i style="background:#7fc4e8"></i>빨대 7fc4e8</span></div>
+    </div>
+
+    <!-- ========== 2. 코코넛 스무디 ========== -->
+    <div class="card">
+      <div class="card-head"><h3>코코넛 스무디</h3><span class="id">smoothie</span></div>
+      <div class="ing">코코넛 ×1 · 우유 ×1</div>
+      <div class="strip">
+        <div class="panel s0"><div class="stage"><svg viewBox="0 0 120 120">
+          <path d="M40,34 L80,34 L76,102 L44,102 Z" fill="#eaf2f7" opacity=".5"/>
+          <path d="M41.5,50 L78.5,50 L76,102 L44,102 Z" fill="#f7f0e2"/>
+          <ellipse cx="60" cy="50" rx="18.5" ry="4.6" fill="#fdf9f0"/>
+          <path d="M43,60 q10,4 18,0 q9,-4 17,1" stroke="#e6dcc6" stroke-width="2" fill="none" opacity=".7"/>
+          <ellipse cx="60" cy="46" rx="19" ry="7" fill="#fffcf5"/>
+          <g fill="#8a6a48"><rect x="52" y="38" width="7" height="2.6" rx="1.3" transform="rotate(-14 55 39)"/><rect x="62" y="41" width="7" height="2.6" rx="1.3" transform="rotate(12 65 42)"/><rect x="56" y="44" width="6" height="2.4" rx="1.2" transform="rotate(26 59 45)"/></g>
+          <ellipse cx="60" cy="34" rx="20" ry="5" fill="none" stroke="#d6e4ec" stroke-width="2.6"/>
+          <path d="M70,16 L65,94" stroke="#eec98a" stroke-width="5" stroke-linecap="round"/>
+        </svg></div><div class="cap"><span class="dot"></span>온전</div></div>
+        <div class="panel s1"><div class="stage"><svg viewBox="0 0 120 120">
+          <path d="M40,34 L80,34 L76,102 L44,102 Z" fill="#eaf2f7" opacity=".5"/>
+          <path d="M42.8,72 L77.2,72 L76,102 L44,102 Z" fill="#f7f0e2"/>
+          <ellipse cx="60" cy="72" rx="17.2" ry="4.3" fill="#fdf9f0"/>
+          <ellipse cx="60" cy="70" rx="16" ry="5" fill="#fffcf5"/>
+          <g fill="#8a6a48"><rect x="54" y="66" width="6" height="2.4" rx="1.2" transform="rotate(-12 57 67)"/><rect x="62" y="69" width="6" height="2.4" rx="1.2" transform="rotate(14 65 70)"/></g>
+          <ellipse cx="60" cy="34" rx="20" ry="5" fill="none" stroke="#d6e4ec" stroke-width="2.6"/>
+          <path d="M70,16 L65,94" stroke="#eec98a" stroke-width="5" stroke-linecap="round"/>
+        </svg></div><div class="cap"><span class="dot"></span>1입</div></div>
+        <div class="panel s2"><div class="stage"><svg viewBox="0 0 120 120">
+          <path d="M40,34 L80,34 L76,102 L44,102 Z" fill="#eaf2f7" opacity=".5"/>
+          <path d="M43.6,90 L76.4,90 L76,102 L44,102 Z" fill="#f7f0e2"/>
+          <ellipse cx="60" cy="90" rx="16.4" ry="4.1" fill="#fdf9f0"/>
+          <g fill="#8a6a48"><rect x="56" y="87" width="5" height="2.2" rx="1.1" transform="rotate(-10 58 88)"/></g>
+          <ellipse cx="60" cy="34" rx="20" ry="5" fill="none" stroke="#d6e4ec" stroke-width="2.6"/>
+          <path d="M70,16 L65,94" stroke="#eec98a" stroke-width="5" stroke-linecap="round"/>
+        </svg></div><div class="cap"><span class="dot"></span>2입</div></div>
+      </div>
+      <p class="note"><span><b>걸쭉한 크림빛 + 코코넛 슬라이스 토핑</b>. 주스보다 <b>불투명하고 수면이 봉긋</b>해 질감이 다르게 읽히는 게 핵심.
+        토핑은 줄면서 함께 내려앉는다.</span></p>
+      <div class="swatches"><span class="sw"><i style="background:#f7f0e2"></i>스무디 f7f0e2</span><span class="sw"><i style="background:#8a6a48"></i>코코넛 8a6a48</span><span class="sw"><i style="background:#eec98a"></i>빨대 eec98a</span></div>
+    </div>
+
+    <!-- ========== 3. 토마토수프 ========== -->
+    <div class="card">
+      <div class="card-head"><h3>토마토수프</h3><span class="id">tomatosoup</span></div>
+      <div class="ing">토마토 ×2 (텃밭)</div>
+      <div class="strip">
+        <div class="panel s0"><div class="stage"><svg viewBox="0 0 120 120">
+          <ellipse cx="60" cy="96" rx="40" ry="8" fill="#000" opacity=".08"/>
+          <path d="M22,66 a38,30 0 0,0 76,0 Z" fill="url(#gBowl)"/>
+          <path d="M26,72 a34,22 0 0,0 68,0 Z" fill="#000" opacity=".06"/>
+          <ellipse cx="60" cy="66" rx="38" ry="10.5" fill="#5a4b36"/>
+          <ellipse cx="60" cy="65.5" rx="34.5" ry="9.2" fill="url(#gSoup)"/>
+          <path d="M42,62 q9,-4 17,-0.5 q8,3.5 16,-1.5" stroke="#fff4e6" stroke-width="3" fill="none" stroke-linecap="round" opacity=".95"/>
+          <path d="M46,68.5 q8,-2.6 14,-0.4" stroke="#fff4e6" stroke-width="2.2" fill="none" stroke-linecap="round" opacity=".6"/>
+          <ellipse cx="46" cy="62" rx="9" ry="3" fill="#fff" opacity=".18"/>
+          <g><ellipse cx="52" cy="61" rx="4" ry="2.4" fill="url(#gLeaf)" transform="rotate(-16 52 61)"/><ellipse cx="71" cy="67" rx="3.4" ry="2" fill="url(#gLeaf2)" transform="rotate(12 71 67)"/></g>
+          <g fill="#e8c88a"><rect x="62" y="60" width="6" height="5" rx="1.2" transform="rotate(14 65 62)"/><rect x="54" y="67" width="5.4" height="4.6" rx="1.2" transform="rotate(-8 56 69)"/></g>
+          <ellipse cx="60" cy="66" rx="38" ry="10.5" fill="none" stroke="url(#gBowl)" stroke-width="4"/>
+          <ellipse cx="60" cy="63.5" rx="38" ry="10.5" fill="none" stroke="#fff" stroke-width="1.4" opacity=".7"/>
+          <g stroke="#fff" stroke-width="2.2" fill="none" opacity=".38" stroke-linecap="round"><path d="M50,50 q4,-7 0,-13"/><path d="M62,46 q5,-8 0,-15"/><path d="M73,52 q4,-6 1,-11"/></g>
+        </svg></div><div class="cap"><span class="dot"></span>온전</div></div>
+        <div class="panel s1"><div class="stage"><svg viewBox="0 0 120 120">
+          <ellipse cx="60" cy="96" rx="40" ry="8" fill="#000" opacity=".08"/>
+          <path d="M22,66 a38,30 0 0,0 76,0 Z" fill="url(#gBowl)"/>
+          <ellipse cx="60" cy="66" rx="38" ry="10.5" fill="#5a4b36"/>
+          <path d="M25.5,68 a34.5,17 0 0,0 69,0 Z" fill="#4a3d2b"/>
+          <ellipse cx="60" cy="74" rx="25" ry="6.6" fill="url(#gSoup)"/>
+          <path d="M50,72 q7,-3 13,-0.4" stroke="#fff4e6" stroke-width="2.4" fill="none" stroke-linecap="round" opacity=".9"/>
+          <ellipse cx="52" cy="72" rx="6" ry="2" fill="#fff" opacity=".16"/>
+          <ellipse cx="67" cy="74" rx="3" ry="1.8" fill="url(#gLeaf2)" transform="rotate(10 67 74)"/>
+          <ellipse cx="60" cy="66" rx="38" ry="10.5" fill="none" stroke="url(#gBowl)" stroke-width="4"/>
+          <ellipse cx="60" cy="63.5" rx="38" ry="10.5" fill="none" stroke="#fff" stroke-width="1.4" opacity=".7"/>
+          <g stroke="#fff" stroke-width="2" fill="none" opacity=".3" stroke-linecap="round"><path d="M56,50 q4,-7 0,-12"/><path d="M68,52 q4,-6 1,-10"/></g>
+        </svg></div><div class="cap"><span class="dot"></span>1입</div></div>
+        <div class="panel s2"><div class="stage"><svg viewBox="0 0 120 120">
+          <ellipse cx="60" cy="96" rx="40" ry="8" fill="#000" opacity=".08"/>
+          <path d="M22,66 a38,30 0 0,0 76,0 Z" fill="url(#gBowl)"/>
+          <ellipse cx="60" cy="66" rx="38" ry="10.5" fill="#5a4b36"/>
+          <path d="M25.5,68 a34.5,20 0 0,0 69,0 Z" fill="#463a29"/>
+          <ellipse cx="60" cy="81" rx="13" ry="3.6" fill="#cf4526"/>
+          <ellipse cx="60" cy="80.6" rx="10.5" ry="2.8" fill="#e2603a"/>
+          <ellipse cx="56" cy="80" rx="4" ry="1.3" fill="#fff" opacity=".14"/>
+          <path d="M40,73 q6,4 14,5.6" stroke="#c9502e" stroke-width="2.4" fill="none" stroke-linecap="round" opacity=".55"/>
+          <ellipse cx="60" cy="66" rx="38" ry="10.5" fill="none" stroke="url(#gBowl)" stroke-width="4"/>
+          <ellipse cx="60" cy="63.5" rx="38" ry="10.5" fill="none" stroke="#fff" stroke-width="1.4" opacity=".7"/>
+        </svg></div><div class="cap"><span class="dot"></span>2입</div></div>
+      </div>
+      <p class="note"><span><b>김 오르는 깊은 볼 + 크림 소용돌이 + 바질·크루통</b>. 음료의 <b>어두운 그릇 안쪽</b> 문법 —
+        수프가 줄면 볼 안쪽 그림자가 넓어져 "덜어냈다"가 확실히 읽힌다.</span></p>
+      <div class="swatches"><span class="sw"><i style="background:#ef6a41"></i>수프 ef6a41</span><span class="sw"><i style="background:#fff5e8"></i>크림 fff5e8</span><span class="sw"><i style="background:#7fae52"></i>바질 7fae52</span></div>
+    </div>
+
+    <!-- ========== 4. 당근 샐러드 ========== -->
+    <div class="card">
+      <div class="card-head"><h3>당근 샐러드</h3><span class="id">salad</span></div>
+      <div class="ing">당근 ×2 (텃밭) · 기름 ×1</div>
+      <div class="strip">
+        <div class="panel s0"><div class="stage"><svg viewBox="0 0 120 120">
+          <ellipse cx="60" cy="94" rx="42" ry="8" fill="#000" opacity=".08"/>
+          <path d="M18,70 a42,20 0 0,0 84,0 Z" fill="url(#gPlate)"/>
+          <ellipse cx="60" cy="70" rx="42" ry="10.5" fill="#4c5740"/>
+          <ellipse cx="60" cy="69" rx="36" ry="8.6" fill="#e9e6da"/>
+          <g>
+            <path d="M34,66 q6,-11 19,-8 q9,2 6,9 q-4,7 -16,6 q-9,-1 -9,-7 Z" fill="url(#gLeaf)"/>
+            <path d="M36,65 q8,-5 16,-4" stroke="#4b7d2a" stroke-width="1.2" fill="none" opacity=".55"/>
+            <path d="M60,58 q9,-9 20,-3 q8,5 2,11 q-7,6 -17,2 q-8,-3 -5,-10 Z" fill="url(#gLeaf2)"/>
+            <path d="M64,60 q8,-3 14,1" stroke="#3f6f22" stroke-width="1.2" fill="none" opacity=".5"/>
+            <path d="M48,72 q8,-8 19,-4 q8,4 3,10 q-7,6 -16,2 q-8,-3 -6,-8 Z" fill="#9ad063"/>
+          </g>
+          <g><rect x="42" y="58" width="19" height="4.6" rx="2.3" fill="url(#gCarrot)" transform="rotate(-26 51 60)"/>
+             <rect x="60" y="63" width="18" height="4.4" rx="2.2" fill="url(#gCarrot)" transform="rotate(20 69 65)"/>
+             <rect x="48" y="70" width="17" height="4.2" rx="2.1" fill="url(#gCarrot)" transform="rotate(-6 56 72)"/>
+             <rect x="64" y="72" width="14" height="4" rx="2" fill="url(#gCarrot)" transform="rotate(32 71 74)"/></g>
+          <g fill="#fff" opacity=".5"><ellipse cx="52" cy="61" rx="4.4" ry="1.4" transform="rotate(-26 52 61)"/><ellipse cx="70" cy="66" rx="4" ry="1.2" transform="rotate(20 70 66)"/></g>
+          <g fill="#3a5c22" opacity=".5"><circle cx="58" cy="66" r="1.1"/><circle cx="74" cy="70" r="0.9"/><circle cx="45" cy="70" r="1"/></g>
+          <ellipse cx="60" cy="70" rx="42" ry="10.5" fill="none" stroke="url(#gPlate)" stroke-width="4"/>
+          <ellipse cx="60" cy="67.6" rx="42" ry="10.5" fill="none" stroke="#fff" stroke-width="1.3" opacity=".8"/>
+        </svg></div><div class="cap"><span class="dot"></span>온전</div></div>
+        <div class="panel s1"><div class="stage"><svg viewBox="0 0 120 120">
+          <ellipse cx="60" cy="94" rx="42" ry="8" fill="#000" opacity=".08"/>
+          <path d="M18,70 a42,20 0 0,0 84,0 Z" fill="url(#gPlate)"/>
+          <ellipse cx="60" cy="70" rx="42" ry="10.5" fill="#4c5740"/>
+          <ellipse cx="60" cy="69" rx="36" ry="8.6" fill="#e9e6da"/>
+          <path d="M48,68 q8,-9 20,-4 q8,4 2,10 q-8,6 -17,1 q-7,-3 -5,-7 Z" fill="url(#gLeaf)"/>
+          <path d="M52,68 q8,-4 14,-1" stroke="#4b7d2a" stroke-width="1.2" fill="none" opacity=".5"/>
+          <g><rect x="46" y="64" width="17" height="4.4" rx="2.2" fill="url(#gCarrot)" transform="rotate(-20 54 66)"/>
+             <rect x="61" y="70" width="14" height="4.2" rx="2.1" fill="url(#gCarrot)" transform="rotate(24 68 72)"/></g>
+          <g fill="#fff" opacity=".45"><ellipse cx="55" cy="66" rx="4" ry="1.3" transform="rotate(-20 55 66)"/></g>
+          <ellipse cx="60" cy="70" rx="42" ry="10.5" fill="none" stroke="url(#gPlate)" stroke-width="4"/>
+          <ellipse cx="60" cy="67.6" rx="42" ry="10.5" fill="none" stroke="#fff" stroke-width="1.3" opacity=".8"/>
+        </svg></div><div class="cap"><span class="dot"></span>1입</div></div>
+        <div class="panel s2"><div class="stage"><svg viewBox="0 0 120 120">
+          <ellipse cx="60" cy="94" rx="42" ry="8" fill="#000" opacity=".08"/>
+          <path d="M18,70 a42,20 0 0,0 84,0 Z" fill="url(#gPlate)"/>
+          <ellipse cx="60" cy="70" rx="42" ry="10.5" fill="#4c5740"/>
+          <ellipse cx="60" cy="69" rx="36" ry="8.6" fill="#e9e6da"/>
+          <path d="M54,72 q6,-6 14,-2 q5,3 1,6 q-6,4 -12,0 q-4,-2 -3,-4 Z" fill="url(#gLeaf2)"/>
+          <rect x="56" y="70" width="12" height="3.6" rx="1.8" fill="url(#gCarrot)" transform="rotate(-12 62 72)"/>
+          <g fill="#7fae52" opacity=".5"><circle cx="48" cy="74" r="1.2"/><circle cx="73" cy="72" r="1"/></g>
+          <ellipse cx="60" cy="70" rx="42" ry="10.5" fill="none" stroke="url(#gPlate)" stroke-width="4"/>
+          <ellipse cx="60" cy="67.6" rx="42" ry="10.5" fill="none" stroke="#fff" stroke-width="1.3" opacity=".8"/>
+        </svg></div><div class="cap"><span class="dot"></span>2입</div></div>
+      </div>
+      <p class="note"><span><b>넓은 접시 + 잎맥 있는 잎채소 3장 + 당근 채</b>(드레싱 윤기·후추). 수프와 달리 <b>개수로 줄어든다</b> —
+        잎과 당근채가 하나씩 사라져 마지막엔 한 조각만.</span></p>
+      <div class="swatches"><span class="sw"><i style="background:#93c95f"></i>잎 93c95f</span><span class="sw"><i style="background:#ef8b3c"></i>당근 ef8b3c</span><span class="sw"><i style="background:#f7f9f2"></i>접시 f7f9f2</span></div>
+    </div>
+
+    <!-- ========== 5. 잼 토스트 ========== -->
+    <div class="card">
+      <div class="card-head"><h3>잼 토스트</h3><span class="id">jamtoast</span></div>
+      <div class="ing">과일 ×2 · 밀가루 ×1 · 설탕 ×1</div>
+      <div class="strip">
+        <div class="panel s0"><div class="stage"><svg viewBox="0 0 120 120">
+          <ellipse cx="62" cy="104" rx="34" ry="6" fill="#000" opacity=".09"/>
+          <path d="M26,96 L94,96 L90,102 L30,102 Z" fill="url(#gChar)"/>
+          <rect x="24" y="28" width="72" height="70" rx="13" fill="url(#gToast)"/>
+          <path d="M24,74 h72 v11 a13,13 0 0 1 -13,13 h-46 a13,13 0 0 1 -13,-13 Z" fill="url(#gChar)" opacity=".92"/>
+          <g fill="#4a2f10" opacity=".55"><ellipse cx="44" cy="86" rx="9" ry="3"/><ellipse cx="70" cy="90" rx="7" ry="2.4"/><ellipse cx="58" cy="80" rx="5" ry="2"/></g>
+          <rect x="24" y="28" width="72" height="70" rx="13" fill="none" stroke="#a97b3a" stroke-width="2"/>
+          <path d="M36,40 h48 a5,5 0 0 1 5,5 v34 a5,5 0 0 1 -5,5 h-48 a5,5 0 0 1 -5,-5 v-34 a5,5 0 0 1 5,-5 Z" fill="url(#gJam)"/>
+  <path d="M31,72 q10,7 24,3 q14,-4 34,2 v7 a5,5 0 0 1 -5,5 h-48 a5,5 0 0 1 -5,-5 Z" fill="#b52240" opacity=".55"/>
+  <g fill="#8e1730" opacity=".5"><circle cx="52" cy="55" r="3.4"/><circle cx="72" cy="66" r="2.8"/><circle cx="58" cy="74" r="2.4"/></g>
+  <path d="M40,48 q10,-5 22,-2" stroke="#ff9db0" stroke-width="4" fill="none" stroke-linecap="round" opacity=".55"/>
+  <ellipse cx="46" cy="50" rx="6" ry="2.4" fill="#fff" opacity=".3" transform="rotate(-12 46 50)"/>
+  <ellipse cx="74" cy="58" rx="4" ry="1.8" fill="#fff" opacity=".22" transform="rotate(16 74 58)"/>
+          <g fill="#f6e6bd" opacity=".55"><circle cx="34" cy="90" r="1.4"/><circle cx="88" cy="84" r="1.2"/></g>
+        </svg></div><div class="cap"><span class="dot"></span>온전</div></div>
+        <div class="panel s1"><div class="stage"><svg viewBox="0 0 120 120">
+          <defs><mask id="jt1"><rect width="120" height="120" fill="#fff"/><circle cx="99" cy="29" r="26" fill="#000"/></mask></defs>
+          <ellipse cx="62" cy="104" rx="34" ry="6" fill="#000" opacity=".09"/>
+          <path d="M28,32 h60 a8,8 0 0 1 8,8 v50 a8,8 0 0 1 -8,8 h-60 a8,8 0 0 1 -8,-8 v-50 a8,8 0 0 1 8,-8 Z" fill="#fbf3e0"/>
+          <path d="M28,36 h56 v6 h-56 Z" fill="#e8bfc8"/>
+          <g mask="url(#jt1)">
+            <path d="M26,96 L94,96 L90,102 L30,102 Z" fill="url(#gChar)"/>
+            <rect x="24" y="28" width="72" height="70" rx="13" fill="url(#gToast)"/>
+            <path d="M24,74 h72 v11 a13,13 0 0 1 -13,13 h-46 a13,13 0 0 1 -13,-13 Z" fill="url(#gChar)" opacity=".92"/>
+            <g fill="#4a2f10" opacity=".55"><ellipse cx="44" cy="86" rx="9" ry="3"/><ellipse cx="70" cy="90" rx="7" ry="2.4"/></g>
+            <rect x="24" y="28" width="72" height="70" rx="13" fill="none" stroke="#a97b3a" stroke-width="2"/>
+            <path d="M36,40 h48 a5,5 0 0 1 5,5 v34 a5,5 0 0 1 -5,5 h-48 a5,5 0 0 1 -5,-5 v-34 a5,5 0 0 1 5,-5 Z" fill="url(#gJam)"/>
+  <path d="M31,72 q10,7 24,3 q14,-4 34,2 v7 a5,5 0 0 1 -5,5 h-48 a5,5 0 0 1 -5,-5 Z" fill="#b52240" opacity=".55"/>
+  <g fill="#8e1730" opacity=".5"><circle cx="52" cy="55" r="3.4"/><circle cx="72" cy="66" r="2.8"/><circle cx="58" cy="74" r="2.4"/></g>
+  <path d="M40,48 q10,-5 22,-2" stroke="#ff9db0" stroke-width="4" fill="none" stroke-linecap="round" opacity=".55"/>
+  <ellipse cx="46" cy="50" rx="6" ry="2.4" fill="#fff" opacity=".3" transform="rotate(-12 46 50)"/>
+  <ellipse cx="74" cy="58" rx="4" ry="1.8" fill="#fff" opacity=".22" transform="rotate(16 74 58)"/>
+          </g>
+          <path d="M78,44 q6,-6 13,-7" stroke="#d8304f" stroke-width="3" fill="none" stroke-linecap="round" opacity=".5"/>
+        </svg></div><div class="cap"><span class="dot"></span>1입</div></div>
+        <div class="panel s2"><div class="stage"><svg viewBox="0 0 120 120">
+          <defs><mask id="jt2"><rect width="120" height="120" fill="#fff"/><circle cx="92" cy="34" r="32" fill="#000"/><circle cx="60" cy="24" r="25" fill="#000"/></mask></defs>
+          <ellipse cx="62" cy="104" rx="34" ry="6" fill="#000" opacity=".09"/>
+          <path d="M28,32 h60 a8,8 0 0 1 8,8 v50 a8,8 0 0 1 -8,8 h-60 a8,8 0 0 1 -8,-8 v-50 a8,8 0 0 1 8,-8 Z" fill="#fbf3e0"/>
+          <path d="M28,44 h50 v6 h-50 Z" fill="#e8bfc8"/>
+          <g mask="url(#jt2)">
+            <path d="M26,96 L94,96 L90,102 L30,102 Z" fill="url(#gChar)"/>
+            <rect x="24" y="28" width="72" height="70" rx="13" fill="url(#gToast)"/>
+            <path d="M24,74 h72 v11 a13,13 0 0 1 -13,13 h-46 a13,13 0 0 1 -13,-13 Z" fill="url(#gChar)" opacity=".92"/>
+            <g fill="#4a2f10" opacity=".55"><ellipse cx="44" cy="86" rx="9" ry="3"/><ellipse cx="70" cy="90" rx="7" ry="2.4"/></g>
+            <rect x="24" y="28" width="72" height="70" rx="13" fill="none" stroke="#a97b3a" stroke-width="2"/>
+            <path d="M36,40 h48 a5,5 0 0 1 5,5 v34 a5,5 0 0 1 -5,5 h-48 a5,5 0 0 1 -5,-5 v-34 a5,5 0 0 1 5,-5 Z" fill="url(#gJam)"/>
+  <path d="M31,72 q10,7 24,3 q14,-4 34,2 v7 a5,5 0 0 1 -5,5 h-48 a5,5 0 0 1 -5,-5 Z" fill="#b52240" opacity=".55"/>
+  <g fill="#8e1730" opacity=".5"><circle cx="52" cy="55" r="3.4"/><circle cx="72" cy="66" r="2.8"/><circle cx="58" cy="74" r="2.4"/></g>
+  <path d="M40,48 q10,-5 22,-2" stroke="#ff9db0" stroke-width="4" fill="none" stroke-linecap="round" opacity=".55"/>
+  <ellipse cx="46" cy="50" rx="6" ry="2.4" fill="#fff" opacity=".3" transform="rotate(-12 46 50)"/>
+  <ellipse cx="74" cy="58" rx="4" ry="1.8" fill="#fff" opacity=".22" transform="rotate(16 74 58)"/>
+          </g>
+          <g fill="#d8304f" opacity=".45"><circle cx="86" cy="60" r="2"/><circle cx="50" cy="40" r="1.6"/></g>
+        </svg></div><div class="cap"><span class="dot"></span>2입</div></div>
+      </div>
+      <p class="note"><span><b>아랫면·옆면이 진하게 그을린</b> 토스트 + <b>촉촉한 잼</b>(광택 하이라이트 · 흘러내린 자국 · 과육 덩어리).
+        모서리부터 베어물면 단면에 <b>뽀얀 크럼 + 붉은 잼 띠</b>가 층으로 보인다.</span></p>
+      <div class="swatches"><span class="sw"><i style="background:#e0466a"></i>잼 e0466a</span><span class="sw"><i style="background:#f2d791"></i>빵 f2d791</span><span class="sw"><i style="background:#fbf3e0"></i>크럼 fbf3e0</span></div>
+    </div>
+
+    <!-- ========== 6. 조개찜 ========== -->
+    <div class="card">
+      <div class="card-head"><h3>조개찜</h3><span class="id">clamsteam</span></div>
+      <div class="ing">조개 ×2</div>
+      <div class="strip">
+        <div class="panel s0"><div class="stage"><svg viewBox="0 0 120 120">
+          <ellipse cx="60" cy="96" rx="40" ry="8" fill="#000" opacity=".08"/>
+          <path d="M22,68 a38,28 0 0,0 76,0 Z" fill="#eef2f4"/>
+          <path d="M26,74 a34,20 0 0,0 68,0 Z" fill="#000" opacity=".06"/>
+          <ellipse cx="60" cy="68" rx="38" ry="10.5" fill="#3f4a4f"/>
+          <ellipse cx="60" cy="67.4" rx="34" ry="9" fill="url(#gBroth)"/>
+          <ellipse cx="48" cy="65" rx="10" ry="3" fill="#fff" opacity=".3"/>
+          <g transform="translate(47,62) rotate(-15) scale(1.0)">
+  <path d="M-14,3 a14,12 0 0,1 28,0 Z" fill="url(#gShell)"/>
+  <g stroke="#b9a888" stroke-width="0.9" fill="none" opacity=".7"><path d="M-9,3 a9,7.5 0 0,1 18,0"/><path d="M-5,3 a5,4.2 0 0,1 10,0"/></g>
+  <ellipse cx="0" cy="1.6" rx="7" ry="3.4" fill="url(#gClamMeat)"/>
+  <ellipse cx="-1.6" cy="0.6" rx="3" ry="1.3" fill="#fff" opacity=".38"/>
+  <path d="M-14,3 a14,12 0 0,1 28,0" fill="none" stroke="#fffdf6" stroke-width="1.3" opacity=".8"/>
+</g><g transform="translate(72,69) rotate(13) scale(0.92)">
+  <path d="M-14,3 a14,12 0 0,1 28,0 Z" fill="url(#gShell)"/>
+  <g stroke="#b9a888" stroke-width="0.9" fill="none" opacity=".7"><path d="M-9,3 a9,7.5 0 0,1 18,0"/><path d="M-5,3 a5,4.2 0 0,1 10,0"/></g>
+  <ellipse cx="0" cy="1.6" rx="7" ry="3.4" fill="url(#gClamMeat)"/>
+  <ellipse cx="-1.6" cy="0.6" rx="3" ry="1.3" fill="#fff" opacity=".38"/>
+  <path d="M-14,3 a14,12 0 0,1 28,0" fill="none" stroke="#fffdf6" stroke-width="1.3" opacity=".8"/>
+</g>
+          <g fill="url(#gLeaf2)"><ellipse cx="59" cy="74" rx="3.6" ry="1.9" transform="rotate(-12 59 74)"/><ellipse cx="80" cy="63" rx="2.8" ry="1.5" transform="rotate(18 80 63)"/></g>
+          <g fill="#fff" opacity=".55"><circle cx="38" cy="70" r="1.6"/><circle cx="86" cy="70" r="1.3"/><circle cx="62" cy="63" r="1.2"/></g>
+          <ellipse cx="60" cy="68" rx="38" ry="10.5" fill="none" stroke="#eef2f4" stroke-width="4"/>
+          <ellipse cx="60" cy="65.6" rx="38" ry="10.5" fill="none" stroke="#fff" stroke-width="1.4" opacity=".75"/>
+          <g stroke="#fff" stroke-width="2.2" fill="none" opacity=".38" stroke-linecap="round"><path d="M48,50 q4,-7 0,-12"/><path d="M62,45 q5,-8 0,-14"/><path d="M75,52 q4,-6 1,-10"/></g>
+        </svg></div><div class="cap"><span class="dot"></span>온전</div></div>
+        <div class="panel s1"><div class="stage"><svg viewBox="0 0 120 120">
+          <ellipse cx="60" cy="96" rx="40" ry="8" fill="#000" opacity=".08"/>
+          <path d="M22,68 a38,28 0 0,0 76,0 Z" fill="#eef2f4"/>
+          <ellipse cx="60" cy="68" rx="38" ry="10.5" fill="#3f4a4f"/>
+          <path d="M25.5,70 a34.5,16 0 0,0 69,0 Z" fill="#364146"/>
+          <ellipse cx="60" cy="74" rx="27" ry="6.8" fill="url(#gBroth)"/>
+          <ellipse cx="52" cy="72.6" rx="7" ry="2.2" fill="#fff" opacity=".26"/>
+          <g transform="translate(66,71) rotate(10) scale(0.9)">
+  <path d="M-14,3 a14,12 0 0,1 28,0 Z" fill="url(#gShell)"/>
+  <g stroke="#b9a888" stroke-width="0.9" fill="none" opacity=".7"><path d="M-9,3 a9,7.5 0 0,1 18,0"/><path d="M-5,3 a5,4.2 0 0,1 10,0"/></g>
+  <ellipse cx="0" cy="1.6" rx="7" ry="3.4" fill="url(#gClamMeat)"/>
+  <ellipse cx="-1.6" cy="0.6" rx="3" ry="1.3" fill="#fff" opacity=".38"/>
+  <path d="M-14,3 a14,12 0 0,1 28,0" fill="none" stroke="#fffdf6" stroke-width="1.3" opacity=".8"/>
+</g><g transform="translate(47,74) rotate(-22) scale(0.86)">
+  <path d="M-13,3 a13,11 0 0,1 26,0 Z" fill="#e3d7c2"/>
+  <path d="M-11,3 a11,9 0 0,1 22,0 Z" fill="#f4ecdc"/>
+  <g stroke="#cbbca2" stroke-width="0.9" fill="none" opacity=".7"><path d="M-7,3 a7,5.6 0 0,1 14,0"/></g>
+</g>
+          <ellipse cx="76" cy="76" rx="2.6" ry="1.4" fill="url(#gLeaf2)" transform="rotate(14 76 76)"/>
+          <ellipse cx="60" cy="68" rx="38" ry="10.5" fill="none" stroke="#eef2f4" stroke-width="4"/>
+          <ellipse cx="60" cy="65.6" rx="38" ry="10.5" fill="none" stroke="#fff" stroke-width="1.4" opacity=".75"/>
+          <g stroke="#fff" stroke-width="2" fill="none" opacity=".3" stroke-linecap="round"><path d="M56,52 q4,-7 0,-11"/><path d="M70,54 q4,-6 1,-9"/></g>
+        </svg></div><div class="cap"><span class="dot"></span>1입</div></div>
+        <div class="panel s2"><div class="stage"><svg viewBox="0 0 120 120">
+          <ellipse cx="60" cy="96" rx="40" ry="8" fill="#000" opacity=".08"/>
+          <path d="M22,68 a38,28 0 0,0 76,0 Z" fill="#eef2f4"/>
+          <ellipse cx="60" cy="68" rx="38" ry="10.5" fill="#3f4a4f"/>
+          <path d="M25.5,70 a34.5,19 0 0,0 69,0 Z" fill="#333d42"/>
+          <ellipse cx="60" cy="82" rx="16" ry="4" fill="#c8dde4"/>
+          <ellipse cx="56" cy="81.4" rx="4.6" ry="1.4" fill="#fff" opacity=".28"/>
+          <g transform="translate(60,81) rotate(-14) scale(0.9)">
+  <path d="M-13,3 a13,11 0 0,1 26,0 Z" fill="#e3d7c2"/>
+  <path d="M-11,3 a11,9 0 0,1 22,0 Z" fill="#f4ecdc"/>
+  <g stroke="#cbbca2" stroke-width="0.9" fill="none" opacity=".7"><path d="M-7,3 a7,5.6 0 0,1 14,0"/></g>
+</g>
+          <ellipse cx="60" cy="68" rx="38" ry="10.5" fill="none" stroke="#eef2f4" stroke-width="4"/>
+          <ellipse cx="60" cy="65.6" rx="38" ry="10.5" fill="none" stroke="#fff" stroke-width="1.4" opacity=".75"/>
+        </svg></div><div class="cap"><span class="dot"></span>2입</div></div>
+      </div>
+      <p class="note"><span><b>김 오르는 국물 + 벌어진 조개 2개</b>(성장선·윤기 나는 조갯살). 조개가 <b>하나씩 빈 껍데기로</b> 바뀌고
+        국물도 줄어, 마지막엔 <b>껍데기 하나만</b> 남는다.</span></p>
+      <div class="swatches"><span class="sw"><i style="background:#f6efe0"></i>껍데기 f6efe0</span><span class="sw"><i style="background:#f0b48a"></i>조갯살 f0b48a</span><span class="sw"><i style="background:#cfe0e6"></i>국물 cfe0e6</span></div>
+    </div>
+
+    <!-- ========== 7. 생선구이 ========== -->
+    <div class="card">
+      <div class="card-head"><h3>생선구이</h3><span class="id">grilledfish</span></div>
+      <div class="ing">물고기 ×1 · 기름 ×1</div>
+      <div class="strip">
+        <div class="panel s0"><div class="stage"><svg viewBox="0 0 120 120">
+          <ellipse cx="60" cy="94" rx="46" ry="9" fill="#000" opacity=".08"/>
+          <ellipse cx="60" cy="82" rx="46" ry="11" fill="url(#gPlate)"/>
+          <ellipse cx="60" cy="80.6" rx="39" ry="8.6" fill="#e9e4d8"/>
+          <ellipse cx="60" cy="76" rx="32" ry="6" fill="#000" opacity=".07"/>
+          <g transform="translate(60,70)">
+            <path d="M-30,0 Q-17,-14 3,-13 Q25,-12 33,0 Q25,12 3,13 Q-17,14 -30,0 Z" fill="url(#gFishSkin)"/>
+            <path d="M-30,0 Q-17,-14 3,-13 Q25,-12 33,0" fill="none" stroke="#f7dfb6" stroke-width="2" opacity=".65"/>
+            <path d="M-31,0 L-45,-10 Q-40,0 -45,10 Z" fill="#c9a06c"/>
+            <path d="M-6,-12 Q-2,-19 7,-15" fill="#c9a06c"/>
+            <g stroke="#7d5628" stroke-width="2.6" stroke-linecap="round" opacity=".75"><path d="M-16,-8 L-12,8"/><path d="M-4,-11 L0,11"/><path d="M9,-10 L12,10"/><path d="M20,-7 L22,7"/></g>
+            <g stroke="#3d2a16" stroke-width="1.1" fill="none" opacity=".35"><path d="M-20,-4 q10,-3 20,-1"/><path d="M-18,4 q12,3 22,0"/></g>
+            <circle cx="25" cy="-4" r="3" fill="#3c2c1c"/><circle cx="24" cy="-5" r="1" fill="#fff" opacity=".8"/>
+            <path d="M28,2 q4,1 5,3" stroke="#8a6134" stroke-width="1.4" fill="none"/>
+          </g>
+          <g transform="translate(24,76) rotate(-16)"><path d="M0,-9 A9,9 0 0,1 0,9 Z" fill="#ffdf6e"/><path d="M0,-6.6 A6.6,6.6 0 0,1 0,6.6 Z" fill="#fff5c4"/><g stroke="#f0c93e" stroke-width="0.9"><path d="M0,-6 L0,6"/><path d="M0,-4 L5.2,-2"/><path d="M0,4 L5.2,2"/></g></g>
+          <g fill="url(#gLeaf2)"><ellipse cx="90" cy="80" rx="6" ry="2.6" transform="rotate(18 90 80)"/></g>
+        </svg></div><div class="cap"><span class="dot"></span>온전</div></div>
+        <div class="panel s1"><div class="stage"><svg viewBox="0 0 120 120">
+          <ellipse cx="60" cy="94" rx="46" ry="9" fill="#000" opacity=".08"/>
+          <ellipse cx="60" cy="82" rx="46" ry="11" fill="url(#gPlate)"/>
+          <ellipse cx="60" cy="80.6" rx="39" ry="8.6" fill="#e9e4d8"/>
+          <g transform="translate(60,70)">
+            <path d="M-7,-11 Q6,-14 20,-11 Q31,-8 33,0 Q31,8 20,11 Q6,14 -7,11 Q-3,0 -7,-11 Z" fill="url(#gFishSkin)"/>
+            <path d="M-7,-11 Q-3,0 -7,11 Q0,12 3,11 Q-1,0 3,-11 Q0,-12 -7,-11 Z" fill="url(#gFishMeat)"/>
+            <g stroke="#cdb69a" stroke-width="0.9" fill="none" opacity=".8"><path d="M-4,-8 q3,8 0,16"/><path d="M0,-9 q3,9 0,18"/></g>
+            <g stroke="#7d5628" stroke-width="2.4" stroke-linecap="round" opacity=".7"><path d="M12,-9 L14,9"/><path d="M22,-6 L24,6"/></g>
+            <circle cx="25" cy="-4" r="3" fill="#3c2c1c"/><circle cx="24" cy="-5" r="1" fill="#fff" opacity=".8"/>
+            <g fill="#f6ead6"><circle cx="-13" cy="6" r="2"/><circle cx="-16" cy="-3" r="1.5"/></g>
+          </g>
+          <g transform="translate(24,76) rotate(-16)"><path d="M0,-8 A8,8 0 0,1 0,8 Z" fill="#ffdf6e"/><path d="M0,-5.8 A5.8,5.8 0 0,1 0,5.8 Z" fill="#fff5c4"/></g>
+        </svg></div><div class="cap"><span class="dot"></span>1입</div></div>
+        <div class="panel s2"><div class="stage"><svg viewBox="0 0 120 120">
+          <ellipse cx="60" cy="94" rx="46" ry="9" fill="#000" opacity=".08"/>
+          <ellipse cx="60" cy="82" rx="46" ry="11" fill="url(#gPlate)"/>
+          <ellipse cx="60" cy="80.6" rx="39" ry="8.6" fill="#e9e4d8"/>
+          <g transform="translate(62,70)">
+            <path d="M14,-8 Q26,-9 31,0 Q26,9 14,8 Q17,0 14,-8 Z" fill="url(#gFishSkin)"/>
+            <circle cx="24" cy="-3" r="2.8" fill="#3c2c1c"/><circle cx="23" cy="-4" r="0.9" fill="#fff" opacity=".8"/>
+            <path d="M-30,0 L-42,-8 Q-38,0 -42,8 Z" fill="#c9a06c" opacity=".9"/>
+            <g stroke="#d6c9b2" stroke-width="2.4" stroke-linecap="round"><path d="M-31,0 L13,0"/></g>
+            <g stroke="#ded2bd" stroke-width="1.7" stroke-linecap="round">
+              <path d="M-24,0 L-28,-8"/><path d="M-24,0 L-28,8"/><path d="M-16,0 L-20,-9"/><path d="M-16,0 L-20,9"/>
+              <path d="M-8,0 L-12,-9"/><path d="M-8,0 L-12,9"/><path d="M0,0 L-4,-8"/><path d="M0,0 L-4,8"/>
+              <path d="M8,0 L5,-7"/><path d="M8,0 L5,7"/></g>
+            <g fill="#f2e7d2"><circle cx="-20" cy="12" r="1.8"/><circle cx="-6" cy="-12" r="1.5"/></g>
+          </g>
+        </svg></div><div class="cap"><span class="dot"></span>2입</div></div>
+      </div>
+      <p class="note"><span><b>바삭한 껍질에 그릴 자국 + 레몬 웨지</b>. 꼬리쪽부터 발라먹어 <b>결이 보이는 흰 속살</b>이 드러나고,
+        마지막엔 <b>머리·꼬리와 가시만</b> 남는다 — 이 요리만의 재미 포인트.</span></p>
+      <div class="swatches"><span class="sw"><i style="background:#d9b483"></i>구운껍질 d9b483</span><span class="sw"><i style="background:#f7ece0"></i>속살 f7ece0</span><span class="sw"><i style="background:#c9b8a2"></i>가시 c9b8a2</span></div>
+    </div>
+
+    <!-- ========== 8. 과일 케이크 ========== -->
+    <div class="card">
+      <div class="card-head"><h3>과일 케이크</h3><span class="id">fruitcake</span></div>
+      <div class="ing">과일 ×2 · 밀가루 ×1 · 우유 ×1</div>
+      <div class="strip">
+        <div class="panel s0"><div class="stage"><svg viewBox="0 0 120 120">
+          <ellipse cx="64" cy="106" rx="36" ry="6" fill="#000" opacity=".09"/>
+          <ellipse cx="62" cy="100" rx="44" ry="8" fill="url(#gPlate)"/>
+          <path d="M36,54 L92,60 L92,66 L36,60 Z" fill="url(#gCream)"/><path d="M36,60 L92,66 L92,75 L36,69 Z" fill="url(#gSponge)"/><path d="M36,69 L92,75 L92,80 L36,74 Z" fill="url(#gJam)"/><path d="M36,74 L92,80 L92,89 L36,83 Z" fill="url(#gSponge)"/><path d="M36,83 L92,89 L92,94 L36,88 Z" fill="url(#gJam)"/><path d="M36,88 L92,94 L92,102 L36,96 Z" fill="url(#gSponge)"/><path d="M36,54 L92,60 L92,62 L36,56 Z" fill="#fff" opacity=".5"/><g fill="#e2cda2" opacity=".55"><circle cx="50" cy="66" r="1.5"/><circle cx="62" cy="70" r="1.2"/><circle cx="74" cy="68" r="1.3"/><circle cx="56" cy="82" r="1.4"/><circle cx="78" cy="84" r="1.1"/></g><path d="M92,60 Q101,49 92,38 L92,38 Q101,49 92,60 L92,102 Q101,91 92,80 Z" fill="#f7edd8" opacity="0"/>
+  <path d="M92,60 Q101,49 92,38 L92,80 Q101,69 92,60 Z" fill="url(#gCream)"/>
+  <path d="M92,60 Q101,49 92,38" fill="none" stroke="#e8d9ba" stroke-width="1.2"/><path d="M36,54 L92,60 Q101,49 92,38 Z" fill="url(#gCream)"/>
+  <path d="M36,54 L92,60 Q101,49 92,38 Z" fill="none" stroke="#efe2c8" stroke-width="1.2"/>
+          <path d="M36,54 L36,90" stroke="#e6d6b4" stroke-width="1.2"/>
+          <g transform="translate(66,44) scale(1.0)">
+  <path d="M0,-9 C6,-9 8,-4 8,0 C8,6 4,10 0,10 C-4,10 -8,6 -8,0 C-8,-4 -6,-9 0,-9 Z" fill="url(#gBerry)"/>
+  <ellipse cx="-2.6" cy="-3" rx="2.6" ry="3.4" fill="#ff8f9f" opacity=".65"/>
+  <g fill="#ffe9c9" opacity=".8"><circle cx="2" cy="-2" r="0.8"/><circle cx="-1" cy="3" r="0.8"/><circle cx="4" cy="4" r="0.7"/></g>
+  <path d="M-4,-8 q4,-3 8,0 q-4,-5 -8,0 Z" fill="#5f9634"/>
+</g>
+          <ellipse cx="50" cy="49" rx="7" ry="4" fill="#7fc44e"/><ellipse cx="49" cy="48" rx="3.4" ry="1.8" fill="#a8dd7c"/>
+          <path d="M84,44 q4,-5 8,-2" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" opacity=".55"/>
+        </svg></div><div class="cap"><span class="dot"></span>온전</div></div>
+        <div class="panel s1"><div class="stage"><svg viewBox="0 0 120 120">
+          <defs><mask id="ck1"><rect width="120" height="120" fill="#fff"/><circle cx="34" cy="66" r="24" fill="#000"/></mask></defs>
+          <ellipse cx="64" cy="106" rx="36" ry="6" fill="#000" opacity=".09"/>
+          <ellipse cx="62" cy="100" rx="44" ry="8" fill="url(#gPlate)"/>
+          <g mask="url(#ck1)">
+            <path d="M36,54 L92,60 L92,66 L36,60 Z" fill="url(#gCream)"/><path d="M36,60 L92,66 L92,75 L36,69 Z" fill="url(#gSponge)"/><path d="M36,69 L92,75 L92,80 L36,74 Z" fill="url(#gJam)"/><path d="M36,74 L92,80 L92,89 L36,83 Z" fill="url(#gSponge)"/><path d="M36,83 L92,89 L92,94 L36,88 Z" fill="url(#gJam)"/><path d="M36,88 L92,94 L92,102 L36,96 Z" fill="url(#gSponge)"/><path d="M36,54 L92,60 L92,62 L36,56 Z" fill="#fff" opacity=".5"/><g fill="#e2cda2" opacity=".55"><circle cx="50" cy="66" r="1.5"/><circle cx="62" cy="70" r="1.2"/><circle cx="74" cy="68" r="1.3"/><circle cx="56" cy="82" r="1.4"/><circle cx="78" cy="84" r="1.1"/></g><path d="M92,60 Q101,49 92,38 L92,38 Q101,49 92,60 L92,102 Q101,91 92,80 Z" fill="#f7edd8" opacity="0"/>
+  <path d="M92,60 Q101,49 92,38 L92,80 Q101,69 92,60 Z" fill="url(#gCream)"/>
+  <path d="M92,60 Q101,49 92,38" fill="none" stroke="#e8d9ba" stroke-width="1.2"/><path d="M36,54 L92,60 Q101,49 92,38 Z" fill="url(#gCream)"/>
+  <path d="M36,54 L92,60 Q101,49 92,38 Z" fill="none" stroke="#efe2c8" stroke-width="1.2"/>
+          </g>
+          <path d="M52,52 q-4,10 0,22 q4,10 0,14" stroke="#f0dfbe" stroke-width="2" fill="none" opacity=".8"/>
+          <g transform="translate(70,46) scale(0.9)">
+  <path d="M0,-9 C6,-9 8,-4 8,0 C8,6 4,10 0,10 C-4,10 -8,6 -8,0 C-8,-4 -6,-9 0,-9 Z" fill="url(#gBerry)"/>
+  <ellipse cx="-2.6" cy="-3" rx="2.6" ry="3.4" fill="#ff8f9f" opacity=".65"/>
+  <g fill="#ffe9c9" opacity=".8"><circle cx="2" cy="-2" r="0.8"/><circle cx="-1" cy="3" r="0.8"/><circle cx="4" cy="4" r="0.7"/></g>
+  <path d="M-4,-8 q4,-3 8,0 q-4,-5 -8,0 Z" fill="#5f9634"/>
+</g>
+          <g fill="#f2e0c0"><circle cx="34" cy="98" r="2.4"/><circle cx="42" cy="101" r="1.8"/></g>
+        </svg></div><div class="cap"><span class="dot"></span>1입</div></div>
+        <div class="panel s2"><div class="stage"><svg viewBox="0 0 120 120">
+          <defs><mask id="ck2"><rect width="120" height="120" fill="#fff"/><circle cx="42" cy="62" r="30" fill="#000"/><circle cx="58" cy="86" r="22" fill="#000"/></mask></defs>
+          <ellipse cx="64" cy="106" rx="36" ry="6" fill="#000" opacity=".09"/>
+          <ellipse cx="62" cy="100" rx="44" ry="8" fill="url(#gPlate)"/>
+          <g mask="url(#ck2)">
+            <path d="M36,54 L92,60 L92,66 L36,60 Z" fill="url(#gCream)"/><path d="M36,60 L92,66 L92,75 L36,69 Z" fill="url(#gSponge)"/><path d="M36,69 L92,75 L92,80 L36,74 Z" fill="url(#gJam)"/><path d="M36,74 L92,80 L92,89 L36,83 Z" fill="url(#gSponge)"/><path d="M36,83 L92,89 L92,94 L36,88 Z" fill="url(#gJam)"/><path d="M36,88 L92,94 L92,102 L36,96 Z" fill="url(#gSponge)"/><path d="M36,54 L92,60 L92,62 L36,56 Z" fill="#fff" opacity=".5"/><g fill="#e2cda2" opacity=".55"><circle cx="50" cy="66" r="1.5"/><circle cx="62" cy="70" r="1.2"/><circle cx="74" cy="68" r="1.3"/><circle cx="56" cy="82" r="1.4"/><circle cx="78" cy="84" r="1.1"/></g><path d="M92,60 Q101,49 92,38 L92,38 Q101,49 92,60 L92,102 Q101,91 92,80 Z" fill="#f7edd8" opacity="0"/>
+  <path d="M92,60 Q101,49 92,38 L92,80 Q101,69 92,60 Z" fill="url(#gCream)"/>
+  <path d="M92,60 Q101,49 92,38" fill="none" stroke="#e8d9ba" stroke-width="1.2"/><path d="M36,54 L92,60 Q101,49 92,38 Z" fill="url(#gCream)"/>
+  <path d="M36,54 L92,60 Q101,49 92,38 Z" fill="none" stroke="#efe2c8" stroke-width="1.2"/>
+          </g>
+          <g fill="#f2e0c0"><circle cx="40" cy="97" r="2.6"/><circle cx="50" cy="101" r="2"/><circle cx="32" cy="100" r="1.6"/></g>
+          <path d="M44,86 q6,3 12,2" stroke="#e8b9c8" stroke-width="2" fill="none" opacity=".6" stroke-linecap="round"/>
+        </svg></div><div class="cap"><span class="dot"></span>2입</div></div>
+      </div>
+      <p class="note"><span><b>조각 케이크</b> — 자른 면에 <b>크림·스펀지·잼이 6층</b>으로 드러나고 스펀지엔 기공까지.
+        위엔 생크림 면 + 딸기·키위. <b>뾰족한 팁부터</b> 베어물어 층이 무너지고, 마지막엔 밑동과 부스러기만.</span></p>
+      <div class="swatches"><span class="sw"><i style="background:#fdf7ea"></i>크림 fdf7ea</span><span class="sw"><i style="background:#f6c9d8"></i>시트 f6c9d8</span><span class="sw"><i style="background:#e0455f"></i>딸기 e0455f</span></div>
+    </div>
+
+  </div>
+
+  <footer>
+    <b>읽는 법</b> — 왼쪽(온전)이 조형 기준, 가운데·오른쪽이 먹기 단계입니다. 3입째에 소멸합니다.
+    <b>재료가 결과물에서 읽히는 것</b>이 이 시트의 핵심 규칙입니다 — 과일 `*` 레시피(주스·잼토스트·과일케이크)는
+    <b>실제로 쓴 과일 색을 따라가게</b> 만들 수 있습니다(바구니에서 차감한 id를 결과에 넘기면 됩니다).
+    기존 문법 재사용: 컵=아이스컵 수위, 볼=음료의 어두운 안쪽, 토스트=부스 토스트 스캘럽 베어물기, 생선=붕어빵 단면.
+    이 기준으로 확정되면 조형(makeFoodGeo 확장) 들어가고, 특별·마음 요리는 다음 시트로 이어갑니다.
+  </footer>
+</div>

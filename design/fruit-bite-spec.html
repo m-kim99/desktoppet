@@ -1,0 +1,153 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}</style></head><body>
+<title>과일 베어물기 단계 — 모델링 기준</title>
+<style>
+  :root{
+    --paper:#f6f3ec; --ink:#2c2620; --muted:#8b8175; --accent:#4f8c3a;
+    --card:#fffdf8; --line:#e7e0d3; --chip:#eee7d9; --plate:#f3eee4;
+    --font-display:'SF Pro Rounded','SF Pro Display',ui-rounded,'Segoe UI',system-ui,sans-serif;
+    --font-body:-apple-system,system-ui,'Segoe UI',Roboto,sans-serif;
+    --font-mono:ui-monospace,'SF Mono',Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --paper:#1b1814; --ink:#ece5d9; --muted:#9a9082; --accent:#93c67c;
+      --card:#252019; --line:#372f27; --chip:#2d271f; }
+  }
+  :root[data-theme="dark"]{ --paper:#1b1814; --ink:#ece5d9; --muted:#9a9082; --accent:#93c67c;
+    --card:#252019; --line:#372f27; --chip:#2d271f; }
+  :root[data-theme="light"]{ --paper:#f6f3ec; --ink:#2c2620; --muted:#8b8175; --accent:#4f8c3a;
+    --card:#fffdf8; --line:#e7e0d3; --chip:#eee7d9; }
+  *{box-sizing:border-box}
+  .wrap{font-family:var(--font-body);color:var(--ink);background:var(--paper);
+    max-width:920px;margin:0 auto;padding:26px 20px 48px;line-height:1.6}
+  h1{font-family:var(--font-display);font-weight:600;font-size:26px;margin:0 0 4px;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:14px;margin:0 0 18px}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 22px;font-size:13.5px}
+  .legend b{font-weight:600}
+  .step{display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--line);
+    border-radius:11px;padding:8px 12px}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:14px 16px;margin-bottom:12px;display:grid;grid-template-columns:210px 1fr;gap:16px;align-items:center}
+  .info .nm{font-family:var(--font-display);font-weight:600;font-size:17px;display:flex;align-items:baseline;gap:8px}
+  .info .em{font-size:20px}
+  .info .id{font-family:var(--font-mono);font-size:11.5px;color:var(--muted);margin:2px 0 7px}
+  .info .note{font-size:13px;color:var(--ink);opacity:.86}
+  .stages{display:flex;gap:10px;justify-content:flex-start}
+  .stage{text-align:center}
+  .plate{background:var(--plate);border-radius:12px;width:96px;height:96px;display:flex;
+    align-items:center;justify-content:center}
+  .stage .lbl{font-size:12px;color:var(--muted);margin-top:5px}
+  .stage.keep .lbl{color:var(--accent);font-weight:600}
+  .foot{color:var(--muted);font-size:12.5px;margin-top:16px;line-height:1.7}
+  .foot code{font-family:var(--font-mono);font-size:11.5px;background:var(--chip);padding:1px 5px;border-radius:5px}
+  @media (max-width:640px){ .card{grid-template-columns:1fr} .stages{justify-content:space-between} }
+</style>
+
+<div class="wrap">
+  <h1>과일 베어물기 단계 — 모델링 기준</h1>
+  <p class="sub">11종 · 각 과일의 실제 조형·색 기준. 초기 상태는 그대로 보존, 1·2입만 새로 모델링.</p>
+  <div class="legend">
+    <span class="step"><span class="dot" style="background:var(--accent)"></span><b>초기</b> — 처음 딴 상태(보존)</span>
+    <span class="step"><span class="dot" style="background:#e6a23c"></span><b>1입</b> — 한입 베어문(과육 노출)</span>
+    <span class="step"><span class="dot" style="background:#d0574a"></span><b>2입</b> — 거의 안남음(꼭지·심·씨)</span>
+    <span class="step"><span class="dot" style="background:var(--muted)"></span><b>3입</b> — 소멸(모델 없음)</span>
+  </div>
+  <div id="grid"></div>
+  <p class="foot">현재 로직은 매 입마다 <code>mesh.scale.setScalar(1 − bites·0.11)</code> 로 <b>통째 균일 축소</b>만 함
+    (<code>world.js:9660</code>). 이걸 <code>bites</code> 값(0→1→2→3)에 따라 <b>베어문 형상 지오메트리 교체</b>로 바꾸는 게 목표.
+    베어문 단면은 껍질보다 밝은 <b>과육색</b>으로, 꼭지·잎·꽃받침·캡 등 <b>안 먹는 부위는 끝까지 유지</b>. 딸기 씨·코코넛 얼굴점 같은 표면 디테일은 베어문 자리에선 함께 사라짐.</p>
+</div>
+
+<script>
+const P='#f3eee4';
+function cell(inner){return '<svg viewBox="0 0 90 90" width="90" height="90" role="img">'+inner+'</svg>';}
+function bmask(id,st){
+  if(!st)return'';
+  const c=st===1
+    ?'<circle cx="65" cy="31" r="12"/><circle cx="57" cy="21" r="6"/><circle cx="73" cy="41" r="6.5"/>'
+    :'<circle cx="55" cy="24" r="21"/><circle cx="64" cy="46" r="11"/><circle cx="41" cy="15" r="9"/>';
+  return '<mask id="'+id+'"><rect x="0" y="0" width="90" height="90" fill="#fff"/><g fill="#000">'+c+'</g></mask>';
+}
+// solid fruit: flesh under, masked skin+surface over, crown on top (persists)
+function solid(i,st,skin,flesh,bodyFn,surfFn,crownFn){
+  const id='m'+i+'_'+st;
+  const flH = st? '<g fill="'+flesh+'">'+bodyFn(true)+'</g>':'';
+  const m = st? ' mask="url(#'+id+')"':'';
+  return cell(bmask(id,st)+flH+'<g'+m+'>'+bodyFn(false).replace('§',skin)+(surfFn?surfFn(st):'')+'</g>'+(crownFn?crownFn():''));
+}
+const stem=(x,y,h)=>'<rect x="'+(x-1.5)+'" y="'+(y-h)+'" width="3" height="'+h+'" rx="1.5" fill="#7a5230"/>';
+const leaf=(x,y,r)=>'<ellipse cx="'+x+'" cy="'+y+'" rx="7" ry="3.4" fill="#5faa48" transform="rotate('+r+' '+x+' '+y+')"/>';
+function starSepal(cx,cy,col){let s='';for(let k=0;k<5;k++){const a=k/5*6.283;s+='<ellipse cx="'+(cx+Math.cos(a)*7)+'" cy="'+(cy+Math.sin(a)*4)+'" rx="7" ry="3.6" fill="'+col+'" transform="rotate('+(a*57.3)+' '+(cx+Math.cos(a)*7)+' '+(cy+Math.sin(a)*4)+')"/>';}return s;}
+
+const round=(fill)=>'<ellipse cx="45" cy="49" rx="26" ry="25" fill="'+fill+'"/>';
+const ap5=cx=>'';
+const FR=[
+ {id:'apple',ko:'사과',em:'🍎',skin:'#ff5f4d',flesh:'#f6eccf',note:'상단 우측을 크게 베어물어 크림색 과육 노출. 2입 = 꼭지+심만 남긴 얇은 조각.',
+  body:h=>'<path d="M45,27 C61,23 70,34 69,49 C68,64 56,72 45,72 C34,72 22,64 21,49 C20,34 29,23 45,27 Z" fill="'+(h?'':'§')+'"/>',
+  surf:st=>'<path d="M38,29 C42,26 48,26 52,29" stroke="#d43b2e" stroke-width="2" fill="none" opacity=".5"/>',
+  crown:()=>stem(45,26,7)+leaf(53,23,-28)},
+ {id:'orange',ko:'귤',em:'🍊',skin:'#ffa63c',flesh:'#ffd9a0',note:'껍질 밑 연주황 속살, 단면에 세그먼트 결 살짝. 2입 = 반달 껍질 조각.',
+  body:h=>'<ellipse cx="45" cy="50" rx="27" ry="24" fill="'+(h?'':'§')+'"/>',
+  surf:st=>st?'<path d="M56,28 L66,52 M45,26 L45,54" stroke="#f0b877" stroke-width="1.4" fill="none" opacity=".6"/>':'<circle cx="34" cy="42" r="1.3" fill="#e0761c" opacity=".5"/><circle cx="52" cy="60" r="1.3" fill="#e0761c" opacity=".5"/>',
+  crown:()=>'<circle cx="45" cy="27" r="3.2" fill="#3f7a34"/>'+leaf(52,25,-20)},
+ {id:'lemon',ko:'레몬',em:'🍋',skin:'#ffe45a',flesh:'#fbf1b0',note:'양끝 뾰족 실루엣이 정체성 — 유지. 단면 옅은 노랑. 2입 = 꼭지쪽 끝동강.',
+  body:h=>'<path d="M45,25 C58,27 71,38 70,50 C69,63 57,73 45,74 C33,73 21,63 20,50 C19,38 32,27 45,25 Z" fill="'+(h?'':'§')+'"/>',
+  surf:st=>'',
+  crown:()=>'<circle cx="45" cy="25" r="2.6" fill="#5f9a3f"/>'},
+ {id:'banana',ko:'바나나',em:'🍌',skin:'#ffdf66',flesh:'#f6ecc4',note:'한쪽 끝부터 베어문다. 껍질 노랑+속 크림. 2입 = 까진 껍질만 늘어지고 속 거의 없음.',
+  full:st=>{
+    if(st===0)return '<path d="M22,32 C24,58 44,72 66,66 C60,68 40,62 32,42 C29,36 25,33 22,32 Z" fill="#ffdf66"/><circle cx="22" cy="32" r="3" fill="#7a5a34"/><circle cx="65" cy="66" r="3" fill="#7a5a34"/>';
+    if(st===1)return '<path d="M22,32 C24,58 44,72 60,68 L54,58 C42,60 33,46 30,40 C27,35 24,33 22,32 Z" fill="#ffdf66"/><path d="M60,68 L54,58 C57,60 60,63 60,68 Z" fill="#f6ecc4"/><circle cx="22" cy="32" r="3" fill="#7a5a34"/>';
+    return '<path d="M22,32 C24,54 33,64 40,64 C34,58 30,44 28,38 C26,34 24,33 22,32 Z" fill="#ffdf66"/><path d="M40,64 C36,60 33,54 32,50 C36,54 40,58 40,64 Z" fill="#f6ecc4"/><path d="M40,64 C50,66 54,60 55,55" stroke="#e6c94e" stroke-width="2.4" fill="none"/><path d="M40,63 C52,66 58,58 60,50" stroke="#e6c94e" stroke-width="2.4" fill="none"/><circle cx="22" cy="32" r="3" fill="#7a5a34"/>';}},
+ {id:'strawberry',ko:'딸기',em:'🍓',skin:'#ff4a5e',flesh:'#ffd0d8',note:'단면 분홍-흰, 씨앗 함께 사라짐. 꽃받침·꼭지는 끝까지 남음. 2입 = 꼭지+꽃받침+작은 조각.',
+  body:h=>'<path d="M45,28 C62,28 66,42 61,56 C56,68 49,73 45,73 C41,73 34,68 29,56 C24,42 28,28 45,28 Z" fill="'+(h?'':'§')+'"/>',
+  surf:st=>{let s='';const pts=[[38,42],[52,42],[45,50],[34,54],[56,54],[45,62],[40,56],[50,56]];for(const[x,y]of pts)s+='<ellipse cx="'+x+'" cy="'+y+'" rx="1.5" ry="2.2" fill="#fff2cf"/>';return s;},
+  crown:()=>starSepal(45,30,'#5faa48')+stem(45,26,6)},
+ {id:'grape',ko:'포도',em:'🍇',skin:'#9a5ad8',flesh:'#9a5ad8',note:'베어물기 아님 — 알맹이를 아래부터 뗀다. 9알 → 5알 → 2알(꼭지 근처만).',
+  full:st=>{
+    const all=[[45,60],[57,52],[33,52],[46,44],[42,48],[54,40],[36,40],[46,34],[45,25]];
+    const n=st===0?9:st===1?5:2;
+    let s='';for(let k=0;k<n;k++){const[x,y]=all[all.length-1-k+(9-n)-((9-n))];}
+    // keep top ones for later states
+    const keep=st===0?all:st===1?all.slice(3):all.slice(7);
+    for(const[x,y]of keep)s+='<circle cx="'+x+'" cy="'+y+'" r="7.2" fill="#9a5ad8" stroke="#5f2f9a" stroke-width="1"/>';
+    return stem(45,24,5)+leaf(53,22,-22)+s;}},
+ {id:'peach',ko:'복숭아',em:'🍑',skin:'#ffc0a8',flesh:'#ffdcae',note:'큰 씨(갈색) 드러남. 세로 골 유지. 2입 = 씨 위주 + 살점 조금.',
+  body:h=>'<ellipse cx="45" cy="50" rx="26" ry="26" fill="'+(h?'':'§')+'"/>',
+  surf:st=>'<path d="M45,26 C40,40 40,60 45,74" stroke="#f4805f" stroke-width="1.6" fill="none" opacity=".55"/>'+(st===2?'<ellipse cx="43" cy="52" rx="8" ry="11" fill="#8a5a34"/>':''),
+  crown:()=>stem(45,26,6)+leaf(52,24,-24)},
+ {id:'cherry',ko:'체리',em:'🍒',skin:'#e83a54',flesh:'#c85a72',note:'알 단위로 먹음. 2알 → 1알(다른 알은 씨 자국) → 씨·꼭지만.',
+  full:st=>{
+    const stems='<path d="M45,22 C40,34 34,44 30,54 M45,22 C50,34 58,44 62,50" stroke="#5f7a34" stroke-width="2" fill="none"/>'+leaf(46,22,-10);
+    if(st===0)return stems+'<circle cx="30" cy="59" r="10" fill="#e83a54" stroke="#8f1428" stroke-width="1"/><circle cx="62" cy="56" r="10" fill="#e83a54" stroke="#8f1428" stroke-width="1"/>';
+    if(st===1)return stems+'<circle cx="62" cy="56" r="10" fill="#e83a54" stroke="#8f1428" stroke-width="1"/><circle cx="30" cy="59" r="6" fill="#c85a72"/><circle cx="30" cy="59" r="3" fill="#7a3a28"/>';
+    return stems+'<circle cx="62" cy="56" r="5.5" fill="#c85a72"/><circle cx="62" cy="56" r="3" fill="#7a3a28"/><circle cx="30" cy="59" r="3" fill="#7a3a28"/>';}},
+ {id:'tomato',ko:'토마토',em:'🍅',skin:'#ff6242',flesh:'#ff9a7a',note:'즙 많은 단면(연주황+씨). 별 꽃받침 유지. 2입 = 꼭지쪽 조각.',
+  body:h=>'<ellipse cx="45" cy="51" rx="28" ry="23" fill="'+(h?'':'§')+'"/>',
+  surf:st=>st?'<circle cx="52" cy="46" r="1.4" fill="#ffd0b8"/><circle cx="58" cy="52" r="1.4" fill="#ffd0b8"/><circle cx="50" cy="56" r="1.4" fill="#ffd0b8"/>':'',
+  crown:()=>starSepal(45,31,'#4f8f3c')+stem(45,27,5)},
+ {id:'eggplant',ko:'가지',em:'🍆',skin:'#6a3d9e',flesh:'#efe7d4',note:'크림색 속살, 초록 캡 유지. 2입 = 캡+꼭지+짧은 조각.',
+  body:h=>'<path d="M45,26 C57,26 60,40 58,54 C56,68 50,76 45,76 C40,76 34,68 32,54 C30,40 33,26 45,26 Z" fill="'+(h?'':'§')+'"/>',
+  surf:st=>'',
+  crown:()=>starSepal(45,29,'#4f8f3c')+'<path d="M45,29 C48,23 50,20 52,18" stroke="#4f8f3c" stroke-width="3" fill="none" stroke-linecap="round"/>'},
+ {id:'coconut',ko:'코코넛',em:'🥥',skin:'#9a6b42',flesh:'#f5f0e6',note:'단단한 흰 속살, 베어문 자리 껍질 테두리 두껍게. 2입 = 반쪽 껍데기.',
+  body:h=>'<ellipse cx="45" cy="50" rx="25" ry="27" fill="'+(h?'':'§')+'"/>',
+  surf:st=>st?'<ellipse cx="45" cy="50" rx="25" ry="27" fill="none" stroke="#5c3a22" stroke-width="4" stroke-dasharray="1 1000" pathLength="1"/>':'<circle cx="38" cy="46" r="2.2" fill="#3a2412"/><circle cx="52" cy="46" r="2.2" fill="#3a2412"/><circle cx="45" cy="56" r="2.2" fill="#3a2412"/>',
+  crown:()=>''}
+];
+
+function draw(f,st){
+  if(f.full) return cell(f.full(st));
+  return solid(f.id,st,f.skin,f.flesh,f.body,f.surf,f.crown);
+}
+const lbls=['초기','1입','2입'];
+document.getElementById('grid').innerHTML = FR.map(f=>
+  '<div class="card"><div class="info"><div class="nm"><span class="em">'+f.em+'</span>'+f.ko+'</div>'
+  +'<div class="id">'+f.id+'</div><div class="note">'+f.note+'</div></div>'
+  +'<div class="stages">'+[0,1,2].map(st=>
+    '<div class="stage'+(st===0?' keep':'')+'"><div class="plate">'+draw(f,st)+'</div><div class="lbl">'+lbls[st]+'</div></div>'
+  ).join('')+'</div></div>'
+).join('');
+</script>
+
+</body></html>
