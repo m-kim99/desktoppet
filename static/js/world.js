@@ -11793,31 +11793,33 @@ function makeFoodGeo(f, bites = 0) {
         const liner = new THREE.TorusGeometry(0.0345, 0.0024, 6, 24); liner.rotateX(Math.PI / 2); liner.scale(1.1, 1, 0.94); liner.translate(0, 0.006, 0);
         add(liner, 0xd9a83c, 0xac8028, { curve: 1 });
         topH = 0.075;
-    } else if (f.id === 'juice' || f.id === 'smoothie') {   // 🥤🥥 컵 요리 — 수위가 내려간다(아이스컵 문법)
+    } else if (f.id === 'juice' || f.id === 'smoothie') {   // 🥤🥥 컵 요리 — 반투명 유리(makeFoodMesh가 유리 자식 추가) 안에 실제 액체가 비친다
         const thick = f.id === 'smoothie';
-        const LV = thick ? [0.062, 0.042, 0.022] : [0.066, 0.044, 0.023], yT = LV[b];
-        const rAt = (y) => 0.0205 + (y / 0.082) * 0.0075, rT = rAt(yT) - 0.0012;
-        const jc0 = thick ? 0xf2ebdb : 0xea7a42, jc1 = thick ? 0xdccbb0 : 0xc85526;
-        const rL = rAt(yT);
-        const lowW = new THREE.CylinderGeometry(rL, 0.0205, yT, 20, 1, true); lowW.translate(0, yT / 2, 0);   // 수위 아래 = 음료가 비쳐 보이는 구간
-        add(lowW, jc0, jc1, { curve: 1.15 });
-        const upW = new THREE.CylinderGeometry(0.028, rL, 0.082 - yT, 20, 1, true); upW.translate(0, (0.082 + yT) / 2, 0);
-        add(upW, 0xeef5f9, 0xd6e4ec, { curve: 1.05 });
-        const cupBot = new THREE.CylinderGeometry(0.0207, 0.0207, 0.003, 20); cupBot.translate(0, 0.0015, 0); add(cupBot, jc0, jc1, { curve: 1 });
-        const well = new THREE.CylinderGeometry(0.0278, rL * 0.99, 0.082 - yT, 20, 1, true); well.scale(-1, 1, 1); well.translate(0, (0.082 + yT) / 2, 0);
-        add(well, 0xa8b4bc, 0x6b767d, { curve: 1.35 });
-        const rim = new THREE.TorusGeometry(0.0276, 0.0018, 6, 22); rim.rotateX(Math.PI / 2); rim.translate(0, 0.0818, 0); add(rim, 0xf6fbfd, 0xd2e0e8, { curve: 1 });
-        const jc = thick ? 0xf7f0e2 : 0xf0834a, jc2 = thick ? 0xe9dcc2 : 0xd85f2c;
-        const surf = thick ? new THREE.SphereGeometry(rT, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5) : new THREE.CylinderGeometry(rT, rT * 0.97, 0.003, 20);
-        if (thick) surf.scale(1, 0.34, 1);
-        surf.translate(0, yT, 0); add(surf, thick ? 0xfdf9f0 : 0xf79c66, jc, { curve: 1 });
-        if (thick) { for (let i = 0; i < 5; i++) { const a = i * 2.4, rr = rT * (0.3 + (i % 3) * 0.2); const fl = new THREE.BoxGeometry(0.0095, 0.0022, 0.0042); fl.rotateY(a * 1.3); fl.translate(Math.cos(a) * rr, yT + 0.0035, Math.sin(a) * rr); add(fl, 0xa08056, 0x74593a, { curve: 1 }); } }
-        else { const lem = new THREE.CylinderGeometry(0.011, 0.011, 0.0028, 16, 1, false, 0, Math.PI); lem.rotateX(Math.PI / 2); lem.rotateZ(0.4); lem.translate(0.0225, yT + 0.006, 0.0075); add(lem, 0xffdf6e, 0xefc648, { curve: 1 });
-               const lin = new THREE.CylinderGeometry(0.0079, 0.0079, 0.0036, 16, 1, false, 0, Math.PI); lin.rotateX(Math.PI / 2); lin.rotateZ(0.4); lin.translate(0.0225, yT + 0.006, 0.0075); add(lin, 0xfff5c4, 0xffe999, { curve: 1 }); }
-        const stc = thick ? 0xeec98a : 0x7fc4e8;
-        const straw = new THREE.CylinderGeometry(0.0033, 0.0033, 0.094, 8); straw.rotateZ(-0.18); straw.translate(0.0095, 0.058, 0.0015);
-        add(straw, stc, ((stc & 0xfefefe) >> 1) | 0x303030, { curve: 1 });
-        topH = 0.086;
+        const shade = (hex, df) => { const c = (x) => Math.max(0, Math.min(255, x + df)); return (c((hex >> 16) & 255) << 16) | (c((hex >> 8) & 255) << 8) | c(hex & 255); };
+        const LV = thick ? [0.060, 0.040, 0.020] : [0.064, 0.042, 0.021], yT = LV[b];
+        const rAt = (y) => 0.0205 + (y / 0.082) * 0.0075, rT = rAt(yT) - 0.0013, rB = 0.0198;
+        const cupBot = new THREE.CylinderGeometry(0.0202, 0.0202, 0.003, 20); cupBot.translate(0, 0.0016, 0); add(cupBot, 0xe2eff7, 0xbfcfda, { curve: 1 });
+        const rim = new THREE.TorusGeometry(0.0276, 0.0017, 6, 22); rim.rotateX(Math.PI / 2); rim.translate(0, 0.0818, 0); add(rim, 0xf4fafd, 0xd2e0e8, { curve: 1 });
+        // 재료색: 과일주스는 def.tint(쓴 과일에서 뽑음)가 있으면 그 색, 없으면 기본 주황. 스무디는 코코넛+우유 크림색.
+        const jc = thick ? 0xf6efe0 : (f.tint || 0xf2894a), jc2 = thick ? 0xe6d7bd : shade(jc, -40), jsurf = thick ? 0xfdf9f0 : shade(jc, 26);
+        const col = new THREE.CylinderGeometry(rT, rB, yT - 0.003, 20); col.translate(0, (yT + 0.003) / 2, 0); add(col, jc, jc2, { curve: 1.12 });
+        if (thick) { const surf = new THREE.SphereGeometry(rT, 18, 11, 0, Math.PI * 2, 0, Math.PI * 0.5); surf.scale(1, 0.36, 1); surf.translate(0, yT, 0); add(surf, jsurf, jc, { curve: 1 }); }
+        else { const surf = new THREE.CylinderGeometry(rT, rT * 0.97, 0.003, 20); surf.translate(0, yT, 0); add(surf, jsurf, jc, { curve: 1 }); }
+        if (thick) for (let i = 0; i < 5; i++) { const a = i * 2.4, rr = rT * (0.28 + (i % 3) * 0.22); const fl = new THREE.BoxGeometry(0.0092, 0.0022, 0.0044); fl.rotateY(a * 1.3); fl.rotateX(0.15); fl.translate(Math.cos(a) * rr, yT + 0.0032, Math.sin(a) * rr); add(fl, 0xa38257, 0x74593a, { curve: 1 }); }
+        else for (let i = 0; i < 6; i++) { const a = i * 2.1, rr = rT * (0.3 + (i % 3) * 0.22); const pl = new THREE.SphereGeometry(0.0021, 6, 5); pl.translate(Math.cos(a) * rr, yT + 0.0008, Math.sin(a) * rr); add(pl, shade(jc, 30), shade(jc, -10), { curve: 1 }); }
+        // 얼음 — 수면에 반쯤 걸침(아이스 주스). 스무디는 걸쭉해서 없음
+        if (!thick) for (const [cx, cz, rot] of (b >= 2 ? [[0.008, 0.004, 0.4], [-0.007, -0.005, -0.5]] : [[0.009, 0.004, 0.5], [-0.009, -0.006, -0.4], [0.001, 0.010, 1.0]])) { const ice = new THREE.BoxGeometry(0.0102, 0.0092, 0.0102); ice.rotateY(rot); ice.rotateZ(rot * 0.32); ice.translate(cx, b >= 2 ? 0.011 : yT + 0.002, cz); add(ice, 0xecf8ff, 0xc8dfec, { curve: 1 }); }
+        // 🍋 레몬 반달 — 컵 오른쪽 림에 얹혀 걸침(반달 평평한 변이 림 위에, 수위 무관 고정)
+        if (!thick) { const lx = 0.019, ly = 0.0806, lz = 0.0;
+            const lem = new THREE.CylinderGeometry(0.0125, 0.0125, 0.0024, 18, 1, false, 0, Math.PI); lem.rotateX(-Math.PI / 2); lem.rotateZ(-0.12); lem.translate(lx, ly, lz); add(lem, 0xffe07a, 0xf0c94e, { curve: 1 });
+            const lin = new THREE.CylinderGeometry(0.0088, 0.0088, 0.0032, 18, 1, false, 0, Math.PI); lin.rotateX(-Math.PI / 2); lin.rotateZ(-0.12); lin.translate(lx, ly + 0.0002, lz); add(lin, 0xfff6c9, 0xffe999, { curve: 1 });
+            for (let i = 0; i < 5; i++) { const a = -1.3 + i * 0.72; const seg = new THREE.BoxGeometry(0.0006, 0.0034, 0.009); seg.rotateY(a); seg.translate(lx + Math.sin(a) * 0.004, ly + 0.0006, lz + Math.cos(a) * 0.0045); add(seg, 0xfffdf0, 0xf3ebc8, { curve: 1 }); }
+            const rind = new THREE.TorusGeometry(0.0125, 0.0016, 6, 14, Math.PI); rind.rotateX(-Math.PI / 2); rind.rotateZ(-0.12); rind.translate(lx, ly + 0.0002, lz); add(rind, 0xd8c246, 0xb59e2e, { curve: 1 }); }
+        const stc = thick ? 0xeec98a : 0x7fc4e8, stc2 = thick ? 0xcfa860 : 0x5a9fc8;
+        const straw = new THREE.CylinderGeometry(0.0033, 0.0033, 0.094, 8); straw.rotateZ(-0.2); straw.translate(-0.0085, 0.058, 0.001);
+        add(straw, stc, stc2, { curve: 1 });
+        for (const [wx, wy, wz] of [[0.0248, 0.052, 0.010], [-0.0242, 0.033, -0.009], [0.0188, 0.021, 0.018]]) { const dr = new THREE.SphereGeometry(0.0021, 6, 5); dr.scale(1, 1.4, 0.55); dr.translate(wx, wy, wz); add(dr, 0xf2fbff, 0xd4ebf6, { curve: 1 }); }
+        topH = 0.088;
     } else if (f.id === 'tomatosoup' || f.id === 'clamsteam') {   // 🍲🦪 깊은 볼 — 줄면 안쪽 그늘이 넓어진다
         const clam = f.id === 'clamsteam';
         const LV = [0.0335, 0.0285, 0.0235], yT = LV[b], rT = (b >= 2 ? 0.026 : b >= 1 ? 0.033 : 0.0395);
@@ -12057,6 +12059,10 @@ function makeFoodMesh(f) {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.userData.topH = geo.userData.topH;
+    if (f.id === 'juice' || f.id === 'smoothie') {   // 🥤 유리컵 = 반투명 별도 메시(내용물이 비친다). 먹기 단계엔 안 변하니 자식으로 고정
+        const g = new THREE.CylinderGeometry(0.028, 0.0205, 0.082, 20, 1, true); g.translate(0, 0.041, 0);
+        mesh.add(new THREE.Mesh(g, glassMat));
+    }
     return mesh;
 }
 
