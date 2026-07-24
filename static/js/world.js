@@ -17516,8 +17516,18 @@ function exitRocketForce() {   // 빙의 해제 — 발사 전=취소, 착륙·�
         ROCKET.mode = 'parked'; ROCKET.burn = 0; ROCKET.t = 0;
         return;
     }
-    if ((ROCKET.mode === 'moonland' || ROCKET.mode === 'dock') && ROCKET.padDir > 0 && ROCKET.padK >= 0.99) {
-        disembarkPoi();   // 🧑‍🚀 로켓은 도킹 유지 — 펫들은 표면 산책 (밤이 되면 알아서 귀항)
+    if ((ROCKET.mode === 'moonland' || ROCKET.mode === 'dock') && ROCKET.padDir > 0) {
+        if (ROCKET.padK >= 0.99) {
+            disembarkPoi();   // 🧑‍🚀 로켓은 도킹 유지 — 펫들은 표면 산책 (밤이 되면 알아서 귀항)
+            return;
+        }
+        // 도킹 이징 중(padK<0.99) 해제 — 시각적으론 이미 붙어 보여서 모바일에서 자주 눌린다(실측 리포트).
+        // 여기서 오토파일럿으로 넘기면 도킹 완료 후 aiDwell이 펫째 본토로 보내버림 → "마저 도킹하고 내려주기" 예약.
+        r.isAI = true;
+        ROCKET.dropAtDock = true;
+        if (r.p) { releaseAI(r.p); r.p.ai.state = 'busy'; }
+        if (r.friend && r.friend.ai.state !== 'held') { releaseAI(r.friend); r.friend.ai.state = 'held'; }
+        logWorldEvent('별똥호가 마저 도킹하고 펫들을 내려주기로 했다 🛰️');
         return;
     }
     if (rocketTether) rocketTether = null;   // 🧑‍🚀 유영 중 해제 — 즉시 릴인 (좌석 포즈가 다음 프레임에 앉힌다)
@@ -17746,6 +17756,7 @@ function updateRocket(delta) {
             ROCKET.aiDwell = 4;
             playBuffer(swishBuf, { vol: 0.35, rate: 0.5, filterFreq: 600 });
             if (r && !r.empty) recordSpacePoi(poi, r.p);
+            if (ROCKET.dropAtDock) { ROCKET.dropAtDock = false; disembarkPoi(); }   // 이징 중 해제 예약 — 도킹을 마쳤으니 내려준다 (귀환 금지)
         }
         if (ROCKET.padDone && ROCKET.padDir > 0 && r && r.isAI && !r.empty) {   // 🤖 오토파일럿 착륙
             ROCKET.aiDwell -= delta;
@@ -17758,6 +17769,7 @@ function updateRocket(delta) {
             }
         }
         if (ROCKET.padDir < 0 && ROCKET.padK <= 0) {
+            ROCKET.dropAtDock = false;   // 언도킹 — 예약 소멸
             ROCKET.heading = ROCKET.freeHeading; ROCKET.pitch = ROCKET.freePitch;
             ROCKET.poiCd = poi.id;   // 이 POI는 반경을 벗어날 때까지 ⌘ 재착륙 금지 — 안 그러면 언도킹 직후 ⌘가 재진입 대신 재도킹(실측)
             if (r && (r.empty || r.isAI)) { ROCKET.mode = 'descent'; ROCKET.t = 0; }   // 빈·AI 라이드는 곧장 귀환 (AI는 수동 조종 불가)
