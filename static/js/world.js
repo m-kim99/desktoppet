@@ -17117,7 +17117,7 @@ const ROCKET_TWR_Z = ROCKET_PAD.z + ROCKET_TWR_UZ * (ROCKET_PAD_R - 0.5);
         mG.push(wire(ex2, DY + 0.12, ez2, px + Math.cos(3.5) * 0.92, DY + 0.1, pz + Math.sin(3.5) * 0.92, 0.05));
     }
     // ── P3 추진제 구형 탱크 2 + 배관
-    for (const [ta, tr] of [[3.05, 1.45], [5.5, 1.45]]) {
+    for (const [ta, tr] of [[5.5, 1.45]]) {   // ⚠️ 3.05 자리는 급수 탱크(3.5)와 맞붙어 복잡했다 → 제거, 반대편 1기만
         const [tx, tz] = at(ta, tr);
         gr.push(bakeGrad(new THREE.SphereGeometry(0.29, 14, 12).translate(tx, DY + 0.42, tz), 0xf2f5f8, 0xb9c2cb, { curve: 1.1 }));
         mG.push(new THREE.TorusGeometry(0.29, 0.022, 6, 18).rotateX(Math.PI / 2).translate(tx, DY + 0.42, tz));
