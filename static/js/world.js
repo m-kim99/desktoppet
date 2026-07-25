@@ -23525,12 +23525,15 @@ function speciesPool(water) {
 const FC_GAME = {
     crucian: 0.798, goldfish: 0.717, koi: 0.935, mackerel: 1.278, salmon: 0.977,
     smelt: 1.877, catfish: 0.876, puffer: 1.746,
-    bottle: 0.635,   // 잡동사니는 비례 대상 아님 — 구 병 높이(0.14)에 맞춘다
+    frog: 2.478, ray: 0.780, angler: 1.071,   // 개구리 9.5cm→0.285 · 가오리 원반폭 0.57 · 아귀 42.5cm→0.559
+    bottle: 0.635, boot: 0.900,   // 잡동사니는 비례 대상 아님 — 구 크기에 맞춘다
 };
+// 튜브 빌더로 만들 수 없는 골격 — 전용 빌더로 분기한다
+const FC_CUSTOM = { boot: () => buildBootCartoon(), frog: () => buildFrogCartoon(), ray: () => buildRayCartoon() };
 function makeFishMesh(sp, sizeK) {
     const gk = FC_GAME[sp.id];
     if (gk) {   // 아틀라스는 첫 호출에서 한 번 구워지고 이후 공유된다(재질도 1개)
-        const inner = buildFishCartoon(sp.id);
+        const inner = FC_CUSTOM[sp.id] ? FC_CUSTOM[sp.id]() : buildFishCartoon(sp.id);
         if (sp.id === 'bottle') { inner.rotation.x = -Math.PI / 2; inner.position.y = 0.126; }   // 구 빌더처럼 세워 놓는다
         const w = new THREE.Group();
         w.add(inner);
@@ -25343,16 +25346,18 @@ const FISHC = {
     },
     angler: {   // 머리가 몸의 절반 · 좌우로 아주 넓고(0.64:1) 위아래로 납작 · 벌어진 입 + 초롱
         ko: '아귀', cell: 8, L: 0.46, edge: 0.18, headS: 0.24, headV: 0.40, bend: 0.012,
-        prof: [[0, 0.078, -0.098, 0.062], [0.08, 0.138, -0.138, 0.150], [0.18, 0.152, -0.142, 0.165],
-            [0.30, 0.136, -0.120, 0.130], [0.43, 0.110, -0.092, 0.090], [0.56, 0.086, -0.070, 0.058],
-            [0.69, 0.054, -0.044, 0.036], [0.80, 0.040, -0.032, 0.022], [0.89, 0.028, -0.022, 0.014],
-            [0.95, 0.020, -0.016, 0.009], [1, 0.016, -0.013, 0.007]],
+        // 머리가 몸의 45% · 폭 0.68L(체고의 3배) · s 0.32에서 **급격히** 좁힌다(완만하면 올챙이가 된다).
+        // s<0.14의 bot이 축 위에 있는 게 핵심 — 위턱만 남고 그 아래가 벌어진 입이 된다.
+        prof: [[0, 0.112, 0.048, 0.072], [0.06, 0.148, 0.028, 0.208], [0.14, 0.168, 0.004, 0.306],
+            [0.22, 0.174, -0.056, 0.340], [0.32, 0.148, -0.106, 0.258], [0.44, 0.104, -0.082, 0.128],
+            [0.56, 0.078, -0.060, 0.074], [0.68, 0.056, -0.042, 0.044], [0.80, 0.038, -0.028, 0.026],
+            [0.90, 0.026, -0.019, 0.016], [1, 0.018, -0.013, 0.010]],
         ramp: [[0, '#8d8478'], [0.22, '#6a6154'], [0.36, '#4a4238'], [0.46, '#332c26'], [0.5, '#28221d']],
-        fin: { col: 0x4e463a, dorsal: { s0: 0.42, s1: 0.56, h: 0.070, rays: 0.28 }, anal: { s0: 0.62, s1: 0.74, h: 0.060, rays: 0.26 },
-            caudal: { h: 0.130, len: 0.115, notch: 0.06, rays: 0.46 },
-            pect: { s0: 0.24, s1: 0.30, c0: -0.20, c1: -0.60, l0: 0.170, l1: 0.070, down: 0.40, rays: 0.44 } },
-        scales: null, gill: 0.205, mouth: 1.7, eye: { s: 0.108, c: 0.62, r: 0.030, iris: '#c8b048' },
-        parts: [{ kind: 'lure', s: 0.10, h: 0.115 }, { kind: 'teeth', s0: 0.012, s1: 0.055, n: 9 }],
+        fin: { col: 0x4e463a, dorsal: { s0: 0.44, s1: 0.58, h: 0.062, rays: 0.28 }, anal: { s0: 0.64, s1: 0.76, h: 0.052, rays: 0.26 },
+            caudal: { h: 0.126, len: 0.112, notch: 0.06, rays: 0.46 },
+            pect: { s0: 0.30, s1: 0.375, c0: -0.16, c1: -0.62, l0: 0.275, l1: 0.115, down: 0.30, rays: 0.50 } },   // 팔처럼 큰 패들
+        scales: null, gill: 0.230, mouth: 0, eye: { s: 0.105, c: 0.66, r: 0.030, iris: '#c8b048' },   // 입은 칠하지 않는다 — 지오메트리다
+        parts: [{ kind: 'jaw' }, { kind: 'lure', s: 0.085, h: 0.115 }, { kind: 'rimteeth', n: 13 }, { kind: 'fringe', n: 5 }],
         extra: 'anglermarble',
     },
 };
@@ -25561,18 +25566,45 @@ function fcParts(sp) {   // 부속 지오메트리 — 칠할 수 없어서 만�
             for (let k = 0; k <= 5; k++) { const t = k / 5; pts.push(new THREE.Vector3(P.x + 0.02 * L * Math.sin(t * 2), P.y + pt.h * L * t, P.z + pt.h * L * t * 0.55)); }
             out.push({ geo: new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 9, 0.012 * L, 5, false), col: 0x3a332b, flat: true });
             const tip = pts[5];
-            out.push({ geo: new THREE.SphereGeometry(0.038 * L, 10, 8).translate(tip.x, tip.y, tip.z), glow: true });
-        } else if (pt.kind === 'teeth') {   // 이빨 — 실루엣에 걸리는 앞줄만 지오, 나머지는 텍스처
+            out.push({ geo: new THREE.SphereGeometry(0.045 * L, 12, 9).translate(tip.x, tip.y, tip.z), glow: true });
+        } else if (pt.kind === 'jaw') {
+            // 🐟 아귀의 정체성은 **벌어진 입**이고, 칠해서는 절대 안 된다(분홍 띠 = 립스틱으로 읽힌다).
+            // 아래턱을 별도 얕은 보울로 만들어 위턱 밑에 매달면 그 사이가 실루엣에 걸리는 구강이 된다.
+            const hinge = 0.315, front = 0.0;
+            for (const f of fcLoftGeo({
+                rows: 16, seg: 24,
+                zOf: (t) => (0.5 - (hinge + (front - hinge) * t)) * L,
+                w: (t) => L * (0.255 + 0.055 * Math.sin(t * Math.PI * 0.9) - 0.215 * Math.pow(t, 2.1)),
+                top: (t, u) => -L * (0.028 + 0.098 * Math.pow(t, 1.25)) + L * 0.016 * fcUf(u, 2.4, 0.5),   // ⚠️ 처짐이 크면 펠리컨 주머니가 된다
+                bot: (t, u) => L * (0.028 + 0.098 * Math.pow(t, 1.25)) + L * 0.036 * fcUf(u, 2.4, 0.45),
+            })) out.push({ geo: f.geo, col: pt.col || 0x3a322a, flat: true });
+        } else if (pt.kind === 'rimteeth') {   // 위턱·아래턱 림에 원뿔 2열 — 앞줄만 지오, 나머지는 텍스처
             for (let i = 0; i < pt.n; i++) {
-                const u = 0.5 + (i / (pt.n - 1) - 0.5) * 0.62, th = u * Math.PI * 2;
-                const s = pt.s0 + (pt.s1 - pt.s0) * (0.3 + 0.7 * Math.abs(i / (pt.n - 1) - 0.5) * 2);
-                fcPoint(sp, s, th, P); fcNormal(sp, s, th, N);
-                const ln = 0.055 * L * (0.7 + 0.5 * Math.random() * 0);
-                const cn = new THREE.ConeGeometry(0.011 * L, ln, 4);
-                cn.translate(0, ln * 0.45, 0);
-                cn.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), N.negate()));
-                cn.translate(P.x, P.y, P.z);
-                out.push({ geo: cn, col: 0xf2ece0, flat: true });
+                const q = i / (pt.n - 1), u = (q - 0.5) * 1.7;
+                for (const [sTop, sy, sc] of [[true, -1, 0.042], [false, 1, 0.034]]) {
+                    const t2 = 0.10 + Math.abs(u) * 0.16;
+                    const zz = sTop ? (0.5 - t2 * 0.55) * L : (0.5 - (0.315 + (0 - 0.315) * (1 - Math.abs(u) * 0.35))) * L;
+                    const hw = sTop ? fcAt(sp, 3, t2 * 0.55) : L * (0.255 - 0.150 * Math.abs(u));
+                    const yy = sTop ? fcAt(sp, 2, t2 * 0.55) : -L * (0.028 + 0.098 * Math.pow(1 - Math.abs(u) * 0.35, 1.25)) + L * 0.014;
+                    const ln = sc * L * (0.75 + 0.45 * (1 - Math.abs(u)));
+                    const cn = new THREE.ConeGeometry(0.013 * L, ln, 4);
+                    cn.translate(0, sy * ln * 0.45, 0);
+                    cn.translate(hw * u * 0.92, yy, zz);
+                    out.push({ geo: cn, col: 0xf4eee2, flat: true });
+                }
+            }
+        } else if (pt.kind === 'fringe') {   // 피부 프릴 — 실루엣 작업이라 칠하기 불가
+            for (let i = 0; i < pt.n; i++) {
+                const t2 = 0.235 + (i / pt.n) * 0.30;
+                for (const sx of [1, -1]) {
+                    const th = Math.acos(THREE.MathUtils.clamp(-(-0.72), -1, 1)) * sx;
+                    fcPoint(sp, t2, th, P); fcNormal(sp, t2, th, N);
+                    const ln = (0.044 - i * 0.005) * L;
+                    const tab = new THREE.SphereGeometry(ln, 7, 5);
+                    tab.scale(0.22, 1.15, 0.80);
+                    tab.translate(P.x + N.x * ln * 0.55, P.y + N.y * ln * 0.55 - ln * 0.35, P.z + N.z * ln * 0.55);
+                    out.push({ geo: tab, col: 0x453c32, flat: true });
+                }
             }
         }
     }
@@ -25666,6 +25698,18 @@ function fcAtlas() {
                 const x = R.x + ((kk * 5) % 13) / 13 * C, y = R.y + ((kk * 3) % 11) / 11 * C;
                 g.beginPath(); g.arc(x, y, C * 0.012, 0, Math.PI * 2); g.fillStyle = 'rgba(196,196,214,0.32)'; g.fill();
             }
+            for (const sx of [-1, 1]) {   // 눈 — 융기 자리(t 0.155·u 0.30)에 칠한다. uv = (u/2+0.5, 1−t)
+                const ex = R.x + (0.5 + sx * 0.150) * C, ey = R.y + 0.155 * C, rr = C * 0.026;
+                const gr = g.createRadialGradient(ex, ey, rr * 0.15, ex, ey, rr);
+                gr.addColorStop(0, '#100f14'); gr.addColorStop(0.46, '#191822'); gr.addColorStop(0.72, '#8a7a3e'); gr.addColorStop(1, 'rgba(60,56,52,0.85)');
+                g.beginPath(); g.ellipse(ex, ey, rr, rr * 0.82, 0, 0, Math.PI * 2); g.fillStyle = gr; g.fill();
+                g.beginPath(); g.arc(ex - sx * rr * 0.3, ey - rr * 0.3, rr * 0.16, 0, Math.PI * 2); g.fillStyle = 'rgba(246,248,240,0.9)'; g.fill();
+                const px = R.x + (0.5 + sx * 0.170) * C, py = R.y + 0.228 * C;   // 분수공 — 가오리 식별의 핵심
+                g.beginPath(); g.ellipse(px, py, C * 0.024, C * 0.014, sx * 0.35, 0, Math.PI * 2);
+                g.fillStyle = 'rgba(34,32,42,0.72)'; g.fill();
+                g.beginPath(); g.ellipse(px - sx * C * 0.004, py - C * 0.003, C * 0.016, C * 0.008, sx * 0.35, 0, Math.PI * 2);
+                g.fillStyle = 'rgba(122,120,136,0.55)'; g.fill();
+            }
         } else {
             g.fillStyle = '#efeae2'; g.fillRect(R.x, R.y, C, C);
             const vg = g.createRadialGradient(R.x + C * 0.5, R.y + C * 0.4, C * 0.05, R.x + C * 0.5, R.y + C * 0.4, C * 0.5);
@@ -25681,6 +25725,8 @@ function fcAtlas() {
         }
         g.restore();
     }
+    fcPaintFrog(g);   // 🐸 셀 9 — 등(위 절반) / 배(아래 절반)
+    fcPaintBoot(g);   // 🥾 셀 12 — 통·발·밑창 3밴드
     {   // 흰 셀(15) 좌상 사분면에 개구리 눈 — 금색 홍채 + **가로 동공**. 중앙은 순백 유지(부속 파트가 샘플)
         const R = faRect(15), C = FA_CELL, ex = R.x + C * 0.25, ey = R.y + C * 0.25, rr = C * 0.22;
         const gr = g.createRadialGradient(ex, ey, rr * 0.15, ex, ey, rr);
@@ -25688,6 +25734,9 @@ function fcAtlas() {
         g.beginPath(); g.arc(ex, ey, rr, 0, Math.PI * 2); g.fillStyle = gr; g.fill();
         g.beginPath(); g.ellipse(ex, ey, rr * 0.82, rr * 0.24, 0, 0, Math.PI * 2); g.fillStyle = '#141208'; g.fill();
         g.beginPath(); g.arc(ex - rr * 0.34, ey - rr * 0.40, rr * 0.14, 0, Math.PI * 2); g.fillStyle = 'rgba(252,255,246,0.92)'; g.fill();
+        g.fillStyle = '#3a2a1c';   // 우하 사분면 = 장화 속 어둠(내벽·바닥이 여기를 샘플한다)
+        g.fillRect(R.x + C * 0.52, R.y + C * 0.52, C * 0.46, C * 0.46);
+        for (let k = 0; k < 10; k++) { g.fillStyle = `rgba(20,14,9,${0.2 + (k % 3) * 0.1})`; g.fillRect(R.x + C * (0.54 + (k % 5) * 0.085), R.y + C * (0.56 + ((k * 3) % 4) * 0.10), C * 0.05, C * 0.06); }
     }
     {   // 공용 지느러미 셀 — **회색조**. 색은 정점색이 곱한다(종별 셀 13개 절약)
         const R = faRect(FA_FIN), C = FA_CELL;
@@ -25798,7 +25847,7 @@ function fcExtra(g, sp, H) {   // 종별 시그니처 무늬 — 비늘 위, 아
             blob(u, s0, rr * 0.55, rr * 0.36, 'rgba(232,222,188,0.55)', 0);
         }
         for (let k = 0; k < 22; k++) blob(((k * 5) % 13) / 13, 0.14 + ((k * 7) % 17) / 17 * 0.74, 0.012, 0.008, 'rgba(40,36,26,0.30)', 0);
-    } else if (sp.extra === 'frogskin' || sp.extra === 'leather' || sp.extra === 'glasslabel') {
+    } else if (sp.extra === 'glasslabel') {
         fcExtra2(g, sp, H);
     } else if (sp.extra === 'anglermarble') {   // 아귀 — 검갈색 얼룩 + 입 안쪽 분홍 + 피부 돌기
         g.fillStyle = 'rgba(214,140,138,0.80)';   // 벌어진 입 안쪽
@@ -25820,29 +25869,6 @@ function fcExtra(g, sp, H) {   // 종별 시그니처 무늬 — 비늘 위, 아
 // 튜브 문법이 통하는 것(개구리·장화·유리병)은 FISHC에 얹고, 원반인 가오리만 독립 빌더.
 // 장화는 **척추 오프셋**(spine)으로 L자로 꺾는다 — 같은 프로파일 기계를 재사용하는 값.
 Object.assign(FISHC, {
-    frog: {   // 체폭 > 체고인 납작 돔 · 눈두덩은 몸에서 이어진 융기(별도 구체 금지가 원칙이지만 눈알만 전용 패치)
-        ko: '개구리', cell: 9, L: 0.11, edge: 0.05, headS: 0.24, headV: 0.40, bend: 0.008,
-        prof: [[0, 0.038, -0.028, 0.036], [0.09, 0.078, -0.052, 0.098], [0.20, 0.108, -0.066, 0.160],
-            [0.36, 0.128, -0.074, 0.205], [0.52, 0.132, -0.076, 0.218], [0.68, 0.122, -0.072, 0.198],
-            [0.82, 0.098, -0.062, 0.152], [0.93, 0.064, -0.046, 0.092], [1, 0.036, -0.030, 0.046]],
-        ramp: [[0, '#f2ecc8'], [0.20, '#dfe2a4'], [0.34, '#a8c268'], [0.46, '#6f9c3e'], [0.5, '#5c8a34']],
-        fin: { col: 0x7fa848 },   // 지느러미 없음
-        scales: null, gill: 0, mouth: 1.5, eye: null,
-        parts: [{ kind: 'frogeye', s: 0.145, c: 0.70, r: 0.062 }, { kind: 'frogleg' }],
-        extra: 'frogskin',
-    },
-    boot: {   // 실루엣이 곧 정체성 — 통(수직) → 발목에서 꺾여 → 발등·발가락(수평). spine이 L자를 만든다
-        ko: '헌 장화', cell: 12, L: 0.30, edge: 0.06, headS: 0.30, headV: 0.34, bend: 0.004,
-        prof: [[0, 0.148, -0.148, 0.148], [0.09, 0.150, -0.150, 0.150], [0.30, 0.138, -0.138, 0.138],
-            [0.48, 0.128, -0.128, 0.130], [0.64, 0.118, -0.140, 0.126], [0.78, 0.108, -0.148, 0.120],
-            [0.90, 0.098, -0.146, 0.112], [0.96, 0.090, -0.142, 0.104], [1, 0.078, -0.132, 0.090]],
-        spineArc: [0.30, 0.68],   // 통(수직) → 발목에서 90° → 발등(수평)
-        ramp: [[0, '#6a4a30'], [0.22, '#7d5838'], [0.36, '#8d6540'], [0.46, '#6f4d2e'], [0.5, '#5e4126']],
-        fin: { col: 0x4a3520 },
-        scales: null, gill: 0, mouth: 0, eye: null,
-        parts: [{ kind: 'sole' }],
-        extra: 'leather',
-    },
     bottle: {   // 투명해야 정체성이 생긴다 — 유리는 별도 재질, 안의 편지·코르크는 불투명
         ko: '유리병', cell: 14, L: 0.24, edge: 0, headS: 0.22, headV: 0.30, bend: 0,
         prof: [[0, 0.048, -0.048, 0.048], [0.05, 0.052, -0.052, 0.052], [0.12, 0.050, -0.050, 0.050],
@@ -25855,120 +25881,106 @@ Object.assign(FISHC, {
         extra: 'glasslabel',
     },
 });
-const FC_RAY = {   // 가오리 — 원반이라 독립 빌더. 폭 1.30×체장 · 두께 0.11×체장(중심) → 날개끝 0.01
-    ko: '가오리', cellTop: 10, cellBot: 11, L: 0.55, tail: 1.15,
-    ramp: [[0, '#8f8ea0'], [0.5, '#6c6b80'], [1, '#4e4d60']],
-};
-function fcRayGeo() {   // 위·아래 두 면 + 물결 날개. uv는 평면(x,z) → 등 셀 / 배 셀
-    const L = FC_RAY.L, HW = 0.65 * L, NR = 16, NA = 30;
-    const outline = (a) => {   // a: -1(왼) ~ 1(오) = 날개 끝. 시위(z 폭)가 끝에서 0으로 수렴 → 뾰족한 다이아
-        const ab = Math.abs(a);
-        return { zf: 0.52 - 0.50 * Math.pow(ab, 1.3), zb: -0.48 + 0.44 * Math.pow(ab, 1.5) };
-    };
-    const parts = [];
+// ---- 공용 로프트 빌더 — "위에서 본 실루엣이 정체성"인 납작 몸 (가오리 · 개구리) -------------
+// 물고기 튜브 빌더(회전체)로는 만들 수 없는 골격이다. 위 아웃라인 w(t) + 상하 높이 필드로 짠다.
+//   w(t)      : 앞뒤 t에서의 반폭 (0=앞, 1=뒤)
+//   top/bot   : (t, u) → 높이. u는 좌우 비율 −1~1. 눈두덩 같은 융기는 여기에 더한다(별도 구체 금지)
+//   zOf(t)    : 앞뒤 좌표
+// uv는 평면 투영 (u→0..1, t→0..1). 등/배가 서로 다른 셀을 쓸 수 있게 두 면을 따로 반환한다.
+function fcLoftGeo(sp) {
+    const ROWS = sp.rows || 30, SEG = sp.seg || 26, out = [];
     for (const side of [1, -1]) {
-        const pos = [], uv = [], idx = [], nrm = [];
-        for (let i = 0; i <= NA; i++) {
-            const a = (i / NA) * 2 - 1, o = outline(a), x = HW * Math.sign(a) * Math.pow(Math.abs(a), 0.85);
-            for (let j = 0; j <= NR; j++) {
-                const t = j / NR, z = (o.zf + (o.zb - o.zf) * t) * L;
-                const ez = 1 - Math.abs(2 * t - 1);                       // 앞뒤 끝에서 0
-                const ex = 1 - Math.pow(Math.abs(a), 1.7);                // 날개 끝에서 0
-                const th = 0.11 * L * ex * ez;
-                const wave = 0.035 * L * Math.sin(Math.abs(a) * 4.2) * Math.pow(Math.abs(a), 1.6);   // 정지 상태의 얕은 물결
-                pos.push(x, side * th + wave, z);
-                uv.push((x / HW) * 0.5 + 0.5, 1 - t);
+        const pos = [], uv = [], idx = [];
+        for (let i = 0; i <= ROWS; i++) {
+            const t = i / ROWS, hw = sp.w(t);
+            for (let j = 0; j <= SEG; j++) {
+                const u = (j / SEG) * 2 - 1;
+                const h = side > 0 ? sp.top(t, u) : -sp.bot(t, u);
+                pos.push(hw * u, h, sp.zOf(t));
+                uv.push(u * 0.5 + 0.5, 1 - t);
             }
         }
-        for (let i = 0; i < NA; i++) for (let j = 0; j < NR; j++) {
-            const p = i * (NR + 1) + j, q = p + NR + 1;
-            if (side > 0) idx.push(p, q, p + 1, q, q + 1, p + 1);
-            else idx.push(p, p + 1, q, q, p + 1, q + 1);
+        for (let i = 0; i < ROWS; i++) for (let j = 0; j < SEG; j++) {
+            const a = i * (SEG + 1) + j, b = a + SEG + 1;
+            if (side > 0) idx.push(a, b, a + 1, b, b + 1, a + 1);
+            else idx.push(a, a + 1, b, b, a + 1, b + 1);
         }
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
         g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
         g.setIndex(idx); g.computeVertexNormals();
-        parts.push({ geo: g, cell: side > 0 ? FC_RAY.cellTop : FC_RAY.cellBot });
+        out.push({ geo: g, cell: side > 0 ? sp.cellTop : sp.cellBot, top: side > 0 });
     }
-    return parts;
+    return out;
+}
+const fcUf = (u, p, q) => Math.pow(Math.max(0, 1 - Math.pow(Math.abs(u), p)), q);   // 좌우 끝 마감 — 로프트가 슬래브가 되지 않게
+const fcBump = (t, u, t0, u0, rt, ru, h) => {   // 국소 융기 — 눈두덩·분수공처럼 몸에서 이어져 나온 것
+    const dt = (t - t0) / rt, du = (Math.abs(u) - u0) / ru, d2 = dt * dt + du * du;
+    return d2 > 1 ? 0 : h * Math.pow(Math.cos(Math.sqrt(d2) * Math.PI * 0.5), 1.4);
+};
+// ---- 🩻 가오리 — 마름모 원반. 앞전은 볼록·뒷전은 오목·날개끝은 진짜 점 -----------------------
+const FC_RAY = { ko: '가오리', cellTop: 10, cellBot: 11, L: 0.55, HW: 0.66, TIP: 0.455, tail: 1.20 };
+const fcRayW = (t) => {   // 마름모: 앞전(볼록)은 지수<1, 뒷전(오목)은 지수>1. 끝은 0이 아니라 아주 작은 값(뾰족한 점)
+    const K = FC_RAY.TIP;
+    const v = t < K ? Math.pow(t / K, 0.74) : Math.pow((1 - t) / (1 - K), 1.42);
+    return FC_RAY.L * (0.035 + (FC_RAY.HW - 0.035) * v);
+};
+const fcRayTh = (t, u) => {   // ⚠️ 두께는 중앙에 **질량**이 있어야 한다 — 선형항 곱만 쓰면 몸통까지 얇아져 종이가 된다
+    const au = Math.abs(u);
+    const core = Math.pow(Math.max(0, 1 - Math.pow(au, 1.55)), 1.85);   // 낮으면 부푼 쿠션 · 높으면 가운데만 솟은 텐트
+    const fore = Math.pow(Math.sin(Math.PI * Math.pow(THREE.MathUtils.clamp(t, 0, 1), 0.82)), 0.75);
+    return FC_RAY.L * 0.062 * core * fore;
+};
+const fcRayCurl = (u) => 0.052 * FC_RAY.L * Math.pow(Math.abs(u), 3.2);   // 날개끝 들림(휨) — 두께가 아니라 중심선이 올라간다
+function fcRaySpec() {
+    return {
+        cellTop: FC_RAY.cellTop, cellBot: FC_RAY.cellBot, rows: 30, seg: 28,
+        zOf: (t) => (0.52 - 1.0 * t) * FC_RAY.L,
+        w: fcRayW,
+        top: (t, u) => fcRayTh(t, u) + fcRayCurl(u) + fcBump(t, u, 0.155, 0.30, 0.075, 0.16, 0.030 * FC_RAY.L)   // 눈두덩 (등 위로 솟는다)
+            + fcBump(t, u, 0.225, 0.34, 0.060, 0.14, 0.014 * FC_RAY.L),                            // 분수공 융기
+        bot: (t, u) => fcRayTh(t, u) * 0.70 - fcRayCurl(u) + fcBump(t, u, 0.30, 0.0, 0.16, 0.30, 0.012 * FC_RAY.L),
+    };
 }
 function fcRayParts() {
     const L = FC_RAY.L, out = [];
-    const pts = [];   // 채찍 꼬리 — 테이퍼 튜브
-    for (let k = 0; k <= 8; k++) { const t = k / 8; pts.push(new THREE.Vector3(0.012 * L * Math.sin(t * 3), 0.02 * L * Math.sin(t * 2.2), (-0.48 - FC_RAY.tail * t) * L)); }
-    const tb = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.020 * L, 5, false);
-    const rp = tb.attributes.position, sc = tb.getAttribute('uv');
-    for (let i = 0; i < rp.count; i++) { const t = THREE.MathUtils.clamp(1 - (rp.getZ(i) / L + 0.48) / -FC_RAY.tail, 0, 1); rp.setX(i, rp.getX(i) * (1 - 0.85 * t)); rp.setY(i, rp.getY(i) * (1 - 0.85 * t)); }
-    tb.computeVertexNormals();
-    out.push({ geo: tb, col: 0x5a5968 });
-    for (const sx of [1, -1]) {   // 등 위로 솟은 눈 두 개
-        const e = new THREE.SphereGeometry(0.030 * L, 10, 8);
-        e.scale(1, 0.85, 1);
-        e.translate(sx * 0.085 * L, 0.062 * L, 0.30 * L);
-        out.push({ geo: e, col: 0x2a2a34 });
+    const pts = [];   // 채찍 꼬리 — 기부가 두툼해야 몸에서 이어진 것으로 읽힌다
+    for (let k = 0; k <= 10; k++) {
+        const t = k / 10;
+        pts.push(new THREE.Vector3(0.010 * L * Math.sin(t * 3.4), 0.028 * L * Math.sin(t * 2.0) - 0.006 * L * t, (-0.44 - FC_RAY.tail * t) * L));
     }
-    for (let k = 0; k < 4; k++) {   // 등 가시
-        const cn = new THREE.ConeGeometry(0.014 * L, 0.055 * L, 5);
-        cn.translate(0, 0.055 * L + 0.028 * L, (-0.20 - k * 0.10) * L);
-        out.push({ geo: cn, col: 0x40404e });
+    const cur = new THREE.CatmullRomCurve3(pts);
+    const tb = new THREE.TubeGeometry(cur, 16, 0.052 * L, 6, false);
+    const rp = tb.attributes.position, ru = tb.attributes.uv;
+    for (let i = 0; i < rp.count; i++) {   // 기부 0.052L → 끝 0.006L
+        const t = ru.getX(i), c = cur.getPoint(t), k = Math.pow(1 - t, 1.35) * 0.88 + 0.12;
+        rp.setXYZ(i, c.x + (rp.getX(i) - c.x) * k, c.y + (rp.getY(i) - c.y) * k, c.z + (rp.getZ(i) - c.z) * k);
+    }
+    tb.computeVertexNormals();
+    out.push({ geo: tb, col: 0x585767 });
+    for (let k = 0; k < 5; k++) {   // 꼬리 가시
+        const t = 0.10 + k * 0.075, c = cur.getPoint(t), ln = (0.062 - k * 0.008) * L;
+        const cn = new THREE.ConeGeometry(0.013 * L, ln, 5);
+        cn.translate(0, ln * 0.45, 0);
+        cn.rotateX(-0.45);
+        cn.translate(c.x, c.y + 0.020 * L, c.z);
+        out.push({ geo: cn, col: 0x3e3d4a });
+    }
+    for (const sx of [1, -1]) {   // 배지느러미 1쌍 — 뒤 아래. 없으면 원반이 뚝 끊긴다
+        const g = fcLoftGeo({   // 뒤 **아래**에 붙는다 — 위에 두면 흰 종이 깃발로 보인다(실측)
+            cellTop: FC_RAY.cellBot, cellBot: FC_RAY.cellBot, rows: 8, seg: 10,
+            zOf: (t) => (-0.29 - 0.155 * t) * L,
+            w: (t) => 0.085 * L * Math.pow(1 - t, 0.62),
+            top: () => 0.007 * L, bot: () => 0.006 * L,
+        });
+        for (const f of g) { f.geo.translate(sx * 0.098 * L, -0.042 * L, 0); out.push({ geo: f.geo, cell: FC_RAY.cellBot }); }
     }
     return out;
 }
 function fcSpecialParts(sp) {   // 개구리 다리·눈 · 장화 밑창 · 유리병 편지·코르크
     const out = [], L = sp.L, P = new THREE.Vector3(), N = new THREE.Vector3();
     for (const pt of sp.parts || []) {
-        if (pt.kind === 'frogeye') {
-            for (const sx of [1, -1]) {
-                const th = Math.acos(THREE.MathUtils.clamp(-pt.c, -1, 1)) * sx;
-                fcPoint(sp, pt.s, th, P); fcNormal(sp, pt.s, th, N);
-                const e = new THREE.SphereGeometry(pt.r * L, 14, 10);
-                e.scale(1, 0.92, 1);
-                e.translate(P.x + N.x * pt.r * L * 0.42, P.y + N.y * pt.r * L * 0.42, P.z + N.z * pt.r * L * 0.42);
-                out.push({ geo: e, patch: 15, sph: { x: P.x + N.x * pt.r * L * 0.42, y: P.y + N.y * pt.r * L * 0.42, z: P.z + N.z * pt.r * L * 0.42, r: pt.r * L, sx } });
-            }
-        } else if (pt.kind === 'frogleg') {
-            for (const sx of [1, -1]) {
-                for (const [s0, c0, knee, len, r0] of [[0.24, -0.52, 0.85, 0.155, 0.048], [0.76, -0.44, 1.60, 0.235, 0.062]]) {
-                    const th = Math.acos(THREE.MathUtils.clamp(-c0, -1, 1)) * sx;
-                    fcPoint(sp, s0, th, P);
-                    const pl = [];
-                    for (let k = 0; k <= 6; k++) {
-                        const t = k / 6, bend2 = Math.sin(t * Math.PI) * knee;
-                        pl.push(new THREE.Vector3(P.x + sx * len * L * (0.42 * t + 0.20 * bend2),
-                            P.y - len * L * (0.55 * t * t + 0.12 * bend2) - 0.02 * L,
-                            P.z + len * L * t * (s0 < 0.5 ? 0.42 - 0.9 * t : -0.55 + 0.30 * t)));
-                    }
-                    const cur = new THREE.CatmullRomCurve3(pl);
-                    const lg = new THREE.TubeGeometry(cur, 14, r0 * L, 7, false);
-                    const lp = lg.attributes.position, lu = lg.attributes.uv;
-                    for (let i = 0; i < lp.count; i++) {   // 뿌리에서 발목으로 가늘어진다 (일정 굵기면 파이프로 읽힌다)
-                        const t = lu.getX(i), c2 = cur.getPoint(t), k2 = 1 - 0.42 * t;
-                        lp.setXYZ(i, c2.x + (lp.getX(i) - c2.x) * k2, c2.y + (lp.getY(i) - c2.y) * k2, c2.z + (lp.getZ(i) - c2.z) * k2);
-                    }
-                    lg.computeVertexNormals();
-                    out.push({ geo: lg, col: 0x74a03e });
-                    const foot = new THREE.SphereGeometry(r0 * L * 1.6, 12, 8);   // 물갈퀴 발 — 납작 판
-                    foot.scale(1.35, 0.26, 2.1);
-                    foot.translate(pl[6].x + sx * 0.02 * L, pl[6].y - 0.01 * L, pl[6].z + (s0 < 0.5 ? -0.05 : -0.06) * L);
-                    out.push({ geo: foot, col: 0x86ae4c });
-                }
-            }
-        } else if (pt.kind === 'sole') {   // 밑창 — 척추를 따라 발바닥 아래에 깔린다(고정 좌표면 공중에 뜬다)
-            const pts = [];
-            for (let k2 = 0; k2 <= 6; k2++) {
-                const s0 = 0.52 + (k2 / 6) * 0.48;
-                fcPoint(sp, s0, 0, P);
-                pts.push(new THREE.Vector3(0, P.y - 0.022 * L, P.z));
-            }
-            const so = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 10, 0.062 * L, 4, false);
-            so.scale(1.9, 0.55, 1);
-            out.push({ geo: so, col: 0x2e2620 });
-            fcPoint(sp, 0.56, 0, P);
-            const hl = new THREE.BoxGeometry(0.22 * L, 0.075 * L, 0.16 * L);
-            hl.translate(0, P.y - 0.055 * L, P.z);
-            out.push({ geo: hl, col: 0x241e18 });
-        } else if (pt.kind === 'note') {   // 돌돌 말린 편지 — 병 안, 불투명
+        if (pt.kind === 'note') {   // 돌돌 말린 편지 — 병 안, 불투명
             const n = new THREE.CylinderGeometry(0.052 * L, 0.052 * L, 0.44 * L, 10);
             n.rotateX(Math.PI / 2); n.rotateY(0.22);
             n.translate(0, -0.01 * L, 0.02 * L);
@@ -25985,32 +25997,7 @@ function fcSpecialParts(sp) {   // 개구리 다리·눈 · 장화 밑창 · 유
 function fcExtra2(g, sp, H) {   // 특수 4종 무늬
     const { xOf, yOf, cOf, C, R } = H;
     const blob = (u, s, rw, rh, fill, rot) => { g.save(); g.beginPath(); g.ellipse(xOf(u), yOf(s), rw * C, rh * C, rot || 0, 0, Math.PI * 2); g.fillStyle = fill; g.fill(); g.restore(); };
-    if (sp.extra === 'frogskin') {   // 등 얼룩 + 등줄 + 배는 크림
-        g.fillStyle = 'rgba(250,246,210,0.86)';
-        g.fillRect(xOf(0), yOf(0.10), C * 0.15, yOf(1) - yOf(0.10));
-        g.fillRect(xOf(0.85), yOf(0.10), C * 0.15, yOf(1) - yOf(0.10));
-        for (let k = 0; k < 26; k++) {
-            const u = 0.24 + ((k * 7) % 13) / 13 * 0.52, s0 = 0.14 + ((k * 5) % 17) / 17 * 0.78;
-            blob(u, s0, 0.026 + (k % 3) * 0.012, 0.018 + (k % 2) * 0.010, `rgba(52,68,26,${0.32 + (k % 3) * 0.10})`, k * 0.8);
-        }
-        g.strokeStyle = 'rgba(226,238,170,0.60)'; g.lineWidth = 3.6;   // 등줄
-        g.beginPath(); g.moveTo(xOf(0.5), yOf(0.16)); g.lineTo(xOf(0.5), yOf(0.94)); g.stroke();
-        g.strokeStyle = 'rgba(48,40,26,0.70)'; g.lineWidth = 2.6;      // 입선 — 넓게 씩 웃는다
-        g.beginPath(); g.moveTo(xOf(0.80), yOf(0.075)); g.quadraticCurveTo(xOf(0.5), yOf(0.115), xOf(0.20), yOf(0.075)); g.stroke();
-        for (const u of [0.42, 0.58]) blob(u, 0.055, 0.010, 0.006, 'rgba(40,34,22,0.55)', 0);   // 콧구멍
-    } else if (sp.extra === 'leather') {   // 낡은 가죽 결 + 물때·이끼 + 통 입구 안쪽 어둠
-        for (let k = 0; k < 40; k++) {
-            const u = ((k * 5) % 19) / 19, s0 = ((k * 7) % 23) / 23;
-            blob(u, s0, 0.030 + (k % 4) * 0.014, 0.014 + (k % 3) * 0.008, `rgba(40,26,14,${0.10 + (k % 3) * 0.06})`, k * 1.3);
-        }
-        for (let k = 0; k < 14; k++) {   // 이끼·물때
-            const u = ((k * 3) % 11) / 11, s0 = 0.55 + ((k * 5) % 9) / 9 * 0.42;
-            blob(u, s0, 0.026, 0.016, `rgba(72,92,48,${0.16 + (k % 2) * 0.10})`, k);
-        }
-        g.strokeStyle = 'rgba(30,20,10,0.55)'; g.lineWidth = 4;        // 발목 접힘선
-        g.beginPath(); g.moveTo(xOf(0), yOf(0.42)); g.lineTo(xOf(1), yOf(0.42)); g.stroke();
-        g.fillStyle = 'rgba(18,12,7,0.92)'; g.fillRect(R.x, yOf(0), C, yOf(0.045) - yOf(0));   // 입구 안쪽 어둠
-    } else if (sp.extra === 'glasslabel') {   // 유리 하이라이트 + 반쯤 떨어진 라벨
+    if (sp.extra === 'glasslabel') {   // 유리 하이라이트 + 반쯤 떨어진 라벨
         for (const [u0, w, al] of [[0.315, 0.070, 0.98], [0.435, 0.030, 0.72], [0.125, 0.042, 0.58]]) {   // 정반사 하이라이트 3줄 — 유리는 밝은 띠로 읽힌다
             const hl = g.createLinearGradient(xOf(u0), 0, xOf(u0 + w), 0);
             hl.addColorStop(0, 'rgba(255,255,255,0)'); hl.addColorStop(0.5, `rgba(255,255,255,${al})`); hl.addColorStop(1, 'rgba(255,255,255,0)');
@@ -26028,6 +26015,391 @@ function fcExtra2(g, sp, H) {   // 특수 4종 무늬
         for (let k = 0; k < 3; k++) { const y = yOf(0.525) + k * (yOf(0.635) - yOf(0.525)) / 3; g.beginPath(); g.moveTo(xOf(0.218), y); g.lineTo(xOf(0.298), y); g.stroke(); }
         g.restore();
     }
+}
+// ---- 🥾 헌 장화 — 공업 제품이라 기계 문법(상자·원통)이 정답이다 ---------------------------
+// 유기물 튜브 빌더로 만들었더니 단면이 전 구간 원형·지름 일정해서 엘보 파이프가 됐다(실측).
+// 구김은 **실루엣이 흔들려야** 구겨져 보이므로 정점 변위(통), 발등 주름·흙은 텍스처(면 음영).
+// uv는 셀 12를 3밴드로 나눠 쓴다 — 통(위 44%) · 발(중 37%) · 밑창(아래 19%).
+const FC_BOOT = { ko: '헌 장화', cell: 12, L: 0.30 };
+const FB_A = 0.560, FB_B = 0.190;   // 밴드 경계(uv v) — 통은 v>FB_A, 발은 FB_B~FB_A, 밑창은 v<FB_B
+function fcBootShaft() {   // 통 — 테이퍼 원통 + 발목 아코디언 접힘 + 세로 구김 + 앞으로 처짐
+    const L = FC_BOOT.L, SEG = 24, RINGS = 18, y0 = 0.195, y1 = 0.795;
+    const ring = (t, j, kR) => {
+        const th = (j / SEG) * Math.PI * 2;
+        const rBase = (0.112 + 0.034 * Math.sin(Math.min(1, t * 2.4) * Math.PI * 0.5) - 0.014 * t) * L;   // 발목 좁고 종아리로 넓어진다
+        const acc = Math.exp(-t * 3.4) * 0.020 * L * Math.sin(t * 9.5);        // 접히는 자리가 정해져 있다(발목에서 강하고 위로 감쇠)
+        const crease = (0.013 * Math.sin(th * 3 + t * 1.5) + 0.0065 * Math.sin(th * 5 - t * 2.3)) * L * (0.35 + 0.65 * t);
+        const flare = t > 0.93 ? 1 + (t - 0.93) * 1.5 : 1;                      // 말린 커프
+        const r = (rBase + acc + crease) * flare * kR;
+        const cx = 0.030 * L * t * t, cz = -0.086 * L - 0.046 * L * Math.pow(t, 1.6);   // 뒤꿈치 위에 선다 + 뒤로 살짝 기운다
+        const rimWob = 0.018 * L * Math.pow(t, 5) * Math.sin(th * 2 + 0.6);     // 입구가 평평한 원이 아니다
+        return [cx + r * Math.sin(th) * (1 + 0.07 * t), (y0 + (y1 - y0) * t) * L + rimWob, cz + r * Math.cos(th) * (1 - 0.05 * t)];
+    };
+    const pos = [], uv = [], idx = [];
+    const push = (t, kR, flip) => {
+        const base = pos.length / 3;
+        for (let j = 0; j <= SEG; j++) { const p = ring(t, j, kR); pos.push(p[0], p[1], p[2]); uv.push(j / SEG, FB_A + (1 - FB_A) * t); }
+        return base;
+    };
+    for (let i = 0; i <= RINGS; i++) push(i / RINGS, 1);
+    for (let i = 0; i < RINGS; i++) for (let j = 0; j < SEG; j++) {
+        const a = i * (SEG + 1) + j, b = a + SEG + 1;
+        idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+    const outer = new THREE.BufferGeometry();
+    outer.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    outer.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    outer.setIndex(idx); outer.computeVertexNormals();
+    // 안쪽 벽 + 바닥 — 입구로 속이 보인다. uv는 **전용 어두운 패치**(셀 15)를 쓴다:
+    // 커프 uv를 그대로 쓰면 안쪽이 바깥과 같은 밝은 갈색이 되어 속이 안 파여 보인다(실측).
+    const ip = [], iu = [], ii = [], IN = 5;
+    const ipush = (t) => { const base = ip.length / 3; for (let j = 0; j <= SEG; j++) { const q = ring(t, j, 0.86); ip.push(q[0], q[1], q[2]); iu.push(j / SEG, t); } return base; };
+    for (let i = 0; i <= IN; i++) ipush(1 - (i / IN) * 0.20);
+    for (let i = 0; i < IN; i++) for (let j = 0; j < SEG; j++) {
+        const a = i * (SEG + 1) + j, b = a + SEG + 1;
+        ii.push(a, a + 1, b, b, a + 1, b + 1);
+    }
+    const cB = ip.length / 3, cc = ring(0.80, 0, 0);
+    ip.push(cc[0], cc[1], cc[2]); iu.push(0.5, 0.5);
+    const cR = ip.length / 3;
+    for (let j = 0; j <= SEG; j++) { const q = ring(0.80, j, 0.86); ip.push(q[0], q[1], q[2]); iu.push(j / SEG, 0.8); }
+    for (let j = 0; j < SEG; j++) ii.push(cB, cR + j, cR + j + 1);
+    const inner = new THREE.BufferGeometry();
+    inner.setAttribute('position', new THREE.Float32BufferAttribute(ip, 3));
+    inner.setAttribute('uv', new THREE.Float32BufferAttribute(iu, 2));
+    inner.setIndex(ii); inner.computeVertexNormals();
+    return { outer, inner };
+}
+// 발은 **직접 로프트**한다 — RoundedBoxGeometry는 non-indexed라 인덱스 있는 통과 병합이 실패하고(실측),
+// 균일한 둥근 상자로는 발볼·발끝 테이퍼·평평한 바닥이 안 나온다. 단면 = 슈퍼타원(둥근 사각).
+const FB_FOOT = [   // t, 반폭, 등높이, 배깊이, 중심y  (전부 L 비율. t=0 뒤꿈치 → 1 발끝)
+    [0.00, 0.098, 0.110, 0.108, 0.166], [0.14, 0.116, 0.112, 0.112, 0.166],
+    [0.34, 0.126, 0.104, 0.110, 0.164], [0.56, 0.128, 0.092, 0.106, 0.160],
+    [0.75, 0.120, 0.078, 0.098, 0.154], [0.89, 0.102, 0.062, 0.084, 0.146],
+    [0.965, 0.074, 0.044, 0.062, 0.138], [1.00, 0.034, 0.022, 0.030, 0.132],
+];
+function fcBootFoot() {
+    const L = FC_BOOT.L, SEG = 22, N = FB_FOOT.length;
+    const at = (t, c) => {   // 스테이션 사이 선형 — 발은 곡률이 완만해서 에르미트까지 필요 없다
+        let i = 0;
+        while (i < N - 2 && t > FB_FOOT[i + 1][0]) i++;
+        const a = FB_FOOT[i], b = FB_FOOT[i + 1], k = (t - a[0]) / Math.max(1e-6, b[0] - a[0]);
+        return (a[c] + (b[c] - a[c]) * k) * L;
+    };
+    const pos = [], uv = [], idx = [], ROWS = 26;
+    for (let i = 0; i <= ROWS; i++) {
+        const t = i / ROWS, hw = at(t, 1), ht = at(t, 2), hb = at(t, 3), cy = at(t, 4);
+        const z = (-0.200 + 0.620 * t) * L;
+        for (let j = 0; j <= SEG; j++) {
+            const ph = (j / SEG) * Math.PI * 2, cs = Math.cos(ph), sn = Math.sin(ph);
+            const n = 3.4;   // 슈퍼타원 지수 — 클수록 사각에 가깝다(고무장화 단면)
+            const ex = Math.sign(cs) * Math.pow(Math.abs(cs), 2 / n), ey = Math.sign(sn) * Math.pow(Math.abs(sn), 2 / n);
+            const wob = 1 + 0.022 * Math.sin(ph * 3 + t * 4.2) * (1 - t * 0.5);   // 살짝 구겨진 갑피
+            pos.push(hw * ex * wob, cy + (ey > 0 ? ht : hb) * ey * (ey > 0 ? wob : 1), z);
+            uv.push(j / SEG, FB_B + (FB_A - FB_B) * t);
+        }
+    }
+    for (let i = 0; i < ROWS; i++) for (let j = 0; j < SEG; j++) {
+        const a = i * (SEG + 1) + j, b = a + SEG + 1;
+        idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+    for (const [t, flip] of [[0, true], [1, false]]) {   // 뒤꿈치·발끝 마감
+        const base = pos.length / 3;
+        pos.push(0, at(t, 4), (-0.200 + 0.620 * t) * L);
+        uv.push(0.5, FB_B + (FB_A - FB_B) * t);
+        for (let j = 0; j <= SEG; j++) {
+            const ph = (j / SEG) * Math.PI * 2, cs = Math.cos(ph), sn = Math.sin(ph), n = 3.4;
+            const ex = Math.sign(cs) * Math.pow(Math.abs(cs), 2 / n), ey = Math.sign(sn) * Math.pow(Math.abs(sn), 2 / n);
+            pos.push(at(t, 1) * ex, at(t, 4) + (ey > 0 ? at(t, 2) : at(t, 3)) * ey, (-0.200 + 0.620 * t) * L);
+            uv.push(j / SEG, FB_B + (FB_A - FB_B) * t);
+        }
+        for (let j = 0; j < SEG; j++) idx.push(base, base + 1 + j + (flip ? 1 : 0), base + 1 + j + (flip ? 0 : 1));
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+}
+function fcBootSole() {   // 밑창도 **발 아웃라인을 따라** 로프트한다 — 상자로 두면 모서리가 튀어나와 스케이트보드가 된다(실측)
+    const L = FC_BOOT.L, SEG = 22, ROWS = 24;
+    const at = (t, c) => {
+        let i = 0;
+        while (i < FB_FOOT.length - 2 && t > FB_FOOT[i + 1][0]) i++;
+        const a = FB_FOOT[i], b = FB_FOOT[i + 1], k = (t - a[0]) / Math.max(1e-6, b[0] - a[0]);
+        return (a[c] + (b[c] - a[c]) * k) * L;
+    };
+    const pos = [], uv = [], idx = [];
+    const half = (t) => at(t, 1) * (1.075 - 0.05 * t) + 0.004 * L;            // 발보다 살짝 넓게 (창이 밖으로 물린다)
+    const top = (t) => (0.058 + 0.030 * Math.max(0, 1 - t / 0.30)) * L;       // 뒤쪽이 두껍다 = 굽
+    const ROW = (t, j) => {
+        const ph = (j / SEG) * Math.PI * 2, cs = Math.cos(ph), sn = Math.sin(ph), n = 7.0;   // 거의 직각 단면
+        const ex = Math.sign(cs) * Math.pow(Math.abs(cs), 2 / n), ey = Math.sign(sn) * Math.pow(Math.abs(sn), 2 / n);
+        const hh = top(t) / 2;
+        return [half(t) * ex, hh + hh * ey * 0.98, (-0.205 + 0.625 * t) * L];
+    };
+    for (let i = 0; i <= ROWS; i++) for (let j = 0; j <= SEG; j++) { const p = ROW(i / ROWS, j); pos.push(p[0], p[1], p[2]); uv.push(j / SEG, (i / ROWS) * FB_B); }
+    for (let i = 0; i < ROWS; i++) for (let j = 0; j < SEG; j++) {
+        const a = i * (SEG + 1) + j, b = a + SEG + 1;
+        idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+    for (const [t, flip] of [[0, true], [1, false]]) {
+        const base = pos.length / 3;
+        pos.push(0, top(t) / 2, (-0.205 + 0.625 * t) * L); uv.push(0.5, t * FB_B);
+        for (let j = 0; j <= SEG; j++) { const p = ROW(t, j); pos.push(p[0], p[1], p[2]); uv.push(j / SEG, t * FB_B); }
+        for (let j = 0; j < SEG; j++) idx.push(base, base + 1 + j + (flip ? 1 : 0), base + 1 + j + (flip ? 0 : 1));
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+}
+function fcBootParts() {
+    return [{ geo: fcBootFoot() }, { geo: fcBootSole() }];
+}
+function fcPaintBoot(g) {   // 흙·물때·긁힘 — "헌" 장화의 정체성은 형태보다 이쪽이다
+    const R = faRect(FC_BOOT.cell), C = FA_CELL;
+    const X = (u) => R.x + u * C, Y = (v) => R.y + (1 - v) * C;
+    const rnd = (n) => ((Math.sin(n * 127.1) * 43758.5453) % 1 + 1) % 1;
+    g.save();
+    g.beginPath(); g.rect(R.x, R.y, C, C); g.clip();
+    // ── 통 밴드: 고무 몸색 + 세로 구김 음영 + 아래로 갈수록 진흙
+    const sh = g.createLinearGradient(R.x, 0, R.x + C, 0);
+    sh.addColorStop(0, '#4a3220'); sh.addColorStop(0.30, '#7d5636'); sh.addColorStop(0.52, '#8e6540');
+    sh.addColorStop(0.74, '#6b482c'); sh.addColorStop(1, '#412c1c');
+    g.fillStyle = sh; g.fillRect(R.x, R.y, C, C);   // ⚠️ 밴드별로 칠하면 안 칠한 밴드가 흰 고무가 된다(실측) — 셀 전체 먼저
+    for (let k = 0; k < 9; k++) {   // 세로 구김 — 정점 변위와 같은 주기(3·5)로 맞춰 그림자가 실루엣과 붙는다
+        const u = (k / 9), dark = k % 2 === 0;
+        const gr = g.createLinearGradient(X(u) - C * 0.02, 0, X(u) + C * 0.02, 0);
+        gr.addColorStop(0, 'rgba(30,18,8,0)'); gr.addColorStop(0.5, dark ? 'rgba(28,17,8,0.30)' : 'rgba(210,178,140,0.16)'); gr.addColorStop(1, 'rgba(30,18,8,0)');
+        g.fillStyle = gr; g.fillRect(X(u) - C * 0.02, Y(1), C * 0.04, Y(FB_A) - Y(1));
+    }
+    for (let k = 0; k < 5; k++) {   // 발목 아코디언 접힘선
+        const v = FB_A + 0.012 + k * 0.030;
+        g.beginPath();
+        for (let j = 0; j <= 20; j++) { const u = j / 20, y = Y(v) + C * 0.006 * Math.sin(u * Math.PI * 6 + k); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
+        g.strokeStyle = `rgba(26,16,8,${0.34 - k * 0.05})`; g.lineWidth = 3.2 - k * 0.4; g.stroke();
+    }
+    // ── 진흙선: 통 아래 + 발 전체. 윗변이 물결이고 위로 튀김이 흩어진다
+    for (const [v0, v1] of [[FB_A, FB_A + 0.14], [FB_B, FB_A]]) {
+        const mg = g.createLinearGradient(0, Y(v1), 0, Y(v0));
+        mg.addColorStop(0, 'rgba(52,38,20,0)'); mg.addColorStop(0.40, 'rgba(56,41,22,0.58)'); mg.addColorStop(1, 'rgba(38,28,15,0.80)');
+        g.fillStyle = mg; g.fillRect(R.x, Y(v1), C, Y(v0) - Y(v1));
+    }
+    g.beginPath();   // 진흙 윗변 — 직선이면 도색으로 읽힌다
+    for (let j = 0; j <= 26; j++) { const u = j / 26, y = Y(FB_A + 0.052 + 0.028 * Math.sin(u * Math.PI * 5.2) + 0.012 * Math.sin(u * Math.PI * 11)); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
+    g.lineTo(X(1), Y(FB_B)); g.lineTo(X(0), Y(FB_B)); g.closePath();
+    g.fillStyle = 'rgba(46,33,18,0.62)'; g.fill();
+    for (let k = 0; k < 78; k++) {   // 튀김
+        const u = rnd(k + 1), v = FB_A + 0.06 + rnd(k + 90) * 0.26, rr = C * (0.005 + rnd(k + 40) * 0.011);
+        g.beginPath(); g.ellipse(X(u), Y(v), rr, rr * (0.6 + rnd(k + 7) * 0.6), rnd(k) * 3, 0, Math.PI * 2);
+        g.fillStyle = `rgba(42,31,17,${0.30 + rnd(k + 13) * 0.38})`; g.fill();
+    }
+    for (let k = 0; k < 5; k++) {   // 물때 조수선
+        const v = FB_A + 0.16 + k * 0.055;
+        g.beginPath();
+        for (let j = 0; j <= 22; j++) { const u = j / 22, y = Y(v + 0.008 * Math.sin(u * Math.PI * 3.4 + k * 2)); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
+        g.strokeStyle = `rgba(122,104,74,${0.16 + (k % 2) * 0.08})`; g.lineWidth = 2.4; g.stroke();
+    }
+    for (let k = 0; k < 26; k++) {   // 이끼·초록 물때 (접힌 골에 낀다)
+        const u = rnd(k + 200), v = FB_B + rnd(k + 300) * 0.46, rr = C * (0.012 + rnd(k + 60) * 0.020);
+        g.beginPath(); g.ellipse(X(u), Y(v), rr, rr * 0.62, rnd(k + 5) * 3, 0, Math.PI * 2);
+        g.fillStyle = `rgba(72,92,42,${0.18 + rnd(k + 31) * 0.22})`; g.fill();
+    }
+    for (let k = 0; k < 12; k++) {   // 긁힘 — 밝게 벗겨진 자리
+        const u = rnd(k + 500), v = FB_B + rnd(k + 600) * 0.60;
+        g.save(); g.translate(X(u), Y(v)); g.rotate(rnd(k + 12) * 3);
+        g.beginPath(); g.ellipse(0, 0, C * (0.010 + rnd(k + 70) * 0.020), C * 0.005, 0, 0, Math.PI * 2);
+        g.fillStyle = `rgba(196,166,128,${0.18 + rnd(k + 21) * 0.16})`; g.fill(); g.restore();
+    }
+    g.strokeStyle = 'rgba(232,206,168,0.30)'; g.lineWidth = 2.6;   // 갑피–밑창 이음선(밝게)
+    g.beginPath(); g.moveTo(R.x, Y(FB_B + 0.004)); g.lineTo(R.x + C, Y(FB_B + 0.004)); g.stroke();
+    // ── 밑창 밴드: 검은 고무 + 트레드
+    g.fillStyle = '#221c16'; g.fillRect(R.x, Y(FB_B), C, Y(0) - Y(FB_B));
+    for (let k = 0; k < 11; k++) {
+        const u = (k + 0.5) / 11;
+        g.fillStyle = `rgba(96,86,74,${0.20 + (k % 2) * 0.10})`;
+        g.fillRect(X(u) - C * 0.022, Y(FB_B) + C * 0.012, C * 0.044, (Y(0) - Y(FB_B)) - C * 0.024);
+    }
+    g.fillStyle = 'rgba(58,44,26,0.72)';   // 밑창에 눌러붙은 흙 — 트레드 골을 메운다
+    for (let k = 0; k < 30; k++) { const rr = C * (0.010 + rnd(k + 800) * 0.022); g.beginPath(); g.arc(X(rnd(k + 700)), Y(rnd(k + 710) * FB_B), rr, rr * 0.7, Math.PI * 2); g.fill(); }
+    const cake = g.createLinearGradient(0, Y(FB_B + 0.055), 0, Y(FB_B - 0.01));   // 갑피 아래쪽에 두껍게 말라붙은 흙
+    cake.addColorStop(0, 'rgba(46,34,18,0)'); cake.addColorStop(1, 'rgba(44,32,16,0.72)');
+    g.fillStyle = cake; g.fillRect(R.x, Y(FB_B + 0.055), C, Y(FB_B - 0.01) - Y(FB_B + 0.055));
+    g.restore();
+}
+function buildBootCartoon() {
+    const A = fcAtlas(), R = faRect(FC_BOOT.cell), k = 1 / FA_COLS;
+    if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
+    const sh = fcBootShaft();
+    const parts = [{ geo: sh.outer }, ...fcBootParts(), { geo: sh.inner, dark: true }];
+    for (const pt of parts) {
+        const uv = pt.geo.attributes.uv, n = uv.count, col = new Float32Array(n * 3);
+        const P = pt.geo.attributes.position, nr = pt.geo.attributes.normal;
+        for (let i = 0; i < n; i++) {
+            const up = nr ? Math.max(0, nr.getY(i)) : 0;   // 정점색 = 형태 음영만: 위를 본 면이 밝고 안쪽이 어둡다
+            const t = 0.86 + 0.16 * up - 0.10 * Math.max(0, -(nr ? nr.getY(i) : 0));
+            col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = pt.dark ? 0.30 : t;
+            if (pt.dark) { const DR = faRect(15); uv.setXY(i, DR.u0 + k * (0.55 + uv.getX(i) * 0.40), DR.v1 - k * (0.55 + (1 - uv.getY(i)) * 0.40)); }
+            else uv.setXY(i, R.u0 + uv.getX(i) * k, R.v1 - (1 - uv.getY(i)) * k);
+        }
+        pt.geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    }
+    const grp = new THREE.Group();
+    const m = new THREE.Mesh(mergeGeometries(parts.map((p) => p.geo), false), fcMat);
+    m.castShadow = true; m.receiveShadow = true;
+    grp.add(m);
+    return grp;
+}
+// ---- 🐸 개구리 — 회전체로 만들 수 없는 골격. 공용 로프트(위 아웃라인 + 높이 필드) + 관절 사지 ----
+// 튜브 빌더로 만들었더니 위에서 잎사귀(최대폭이 몸 중앙, 코·엉덩이 뾰족)였다. 실제는 **둥근 삼각형** —
+// 뭉툭한 코, 최대폭이 눈·어깨(앞에서 30%), 엉덩이는 넓고 둥글다.
+// 셀 9 하나를 상하로 나눠 쓴다: v 0.5~1 = 등(초록 얼룩) · v 0~0.5 = 배(크림).
+const FC_FROG = { ko: '개구리', cell: 9, L: 0.115, PEAK: 0.30 };
+const fcFrogW = (t) => {
+    const K = FC_FROG.PEAK;
+    const f = t < K ? Math.pow(t / K, 0.58) : Math.pow(1 - (t - K) / (1 - K), 0.72) * 0.90 + 0.10;
+    return FC_FROG.L * (0.075 + 0.285 * f);
+};
+function fcFrogSpec() {
+    const L = FC_FROG.L;
+    return {
+        cellTop: FC_FROG.cell, cellBot: FC_FROG.cell, vTop: [0.5, 1], vBot: [0, 0.5], rows: 26, seg: 24,
+        zOf: (t) => (0.5 - t) * L,
+        w: fcFrogW,
+        // ⚠️ 높이 필드는 |u|=1에서 0으로 떨어져야 한다 — 안 그러면 수직 테두리를 가진 슬래브(옆에서 보트)가 된다
+        top: (t, u) => 0.268 * L * Math.pow(Math.sin(Math.PI * Math.pow(THREE.MathUtils.clamp(t, 0, 1), 0.60)), 0.82) * fcUf(u, 2.8, 0.40)
+            + fcBump(t, u, 0.150, 0.56, 0.105, 0.230, 0.052 * L)   // ⚠️ 융기가 등 정점보다 높으면 정면에서 쌍봉+가운데 골이 된다      // 눈두덩 — 몸에서 이어진 융기(얹은 구슬 금지)
+            + fcBump(t, u, 0.055, 0.0, 0.055, 0.40, 0.014 * L),        // 코끝 살짝 들림
+        bot: (t, u) => 0.058 * L * Math.pow(Math.sin(Math.PI * Math.pow(THREE.MathUtils.clamp(t, 0, 1), 0.68)), 0.45) * fcUf(u, 2.8, 0.40),
+    };
+}
+// 관절 사지 — 뒷다리는 **무릎이 등선 위로** 접혀야 개구리로 읽힌다(수직 말뚝 금지)
+const FC_FROG_LIMBS = [
+    { pts: [[0.295, 0.010, 0.150], [0.415, -0.048, 0.205], [0.360, -0.040, 0.292]], r: [0.052, 0.040, 0.030],
+      foot: { at: [0.360, -0.046, 0.300], dir: [0.28, 0, 1], len: 0.115, wide: 0.075, toes: 4 } },
+    { pts: [[0.300, 0.022, -0.155], [0.470, 0.070, -0.255], [0.455, -0.020, -0.055], [0.395, -0.038, 0.060]], r: [0.072, 0.058, 0.041, 0.031],
+      foot: { at: [0.395, -0.044, 0.070], dir: [0.20, 0, 1], len: 0.155, wide: 0.105, toes: 5 } },
+];
+function fcTaperTube(pts, radii, seg) {   // 관절 폴리라인 → 관절별 반지름 테이퍼 튜브
+    const cur = new THREE.CatmullRomCurve3(pts);
+    const g = new THREE.TubeGeometry(cur, Math.max(7, pts.length * 4), 1, seg || 6, false);
+    const P = g.attributes.position, U = g.attributes.uv;
+    const rAt = (t) => {
+        const f = t * (radii.length - 1), i = Math.min(radii.length - 2, Math.floor(f)), k = f - i;
+        return radii[i] + (radii[i + 1] - radii[i]) * (k * k * (3 - 2 * k));
+    };
+    for (let i = 0; i < P.count; i++) {
+        const t = U.getX(i), c = cur.getPoint(t), r = rAt(t);
+        P.setXYZ(i, c.x + (P.getX(i) - c.x) * r, c.y + (P.getY(i) - c.y) * r, c.z + (P.getZ(i) - c.z) * r);
+    }
+    g.computeVertexNormals();
+    return g;
+}
+function fcFrogFoot(f, L, sx) {   // 물갈퀴 발 = 납작 패드 + 부챗살 발가락. 발가락이 없으면 개구리 발로 안 읽힌다
+    const out = [], base = new THREE.Vector3(f.at[0] * sx * L, f.at[1] * L, f.at[2] * L);
+    const pad = new THREE.SphereGeometry(1, 10, 6);
+    pad.scale(f.wide * L, 0.020 * L, f.len * L * 0.55);
+    pad.translate(base.x, base.y, base.z + f.len * L * 0.28);
+    out.push(pad);
+    for (let i = 0; i < f.toes; i++) {
+        const a = (i / (f.toes - 1) - 0.5) * 1.24;            // 부챗살
+        const dx = Math.sin(a) * f.wide * 1.35, dz = Math.cos(a);
+        const tip = new THREE.Vector3(base.x + sx * dx * L, base.y + 0.004 * L, base.z + dz * f.len * L);
+        const mid = new THREE.Vector3((base.x + tip.x) / 2, base.y + 0.010 * L, (base.z + tip.z) / 2);
+        out.push(fcTaperTube([base.clone(), mid, tip], [0.020 * L, 0.015 * L, 0.009 * L], 4));
+        const web = new THREE.SphereGeometry(1, 6, 4);        // 물갈퀴 — 발가락 사이 막
+        web.scale(0.030 * L, 0.008 * L, f.len * L * 0.40);
+        web.translate((base.x + tip.x) / 2, base.y, (base.z + tip.z) / 2);
+        out.push(web);
+    }
+    return out;
+}
+function fcFrogParts() {
+    const L = FC_FROG.L, out = [];
+    for (const sx of [1, -1]) for (const lb of FC_FROG_LIMBS) {
+        out.push({ geo: fcTaperTube(lb.pts.map((q) => new THREE.Vector3(q[0] * sx * L, q[1] * L, q[2] * L)), lb.r.map((r) => r * L), 7) });
+        for (const g of fcFrogFoot(lb.foot, L, sx)) out.push({ geo: g });
+    }
+    return out;
+}
+function fcPaintFrog(g) {   // 셀 9 — 위 절반 등(초록 얼룩·등줄·눈), 아래 절반 배(크림). uv = (u/2+0.5, 1−t) → 등은 v 0.5~1
+    const R = faRect(FC_FROG.cell), C = FA_CELL;
+    const rnd = (n) => ((Math.sin(n * 91.7) * 47251.3) % 1 + 1) % 1;
+    const BX = (u) => R.x + (u * 0.5 + 0.5) * C;                      // 좌우 비율 u(−1~1) → 캔버스 x
+    const BY = (t, top) => R.y + (top ? t * 0.5 : 0.5 + t * 0.5) * C;  // 앞뒤 t → 캔버스 y (등/배 밴드)
+    g.save();
+    g.beginPath(); g.rect(R.x, R.y, C, C); g.clip();
+    const bk = g.createLinearGradient(R.x, 0, R.x + C, 0);   // 등 — 가운데가 밝고 옆구리가 짙다
+    bk.addColorStop(0, '#4c6b28'); bk.addColorStop(0.22, '#6d9438'); bk.addColorStop(0.5, '#93b855');
+    bk.addColorStop(0.78, '#6d9438'); bk.addColorStop(1, '#4c6b28');
+    g.fillStyle = bk; g.fillRect(R.x, R.y, C, C * 0.5);
+    const bl = g.createLinearGradient(R.x, 0, R.x + C, 0);   // 배 — 크림
+    bl.addColorStop(0, '#cfd79a'); bl.addColorStop(0.5, '#f4f0cc'); bl.addColorStop(1, '#cfd79a');
+    g.fillStyle = bl; g.fillRect(R.x, R.y + C * 0.5, C, C * 0.5);
+    for (let k = 0; k < 30; k++) {   // 등 얼룩
+        const u = rnd(k + 1) * 1.7 - 0.85, t = 0.12 + rnd(k + 50) * 0.82;
+        g.save(); g.translate(BX(u), BY(t, true)); g.rotate(rnd(k + 9) * 3);
+        g.beginPath(); g.ellipse(0, 0, C * (0.022 + rnd(k + 20) * 0.020), C * (0.011 + rnd(k + 30) * 0.010), 0, 0, Math.PI * 2);
+        g.fillStyle = `rgba(48,66,24,${0.34 + rnd(k + 40) * 0.22})`; g.fill(); g.restore();
+    }
+    g.strokeStyle = 'rgba(222,236,164,0.52)'; g.lineWidth = 5;   // 등줄
+    g.beginPath(); g.moveTo(BX(0), BY(0.14, true)); g.lineTo(BX(0), BY(0.95, true)); g.stroke();
+    for (const sx of [-1, 1]) {   // 눈 — 융기 자리(t 0.150 · |u| 0.58)에 칠한다. 금색 홍채 + **가로 동공**
+        const ex = BX(sx * 0.58), ey = BY(0.150, true), rr = C * 0.052;
+        const gr = g.createRadialGradient(ex, ey, rr * 0.12, ex, ey, rr);
+        gr.addColorStop(0, '#f2c63c'); gr.addColorStop(0.58, '#d29c1c'); gr.addColorStop(0.86, '#8a600e'); gr.addColorStop(1, 'rgba(48,40,12,0.9)');
+        g.beginPath(); g.arc(ex, ey, rr, 0, Math.PI * 2); g.fillStyle = gr; g.fill();
+        g.beginPath(); g.ellipse(ex, ey, rr * 0.80, rr * 0.24, 0, 0, Math.PI * 2); g.fillStyle = '#12100a'; g.fill();
+        g.beginPath(); g.arc(ex - sx * rr * 0.32, ey - rr * 0.38, rr * 0.15, 0, Math.PI * 2); g.fillStyle = 'rgba(252,255,246,0.94)'; g.fill();
+        g.beginPath(); g.arc(ex, ey, rr * 1.10, Math.PI * 1.05, Math.PI * 1.95); g.strokeStyle = 'rgba(52,72,26,0.55)'; g.lineWidth = 4; g.stroke();   // 눈꺼풀 능선
+        g.beginPath(); g.ellipse(BX(sx * 0.30), BY(0.055, true), C * 0.008, C * 0.005, 0, 0, Math.PI * 2);
+        g.fillStyle = 'rgba(40,34,18,0.55)'; g.fill();   // 콧구멍
+    }
+    g.strokeStyle = 'rgba(48,40,24,0.62)'; g.lineWidth = 4;   // 입선 — 넓게 씩 웃는다(등·배 경계를 따라)
+    g.beginPath();
+    for (let j = 0; j <= 20; j++) { const u = -0.9 + (j / 20) * 1.8, y = BY(0.052 + 0.030 * (1 - Math.abs(u)), true); j ? g.lineTo(BX(u), y) : g.moveTo(BX(u), y); }
+    g.stroke();
+    for (let k = 0; k < 14; k++) {   // 배 점무늬
+        const u = rnd(k + 300) * 1.5 - 0.75, t = 0.20 + rnd(k + 400) * 0.66;
+        g.beginPath(); g.arc(BX(u), BY(t, false), C * (0.008 + rnd(k + 70) * 0.008), 0, Math.PI * 2);
+        g.fillStyle = `rgba(150,150,96,${0.22 + rnd(k + 80) * 0.18})`; g.fill();
+    }
+    g.restore();
+}
+function buildFrogCartoon() {
+    const A = fcAtlas(), k = 1 / FA_COLS, R = faRect(FC_FROG.cell);
+    if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
+    const parts = [];
+    for (const f of fcLoftGeo(fcFrogSpec())) {
+        const uv = f.geo.attributes.uv, n = uv.count, col = new Float32Array(n * 3);
+        const vr = f.top ? [0.5, 1] : [0, 0.5];
+        for (let i = 0; i < n; i++) {
+            uv.setXY(i, R.u0 + uv.getX(i) * k, R.v1 - k * (1 - (vr[0] + (1 - uv.getY(i)) * (vr[1] - vr[0]))));
+            col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = 1;
+        }
+        f.geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+        parts.push(f.geo);
+    }
+    for (const pt of fcFrogParts()) {   // 사지는 등 초록 한 점을 샘플하고 음영은 정점색이 준다
+        const P = pt.geo.attributes.position, nr = pt.geo.attributes.normal;
+        const uvArr = new Float32Array(P.count * 2), col = new Float32Array(P.count * 3);
+        for (let i = 0; i < P.count; i++) {
+            uvArr[i * 2] = R.u0 + k * 0.22; uvArr[i * 2 + 1] = R.v1 - k * 0.32;
+            const up = nr ? Math.max(0, nr.getY(i)) : 0.5;
+            const s = 0.86 + 0.20 * up;
+            col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = s;
+        }
+        pt.geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvArr, 2));
+        pt.geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+        parts.push(pt.geo);
+    }
+    const grp = new THREE.Group();
+    const m = new THREE.Mesh(mergeGeometries(parts, false), fcMat);
+    m.castShadow = true; m.receiveShadow = true;
+    grp.add(m);
+    return grp;
 }
 // ---- 조립 ---------------------------------------------------------------------------------
 let fcMat = null, fcGlowMat = null, fcGlassMat = null;
@@ -26103,16 +26475,22 @@ function buildRayCartoon() {   // 가오리 — 원반이라 독립. 등/배 셀
     const A = fcAtlas(), k = 1 / FA_COLS, WR = faRect(15);
     if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
     const parts = [];
-    for (const f of fcRayGeo()) {
+    for (const f of fcLoftGeo(fcRaySpec())) {
         const R = faRect(f.cell), uv = f.geo.attributes.uv, n = uv.count, col = new Float32Array(n * 3);
         for (let i = 0; i < n; i++) { uv.setXY(i, R.u0 + uv.getX(i) * k, R.v1 - (1 - uv.getY(i)) * k); col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = 1; }
         f.geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
         parts.push(f.geo);
     }
     for (const pt of fcRayParts()) {
-        const P = pt.geo.attributes.position, uvArr = new Float32Array(P.count * 2), col = new Float32Array(P.count * 3), c = new THREE.Color(pt.col);
-        for (let i = 0; i < P.count; i++) { uvArr[i * 2] = WR.u0 + k * 0.5; uvArr[i * 2 + 1] = WR.v1 - k * 0.5; col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
-        pt.geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvArr, 2));
+        const P = pt.geo.attributes.position, col = new Float32Array(P.count * 3), c = new THREE.Color(pt.col || 0xffffff);
+        if (pt.cell !== undefined) {   // 배지느러미는 배 셀을 그대로 쓴다(단색이면 원반과 톤이 어긋난다)
+            const CR = faRect(pt.cell), uv = pt.geo.attributes.uv;
+            for (let i = 0; i < P.count; i++) { uv.setXY(i, CR.u0 + uv.getX(i) * k, CR.v1 - (1 - uv.getY(i)) * k); col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = 1; }
+        } else {
+            const uvArr = new Float32Array(P.count * 2);
+            for (let i = 0; i < P.count; i++) { uvArr[i * 2] = WR.u0 + k * 0.5; uvArr[i * 2 + 1] = WR.v1 - k * 0.5; col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+            pt.geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvArr, 2));
+        }
         pt.geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
         parts.push(pt.geo);
     }
@@ -26152,7 +26530,8 @@ if (location.search.includes('sealab')) {
     const ROWS = [
         ['crucian', 'goldfish', 'koi', 'mackerel'].map(cartoonOf),
         ['salmon', 'smelt', 'catfish', 'puffer', 'angler'].map(cartoonOf),
-        [...['frog', 'boot', 'bottle'].map(cartoonOf), { key: 'c-ray', ko: '가오리', obj: buildRayCartoon() }],
+        [cartoonOf('bottle'), { key: 'c-boot', ko: '헌 장화', obj: buildBootCartoon() },
+            { key: 'c-frog', ko: '개구리', obj: buildFrogCartoon() }, { key: 'c-ray', ko: '가오리', obj: buildRayCartoon() }],
         [{ key: 'crucian-now', ko: '붕어 현재', obj: makeFishMesh(FISH_SPECIES[0], 1), side: true }],
         ['crucian', 'goldfish', 'koi', 'frog', 'catfish', 'smelt'].map(fishOf),
         ['mackerel', 'puffer', 'ray', 'salmon', 'angler'].map(fishOf),
