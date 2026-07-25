@@ -4428,7 +4428,16 @@ function ingKo(nd) {
     return ING_KO[nd.id] || nd.id;
 }
 const sumVals = (o) => Object.values(o).reduce((a, b) => a + b, 0);
+// 🔀 재료 별칭 — 같은 아이템이 두 창고에 살면(텃밭 토마토 vs 덩굴 토마토) 레시피의 캐논 창고에
+// 더해 목록의 창고도 인정. 조회=합산, 차감=캐논 먼저(바구니 과일은 '아무 과일' 레시피·선물 몫이
+// 있어 아껴둔다). 목록의 창고는 별칭 키가 아닐 것 — 재귀 금지.
+const ING_ALIASES = { 'pantry:tomato': [['fruit', 'tomato']] };
 function ingredientCount(src, id) {
+    const extra = ING_ALIASES[`${src}:${id}`];
+    const base = ingredientCountOne(src, id);
+    return extra ? extra.reduce((a, u) => a + ingredientCountOne(u[0], u[1]), base) : base;
+}
+function ingredientCountOne(src, id) {
     if (src === 'staple') return Infinity;
     if (src === 'fruit') return id === '*' ? sumVals(basketCounts) : (basketCounts[id] || 0);
     if (src === 'pantry') return id === '*' ? sumVals(pantryCounts) : (pantryCounts[id] || 0);
@@ -4646,7 +4655,13 @@ function lineConsume(key, counts, id, save) {   // 카운트 계보 공용 차�
     return use;
 }
 let lastCookFruit = null;   // 🥤 과일주스 색: 방금 조리에 실제로 쓴 과일 id (없으면 기본 주황)
-function consumeUnit(src, id) {   // 계보 무관 1단위 차감 — 정규 조리·실험 공용
+function consumeUnit(src, id) {   // 계보 무관 1단위 차감 — 정규 조리·실험 공용 (별칭 폴백 포함)
+    const got = consumeUnitOne(src, id);
+    if (got) return got;
+    for (const u of ING_ALIASES[`${src}:${id}`] || []) { const g = consumeUnitOne(u[0], u[1]); if (g) return g; }
+    return false;
+}
+function consumeUnitOne(src, id) {
     if (src === 'staple') return true;
     if (src === 'fruit') { const u = lineConsume('fruit', basketCounts, id, () => saveBasket()); if (u) lastCookFruit = u; return u; }
     if (src === 'pantry') return lineConsume('pantry', pantryCounts, id, () => savePantry());
