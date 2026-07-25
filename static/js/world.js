@@ -13985,9 +13985,6 @@ function doInteract() {
         const gf = nearestGroundFruit(0.85);
         if (gf) { pickGroundFruit(possessed, gf); return; }
     }
-    {   // 🔥 모닥불 곁 ⌘ = 구이 메뉴
-        if (bonfirePr && Math.hypot(possessed.mover.position.x - bonfirePr.x, possessed.mover.position.z - bonfirePr.z) < 1.5) { toggleGrillPanel(); return; }
-    }
     {   // 🍳 주방 곁 ⌘ = 레시피 패널
         const pr = PROPS.find((q) => q.type === 'kitchen');
         if (pr && Math.hypot(possessed.mover.position.x - pr.x, possessed.mover.position.z - pr.z) < 1.3) { toggleKitchenPanel(); return; }
@@ -14008,6 +14005,11 @@ function doInteract() {
     {   // 🐚 조개 줍기 — 곁에 있으면 ⌘
         const sh = nearestShell(0.85);
         if (sh) { pickShell(sh); return; }
+    }
+    {   // 🔥 모닥불 곁 ⌘ = 구이 메뉴 — 발밑 줍기(낙과·조개)·수확보다 뒤, 반경은 나무·피아노급.
+        // 1.5는 모래섬에서 조개(0.85)·야자(1.43m 거리)까지 선점했다(실측 리포트) — startGrill 자체
+        // 검증은 1.6이라 여기만 좁혀도 굽기 흐름은 그대로.
+        if (bonfirePr && Math.hypot(possessed.mover.position.x - bonfirePr.x, possessed.mover.position.z - bonfirePr.z) < 1.05) { toggleGrillPanel(); return; }
     }
     if (handHold) { releaseHandHold(); return; }
     if (tryGrabHand()) return;
