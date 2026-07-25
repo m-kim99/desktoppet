@@ -23517,7 +23517,13 @@ function fishConditionActive(sp) {
 function speciesPool(water) {
     return FISH_SPECIES.filter((s) => s.water === water && s.rarity > 0 && fishConditionActive(s));
 }
-// 카툰 조형으로 교체된 종. 개구리·헌 장화·가오리·아귀는 아직 구 빌더 — 조형 재작업 대기.
+// 잡은 물고기처럼 **매번 새로 만드는 임시 메시**는 scene.remove만으론 지오메트리가 VRAM에 남는다.
+// 재질(fcMat·fcGlassMat·fcGlowMat)은 공용이라 절대 dispose하지 않는다.
+function disposeTempMesh(o) {
+    if (!o) return;
+    o.traverse((c) => { if (c.isMesh && c.geometry) c.geometry.dispose(); });
+}
+// 어종 13종 전부 카툰 조형이다.
 // gameK: 구 빌더는 종에 무관하게 z 0.45~0.55였다(크기 차이가 sizeK에만 있었다). 카툰은 **종별 실제 크기**를
 // 반영하되 실측 cm를 그대로 쓰면 빙어(11cm)가 점이 되고 연어(62cm)가 펫보다 커진다 →
 //   목표 체장 = 0.44 × (실측 cm / 25)^0.45      (25cm = 8종 중위값 · 지수 0.45 = 완화)
@@ -23540,176 +23546,7 @@ function makeFishMesh(sp, sizeK) {
         w.scale.setScalar(sizeK * gk);
         return w;
     }
-    const g = new THREE.Group();
-    if (sp.body === 'boot') {
-        const shaft = new THREE.Mesh(bakeGrad(new RoundedBoxGeometry(0.07, 0.13, 0.09, 2, 0.02), sp.back, sp.belly), gradMat);
-        shaft.position.y = 0.05;
-        g.add(shaft);
-        const toe = new THREE.Mesh(bakeGrad(new RoundedBoxGeometry(0.07, 0.05, 0.09, 2, 0.02), sp.back, sp.belly), gradMat);
-        toe.position.set(0, 0.005, 0.07);
-        g.add(toe);
-    } else if (sp.body === 'bottle') {
-        const body = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.035, 0.04, 0.14, 10), sp.back, sp.belly), gradMatDS);
-        body.position.y = 0.07;
-        g.add(body);
-        const neck = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.016, 0.022, 0.05, 8), sp.back, sp.belly), gradMatDS);
-        neck.position.y = 0.16;
-        g.add(neck);
-        const cork = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.017, 0.017, 0.022, 8), 0xc9a06a, 0x9a7448), gradMat);
-        cork.position.y = 0.19;
-        g.add(cork);
-        const note = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.09, 6), M(0xfdf3df));   // 돌돌 말린 편지
-        note.position.y = 0.08;
-        note.rotation.z = 0.18;
-        g.add(note);
-    } else if (sp.body === 'flat') {   // 가오리 — 납작 다이아 + 꼬리
-        const disc = new THREE.Mesh(bakeGrad(new THREE.SphereGeometry(0.09, 10, 8), sp.back, sp.belly), gradMat);
-        disc.scale.set(1.5, 0.28, 1.1);
-        g.add(disc);
-        for (const s of [-1, 1]) {   // 날개 끝 살짝 들림
-            const tipW = new THREE.Mesh(bakeGrad(new THREE.ConeGeometry(0.035, 0.09, 6), sp.back, sp.belly), gradMat);
-            tipW.rotation.z = s * 1.35;
-            tipW.position.set(s * 0.15, 0.01, 0);
-            g.add(tipW);
-        }
-        const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.011, 0.16, 6), gradMat);
-        bakeGrad(tail.geometry, sp.back, sp.back);
-        tail.rotation.x = Math.PI / 2 + 0.25;
-        tail.position.set(0, 0.01, -0.15);
-        g.add(tail);
-    } else if (sp.body === 'frog') {   // 개구리 — 둥근 몸 + 눈두덩 + 뒷다리 스텁
-        const body = new THREE.Mesh(bakeGrad(new THREE.SphereGeometry(0.07, 12, 9), sp.back, sp.belly), gradMat);
-        body.scale.set(1.1, 0.8, 1.2);
-        g.add(body);
-        for (const s of [-1, 1]) {
-            const eyeBump = new THREE.Mesh(bakeGrad(new THREE.SphereGeometry(0.024, 8, 6), sp.back, sp.back), gradMat);
-            eyeBump.position.set(s * 0.035, 0.055, 0.05);
-            g.add(eyeBump);
-            const eye = new THREE.Mesh(new THREE.SphereGeometry(0.011, 8, 6), M(0x2b2b33));
-            eye.position.set(s * 0.035, 0.065, 0.062);
-            g.add(eye);
-            const leg = new THREE.Mesh(bakeGrad(new THREE.SphereGeometry(0.03, 8, 6), sp.back, sp.belly), gradMat);
-            leg.scale.set(0.8, 0.5, 1.4);
-            leg.position.set(s * 0.07, -0.03, -0.05);
-            g.add(leg);
-        }
-    } else {   // oval/sleek/round — 비대칭 유선형 + 포크 꼬리 + 지느러미 세트 (스쿨피시급 문법)
-        const L = sp.body === 'sleek' ? 0.24 : sp.body === 'round' ? 0.15 : 0.19;   // 반길이
-        const W = sp.body === 'sleek' ? 0.05 : sp.body === 'round' ? 0.085 : 0.062; // 최대 반폭
-        const prof = [];
-        for (let i = 0; i <= 9; i++) {
-            const t = i / 9;
-            const u = Math.pow(t, 0.82);   // 배가 앞쪽 1/3에 오는 비대칭 — 대칭 방추는 어뢰처럼 보인다
-            prof.push(new THREE.Vector2(Math.max(0.001, Math.sin(u * Math.PI) ** (sp.body === 'round' ? 0.72 : 1.1) * W), (t - 0.5) * 2 * L));
-        }
-        const bodyGeo = new THREE.LatheGeometry(prof, 14);
-        bodyGeo.rotateX(-Math.PI / 2);   // 머리 +z (프로파일 t=0이 꼬리 쪽이 되게 뒤집는다)
-        const body = new THREE.Mesh(bakeGrad(bodyGeo, sp.back, sp.belly), gradMat);
-        body.scale.y = 0.85;
-        g.add(body);
-        const finB = (geo) => new THREE.Mesh(bakeGrad(geo, sp.back, sp.belly), gradMat);
-        // 포크 꼬리 2엽 — 금붕어는 길게 나풀, 라운드는 작은 부채
-        const lobeL = sp.id === 'goldfish' ? 0.115 : sp.body === 'round' ? 0.06 : 0.085;
-        const lobeSpread = sp.id === 'goldfish' ? 0.62 : 0.5;
-        for (const ty of [1, -1]) {
-            const lobe = new THREE.ConeGeometry(sp.id === 'goldfish' ? 0.034 : 0.028, lobeL, 5);
-            lobe.scale(0.24, 1, 1);
-            lobe.rotateX(-Math.PI / 2 - ty * lobeSpread);
-            lobe.translate(0, ty * 0.012, -L - lobeL * 0.38);
-            g.add(finB(lobe));
-        }
-        // 등지느러미 — 뒤로 누운 낫
-        const dorsal = new THREE.ConeGeometry(0.032, sp.body === 'sleek' ? 0.06 : 0.05, 5);
-        dorsal.scale(0.22, 1, 1);
-        dorsal.rotateX(-0.5);   // 낫 — 꼬리 쪽으로 눕는다
-        dorsal.translate(0, W * 0.82 + 0.02, -L * 0.05);
-        g.add(finB(dorsal));
-        // 가슴지느러미 한 쌍 + (라운드 제외) 배지느러미
-        for (const side of [1, -1]) {
-            const pec = new THREE.ConeGeometry(0.02, 0.05, 5);
-            pec.scale(0.24, 1, 1);
-            pec.rotateZ(side * 1.15);
-            pec.rotateY(side * 0.5);
-            pec.translate(side * W * 0.72, -0.008, L * 0.3);
-            g.add(finB(pec));
-        }
-        if (sp.body !== 'round') {
-            const anal = new THREE.ConeGeometry(0.02, 0.04, 5);
-            anal.scale(0.22, 1, 1);
-            anal.rotateX(Math.PI + 0.5);
-            anal.translate(0, -W * 0.7 - 0.01, -L * 0.35);
-            g.add(finB(anal));
-        }
-        if (sp.id === 'mackerel') {   // 고등어 시그니처 — 꼬리 앞 핀렛 3개
-            for (let k = 0; k < 3; k++) {
-                const finlet = new THREE.ConeGeometry(0.01, 0.02, 4);
-                finlet.scale(0.3, 1, 1);
-                finlet.rotateX(-0.6);
-                finlet.translate(0, W * 0.55 + 0.008, -L * (0.55 + k * 0.16));
-                g.add(finB(finlet));
-            }
-        }
-        if (sp.id === 'salmon') {   // 연어 기름지느러미 — 꼬리 앞 작은 혹
-            const adi = new THREE.SphereGeometry(0.014, 6, 5);
-            adi.scale(0.5, 1, 0.7);
-            adi.translate(0, W * 0.68 + 0.008, -L * 0.62);
-            g.add(finB(adi));
-        }
-        if (sp.id === 'koi') {   // 잉어 — 등 반점 + 짧은 수염 한 쌍
-            for (const [px2, pz2, pr2] of [[0.02, 0.28, 0.032], [-0.025, -0.12, 0.026]]) {
-                const patch = new THREE.SphereGeometry(pr2, 8, 6);
-                patch.scale(1.15, 0.32, 1.3);
-                patch.translate(px2, W * 0.78, L * pz2);
-                g.add(new THREE.Mesh(bakeGrad(patch, sp.belly, sp.belly, { curve: 1 }), gradMat));
-            }
-            for (const sx of [-1, 1]) {
-                const barb = new THREE.CylinderGeometry(0.0025, 0.004, 0.035, 5);
-                barb.rotateX(1.1);
-                barb.rotateY(sx * 0.5);
-                barb.translate(sx * W * 0.4, -0.012, L * 0.92);
-                g.add(new THREE.Mesh(bakeGrad(barb, sp.belly, sp.belly, { curve: 1 }), gradMat));
-            }
-        }
-        if (sp.body === 'round' && !sp.lure) {   // 복어 가시
-            for (let i = 0; i < 9; i++) {
-                const a = (i / 9) * Math.PI * 2;
-                const spike = new THREE.Mesh(bakeGrad(new THREE.ConeGeometry(0.012, 0.035, 5), sp.belly, sp.back), gradMat);
-                spike.position.set(Math.cos(a) * W * 0.8, Math.sin(a) * W * 0.66, -0.01);
-                spike.rotation.z = -a - Math.PI / 2;
-                g.add(spike);
-            }
-        }
-        if (sp.lure) {   // 아귀 초롱 — 밤바다 어종답게 은은히 빛난다 (lampGlobeMat: 밤에 발광)
-            const stalk = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.006, 0.008, 0.09, 6), sp.back, sp.back), gradMat);
-            stalk.position.set(0, W * 0.9 + 0.03, L * 0.5);
-            stalk.rotation.x = 0.55;
-            g.add(stalk);
-            const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 6), lampGlobeMat);
-            bulb.position.set(0, W * 0.9 + 0.068, L * 0.5 + 0.045);
-            g.add(bulb);
-        }
-        if (sp.whiskers) {   // 메기 수염 두 쌍
-            for (const [sx, ang] of [[-1, 0.5], [1, -0.5], [-1, 1.1], [1, -1.1]]) {
-                const wk = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.003, 0.005, 0.09, 5), sp.belly, sp.belly), gradMat);
-                wk.position.set(sx * W * 0.5, -0.005, L * 0.85);
-                wk.rotation.z = ang;
-                wk.rotation.x = 0.9;
-                g.add(wk);
-            }
-        }
-        const eyeM = M(0x24262b);
-        const glintM = M(0xf6f8fa);
-        for (const s of [-1, 1]) {
-            const eye = new THREE.Mesh(new THREE.SphereGeometry(0.013, 8, 6), eyeM);
-            eye.position.set(s * W * 0.62, 0.018, L * 0.6);
-            g.add(eye);
-            const glint = new THREE.Mesh(new THREE.SphereGeometry(0.0045, 6, 5), glintM);
-            glint.position.set(s * W * 0.7, 0.026, L * 0.63);
-            g.add(glint);
-        }
-    }
-    g.scale.setScalar(sizeK);
-    return g;
+    throw new Error('makeFishMesh: 카툰 조형이 없는 종 — FC_GAME/FC_CUSTOM에 등록해야 한다: ' + sp.id);
 }
 // 🧊 아이스박스 재고 — { speciesId: n }. 조종 낚시 성공 시 "보관"을 고르면 쌓인다 (요리 재료).
 // AI 어획은 도감 규칙과 같은 원칙으로 제외 — 재고도 주인 몫만.
@@ -24011,14 +23848,14 @@ function equipFishing() {
 function unequipFishing() {
     if (!fishing) return;
     hideGear(fishing);   // 리그는 캐시 — 씬에서 빼지 않고 숨긴다 (재장비 시 재생성 없음)
-    if (fishing.fishMesh) scene.remove(fishing.fishMesh);
+    if (fishing.fishMesh) { scene.remove(fishing.fishMesh); disposeTempMesh(fishing.fishMesh); }
     fishing = null;   // 팔다리는 엔티티가 매 프레임 원위치 — 복원 코드 불필요 (앉기와 동일 원리)
 }
 function resetFishingInstance(f, quiet) {
     f.bobber.visible = false;
     f.line.visible = false;
     f.shadow.visible = false;
-    if (f.fishMesh) { scene.remove(f.fishMesh); f.fishMesh = null; }
+    if (f.fishMesh) { scene.remove(f.fishMesh); disposeTempMesh(f.fishMesh); f.fishMesh = null; }
     f.state = 'idle';
     f.t = 0;
     if (!quiet) playBuffer(swishBuf, { vol: 0.2, rate: 1.6, filterFreq: 1400 });
@@ -24102,7 +23939,7 @@ function startAiFishing(p) {
 function endAiFishing() {
     if (!aiFishing) return;
     const f = aiFishing, p = f.p;
-    if (f.fishMesh) { scene.remove(f.fishMesh); f.fishMesh = null; }
+    if (f.fishMesh) { scene.remove(f.fishMesh); disposeTempMesh(f.fishMesh); f.fishMesh = null; }
     hideGear(f);
     p.mover.position.y = world.groundHeightAt(p.mover.position.x, p.mover.position.z);   // 잔여 부양 정리 (endDip 문법)
     aiFishing = null;
@@ -24462,6 +24299,7 @@ function updateFishingInstance(f, delta) {
             f.fishMesh.rotation.y += delta * 1.5;
             if (f.t > 1.9) {
                 scene.remove(f.fishMesh);
+                disposeTempMesh(f.fishMesh);
                 f.fishMesh = null;
                 f.shown = false;
                 resetFishingInstance(f, true);
