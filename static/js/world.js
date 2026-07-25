@@ -26632,15 +26632,24 @@ function fcOysterFlesh() {
     for (const up of [true, false]) {
         const sg = up ? 1 : -1;
         const g = fcValveGeo({
-            R: S.R * 0.70, arc: S.arc * 0.88, ribs: 3, umbo: S.umbo * 0.7, wmin: 0.34, wpow: 1.10,
+            // ⚠️ 컵 안쪽은 반구가 아니라 **골(trough)**이다: 가장 깊은 곳이 lateral 0.61R이고 힌지
+            // 쪽(0.30R)과 림 쪽(1.0R)에서 둘 다 h=0으로 올라온다. 그래서 큰 덩어리를 가운데 놓으면
+            // 힌지 쪽 벽을 뚫고 나와 옆에서 **날카로운 V 홈과 검은 틈**으로 보였다(실측).
+            // 0.70R·−0.28R → 0.58R·−0.12R: 골에서 가장 넓고 얕은 구간에 얹힌다.
+            R: S.R * 0.58, arc: S.arc * 0.88, ribs: 3, umbo: S.umbo * 0.7, wmin: 0.34, wpow: 1.10,
             flip: !up, nr: 9, na: 32, thick: 0,
             edge: (q) => (1 - 0.12 * Math.pow(Math.abs(q), 2.2)) * wob(q),
-            h: (r, q) => sg * S.R * (up ? 0.36 : 0.15) * Math.pow(Math.sin(Math.PI * r), 0.66)
+            // ⚠️ 두 짝이 **힌지 끝에서 만나야** 닫힌 덩어리가 된다. 렌즈 h는 r=0.055(첫 행)에서
+            // sin(π·0.055)^0.66 = 0.31, 즉 이미 부풀어 있어서 위·아래가 0.19R 떨어져 있었다 →
+            // DoubleSide로 그 틈이 들여다보여 **속살에 구멍이 뚫린 것처럼** 보였다(사용자 리포트).
+            // (r−0.055)/0.18 램프로 첫 행을 정확히 0으로 눌러 두 짝을 봉합한다.
+            h: (r, q) => sg * S.R * (up ? 0.30 : 0.10) * Math.pow(Math.sin(Math.PI * r), 0.66)
+                * Math.min(1, (r - 0.055) / 0.18)
                 * (1 - 0.18 * q * q) * (1 + 0.10 * Math.sin(r * 6.1 + q * 2.0)),
         });
         // ⚠️ 렌즈는 y=0(껍데기 림 높이) 대칭으로 나온다 → 그대로 두면 속살이 컵 **위로 솟는다**
-        // (실측: 컵에 얹힌 달걀). 컵 안쪽으로 내려 앉힌다 — 윗면이 림에 겨우 닿는 깊이.
-        g.translate(0, -S.R * 0.28, 0);
+        // (실측: 컵에 얹힌 달걀). 컵 안쪽으로 내려 앉힌다 — 너무 내리면 골 바닥을 뚫는다.
+        g.translate(0, -S.R * 0.12, 0);
         out.push(g);
     }
     return out;
@@ -26674,12 +26683,23 @@ function fcPaintSea(g) {
                 g.strokeStyle = col; g.lineWidth = w; g.stroke();
             }
         }
-        for (let k = 0; k < 5; k++) {   // 옅은 보라·초록 얼룩 — 굴 껍데기의 색 반점 (성기게)
-            const u0 = fcHash(k + 30), v0 = fcHash(k + 44);
-            g.save(); g.translate(X(u0), Y(v0)); g.rotate(fcHash(k + 8) * 3);
-            g.beginPath(); g.ellipse(0, 0, C * (0.05 + fcHash(k + 19) * 0.05), C * 0.026, 0, 0, Math.PI * 2);
-            g.fillStyle = k % 2 ? `rgba(126,110,148,${0.12 + fcHash(k + 3) * 0.10})` : `rgba(118,140,112,${0.10 + fcHash(k + 5) * 0.10})`;
+        // 짙은 무늬 — 실물 굴 껍데기는 자갈색·회자색 얼룩과 방사 줄무늬가 섞여 있다(사용자 지정).
+        // ⚠️ 알파 0.10~0.22로는 백악질에 묻혀 안 보였다. 얼룩은 **진하게·성기게**(만화식 규율).
+        // ⚠️ 방사 줄무늬(힌지→자유변)를 넣었더니 가로 박편과 교차해 **타탄체크**가 됐다(실측).
+        // 굴 껍데기는 방사 무늬가 아니라 **층 결을 따라 번진 얼룩**으로 읽힌다 → 축을 하나로 통일한다.
+        // ① 짙은 얼룩 7개 — 층 방향(가로)으로 길게. 여러 개를 겹쳐 경계가 흐린 번짐을 만든다.
+        for (let k = 0; k < 7; k++) {
+            const u0 = fcHash(k + 30), v0 = 0.10 + fcHash(k + 44) * 0.82;
+            g.save(); g.translate(X(u0), Y(v0)); g.rotate((fcHash(k + 8) - 0.5) * 0.34);
+            g.beginPath(); g.ellipse(0, 0, C * (0.09 + fcHash(k + 19) * 0.09), C * (0.024 + fcHash(k + 23) * 0.020), 0, 0, Math.PI * 2);
+            g.fillStyle = k % 2 ? `rgba(78,64,86,${0.26 + fcHash(k + 3) * 0.14})` : `rgba(92,80,66,${0.24 + fcHash(k + 5) * 0.14})`;
             g.fill(); g.restore();
+        }
+        for (let k = 0; k < 4; k++) {   // ② 아주 짙은 반점 — 굴 껍데기의 검은 점 (작고 성기게)
+            const u0 = fcHash(k + 88), v0 = 0.20 + fcHash(k + 92) * 0.62;
+            g.save(); g.translate(X(u0), Y(v0)); g.rotate((fcHash(k + 77) - 0.5) * 0.3);
+            g.beginPath(); g.ellipse(0, 0, C * (0.034 + fcHash(k + 95) * 0.022), C * 0.010, 0, 0, Math.PI * 2);
+            g.fillStyle = `rgba(52,44,50,${0.30 + fcHash(k + 99) * 0.14})`; g.fill(); g.restore();
         }
     });
     cell(FC_SEA.oyster.cellIn, (R, X, Y) => {   // 안쪽면 — 매끈한 자개 + 근육 자국
@@ -26696,13 +26716,24 @@ function fcPaintSea(g) {
         const gr = g.createLinearGradient(0, R.y, 0, R.y + C);
         gr.addColorStop(0, '#fdf3dd'); gr.addColorStop(0.55, '#f6e6c6'); gr.addColorStop(1, '#e9d3ab');
         g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
-        // 외투막(mantle) 주름 — 자유변 = 셀 아래쪽. 회갈색 띠 + 그 안쪽 물결 한 줄.
-        const man = g.createLinearGradient(0, Y(0.22), 0, Y(0));
-        man.addColorStop(0, 'rgba(158,132,104,0)'); man.addColorStop(1, 'rgba(146,118,92,0.62)');
-        g.fillStyle = man; g.fillRect(R.x, Y(0.22), C, Y(0) - Y(0.22));
+        // 외투막(mantle) — 굴 속살의 **검은 테두리**가 이 종의 알아보는 표식이다(사용자 지정).
+        // 자유변(= 셀 아래쪽)이 3D에서 속살 덩어리의 둘레다. 위·아래 렌즈가 같은 uv를 쓰므로
+        // 이 띠 하나가 적도를 한 바퀴 감는 검은 테가 된다.
+        // ⚠️ 회갈색 0.62로는 '그늘'로 읽혀서 테두리가 안 보였다 → 숯빛까지 내리고 폭을 좁힌다.
+        // ⚠️ **uv 폭 ≠ 3D 폭이다.** 렌즈에서 v 0~0.26은 얇은 테가 아니라 넓은 고리(반지름 0.74~1.0)라,
+        // 0.26 폭에 숯빛을 깔았더니 속살 절반이 검은 치마가 되어 오히려 구멍처럼 보였다(실측).
+        // 반지름 비는 (0.34 + 0.66·r^1.10)이므로 v 0~0.08 ≈ 반지름 0.94~1.0 = 진짜 테두리 폭이다.
+        const man = g.createLinearGradient(0, Y(0.14), 0, Y(0));
+        man.addColorStop(0, 'rgba(46,38,36,0)'); man.addColorStop(0.42, 'rgba(44,36,34,0.46)');
+        man.addColorStop(0.70, 'rgba(30,25,24,0.90)'); man.addColorStop(1, 'rgba(24,20,19,0.94)');
+        g.fillStyle = man; g.fillRect(R.x, Y(0.14), C, Y(0) - Y(0.14));
+        // 프릴 — 외투막은 매끈한 띠가 아니라 물결지는 주름이다. 안쪽 경계를 흔들어 준다.
         g.beginPath();
-        for (let j = 0; j <= 30; j++) { const u = j / 30, y = Y(0.19 + 0.028 * Math.sin(u * 7.2)); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
-        g.strokeStyle = 'rgba(170,142,112,0.44)'; g.lineWidth = 6; g.stroke();
+        for (let j = 0; j <= 40; j++) { const u = j / 40, y = Y(0.098 + 0.020 * Math.sin(u * 8.4) + 0.010 * Math.sin(u * 17.1 + 1.0)); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
+        g.strokeStyle = 'rgba(38,31,30,0.62)'; g.lineWidth = 6; g.lineCap = 'round'; g.stroke();
+        g.beginPath();   // 프릴 바로 위 얇은 밝은 선 — 검은 테가 '떠 보이지' 않게 받쳐 준다
+        for (let j = 0; j <= 40; j++) { const u = j / 40, y = Y(0.150 + 0.020 * Math.sin(u * 8.4)); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
+        g.strokeStyle = 'rgba(255,246,224,0.50)'; g.lineWidth = 4; g.stroke();
         const wet = g.createRadialGradient(X(0.40), Y(0.66), 0, X(0.40), Y(0.66), C * 0.20);   // 젖은 광택 (드로우 안 늘리려고 텍스처로)
         wet.addColorStop(0, 'rgba(255,255,250,0.62)'); wet.addColorStop(1, 'rgba(255,255,250,0)');
         g.fillStyle = wet; g.fillRect(R.x, R.y, C, C);
