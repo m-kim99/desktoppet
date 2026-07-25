@@ -16705,7 +16705,7 @@ function jetPoints(count, tex, size, len, spread, upDir, speedLo, speedHi, { rin
 function makeRocket() {
     const g = new THREE.Group();
     g.rotation.order = 'YXZ';   // heading(Y) 먼저, pitch(X)는 기수 방향으로
-    const grad = [], red = [], metal = [], dark = [], gloss = [];   // gloss=클리어코트(노즈콘·단열 밴드) — +1 draw
+    const grad = [], red = [], metal = [], dark = [];
     // Extrude(핀)는 논인덱스·Lathe/Torus는 인덱스 — 혼합 병합은 null을 뱉는다 (버킷 3계명)
     const mergeSafe = (arr) => mergeGeometries(arr.map((q) => (q.index ? q.toNonIndexed() : q)), false);
     // 스웹 핀 3장 + 착륙 발 (핀이 다리를 겸하는 틴틴 문법 — 스포츠카 실루엣 압출 문법)
@@ -16821,15 +16821,7 @@ function makeRocket() {
         new THREE.Vector2(0.245, 1.235), new THREE.Vector2(0.22, 1.30),
         new THREE.Vector2(0.155, 1.42), new THREE.Vector2(0.075, 1.52), new THREE.Vector2(0.0, 1.585),
     ];
-    gloss.push(bakeGrad(new THREE.LatheGeometry(nosePts, 20), 0xe8735f, 0xa8443a, { curve: 1 }));   // D. 노즈콘 = 클리어코트 광택(전부 매트면 평평하다)
-    // ⚠️ 단열 밴드에 gradMatFoil(metalness 0.92)을 쓰면 어두운 RoomEnvironment만 반사해 **검은 띠**가
-    // 된다(실측). 간식 파우치처럼 작고 구겨진 면엔 맞지만 로켓의 넓은 원통엔 못 쓴다 → 광택 버킷(metalness 0).
-    gloss.push(bakeGrad(new THREE.CylinderGeometry(0.286, 0.298, 0.15, 20).translate(0, 0.845, 0), 0xfdfefe, 0xccd4dc, { curve: 1.1 }));
-    gloss.push(bakeGrad(new THREE.CylinderGeometry(0.253, 0.253, 0.05, 20).translate(0, 1.29, 0), 0xfbfdfe, 0xc8d0d8, { curve: 1.1 }));
-    for (let i = 0; i < 24; i++) {   // 단열재 주름 — 밋밋한 원통이 플라스틱 링으로 읽히는 걸 끊는다
-        const a3 = (i / 24) * Math.PI * 2;
-        gloss.push(bakeGrad(new THREE.BoxGeometry(0.014, 0.15, 0.016).rotateY(-a3).translate(Math.cos(a3) * 0.297, 0.845, Math.sin(a3) * 0.297), 0xe6ecf2, 0xb4bec8, { curve: 1 }));
-    }
+    grad.push(bakeGrad(new THREE.LatheGeometry(nosePts, 20), 0xe06a58, 0xb04a3c, { curve: 1 }));   // 매트 유지 — 클리어코트를 씌우면 반사가 붉은색을 씻어낸다(사용자 리포트)
     for (let i = 0; i < 4; i++) {   // E. RCS 스러스터 4 (십자) — 자세 제어가 있다는 신호
         const a2 = i * Math.PI / 2 + 0.79, cs2 = Math.cos(a2), sn2 = Math.sin(a2);
         metal.push(new THREE.BoxGeometry(0.05, 0.05, 0.045).rotateY(-a2).translate(cs2 * 0.226, 1.325, sn2 * 0.226));
@@ -16852,7 +16844,7 @@ function makeRocket() {
         glass.translate(0, py, pz + (pz > 0 ? 0.004 : -0.004));
         dark.push(glass);
     }
-    for (const [arr, mat] of [[grad, gradMat], [red, M(0xd05a4a)], [metal, M(0x5a5f66)], [dark, M(0x2c241d)], [gloss, gradMatGloss]]) {
+    for (const [arr, mat] of [[grad, gradMat], [red, M(0xd05a4a)], [metal, M(0x5a5f66)], [dark, M(0x2c241d)]]) {
         const merged = mergeSafe(arr);
         if (merged) g.add(new THREE.Mesh(merged, mat));
     }
