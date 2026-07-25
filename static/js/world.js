@@ -9634,7 +9634,6 @@ if (statsOn) window.__worldDev = {
         return out;
     },
     seabedAt: (x, z) => +seabedHeight(x, z).toFixed(2),
-    callFriend: () => startPhoneCall(),   // 📞 친구 부르기 (E2E)
     subState: () => ({
         mode: SUB.mode, x: +SUB.x.toFixed(1), y: +SUB.y.toFixed(2), z: +SUB.z.toFixed(1),
         ride: subRide ? { isAI: subRide.isAI, manual: subRide.manual, friend: !!subRide.friend, u: +(subRide.u || 0).toFixed(3), gap: subRide.friend ? +Math.hypot(subRide.p.mover.position.x - subRide.friend.mover.position.x, subRide.p.mover.position.z - subRide.friend.mover.position.z).toFixed(2) : null } : null,
@@ -14876,6 +14875,7 @@ function startPhoneCall() {
     const p = possessed;
     if (!p || phoneCall) return;
     if (carDrive || (boatRide && boatRide.driver === possessed) || planeRide || balloonRide || ferryRide) { showToast('📞 탈것에서 내린 뒤에 걸어요'); return; }
+    if (p.poiWalk || (rocketRide && !rocketRide.empty && (rocketRide.p === p || rocketRide.friend === p))) { showToast('🛰️ 우주에선 전화가 안 터져요 — 지상에서 불러요'); return; }
     const friend = pets.find((q) => q !== p);
     if (!friend) { showToast('👥 부를 친구가 없어요'); return; }
     if (fishing && fishing.state !== 'idle') cancelFishing(true);
@@ -14913,6 +14913,25 @@ function yankFriendFree(friend) {   // 뭘 하든 데려온다 — 잠·침대·
         if (ferryRide.p === friend) { ferryRide.p = ferryRide.friend; ferryRide.friend = null; if (!ferryRide.p) ferryRide = null; }
     }
     friend.swimming = false;
+    if (aiRocketWalk && aiRocketWalk.p === friend) aiRocketWalk = null;
+    if (rocketHop && rocketHop.q === friend) rocketHop = null;
+    if (rocketRide && !rocketRide.empty && (rocketRide.p === friend || rocketRide.friend === friend)) {
+        // 🚀 비행 좌석에서 빼낸다 — 남는 승객이 없으면 빈 여정 완주 (하이재킹 빼앗김 문법)
+        if (rocketRide.friend === friend) rocketRide.friend = null;
+        else { rocketRide.p = rocketRide.friend; rocketRide.friend = null; }
+        if (!rocketRide.p) { rocketRide.empty = true; rocketRide.isAI = true; }
+    }
+    if (friend.poiWalk) {   // 🛰️ 우주 산책 청산 (보드 문법: 구면 자세까지) — 클램프가 도로 정거장에 붙잡아 "불러도 안 오던" 원인
+        friend.poiWalk = null;
+        friend.moonYaw = 0; friend.moonH = 0; friend.moonJumpV = undefined; friend.moonDir = null;
+        friend.mover.rotation.set(0, friend.mover.rotation.y, 0);
+        if (!pets.some((q) => q.poiWalk) && !rocketRide && (ROCKET.mode === 'moonland' || ROCKET.mode === 'dock') && ROCKET.padK >= 0.99) {
+            // 마지막 산책자가 소환됐다 — 빈 별똥호도 알아서 귀항 (POI에 로켓이 좌초되지 않게)
+            rocketRide = { p: null, friend: null, t: 0, zg: 0, isAI: true, empty: true, som: [{ cd: 9, t: 9 }, { cd: 13, t: 9 }] };
+            ROCKET.padDir = -1; ROCKET.padDone = false; ROCKET.aiEvaT = 0;
+            logWorldEvent('빈 별똥호가 혼자 귀환길에 올랐다 🚀');
+        }
+    }
     friend.mover.rotation.x = 0;
     friend.mover.rotation.z = 0;
     releaseAI(friend);
@@ -14945,6 +14964,7 @@ function updatePhoneCall(delta) {
     }
     if (c.t >= 3.3) {   // 통화 끝 — 절친 소환 + 손잡기
         const friend = c.friend;
+        const fromSpace = !!friend.poiWalk || !!(rocketRide && !rocketRide.empty && (rocketRide.p === friend || rocketRide.friend === friend));
         cancelPhoneCall();
         yankFriendFree(friend);
         const h = m.rotation.y;
@@ -14965,6 +14985,9 @@ function updatePhoneCall(delta) {
             playBuffer(splashBuf, { vol: 0.4, rate: 1.1, filterFreq: 2200 });
             showToast('📞 통화 끝 — 절친이 퐁당 뛰어들어 곁으로 내려와요!');
             logWorldEvent(`${petKo(friend)}가 전화를 받고 퐁당 뛰어들어 ${petKo(p)} 곁으로 헤엄쳐 내려왔다 🤿`);
+        } else if (fromSpace) {
+            showToast('📞 통화 끝 — 절친이 별똥호 편으로 부리나케 돌아와 손을 잡았어요!');
+            logWorldEvent(`${petKo(friend)}가 전화를 받고 우주에서 한달음에 돌아와 ${petKo(p)}의 손을 잡았다 🛰️`);
         } else {
             showToast('📞 통화 끝 — 절친이 포르르 달려와 손을 잡았어요!');
             logWorldEvent(`${petKo(friend)}가 전화를 받자마자 포르르 달려와 ${petKo(p)}의 손을 잡았다`);
@@ -14975,8 +14998,10 @@ function teleportToFriend() {
     const p = possessed;
     if (!p) return;
     if (carDrive || boatRide || planeRide || balloonRide || ferryRide) { showToast('📍 탈것에서 내린 뒤에 가요'); return; }
+    if (p.poiWalk || (rocketRide && !rocketRide.empty && (rocketRide.p === p || rocketRide.friend === p))) { showToast('🛰️ 우주에선 별똥호로 돌아가요 — 로켓 곁 ⌘'); return; }
     const friend = pets.find((q) => q !== p);
     if (!friend) { showToast('👥 갈 친구가 없어요'); return; }
+    if (friend.poiWalk) { showToast(`${friend.poiWalk.emoji} 친구는 ${friend.poiWalk.ko}에 있어요 — 별똥호를 타고 가요!`); return; }
     if (fishing && fishing.state !== 'idle') cancelFishing(true);
     cancelPhoneCall();
     if (handHold) releaseHandHold();
