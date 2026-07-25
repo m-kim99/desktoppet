@@ -2577,7 +2577,9 @@ function makeBonfire(pr) {
 // 메시 하나가 곧 드로우 하나다(움직일 수 있는 타입이라 월드 베이크에 안 들어간다).
 function makeIcebox() {
     const g = new THREE.Group();
-    const cream = M(0xf2f7f4), teal = M(0x3f6672), iceM = M(0xe8f8ff);
+    const cream = M(0xf2f7f4), teal = M(0x3f6672);
+    // ⚠️ 얼음은 반투명이라야 조각이 갈라져 보인다 — 불투명 하늘색은 한 덩어리 젤리로 읽힌다
+    const iceM = M(0xe8f6ff, { transparent: true, opacity: 0.66, roughness: 0.05, metalness: 0 });
     const wood = M(0x9a7a54, { map: woodTex });
     const B = { wood: [], mint: [], low: [], cream: [], teal: [], vc: [], ice: [], dark: [], grip: [] };
     const put = (arr, geo, pos, rot, sc) => {
@@ -2603,8 +2605,13 @@ function makeIcebox() {
     put(B.vc, bakeGrad(new RoundedBoxGeometry(0.39, 0.2, 0.27, 2, 0.02), 0x35525e, 0x1d2f38, { curve: 1 }), V(0, 0.245, 0));
     put(B.vc, bakeGrad(new THREE.BoxGeometry(0.37, 0.012, 0.25), 0x2a4450, 0x1a2a32, { curve: 1 }), V(0, 0.318, 0));
     // 🧊 얼음 — 림 살짝 위로 솟아야 보인다(예전엔 뚜껑 위 높이라 아예 안 보였다)
-    for (const [ix, iz, isc, ir] of [[-0.115, 0.055, 1, 0.3], [-0.03, -0.05, 0.82, 1.2], [0.075, 0.06, 0.92, 2.4], [0.13, -0.045, 0.7, 0.8], [0.02, 0.09, 0.62, 1.9]]) {
-        put(B.ice, new RoundedBoxGeometry(0.062, 0.052, 0.058, 1, 0.014), V(ix, 0.372, iz), [0.2 * isc, ir, 0.15], [isc, isc, isc]);
+    for (const [ix, iy2, iz, isc, ir, it] of [
+        [-0.132, 0.372, 0.072, 1, 0.3, 0.25], [-0.055, 0.38, -0.072, 0.9, 1.2, -0.3],
+        [0.055, 0.37, 0.085, 0.92, 2.4, 0.15], [0.142, 0.372, -0.055, 0.78, 0.8, 0.4],
+        [0.02, 0.382, 0.02, 0.66, 1.9, -0.5], [0.145, 0.366, 0.085, 0.6, 2.9, 0.2],
+        [-0.145, 0.37, -0.03, 0.72, 0.55, -0.15],
+    ]) {
+        put(B.ice, new RoundedBoxGeometry(0.068, 0.062, 0.064, 1, 0.013), V(ix, iy2, iz), [it, ir, 0.18], [isc, isc, isc]);
     }
     // 🐟 물고기 2마리 — 꼬리만이 아니라 몸통·눈까지. 한 마리는 앞쪽에 걸쳐 조과가 한눈에 읽힌다
     for (const [fx, fy2, fz, fa, fs2, tilt] of [[-0.055, 0.395, 0.055, 0.5, 1, 0.1], [0.085, 0.378, -0.035, -0.95, 0.82, -0.12]]) {
@@ -2650,27 +2657,6 @@ function makeIcebox() {
         if (merged) lidPivot.add(new THREE.Mesh(merged, mat));
     }
     g.add(lidPivot);
-    // 옆면 스티커 — FISH 라벨 (부스 사인 문법의 축소판)
-    const cv = document.createElement('canvas');
-    cv.width = 64; cv.height = 64;
-    const c = cv.getContext('2d');
-    c.fillStyle = '#f6fbf9';
-    c.beginPath();
-    c.arc(32, 32, 30, 0, Math.PI * 2);
-    c.fill();
-    c.font = '30px sans-serif';
-    c.textAlign = 'center';
-    c.textBaseline = 'middle';
-    c.fillText('🐟', 32, 30);
-    c.fillStyle = '#3f6672';
-    c.font = 'bold 11px sans-serif';
-    c.fillText('FRESH', 32, 52);
-    const stTex = new THREE.CanvasTexture(cv);
-    stTex.colorSpace = THREE.SRGBColorSpace;
-    const sticker = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.006, 20), new THREE.MeshStandardMaterial({ map: stTex, roughness: 1, metalness: 0 }));
-    sticker.position.set(0.226, 0.21, 0.04);
-    sticker.rotation.z = Math.PI / 2;
-    g.add(sticker);
     return g;
 }
 function makeCoffeeBooth() {
