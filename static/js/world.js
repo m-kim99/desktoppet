@@ -16780,6 +16780,7 @@ const vendLocalPt = (lx, lz) => ({ x: VEND.x + lx * Math.cos(VEND_A) + lz * Math
 const VEND_FRONT = vendLocalPt(0, 0.62);    // 펫이 서는 자리
 const VEND_TRAY = vendLocalPt(-0.045, 0.3); // 배출구 — 여기서 간식이 둥실 떠나온다
 const vendGlowMat = new THREE.MeshBasicMaterial({ color: 0xffeecb, transparent: true, opacity: 0.9, fog: false });
+const vendCoolMat = new THREE.MeshBasicMaterial({ color: 0x8ce8ff, transparent: true, opacity: 0.85, fog: false });   // 스크린 — 진열 크림등과 색온도·위상을 분리해야 정보 위계가 산다
 const VEND_HOVER = { type: 'vend', x: VEND.x, z: VEND.z, labelY: 35.5 };   // 호버 라벨용 의사 프롭 (PROPS엔 절대 안 넣는다 — layoutId 불변식)
 PROP_CLICKS.vend = () => toggleVendPanel();
 HOVER_PROMPTS.vend = () => '🥤 우주 자판기 — 클릭 골라주기 · ⌘ 랜덤 뽑기';
@@ -16795,6 +16796,11 @@ const poiBeaconMat = new THREE.MeshBasicMaterial({ color: 0xff7a6a, transparent:
     const poiMetal = new THREE.MeshStandardMaterial({ color: 0x5a5f66, roughness: 0.7, fog: false });
     const poiPanel = new THREE.MeshStandardMaterial({ color: 0x2c4a7c, roughness: 0.45, metalness: 0.35, fog: false, side: THREE.DoubleSide });
     const poiWarm = new THREE.MeshBasicMaterial({ color: 0xffe9c6, fog: false });
+    // 🥤 자판기 전용 — 진열 유리(정점색 폴오프)와 간식 미니 3계보(공유 M 변이 금지 규율에 따라 clone + fog off)
+    const vendGlassMat = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.15, roughness: 0.1, metalness: 0, side: THREE.DoubleSide, depthWrite: false, fog: false });
+    const vendSnackMat = gradMat.clone(); vendSnackMat.fog = false;
+    const vendSnackFoil = gradMatFoil.clone(); vendSnackFoil.fog = false;
+    const vendSnackGloss = gradMatGloss.clone(); vendSnackGloss.fog = false;
     const addMerged = (parent, arr, mat) => { const g = mergeGeometries(arr, false); if (g) parent.add(new THREE.Mesh(g, mat)); };
     // 🌕 꼬마 달 (R7 — 펫이 정상 캡 r4.2를 걸어다니는 체급): 회백 구 + 크레이터 14 + 빨간 깃발
     const mp = SPACE_POIS[0];
@@ -16922,55 +16928,121 @@ const poiBeaconMat = new THREE.MeshBasicMaterial({ color: 0xff7a6a, transparent:
     const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), poiBeaconMat);
     beacon.position.set(0, 5.55, -2.9);
     stG.add(beacon);
-    // 🥤 우주 자판기 — 크림 몸통 + 블루 옆판 + 레드 탑밴드 + 발광 진열창(미니 4종 진열) + 배출 트레이 + 안전매트
+    // 🥤 우주 자판기 — 통짜 박스를 프레임 구조로 분절(플린스·앞면 필러·돌출 캐노피) +
+    // **진짜 함몰 진열창**(개구부를 실제로 비운 5분절 몸통 · 깊이 0.14 캐비티 · 어두운 내벽 ·
+    // 선반 2단 · 유리 1장) + 진열 상품은 간식 5종 실물 미니(makeFoodGeo 재사용 — 신규 조형 0) +
+    // 배출구도 실제 구멍(캐비티 + 금속 립 + 스모크 플랩) + 리세스 키패드/스크린/슬롯.
+    // 발광은 따뜻한 진열(vendGlowMat)과 차가운 스크린(vendCoolMat) 둘로 분리 — 정보 위계.
+    // ⚠️ 통짜 박스 안에 캐비티를 "얹으면" 앞면과 코플래너가 되어 z-fight — 개구부는 반드시 몸통을 쪼개서 비운다.
     const vendG = new THREE.Group();
     vendG.position.set(-2.35, 0, -2.05);
     vendG.rotation.y = VEND_A;
-    const vGrad = [], vRed = [], vMetal = [], vPanel = [];
-    const vBody = new THREE.BoxGeometry(0.55, 1.15, 0.4);
-    vBody.translate(0, 0.575, 0);
-    vGrad.push(bakeGrad(vBody, 0xf4e6c8, 0xcfa87a, { curve: 1.2 }));
-    for (const sx of [-0.276, 0.276]) {
-        const side = new THREE.BoxGeometry(0.02, 0.98, 0.34);
-        side.translate(sx, 0.6, 0);
-        vPanel.push(side);
+    const vGrad = [], vRed = [], vMetal = [], vPanel = [], vGlass = [], vWarm = [], vCool = [];
+    const vbox = (w, h, d, x, y, z) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z); return g; };
+    const vSkin = (g) => bakeGrad(g, 0xf4e6c8, 0xcfa87a, { yMin: 0, yMax: 1.15, curve: 1.2 });   // 분절 조각이 하나의 램프를 공유 — 이음매가 안 보인다
+    const vDark = (g) => bakeGrad(g, 0x36486a, 0x121a26, { curve: 1.1 });   // 진열 캐비티 내벽
+    const vStar = (r1, r2, d) => {   // ★ 로고 뱃지 — 옆판/마퀴 공용
+        const s = new THREE.Shape();
+        for (let i = 0; i < 10; i++) {
+            const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r2 : r1;
+            const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+            if (i) s.lineTo(px, py); else s.moveTo(px, py);
+        }
+        s.closePath();
+        return new THREE.ExtrudeGeometry(s, { depth: d, bevelEnabled: false, curveSegments: 1 });
+    };
+    // ── 몸통: 진열 개구부(x -0.23..0.14, y 0.5..1.08)와 배출구(x -0.195..0.105, y 0.15..0.32)를 실제로 비운 분절
+    vGrad.push(vSkin(vbox(0.55, 0.095, 0.4, 0, 0.1025, 0)));          // 하단 문턱
+    vGrad.push(vSkin(vbox(0.55, 0.18, 0.4, 0, 0.41, 0)));             // 배출구 위 인방
+    vGrad.push(vSkin(vbox(0.08, 0.17, 0.4, -0.235, 0.235, 0)));       // 배출구 좌
+    vGrad.push(vSkin(vbox(0.17, 0.17, 0.4, 0.19, 0.235, 0)));         // 배출구 우
+    vGrad.push(vSkin(vbox(0.30, 0.17, 0.31, -0.045, 0.235, -0.045))); // 배출구 뒤
+    vGrad.push(vSkin(vbox(0.55, 0.58, 0.26, 0, 0.79, -0.07)));        // 진열창 뒤
+    vGrad.push(vSkin(vbox(0.045, 0.58, 0.14, -0.2525, 0.79, 0.13)));  // 진열창 좌 기둥
+    vGrad.push(vSkin(vbox(0.135, 0.58, 0.14, 0.2075, 0.79, 0.13)));   // 진열창 우 기둥(조작부)
+    vGrad.push(vSkin(vbox(0.55, 0.07, 0.4, 0, 1.115, 0)));            // 상단
+    vMetal.push(vbox(0.50, 0.055, 0.36, 0, 0.0275, 0));               // 플린스 — 안쪽으로 물려 접지가 생긴다
+    for (const sx of [-0.264, 0.264]) vMetal.push(vbox(0.02, 1.0, 0.016, sx, 0.6, 0.208));   // 앞면 수직 필러
+    // ── 캐노피: 앞으로 0.07 돌출 + 아래 그림자 홈 + 마퀴 + ★
+    vRed.push(vbox(0.60, 0.105, 0.47, 0, 1.2025, 0.035));
+    vMetal.push(vbox(0.575, 0.014, 0.44, 0, 1.143, 0.03));
+    vWarm.push(vbox(0.40, 0.05, 0.014, 0.03, 1.202, 0.267));
+    { const st = vStar(0.038, 0.016, 0.012); st.translate(-0.185, 1.202, 0.266); vWarm.push(st); }
+    // ── 진열 캐비티: 어두운 내벽 + 선반 2단 + 언더라이트 + 천장등
+    vGrad.push(vDark(vbox(0.372, 0.582, 0.006, -0.045, 0.79, 0.066)));
+    vGrad.push(vDark(vbox(0.008, 0.582, 0.14, -0.226, 0.79, 0.13)));
+    vGrad.push(vDark(vbox(0.008, 0.582, 0.14, 0.136, 0.79, 0.13)));
+    vGrad.push(vDark(vbox(0.372, 0.008, 0.14, -0.045, 0.504, 0.13)));
+    vGrad.push(vDark(vbox(0.372, 0.008, 0.14, -0.045, 1.076, 0.13)));
+    for (const sy of [0.69, 0.88]) {
+        vGrad.push(bakeGrad(vbox(0.362, 0.014, 0.126, -0.045, sy, 0.132), 0xfbf1dc, 0xd6c2a0, { curve: 1 }));
+        vWarm.push(vbox(0.336, 0.007, 0.016, -0.045, sy - 0.012, 0.186));
     }
-    const vTop = new THREE.BoxGeometry(0.57, 0.085, 0.42);
-    vTop.translate(0, 1.19, 0);
-    vRed.push(vTop);
-    const vMat_ = new THREE.BoxGeometry(0.44, 0.008, 0.3);   // 앞 안전매트
-    vMat_.translate(0, 0.004, 0.42);
-    vGrad.push(bakeGrad(vMat_, 0xe8c860, 0xc8a040, { curve: 1 }));
-    // 진열 미니 4종 (발광창 앞에 얹힌다)
-    const miniJ = new THREE.BoxGeometry(0.055, 0.075, 0.02); miniJ.translate(-0.115, 0.93, 0.216); vGrad.push(bakeGrad(miniJ, 0xe8edf4, 0xaab4c0, { curve: 1 }));
-    const miniI = new THREE.BoxGeometry(0.06, 0.05, 0.022); miniI.translate(0.03, 0.92, 0.216); vGrad.push(bakeGrad(miniI, 0xfdf4e6, 0xf6c2d0, { curve: 1 }));
-    const miniT = new THREE.CylinderGeometry(0.019, 0.023, 0.07, 10); miniT.translate(-0.115, 0.68, 0.216); vGrad.push(bakeGrad(miniT, 0xd8ece4, 0x6fbf9f, { curve: 1 }));
-    const miniC = new THREE.CylinderGeometry(0.032, 0.032, 0.016, 5); miniC.rotateX(Math.PI / 2); miniC.translate(0.03, 0.68, 0.216); vGrad.push(bakeGrad(miniC, 0xe8b45c, 0xc48c3c, { curve: 1 }));
-    for (let i = 0; i < 3; i++) {   // 버튼 3 + 동전구 + 배출 트레이
-        const btn = new THREE.BoxGeometry(0.05, 0.045, 0.018);
-        btn.translate(0.2, 0.92 - i * 0.09, 0.204);
-        if (i === 0) vRed.push(btn); else if (i === 1) vPanel.push(btn); else vMetal.push(btn);
+    vWarm.push(vbox(0.336, 0.009, 0.05, -0.045, 1.068, 0.15));
+    vWarm.push(vbox(0.1, 0.005, 0.06, -0.045, 0.889, 0.128));   // 🌟 레어 칸 받침등 — 골드빵만 따로 띄운다
+    // ── 진열 상품 = 간식 5종 실물 미니(0.74배). 재질 계보별 1드로우로 병합 — 골드빵은 은박/글레이즈가 그대로 살아 레어가 읽힌다
+    const mBase = [], mFoil = [], mGloss = [];
+    for (const d of [
+        { id: 'sgold', x: -0.045, y: 0.894, r: 0.42 },
+        { id: 'sjuice', x: -0.15, y: 0.704, r: -0.38 },
+        { id: 'sice', x: 0.055, y: 0.704, r: 0.3 },
+        { id: 'stube', x: -0.15, y: 0.514, r: 0.5 },
+        { id: 'scookie', x: 0.055, y: 0.514, r: -0.55 },
+    ]) {
+        const g0 = makeFoodGeo({ id: d.id, name: d.id }, 0);
+        const m4 = new THREE.Matrix4().makeTranslation(d.x, d.y, 0.128)
+            .multiply(new THREE.Matrix4().makeRotationY(d.r))
+            .multiply(new THREE.Matrix4().makeScale(0.95, 0.95, 0.95));
+        for (const [arr, g] of [[mBase, g0], [mFoil, g0.userData.foilGeo], [mGloss, g0.userData.glossGeo]]) {
+            if (!g || !g.attributes.position || !g.attributes.position.count) continue;
+            g.applyMatrix4(m4);
+            // ⚠️ 간식마다 속성 구성이 달라(uv 유무·색 유무) 그대로 합치면 mergeGeometries가 null을
+            // 뱉고 그 계보가 통째로 사라진다(실측: 5종 중 2종 증발) — position/normal/color로 정규화 후 합친다.
+            for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'color') g.deleteAttribute(k);
+            if (!g.attributes.normal) g.computeVertexNormals();
+            if (!g.attributes.color) g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3));
+            arr.push(g.index ? g.toNonIndexed() : g);
+        }
     }
-    const coin = new THREE.BoxGeometry(0.035, 0.055, 0.016);
-    coin.translate(0.2, 0.62, 0.204);
-    vMetal.push(coin);
-    const tray = new THREE.BoxGeometry(0.32, 0.15, 0.05);
-    tray.translate(-0.045, 0.19, 0.19);
-    vMetal.push(tray);
-    const vWin = new THREE.BoxGeometry(0.37, 0.58, 0.012);   // 어두운 진열 유리 — 그 위에 불 켜진 선반 + 미니 상품
-    vWin.translate(-0.045, 0.79, 0.198);
-    vPanel.push(vWin);
-    for (const [arr, mat] of [[vGrad, poiGrad], [vRed, poiRed], [vMetal, poiMetal], [vPanel, poiPanel]]) {
+    // ── 유리 1장 + 배출구 스모크 플랩 (전면 광택 금지 — 위→아래 반사 폴오프를 정점색으로)
+    vGlass.push(bakeGrad(vbox(0.372, 0.582, 0.005, -0.045, 0.79, 0.196), 0xeaf7ff, 0x7d9db4, { curve: 1.9 }));
+    { const fl = vbox(0.284, 0.15, 0.005, 0, -0.075, 0); fl.rotateX(-0.17); fl.translate(-0.045, 0.312, 0.19); vGlass.push(bakeGrad(fl, 0xc6d8e2, 0x64757f, { curve: 1.2 })); }
+    // ── 배출구: 어두운 캐비티 내벽 + 금속 립(집어 넣는 구멍으로 읽힌다)
+    const vPort = (g) => bakeGrad(g, 0x2c333c, 0x11151a, { curve: 1 });
+    vGrad.push(vPort(vbox(0.302, 0.172, 0.006, -0.045, 0.235, 0.113)));
+    vGrad.push(vPort(vbox(0.302, 0.006, 0.09, -0.045, 0.153, 0.155)));
+    vGrad.push(vPort(vbox(0.302, 0.006, 0.09, -0.045, 0.317, 0.155)));
+    vGrad.push(vPort(vbox(0.006, 0.172, 0.09, -0.192, 0.235, 0.155)));
+    vGrad.push(vPort(vbox(0.006, 0.172, 0.09, 0.102, 0.235, 0.155)));
+    vMetal.push(vbox(0.34, 0.022, 0.018, -0.045, 0.331, 0.206));
+    vMetal.push(vbox(0.34, 0.032, 0.026, -0.045, 0.139, 0.208));   // 아래 립은 두껍게 — 손이 들어가는 턱
+    for (const sx of [-0.206, 0.116]) vMetal.push(vbox(0.022, 0.192, 0.018, sx, 0.235, 0.206));
+    // ── 조작부: 리세스 패널 + 3×2 키패드 + 스크린(차가운 발광) + 카드/코인 슬롯
+    vPanel.push(vbox(0.115, 0.42, 0.008, 0.2075, 0.80, 0.192));
+    for (let i = 0; i < 6; i++) {
+        const btn = vbox(0.038, 0.03, 0.016, 0.176 + (i % 2) * 0.064, 0.955 - Math.floor(i / 2) * 0.055, 0.2);
+        if (i === 0 || i === 5) vRed.push(btn); else vMetal.push(btn);
+    }
+    vMetal.push(vbox(0.105, 0.065, 0.01, 0.2075, 0.745, 0.197));
+    vCool.push(vbox(0.088, 0.048, 0.008, 0.2075, 0.745, 0.203));
+    vMetal.push(vbox(0.082, 0.02, 0.014, 0.2075, 0.665, 0.201));
+    vGrad.push(vPort(vbox(0.062, 0.007, 0.016, 0.2075, 0.665, 0.204)));   // 슬롯 홈
+    // ── 옆판: 통짜 네이비 → 리브 3 + 하단 통풍 슬롯 5 + ★ 뱃지 (실루엣이 아니라 표면으로 정보)
+    for (const s_ of [-1, 1]) {
+        vPanel.push(vbox(0.012, 0.9, 0.33, s_ * 0.272, 0.60, 0));
+        for (const rz of [-0.1, 0, 0.1]) vMetal.push(vbox(0.014, 0.86, 0.014, s_ * 0.277, 0.60, rz));
+        for (let i = 0; i < 5; i++) vGrad.push(vPort(vbox(0.01, 0.009, 0.2, s_ * 0.278, 0.155 + i * 0.019, 0)));
+        const st = vStar(0.05, 0.021, 0.012); st.rotateY(s_ * Math.PI / 2); st.translate(s_ * 0.279, 1.0, 0); vRed.push(st);
+    }
+    // ── 갑판 데칼(안전매트): 두꺼운 판 → 얇은 데칼 + 셰브론 2
+    vGrad.push(bakeGrad(vbox(0.44, 0.004, 0.3, 0, 0.002, 0.4), 0xe8c860, 0xc8a040, { curve: 1 }));
+    for (const cz of [0.33, 0.44]) { const ch = vbox(0.2, 0.005, 0.03, 0, 0.0045, cz); ch.rotateX(0); vMetal.push(ch); }
+    for (const [arr, mat] of [[vGrad, poiGrad], [vRed, poiRed], [vMetal, poiMetal], [vPanel, poiPanel],
+        [vGlass, vendGlassMat], [vWarm, vendGlowMat], [vCool, vendCoolMat],
+        [mBase, vendSnackMat], [mFoil, vendSnackFoil], [mGloss, vendSnackGloss]]) {
         const g = mergeGeometries(arr.map((q) => (q.index ? q.toNonIndexed() : q)), false);
         if (g) vendG.add(new THREE.Mesh(g, mat));
     }
-    const vWinGeo = mergeGeometries([
-        new THREE.BoxGeometry(0.34, 0.035, 0.02).translate(-0.045, 0.875, 0.204),   // 불 켜진 선반 2단
-        new THREE.BoxGeometry(0.34, 0.035, 0.02).translate(-0.045, 0.625, 0.204),
-        new THREE.BoxGeometry(0.34, 0.022, 0.016).translate(-0.045, 1.04, 0.204),   // 상단 마퀴 라이트
-        new THREE.BoxGeometry(0.09, 0.05, 0.012).translate(0.2, 0.74, 0.2),         // 미니 스크린
-    ], false);
-    vendG.add(new THREE.Mesh(vWinGeo, vendGlowMat));   // 발광부 — 펄스는 POI 라이브에서
     stG.add(vendG);
     vendGroup = vendG;
     // 🔭 전망 망원경 (관광 쌍안경 스타일): 기둥 + 스위블 + 쌍둥이 경통 + 레드 밴드 + 발광 접안점
@@ -18062,6 +18134,7 @@ function updateRocket(delta) {
         stationWingR.rotation.x += delta * 0.16;
         poiBeaconMat.opacity = 0.35 + 0.65 * Math.abs(Math.sin(wxTime.value * 2.6));
         vendGlowMat.opacity = 0.82 + Math.sin(wxTime.value * 1.8) * 0.13;   // 🥤 진열창 숨쉬는 펄스
+        vendCoolMat.opacity = 0.72 + Math.sin(wxTime.value * 3.4 + 1.4) * 0.2;   // 스크린은 더 빠르고 차갑게 — 둘이 같은 위상이면 평평해진다
     }
     // 🥤 무중력 디스펜스 아크 — 간식이 트레이에서 둥실 떠나와 펫 손으로
     if (vendFly) {
