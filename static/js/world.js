@@ -2569,66 +2569,87 @@ function makeBonfire(pr) {
     bonfireFx = { flames: [flameOut, flameIn], halo, ember, litK: 0 };
     return g;
 }
-// 🧊 아이스박스 — 잔교 곁 캠핑 쿨러(조과 보관함·요리 재료). 뚜껑을 뒤 힌지로 빼꼼 열어
-// 얼음 큐브와 물고기 꼬리가 내다보이게 — "생선 보관함"이 조형만으로 읽힌다. 정적 = 병합 대상.
+// 🧊 아이스박스 — 잔교 곁 캠핑 쿨러(조과 보관함·요리 재료).
+// ⚠️ 예전 뚜껑은 주석만 "뒤 힌지"였고 실제로는 **자기 중심에서 기울인 판**이라 열린 게 아니라
+// 떠 있는 판으로 읽혔다. 게다가 얼음·생선을 몸통 윗면(0.325)보다 **위**에 둬서 뚜껑에 다 가렸다.
+// 이제 힌지 그룹을 뒷변에 두고 **거의 세워** 젖히고(살짝만 젖히면 위에서 내려보는 게임 카메라를
+// 뚜껑이 막는다), 내용물은 림(0.36) 살짝 위로 솟게 앉힌다. 조립은 **재질별 병합** — 프롭은
+// 메시 하나가 곧 드로우 하나다(움직일 수 있는 타입이라 월드 베이크에 안 들어간다).
 function makeIcebox() {
     const g = new THREE.Group();
-    const cream = M(0xf2f7f4);
-    // 나무 팔레트 받침 — 잔교 감성, 모래·물때에서 띄운다
+    const cream = M(0xf2f7f4), teal = M(0x3f6672), iceM = M(0xe8f8ff);
     const wood = M(0x9a7a54, { map: woodTex });
-    for (const pz of [-0.105, 0.105]) {
-        const plank = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.034, 0.125), wood);
-        plank.position.set(0, 0.017, pz);
-        g.add(plank);
+    const B = { wood: [], mint: [], low: [], cream: [], teal: [], vc: [], ice: [], dark: [], grip: [] };
+    const put = (arr, geo, pos, rot, sc) => {
+        if (pos || rot || sc) {
+            geo.applyMatrix4(new THREE.Matrix4().compose(
+                pos || new THREE.Vector3(),
+                rot ? new THREE.Quaternion().setFromEuler(new THREE.Euler(rot[0] || 0, rot[1] || 0, rot[2] || 0)) : new THREE.Quaternion(),
+                sc ? new THREE.Vector3(sc[0], sc[1], sc[2]) : new THREE.Vector3(1, 1, 1)));
+        }
+        arr.push(geo);
+        return geo;
+    };
+    const V = (x, y, z) => new THREE.Vector3(x, y, z);
+    const BODY_TOP = 0.36;
+    // 나무 팔레트 받침 — 잔교 감성, 모래·물때에서 띄운다
+    for (const pz of [-0.115, 0.115]) put(B.wood, new THREE.BoxGeometry(0.52, 0.034, 0.13), V(0, 0.017, pz));
+    for (const sx of [-0.18, 0.18]) put(B.wood, new THREE.BoxGeometry(0.095, 0.03, 0.34), V(sx, 0.045, 0));
+    // 몸통 — 아래 절반 짙은 청록 / 위 민트. 채도를 올려야 햇빛 아래서 흰 통으로 안 보인다
+    put(B.mint, new RoundedBoxGeometry(0.44, 0.3, 0.32, 3, 0.04), V(0, 0.21, 0));
+    put(B.low, new RoundedBoxGeometry(0.448, 0.15, 0.328, 3, 0.038), V(0, 0.135, 0));
+    put(B.cream, new RoundedBoxGeometry(0.47, 0.045, 0.35, 3, 0.02), V(0, BODY_TOP - 0.012, 0));   // 림 립
+    // 속 — 어두운 내벽·바닥(정점색이라 재질 버킷 0 증가). 열린 입으로 이게 보여야 "보관함"이 된다
+    put(B.vc, bakeGrad(new RoundedBoxGeometry(0.39, 0.2, 0.27, 2, 0.02), 0x35525e, 0x1d2f38, { curve: 1 }), V(0, 0.245, 0));
+    put(B.vc, bakeGrad(new THREE.BoxGeometry(0.37, 0.012, 0.25), 0x2a4450, 0x1a2a32, { curve: 1 }), V(0, 0.318, 0));
+    // 🧊 얼음 — 림 살짝 위로 솟아야 보인다(예전엔 뚜껑 위 높이라 아예 안 보였다)
+    for (const [ix, iz, isc, ir] of [[-0.115, 0.055, 1, 0.3], [-0.03, -0.05, 0.82, 1.2], [0.075, 0.06, 0.92, 2.4], [0.13, -0.045, 0.7, 0.8], [0.02, 0.09, 0.62, 1.9]]) {
+        put(B.ice, new RoundedBoxGeometry(0.062, 0.052, 0.058, 1, 0.014), V(ix, 0.372, iz), [0.2 * isc, ir, 0.15], [isc, isc, isc]);
     }
-    for (const sx of [-0.17, 0.17]) {   // 팔레트 가로장
-        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.03, 0.32), wood);
-        rail.position.set(sx, 0.045, 0);
-        g.add(rail);
+    // 🐟 물고기 2마리 — 꼬리만이 아니라 몸통·눈까지. 한 마리는 앞쪽에 걸쳐 조과가 한눈에 읽힌다
+    for (const [fx, fy2, fz, fa, fs2, tilt] of [[-0.055, 0.395, 0.055, 0.5, 1, 0.1], [0.085, 0.378, -0.035, -0.95, 0.82, -0.12]]) {
+        const M4 = new THREE.Matrix4().compose(V(fx, fy2, fz),
+            new THREE.Quaternion().setFromEuler(new THREE.Euler(tilt, fa, 0.1)), V(fs2, fs2, fs2));
+        const bodyF = bakeGrad(new THREE.SphereGeometry(0.052, 12, 9), 0x8fb8e4, 0x4d78ac, { curve: 1.1 });
+        bodyF.scale(1.9, 0.62, 0.85);
+        B.vc.push(bodyF.applyMatrix4(M4));
+        const tail = bakeGrad(new THREE.ConeGeometry(0.045, 0.075, 4), 0x9fc4e8, 0x5b84b6, { curve: 1 });
+        tail.scale(1, 1, 0.3);
+        tail.rotateZ(Math.PI / 2 + 0.25);
+        tail.translate(-0.115, 0.006, 0);
+        B.vc.push(tail.applyMatrix4(M4));
+        B.dark.push(new THREE.SphereGeometry(0.008, 8, 6).translate(0.062, 0.015, 0.026).applyMatrix4(M4));
     }
-    // 몸통 — 민트 쿨러, 아래 짙은 밴드 투톤
-    const body = new THREE.Mesh(new RoundedBoxGeometry(0.44, 0.26, 0.32, 3, 0.04), M(0xcdeae2));
-    body.position.y = 0.195;
-    g.add(body);
-    const band = new THREE.Mesh(new RoundedBoxGeometry(0.452, 0.075, 0.332, 2, 0.028), M(0x7fae9f));
-    band.position.y = 0.1;
-    g.add(band);
-    // 뚜껑 — 짙은 청록, 뒤 힌지로 살짝 열림 (앞 틈으로 속이 보인다)
-    const lid = new THREE.Mesh(new RoundedBoxGeometry(0.47, 0.075, 0.35, 3, 0.03), M(0x3f6672));
-    lid.position.set(0, 0.352, -0.028);
-    lid.rotation.x = -0.3;
-    g.add(lid);
-    const grip = new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.015, 8, 14, Math.PI), cream);
-    grip.position.set(0, 0.402, -0.04);
-    grip.rotation.x = -0.3;
-    g.add(grip);
-    // 양옆 U 핸들 + 앞면 래치 — 쿨러의 문법
+    // 서리 — 안쪽 림에 앉은 흰 자국(차가움 단서)
+    for (const [sx2, sz2, sw] of [[-0.14, 0.115, 0.1], [0.12, 0.12, 0.075], [0.17, -0.06, 0.06], [-0.16, -0.09, 0.07]]) {
+        put(B.cream, new RoundedBoxGeometry(sw, 0.014, 0.03, 1, 0.006), V(sx2, 0.356, sz2), [0, Math.atan2(sx2, sz2), 0]);
+    }
+    // 양옆 U 핸들 + 앞면 래치(림 아래 제자리) + 배수 마개
     for (const sx of [-1, 1]) {
-        const h = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.014, 8, 12, Math.PI), M(0x5d8478));
-        h.position.set(sx * 0.232, 0.21, 0);
-        h.rotation.y = Math.PI / 2;
-        h.rotation.z = sx * 0.12;
-        g.add(h);
+        put(B.grip, new THREE.TorusGeometry(0.05, 0.014, 8, 12, Math.PI), V(sx * 0.232, 0.225, 0), [0, Math.PI / 2, sx * 0.12]);
     }
-    const latch = new THREE.Mesh(new RoundedBoxGeometry(0.05, 0.07, 0.022, 2, 0.008), cream);
-    latch.position.set(0, 0.3, 0.168);
-    g.add(latch);
-    // 얼음 큐브 — 앞 틈으로 보이는 세 알 (살짝 다른 크기·기울기)
-    const iceM = M(0xe8f8ff);
-    for (const [ix, iz, isc, ir] of [[-0.1, 0.07, 1, 0.3], [0.02, 0.1, 0.8, 1.2], [0.12, 0.05, 0.9, 2.4]]) {
-        const cube = new THREE.Mesh(new RoundedBoxGeometry(0.06, 0.05, 0.055, 1, 0.014), iceM);
-        cube.position.set(ix, 0.335, iz);
-        cube.scale.setScalar(isc);
-        cube.rotation.y = ir;
-        g.add(cube);
+    put(B.cream, new RoundedBoxGeometry(0.055, 0.075, 0.024, 2, 0.008), V(0, 0.275, 0.166));
+    put(B.teal, new THREE.TorusGeometry(0.022, 0.007, 6, 12, Math.PI), V(0, 0.313, 0.172), [Math.PI / 2, 0, 0]);
+    put(B.teal, new THREE.CylinderGeometry(0.016, 0.016, 0.022, 10), V(-0.228, 0.115, 0.06), [0, 0, Math.PI / 2]);
+    for (const [arr, mat] of [[B.wood, wood], [B.mint, M(0xa6dccf)], [B.low, M(0x5f9a8c)], [B.cream, cream],
+        [B.teal, teal], [B.vc, gradMat], [B.ice, iceM], [B.dark, M(0x2c241d)], [B.grip, M(0x5d8478)]]) {
+        const merged = mergeGeometries(arr.map((q) => (q.index ? q.toNonIndexed() : q)), false);
+        if (merged) g.add(new THREE.Mesh(merged, mat));
     }
-    // 물고기 꼬리 빼꼼 — 파란 꼬리지느러미 한 장 (부채꼴 납작 콘)
-    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.095, 4), M(0x6f9fd8));
-    tail.position.set(-0.02, 0.375, 0.03);
-    tail.scale.z = 0.28;
-    tail.rotation.z = 0.5;
-    tail.rotation.x = -0.25;
-    g.add(tail);
+    // 뚜껑 — **뒷변 힌지 그룹**을 거의 세운다. 살짝만 젖히면 위에서 내려보는 카메라를 뚜껑이 막는다
+    const lidPivot = new THREE.Group();
+    lidPivot.position.set(0, BODY_TOP + 0.005, -0.172);
+    lidPivot.rotation.x = -1.25;
+    const lidT = [], lidC = [];
+    put(lidT, new RoundedBoxGeometry(0.47, 0.062, 0.35, 3, 0.028), V(0, 0.03, 0.175));
+    for (const sx of [-0.16, 0.16]) put(lidT, new THREE.CylinderGeometry(0.014, 0.014, 0.075, 8), V(sx, 0.012, 0.01), [0, 0, Math.PI / 2]);
+    put(lidC, new RoundedBoxGeometry(0.4, 0.02, 0.29, 2, 0.012), V(0, -0.006, 0.175));
+    put(lidC, new THREE.TorusGeometry(0.055, 0.015, 8, 14, Math.PI), V(0, 0.06, 0.3));
+    for (const [arr, mat] of [[lidT, teal], [lidC, cream]]) {
+        const merged = mergeGeometries(arr.map((q) => (q.index ? q.toNonIndexed() : q)), false);
+        if (merged) lidPivot.add(new THREE.Mesh(merged, mat));
+    }
+    g.add(lidPivot);
     // 옆면 스티커 — FISH 라벨 (부스 사인 문법의 축소판)
     const cv = document.createElement('canvas');
     cv.width = 64; cv.height = 64;
@@ -2647,7 +2668,7 @@ function makeIcebox() {
     const stTex = new THREE.CanvasTexture(cv);
     stTex.colorSpace = THREE.SRGBColorSpace;
     const sticker = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.006, 20), new THREE.MeshStandardMaterial({ map: stTex, roughness: 1, metalness: 0 }));
-    sticker.position.set(0.226, 0.2, 0.04);
+    sticker.position.set(0.226, 0.21, 0.04);
     sticker.rotation.z = Math.PI / 2;
     g.add(sticker);
     return g;
