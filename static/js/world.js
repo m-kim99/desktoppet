@@ -7931,6 +7931,7 @@ let lastAliveMs = 0;                               // 마지막으로 프레임�
 let lastSeenSavedAt = 0;
 let offlineLastSummary = null;                     // __worldDev.offlineLast — E2E·디버그 노출
 try { lastAliveMs = +localStorage.getItem('world-last-seen') || 0; } catch (e) {}
+const bootAliveMs = lastAliveMs;   // 부팅 스냅샷 — lastAliveMs는 매 프레임 하트비트로 덮이므로, "정말 마지막으로 살아있던 시각"은 여기만 남는다 (우주 밤샘 정산용)
 
 function awakeOverlapSec(from, to) {               // [from,to) ∩ 매일 06~22시 — 초 단위
     let s = 0;
@@ -9421,6 +9422,7 @@ if (statsOn) window.__worldDev = {
     },
     aiEvaShort: () => { if (ROCKET.aiEvaT > 0) ROCKET.aiEvaT = 5; return +(ROCKET.aiEvaT || 0).toFixed(1); },
     graceShort: () => { if (ROCKET.poiGraceT > 0) ROCKET.poiGraceT = 2; return +(ROCKET.poiGraceT || 0).toFixed(1); },   // 🌙 밤 귀항 유예 단축 (E2E)
+    spaceGapProbe: (a, b) => gapTouchedSleep(a, b),   // 🌙 부재-밤 판정 단위검사 (E2E)
     teleGo: () => { startTeleView(); return !!teleView; },
     plazaGo: () => { const was = possessed ? possessed.name : 'cam'; goPlaza(); return was; },
     teleState: () => teleView ? { i: teleView.vistas.i, n: teleView.vistas.list.length, cam: [+camera.position.x.toFixed(1), +camera.position.y.toFixed(1), +camera.position.z.toFixed(1)] } : null,
@@ -17075,16 +17077,46 @@ function boardPoiRocket() {   // 산책 → 재탑승 = 곧장 이륙 (발사대
 // 재접속 시 여행을 곱게 정산하고 발사대 곁 물가에서 시작). BotW식 세이프 앵커 + 심즈식 상태 요약.
 function rocketSaveToken() {
     const landed = (ROCKET.mode === 'moonland' || ROCKET.mode === 'dock') && ROCKET.padDir > 0 && ROCKET.padK >= 0.99;
-    if (landed && ROCKET.poi) return { poi: ROCKET.poi.id };
+    // who = 실제로 그곳에 있는 펫만(산책자+탑승자) — 복원·정산이 집에 있던 펫까지 소환하지 않게
+    const who = pets.filter((q) => q.poiWalk || (rocketRide && !rocketRide.empty && (rocketRide.p === q || rocketRide.friend === q))).map((q) => q.name);
+    if (landed && ROCKET.poi) return { poi: ROCKET.poi.id, who };
     const walker = pets.find((q) => q.poiWalk);
-    if (walker) return { poi: walker.poiWalk.id };   // 보험 — 착륙 상태가 아닌데 산책자가 있으면
+    if (walker) return { poi: walker.poiWalk.id, who };   // 보험 — 착륙 상태가 아닌데 산책자가 있으면
     if (rocketRide && !rocketRide.empty && ROCKET.mode !== 'parked') return 'flight';
     return null;
+}
+function gapTouchedSleep(fromMs, toMs) {   // 부재 [from,to]가 취침대(22–06)에 걸쳤나 — 밤 귀항 정산 판정
+    if (!fromMs || toMs - fromMs < 60000) return false;        // 1분 미만 = 새로고침 결 — 연속으로 본다
+    if (toMs - fromMs >= 22 * 3600000) return true;            // 하루 근접 부재 — 무조건 밤 포함
+    const from = new Date(fromMs), to = new Date(toMs);
+    if (isSleepTime(from.getHours() + from.getMinutes() / 60) || isSleepTime(to.getHours() + to.getMinutes() / 60)) return true;
+    return from.toDateString() !== to.toDateString();          // 둘 다 낮인데 날짜가 다르다 = 밤을 통과했다
+}
+function settleSpaceHome(poi, movers) {   // 🌙 부재 중 밤 — "산책자 전원이 별똥호로 귀환해 잤다"로 정산 (미아 금지: movers 단위, 로켓은 발사대 기본값)
+    let best = ISLANDS[0], bd = Infinity;
+    for (const s of ISLANDS) { const d = Math.hypot(ROCKET_PAD.x - s.x, ROCKET_PAD.z - s.z) - s.r; if (d < bd) { bd = d; best = s; } }
+    const dx = ROCKET_PAD.x - best.x, dz = ROCKET_PAD.z - best.z, L = Math.hypot(dx, dz) || 1;
+    movers.forEach((q, i) => {
+        const t_ = (i ? -1 : 1) * 0.55;
+        const qx = best.x + (dx / L) * (best.r - 0.7) - (dz / L) * t_;
+        const qz = best.z + (dz / L) * (best.r - 0.7) + (dx / L) * t_;
+        q.mover.position.set(qx, world.groundHeightAt(qx, qz), qz);
+        q.mover.rotation.set(0, Math.atan2(dx, dz), 0);
+        q.swimming = false;
+    });
+    if (!movers.length) return;
+    // 그날 밤 시각의 이벤트 — 일기가 먹는 조용한 흔적 (재접속 토스트 금지 원칙)
+    const from = new Date(bootAliveMs);
+    const nightT = isSleepTime(from.getHours() + from.getMinutes() / 60) ? bootAliveMs + 5 * 60000 : new Date(from).setHours(22, 4, 0, 0);
+    worldEvents.push({ t: Math.min(nightT, Date.now() - 30000), text: `밤이 깊어 펫들이 ${poi.ko}에서 별똥호를 타고 집으로 돌아왔다 ${poi.emoji}🌙🚀` });
+    try { localStorage.setItem('world-events', JSON.stringify(worldEvents)); worldSync('world-events'); } catch (e) {}
 }
 function applySpaceRestore(tok) {
     if (tok && tok.poi) {
         const poi = SPACE_POIS.find((q) => q.id === tok.poi);
         if (!poi) return;
+        const movers = tok.who ? pets.filter((q) => tok.who.includes(q.name)) : pets;   // 구토큰(who 없음) = 전원
+        if (gapTouchedSleep(bootAliveMs, Date.now())) { settleSpaceHome(poi, movers); return; }   // 🌙 부재가 밤에 걸쳤다 — 그 자리 대신 귀환 정산 ("그 시간엔 자야 하니까")
         ROCKET.mode = poi.id === 'moon' ? 'moonland' : 'dock';
         ROCKET.poi = poi;
         ROCKET.padK = 1; ROCKET.padDir = 1; ROCKET.padDone = true; ROCKET.aiDwell = 9e9;
@@ -17101,7 +17133,7 @@ function applySpaceRestore(tok) {
         rocketGroup.quaternion.copy(poi.padQuat);
         const dx = poi.x - ROCKET.x, dz = poi.z - ROCKET.z;
         const L = Math.hypot(dx, dz) || 1;
-        pets.forEach((q, i) => {
+        movers.forEach((q, i) => {
             const side = i ? -1 : 1;
             const qx = ROCKET.x + (dx / L) * 1.5 - (dz / L) * side * 0.5;
             const qz = ROCKET.z + (dz / L) * 1.5 + (dx / L) * side * 0.5;
