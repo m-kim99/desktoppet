@@ -4806,7 +4806,7 @@ function buildSkewer(r) {   // 실물 꼬치 — makeFoodGeo의 raw 지오로 �
     const mesh = new THREE.Mesh(mk(true), gradMat);
     mesh.castShadow = true;
     syncShinyParts(mesh, mesh.geometry);
-    mesh.scale.setScalar(2.6);   // 조리 소품은 월드 스케일(펫 손 크기) — 먹기용은 접시 스케일 그대로
+    mesh.scale.setScalar(SKEWER_SCALE);   // 완성 후 손에 드는 꼬치(makeFoodMesh)와 같은 상수 — 어긋나면 크기가 튄다
     grp.add(mesh);
     const cook = () => {
         const g = mk(false);
@@ -9265,6 +9265,7 @@ if (statsOn) window.__worldDev = {
     // 펫 몸통의 화면 좌표 — 스모크의 우클릭 프로브가 격자 스캔(위치 랜덤) 대신 정확히 조준한다
     petScreenXY: () => pets.map((p) => { const a = fxPoint(p, 50, 45); return { x: Math.round(a.x), y: Math.round(a.y) }; }),
     fishState: () => (fishing ? fishing.state : null),   // 낚시 헤드리스 검증용
+    fishBigNext: () => { fishForceBig = true; return true; },   // 🐟 월척 강제 (E2E — 자축 폴짝 검증)
     aiFishState: () => (aiFishing ? aiFishing.state : null),   // 절친 자율 낚시 검증용
     actStats: () => ({ ...actStats }),   // 자율활동 시작 카운터 — 분포 검증(레지스트리 weight와 대조)용
     leisureState: (name, all = false) => {   // 물림·시간대 검증: 실효 weight + 최근 시작 스탬프 (all=쿨다운·게이트 무시 — 공식 자체 검증용)
@@ -11594,6 +11595,10 @@ function makeSeafoodMesh(id, scale = 1) {
 // 🍔 푸드 부스 9종 — 과일과 같은 규율: 전 파트 bakeGrad 정점색 → 병합 1드로우(gradMat).
 // bites 0=온전 · 1=한 입 · 2=거의 안 남음 (일러스트 기준). 음식별 방식: 모서리/꼭짓점=스쿱 카빙,
 // 긴 것=짧아짐+단면, 도넛=부분 링, 컵케이크=토핑 제거+케이크. 원점=바닥, +y로 쌓는다.
+// 🍢 꼬치 요리(모닥불 구이 3종): 굽는 프롭과 손에 든 완성품이 같은 지오를 쓰므로 스케일도 하나로 묶는다.
+// 이 값이 어긋나면 다 굽고 손에 옮기는 순간 크기가 튄다(2.6→1 축소 리포트).
+const SKEWER_FOODS = new Set(['fishskewer', 'grilledclam', 'marshmallow']);
+const SKEWER_SCALE = 2.6;
 function makeFoodGeo(f, bites = 0) {
     const b = bites, parts = [], foilParts = [], glossParts = [], clearParts = [];   // foil/gloss/clear = 광택·반투명 자식 메시로 분리될 파트
     const add = (geo, top, bottom, opts) => { parts.push(bakeGrad(geo, top, bottom, opts || { curve: 1.1 })); };
@@ -12762,7 +12767,7 @@ function makeFoodGeo(f, bites = 0) {
         if (raw || b < 2) {   // 눈 — 크게(작으면 안 읽힘)
             for (const zf of [1, -1]) { const eye = new THREE.SphereGeometry(0.0021, 8, 6); eye.translate(wave(0.0965), Y0 + 0.0965, zf * 0.0052); add(eye, 0x2c2218, 0x140e08, { curve: 1 }); const gl = new THREE.SphereGeometry(0.0007, 5, 4); gl.translate(wave(0.0965) + 0.0007, Y0 + 0.0974, zf * 0.0062); add(gl, 0xffffff, 0xd8dee2, { curve: 1 }); }
         } else { const eye = new THREE.SphereGeometry(0.0018, 7, 5); eye.translate(wave(0.095), Y0 + 0.0965, 0.0042); add(eye, 0x2c2218, 0x140e08, { curve: 1 }); }
-        topH = 0.20;
+        topH = (Y0 + L / 2) * 2;   // 꼬치의 topH = "먹이 중심 × 2" — 입 정렬(mouth − topH/2)이 스틱 중간이 아니라 생선에 맞도록
     } else if (f.id === 'grilledclam') {   // 🦪🍢 조개구이 — raw=꽉 닫힌 조개 2, cooked=활짝 벌어짐+윤기 조갯살+육즙, 살 2→1→0
         const raw = !!f.raw;
         skStick(0.185, !raw);
@@ -12829,7 +12834,7 @@ function makeFoodGeo(f, bites = 0) {
         else if (b >= 2) { clamAt(0.082, 0.4, 'empty'); clamAt(0.132, 3.5, 'empty'); }
         else if (b >= 1) { clamAt(0.082, 0.4, 'full'); clamAt(0.132, 3.5, 'empty'); }
         else { clamAt(0.082, 0.4, 'full'); clamAt(0.132, 3.5, 'full'); }
-        topH = 0.185;
+        topH = 0.107 * 2;   // 조개 2개의 중심(0.082·0.132) — 입은 껍데기 사이로 온다
     } else if (f.id === 'marshmallow') {   // 🍡🍢 마시멜로 — 동일 원통 3개: cooked=위치별 토스팅 그라데이션+처짐, 3→2→1 + 스틱 끈적 잔여
         const raw = !!f.raw;
         const hsh2 = (x, y) => { const t = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return t - Math.floor(t); };
@@ -12877,7 +12882,7 @@ function makeFoodGeo(f, bites = 0) {
             }
             if (b >= 2) { const dr = new THREE.SphereGeometry(0.0026, 7, 5); dr.scale(0.7, 1.5, 0.7); dr.translate(0.0078, slots[0] + 0.001, 0.003); glossParts.push(bakeGrad(dr, 0xe8b86a, 0xc08a3a, { curve: 1 })); }   // 마지막 하나는 카라멜 드립
         }
-        topH = 0.175;
+        topH = (present.reduce((s2, si) => s2 + slots[si], 0) / present.length + 0.008) * 2;   // 남은 마시멜로 중심 × 2 — 먹을수록 아래로 내려온다
     } else if (f.id === 'cloche') {   // 🍽️ 클로슈 — 요리 완성품 임시 그릇 (요리별 조형은 디자인 확정 후 dish 분기로). burnt = 실험 실패작(그을림)
         const burnt = !!f.burnt;
         const tray = new THREE.CylinderGeometry(0.075, 0.082, 0.014, 18);
@@ -12953,7 +12958,8 @@ function makeFoodMesh(f) {
     const mesh = new THREE.Mesh(geo, gradMat);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.userData.topH = geo.userData.topH;
+    if (SKEWER_FOODS.has(f.id)) mesh.scale.setScalar(SKEWER_SCALE);   // 🍢 굽는 프롭과 같은 스케일 — 다 굽고 손에 옮겨 들 때 크기가 튀지 않게(사용자 리포트)
+    mesh.userData.topH = geo.userData.topH * mesh.scale.x;            // 입 정렬은 월드 단위 — 스케일 반영 필수(접시 요리는 scale 1이라 종전과 동일)
     syncShinyParts(mesh, geo);
     if (f.id === 'juice' || f.id === 'smoothie') {   // 🥤 유리컵 = 반투명 별도 메시(내용물이 비친다). 먹기 단계엔 안 변하니 자식으로 고정
         const g = new THREE.CylinderGeometry(0.028, 0.0205, 0.082, 20, 1, true); g.translate(0, 0.041, 0);
@@ -13264,6 +13270,8 @@ function updateHeldPose(p, key, delta) {
                     it.mesh.geometry.dispose();
                     it.mesh.geometry = (it.def && it.def.fruit) ? makeFruitGeo(it.def.fruit, Math.min(2, it.bites)) : makeFoodGeo(it.def, Math.min(2, it.bites));
                     syncShinyParts(it.mesh, it.mesh.geometry);   // 우주 간식 은박/글레이즈 자식도 단계 따라 교체
+                    const nt = it.mesh.geometry.userData && it.mesh.geometry.userData.topH;
+                    if (nt) it.mesh.userData.topH = nt * it.mesh.scale.x;   // 꼬치는 먹을수록 남은 먹이가 아래로 — 입 높이 재동기
                 }
                 playBuffer(munchBuf, { vol: 0.55, rate: 0.85 + Math.random() * 0.3, filterFreq: 950 });
             }
@@ -22688,17 +22696,26 @@ function openIcebox() {
     iceboxPanel.style.display = iceboxPanel.style.display === 'none' ? 'block' : (iceboxPanel.style.display ? 'none' : 'block');
     if (iceboxPanel.style.display !== 'none') refreshIceboxPanel();
 }
-// 조과 보관 제안 — 팡파레 곁에 작은 2버튼: 보관 / 놓아주기(기본, 6초 방치=놓아주기 — 종전 동작).
+// 조과 보관 제안 — 팡파레 곁에 작은 2버튼. 기본(6초 방치·새 조과에 밀림)=보관: "낚았는데 없다"
+// 리포트 수리 — 잡은 건 내 것이 기대값(스타듀 문법), 놓아주기만 명시적 선택.
 let iceOffer = null;
+let fishForceBig = false;   // E2E — 다음 입질을 월척으로 (자축 폴짝 경로 강제)
 function offerIceboxKeep(sp, len) {
-    if (iceOffer) { clearTimeout(iceOffer.timer); iceOffer.el.remove(); iceOffer = null; }
+    if (iceOffer) iceOffer.close(true);   // 새 조과가 밀어내도 이전 것은 보관
     const el = document.createElement('div');
     el.style.cssText = 'position:fixed; left:50%; transform:translateX(-50%); bottom:calc(118px + env(safe-area-inset-bottom, 0px)); display:flex; gap:8px; z-index:120; background:rgba(30,32,40,0.94); border-radius:12px; padding:8px 10px; box-shadow:0 6px 18px rgba(0,0,0,0.35); font-family:sans-serif; align-items:center;';
     const label = document.createElement('span');
     label.textContent = `🐟 ${sp.ko} ${len}cm —`;
     label.style.cssText = 'color:#fff; font-size:13px;';
     el.appendChild(label);
-    const close = () => { if (!iceOffer) return; clearTimeout(iceOffer.timer); iceOffer.el.remove(); iceOffer = null; };
+    const keep = () => {
+        iceboxCounts[sp.id] = (iceboxCounts[sp.id] || 0) + 1;
+        saveIcebox();
+        refreshIceboxPanel();
+        showToast(`🧊 ${sp.ko}를 아이스박스에 보관했어요 — 요리 재료!`);
+        logWorldEvent(`낚은 ${sp.ko}를 아이스박스에 보관했다 🧊`);
+    };
+    const close = (andKeep) => { if (!iceOffer) return; clearTimeout(iceOffer.timer); iceOffer.el.remove(); iceOffer = null; if (andKeep) keep(); };
     const mk = (txt, fn) => {
         const b = document.createElement('button');
         b.textContent = txt;
@@ -22706,16 +22723,10 @@ function offerIceboxKeep(sp, len) {
         b.onclick = () => { close(); if (fn) fn(); };
         el.appendChild(b);
     };
-    mk('🧊 아이스박스에 보관', () => {
-        iceboxCounts[sp.id] = (iceboxCounts[sp.id] || 0) + 1;
-        saveIcebox();
-        refreshIceboxPanel();
-        showToast(`🧊 ${sp.ko}를 아이스박스에 보관했어요 — 요리 재료!`);
-        logWorldEvent(`낚은 ${sp.ko}를 아이스박스에 보관했다 🧊`);
-    });
+    mk('🧊 보관 (기본)', keep);
     mk('🌊 놓아주기', null);
     document.body.appendChild(el);
-    iceOffer = { el, timer: setTimeout(close, 6000) };
+    iceOffer = { el, close, timer: setTimeout(() => close(true), 6000) };
 }
 // 도감 — { speciesId: { n, max } }
 function fishdexRecord(sp, len) {
@@ -23075,7 +23086,8 @@ function startCast(f, target) {
         console.warn('[fish] species pool empty — fallback', target.water);
         f.species = FISH_SPECIES.find((s) => s.water === target.water && !s.when) || FISH_SPECIES[0];
     }
-    f.len = Math.round(f.species.len[0] + Math.random() * (f.species.len[1] - f.species.len[0]));
+    f.len = fishForceBig ? f.species.len[1] : Math.round(f.species.len[0] + Math.random() * (f.species.len[1] - f.species.len[0]));
+    fishForceBig = false;
     f.big = f.len >= f.species.len[0] + (f.species.len[1] - f.species.len[0]) * 0.85 && f.species.rarity > 0;
     playBuffer(swishBuf, { vol: 0.4, rate: 1.25, filterFreq: 1600 });
 }
@@ -23364,7 +23376,7 @@ function updateFishingInstance(f, delta) {
                 if (f.species.rarity > 0) {
                     fishFanfare();
                     if (!f.isAI) maybeProactive(null, `주인이 방금 낚시로 ${f.species.ko}(${f.len}cm)를 낚았다!${f.big ? ' 월척이다!' : ''}`);
-                    if (!f.isAI && PROPS.some((q) => q.type === 'icebox')) offerIceboxKeep(f.species, f.len);   // 🧊 보관/놓아주기 — 방치=놓아주기(종전)
+                    if (!f.isAI && PROPS.some((q) => q.type === 'icebox')) offerIceboxKeep(f.species, f.len);   // 🧊 보관/놓아주기 — 방치·밀어내기=보관(기본)
                     for (let i = 0; i < 8; i++) {   // 반짝 링
                         const a = (i / 8) * Math.PI * 2;
                         const spr = glowSprite(0xfff1cf, 0.08, 0.9);
@@ -23425,9 +23437,15 @@ function updateFishingInstance(f, delta) {
     if (f.isAI) {
         // AI 펫은 서포트 클램프가 없다 — 폴짝을 +=하면 잡을 때마다 하늘로 적분 누적되고,
         // 떠오른 뒤엔 steerToward 턱 규칙(0.26)에 막혀 걷지도 못한다 (사용자 버그 리포트).
-        // 절대값: 지면 + 이번 프레임 폴짝. (조종 펫은 updatePossessed가 매 프레임 기준선 복원)
+        // 절대값: 지면 + 이번 프레임 폴짝.
         m.position.y = playerSupportY(p, m.position.x, m.position.z).y + hopY;
-    } else if (hopY) m.position.y += hopY;
+    } else if (hopY || f.hopApplied) {
+        // 조종 펫도 같은 병(리포트 2호: 완료 직후 초고도 '더블점프' = 월척 폴짝×2의 적분).
+        // 'land' 연출 중엔 updatePlayer가 입력 잠금으로 早반환이라 "매 프레임 기준선 복원"
+        // 가정이 거짓 — 교체식(+이번 −지난)이면 배 위 낚시(서포트 밖 기준선)도 안전하다.
+        m.position.y += hopY - (f.hopApplied || 0);
+        f.hopApplied = hopY;
+    }
     if (f.droop > 0) {   // 처짐: 날개·귀가 축
         for (const wg of p.pet.wings) wg.rotation.z = (wg.userData._restRotZ || 0) * (1 - f.droop * 0.5);
         for (const er of p.pet.ears) er.rotation.x = (er.userData._restRotX || 0) + 0.4 * f.droop;
