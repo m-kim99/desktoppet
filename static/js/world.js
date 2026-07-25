@@ -17407,7 +17407,7 @@ const dishDef = (id, name, extra) => {
     return d;
 };
 let vendPending = null, vendBusyUntil = 0, vendFly = null;
-function giveSnack(p, f) {   // giveFood 미러 — 자판기는 받자마자 그 자리에서 냠냠
+function giveSnack(p, f) {   // giveFood 미러 — 조종 펫은 받기만(먹기=우클릭 메뉴, 부스 문법). 절친 자율 뽑기만 그 자리에서 냠냠
     removeFood(p);
     const mesh = makeFoodMesh(f);
     mesh.rotation.y = Math.PI;
@@ -17417,7 +17417,7 @@ function giveSnack(p, f) {   // giveFood 미러 — 자판기는 받자마자 �
     const sideX = flankX(p, 1, itemY, itemZ);
     mesh.position.set(sideX + 0.045, itemY, itemZ);
     const food = {
-        def: f, mesh, bites: 0, seq: { count: 3, t: 0, played: -1 },
+        def: f, mesh, bites: 0, seq: p === possessed ? null : { count: 3, t: 0, played: -1 },
         rest: mesh.position.clone(),
         anchor: new THREE.Vector3(sideX - 0.025, itemY + 0.045, itemZ + 0.01),
     };
