@@ -16787,17 +16787,6 @@ function makeRocket() {
         grad.push(bakeGrad(new THREE.BoxGeometry(0.012, 0.4, 0.02).rotateY(-a2).translate(Math.cos(a2) * 0.293, 0.51, Math.sin(a2) * 0.293), 0xe2cfab, 0xb28f66, { curve: 1 }));
     }
     grad.push(bakeGrad(new THREE.CylinderGeometry(0.24, 0.268, 0.055, 20).translate(0, 0.175, 0), 0xd8cdb8, 0x8e8578, { curve: 1 }));   // 엔진 슈라우드
-    // E. 그리드 핀 3 — 동체에 접혀 붙은 채. 프레임 + 격자 살
-    for (let k = 0; k < 3; k++) {
-        const a2 = Math.PI / 2 + k * 2.0944 + 1.047;
-        const cs2 = Math.cos(a2), sn2 = Math.sin(a2);
-        const fr = 0.30;
-        metal.push(new THREE.BoxGeometry(0.018, 0.2, 0.017).rotateY(-a2).translate(cs2 * (fr + 0.02), 0.8, sn2 * (fr + 0.02) + 0.057));
-        metal.push(new THREE.BoxGeometry(0.018, 0.2, 0.017).rotateY(-a2).translate(cs2 * (fr + 0.02) + 0.057 * sn2, 0.8, sn2 * (fr + 0.02) - 0.057 * cs2));
-        for (const gy of [0.73, 0.8, 0.87]) metal.push(new THREE.BoxGeometry(0.022, 0.014, 0.125).rotateY(-a2).translate(cs2 * (fr + 0.03), gy, sn2 * (fr + 0.03)));
-        for (const go of [-0.045, 0, 0.045]) metal.push(new THREE.BoxGeometry(0.022, 0.19, 0.014).rotateY(-a2).translate(cs2 * (fr + 0.03) - sn2 * go, 0.8, sn2 * (fr + 0.03) + cs2 * go));
-        metal.push(new THREE.CylinderGeometry(0.02, 0.02, 0.06, 6).rotateZ(Math.PI / 2).rotateY(-a2).translate(cs2 * fr, 0.7, sn2 * fr));   // 힌지
-    }
     // 전망 캐빈: 두 좌석 사이 콘솔 + 유리 위아래 금속 림 (유리 돔 0.98~1.24 — 앉으면 어깨까지, 유영하면 온몸)
     const consolePost = new THREE.CylinderGeometry(0.028, 0.036, 0.10, 8);
     consolePost.translate(0, 1.015, 0);
@@ -16822,12 +16811,7 @@ function makeRocket() {
         new THREE.Vector2(0.155, 1.42), new THREE.Vector2(0.075, 1.52), new THREE.Vector2(0.0, 1.585),
     ];
     grad.push(bakeGrad(new THREE.LatheGeometry(nosePts, 20), 0xe06a58, 0xb04a3c, { curve: 1 }));   // 매트 유지 — 클리어코트를 씌우면 반사가 붉은색을 씻어낸다(사용자 리포트)
-    for (let i = 0; i < 4; i++) {   // E. RCS 스러스터 4 (십자) — 자세 제어가 있다는 신호
-        const a2 = i * Math.PI / 2 + 0.79, cs2 = Math.cos(a2), sn2 = Math.sin(a2);
-        metal.push(new THREE.BoxGeometry(0.05, 0.05, 0.045).rotateY(-a2).translate(cs2 * 0.226, 1.325, sn2 * 0.226));
-        dark.push(new THREE.CylinderGeometry(0.012, 0.02, 0.035, 8).rotateZ(Math.PI / 2).rotateY(-a2).translate(cs2 * 0.257, 1.325, sn2 * 0.257));
-    }
-    const mast = new THREE.CylinderGeometry(0.009, 0.012, 0.10, 6);
+    const mast = new THREE.CylinderGeometry(0.009, 0.012, 0.10, 6);   // 안테나 마스트 — 없으면 비콘이 공중에 뜬다
     mast.translate(0, 1.62, 0);
     metal.push(mast);
     // 허리 레드 밴드 + 현창 2 (앞뒤)
