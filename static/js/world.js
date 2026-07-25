@@ -17037,7 +17037,7 @@ SPACE_POIS[0].padQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vect
 SPACE_POIS[1].padPos = new THREE.Vector3(SPACE_POIS[1].x, SPACE_POIS[1].y, SPACE_POIS[1].z + 2.2);   // 갑판 위 착륙 패드 (코어 비켜서)
 SPACE_POIS[1].padQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0));   // 한 좌석이 정거장 창을 마주본다
 const spacePoiGroup = new THREE.Group();
-let stationWingL = null, stationWingR = null, stationAntenna = null, vendGroup = null, teleGroup = null;
+let stationWingL = null, stationWingR = null, stationWingBase = 0, stationAntenna = null, vendGroup = null, teleGroup = null;
 let teleYawG = null, teleTiltG = null;   // 🔭 요크 좌우 회전 / 하우징 상하 틸트 — 조형이 실제 축을 갖는다
 const TELE_PARK = { yaw: 0, tilt: -0.17 };   // 아무도 안 볼 땐 난간 바깥을 향해 살짝 숙인 자세
 let teleAim = { ...TELE_PARK };
@@ -17080,7 +17080,9 @@ const navGrnMat = new THREE.MeshBasicMaterial({ color: 0x7df0a4, fog: false });
     const poiFoil = gradMatFoil.clone(); poiFoil.fog = false;
     // ☀️ 태양전지 셀 — 각도에 따라 번쩍이는 유리면(클리어코트 + envMap 반사). 정점색은 남색 램프만
     // 맡고 광택은 재질이 전담 — 매트 재질(roughness .85)로는 "남색 종이판"으로 읽힌다(사용자 리포트).
-    const poiCell = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.07, metalness: 0.1, ior: 1.7, clearcoat: 1, clearcoatRoughness: 0.03, envMap: scene.userData.envTex, envMapIntensity: 1.8, fog: false });
+    const poiCell = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.06, metalness: 0, ior: 1.75, clearcoat: 1, clearcoatRoughness: 0.025, envMap: scene.userData.envTex, envMapIntensity: 1.05, fog: false });
+    // ⚠️ envMapIntensity를 올리면 하늘 반사가 면 전체를 덮어 남색이 하얗게 뜬다 — 넓은 반사는 낮추고
+    // 좁고 밝은 하이라이트(clearcoatRoughness .025)로 번쩍임을 만든다. 색은 정점색으로 진하게.
     const poiGloss = gradMatGloss.clone(); poiGloss.fog = false;
     const addMerged = (parent, arr, mat) => { const g = mergeGeometries(arr, false); if (g) parent.add(new THREE.Mesh(g, mat)); };
     // 🌕 꼬마 달 (R7 — 펫이 정상 캡 r4.2를 걸어다니는 체급): 회백 구 + 크레이터 14 + 빨간 깃발
@@ -17345,8 +17347,8 @@ const navGrnMat = new THREE.MeshBasicMaterial({ color: 0x7df0a4, fog: false });
         const wGrad = [], wCell = [];
         wGrad.push(WHT(sbox(0.14, 0.09, 3.7, 0, 0, 0)));                          // 스파
         for (const pz of [-1.75, 1.75]) {
-            wGrad.push(bakeGrad(sbox(2.2, 0.05, 3.2, 0, 0, pz), 0x6e6244, 0xc8a13c, { curve: 1 }));   // 판 본체 — 아래=캡톤 금색
-            wCell.push(bakeGrad(sbox(2.14, 0.016, 3.14, 0, 0.033, pz), 0x4a72d8, 0x0e1a38, { curve: 1.6 }));   // 셀 유리(반사 재질)
+            wGrad.push(bakeGrad(sbox(2.2, 0.05, 3.2, 0, 0, pz), 0x4a4132, 0xb8912e, { curve: 1 }));   // 판 본체 — 아래=캡톤 금색
+            wCell.push(bakeGrad(sbox(2.14, 0.016, 3.14, 0, 0.033, pz), 0x1e3a85, 0x03060f, { curve: 1.5 }));   // 셀 유리 — 실제 PV는 검푸른 유리
             for (let c = -2; c <= 2; c++) wGrad.push(BUS(sbox(2.16, 0.01, 0.03, 0, 0.044, pz + c * 0.62)));   // 버스바 — 유리 위 은색 리본
             for (const cx of [-0.73, 0.73]) wGrad.push(BUS(sbox(0.03, 0.01, 3.14, cx, 0.044, pz)));
             for (const [fw, fd, fx, fz] of [[2.26, 0.06, 0, pz - 1.6], [2.26, 0.06, 0, pz + 1.6], [0.06, 3.3, -1.11, pz], [0.06, 3.3, 1.11, pz]])
@@ -18642,8 +18644,13 @@ function updateRocket(delta) {
         // 겨누면 판이 뒤집혀 셀 면이 안 보인다(정거장이 해보다 30m 높다). 해의 동서 이동을 요크
         // 기울기 ±0.62rad로 매핑 — 하루 종일 천천히 기울고 밤엔 끝자세로 대기한다.
         const wAim = THREE.MathUtils.clamp(sunMesh.position.x / 16, -1, 1) * 0.62, wK = 1 - Math.pow(0.25, delta);
-        stationWingL.rotation.x += Math.atan2(Math.sin(wAim - stationWingL.rotation.x), Math.cos(wAim - stationWingL.rotation.x)) * wK;
-        stationWingR.rotation.x = stationWingL.rotation.x;
+        stationWingBase += Math.atan2(Math.sin(wAim - stationWingBase), Math.cos(wAim - stationWingBase)) * wK;
+        // 자세 미세 조정 — 해 추적만 걸면 하루 종일 멈춰 보인다. 좌우 위상을 어긋내고(0.9rad)
+        // 아주 느린 플렉스(z축 0.8°)를 얹어야 "떠 있는 구조물"로 읽힌다.
+        stationWingL.rotation.x = stationWingBase + Math.sin(wxTime.value * 0.33) * 0.045;
+        stationWingR.rotation.x = stationWingBase + Math.sin(wxTime.value * 0.33 + 0.9) * 0.045;
+        stationWingL.rotation.z = Math.sin(wxTime.value * 0.21) * 0.014;
+        stationWingR.rotation.z = Math.sin(wxTime.value * 0.21 + 1.7) * 0.014;
         if (stationAntenna) stationAntenna.rotation.y += delta * 0.22;   // 📡 스윕
         const padSpd = (ROCKET.poi && ROCKET.poi.id === 'station' && ROCKET.padK > 0.02 && ROCKET.padK < 0.99) ? 7 : 2.2;   // 도킹 중엔 유도등이 빨라진다
         for (let i = 0; i < 4; i++) padLightMats[i].opacity = 0.22 + 0.6 * Math.pow(Math.max(0, Math.sin(wxTime.value * padSpd - i * 0.9)), 3);
