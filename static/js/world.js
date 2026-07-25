@@ -22487,7 +22487,9 @@ let shellSeeded = false;   // 로드 직후 1~2개 즉시 — 레이아웃·소�
 function shellCounts() {
     try { return JSON.parse(localStorage.getItem('world-shells') || '{}'); } catch (e) { return {}; }
 }
-function makeShellMesh(t) {   // 🐚 고퀄 리모델: 종별 시그니처 — 가리비=방사 리브·소라=진짜 나선·분홍조개=성장 융기·진주=자개 속살+발광 알
+function makeShellMesh(t) {
+    if (FC_SHELL[t.id]) return buildShellCartoon(t.id);   // 🐚 카툰 조형 — 종당 1드로우(진주만 2: 발광 진주)
+   // 🐚 고퀄 리모델: 종별 시그니처 — 가리비=방사 리브·소라=진짜 나선·분홍조개=성장 융기·진주=자개 속살+발광 알
     const g = new THREE.Group();
     const parts = [];
     const ribFan = (baseCol, rimCol, ribN, sx) => {   // 부채 껍데기 + 방사 리브 (가리비·진주 공용)
@@ -25055,12 +25057,13 @@ document.addEventListener('visibilitychange', async () => {
 //   ③ 무늬는 만화식 — 굵고 성긴 초승달 비늘 + 일정 굵기 외곽선. 촘촘하면 96px에서 노이즈가 되고 원경에 모아레
 //   ④ 지느러미 텍스처는 **회색조 공용 1셀**, 색은 정점색으로 종별 착색(vertexColors × map) → 셀 13개 절약
 //   ⑤ 정점색은 형태 음영 + 지느러미 착색만. 색·무늬는 텍스처 몫
-const FA_W = 1024, FA_CELL = 256, FA_COLS = 4;
+const FA_W = 2048, FA_H = 1024, FA_CELL = 256, FA_COLS = 8, FA_ROWS = 4;
+const FA_KU = 1 / FA_COLS, FA_KV = 1 / FA_ROWS;   // ⚠️ 비정사각 아틀라스 — u·v 스케일이 다르다(하나로 쓰면 세로가 늘어난다)
 const faRect = (i) => {
     const c = i % FA_COLS, r = (i / FA_COLS) | 0;
-    return { x: c * FA_CELL, y: r * FA_CELL, u0: c / FA_COLS, v1: 1 - r / FA_COLS, k: 1 / FA_COLS };
+    return { x: c * FA_CELL, y: r * FA_CELL, u0: c * FA_KU, v1: 1 - r * FA_KV };
 };
-const FA_FIN = 13;   // 공용 지느러미 셀
+const FA_FIN = 13;   // 공용 지느러미 셀 · 15 = 흰색+개구리눈+장화속 · 16~19 = 조개 · 20~27 해산물 예약
 
 // ---- 종별 데이터 -------------------------------------------------------------------------
 // prof: [s, top, bot, hw] · edge: 등날 날카로움(0=둥근 단면, 1=날) · headV: 머리에 줄 셀 높이 비율
@@ -25454,9 +25457,9 @@ let _fcAtlas = null;
 function fcAtlas() {
     if (_fcAtlas) return _fcAtlas;
     const cv = document.createElement('canvas');
-    cv.width = cv.height = FA_W;
+    cv.width = FA_W; cv.height = FA_H;
     const g = cv.getContext('2d');
-    g.fillStyle = '#ffffff'; g.fillRect(0, 0, FA_W, FA_W);   // 셀 15 = 순백(부속 파트가 정점색만 쓰도록)
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, FA_W, FA_H);   // 셀 15 = 순백(부속 파트가 정점색만 쓰도록)
     for (const id in FISHC) {
         const sp = FISHC[id], R = faRect(sp.cell), C = FA_CELL;
         const xOf = (u) => R.x + u * C, yOf = (s) => R.y + fcV(sp, s) * C, cOf = (u) => -Math.cos(u * Math.PI * 2);
@@ -25563,6 +25566,7 @@ function fcAtlas() {
         }
         g.restore();
     }
+    fcPaintShell(g);  // 🐚 셀 16~19
     fcPaintFrog(g);   // 🐸 셀 9 — 등(위 절반) / 배(아래 절반)
     fcPaintBoot(g);   // 🥾 셀 12 — 통·발·밑창 3밴드
     {   // 흰 셀(15) 좌상 사분면에 개구리 눈 — 금색 홍채 + **가로 동공**. 중앙은 순백 유지(부속 파트가 샘플)
@@ -25591,7 +25595,7 @@ function fcAtlas() {
     const tex = new THREE.CanvasTexture(cv);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 4;
-    _fcAtlas = { tex, C: FA_CELL, W: FA_W };
+    _fcAtlas = { tex, C: FA_CELL, W: FA_W, H: FA_H };
     return _fcAtlas;
 }
 function fcExtra(g, sp, H) {   // 종별 시그니처 무늬 — 비늘 위, 아가미·눈 아래 레이어
@@ -26068,7 +26072,7 @@ function fcPaintBoot(g) {   // 흙·물때·긁힘 — "헌" 장화의 정체성
     g.restore();
 }
 function buildBootCartoon() {
-    const A = fcAtlas(), R = faRect(FC_BOOT.cell), k = 1 / FA_COLS;
+    const A = fcAtlas(), R = faRect(FC_BOOT.cell), k = FA_KU, kv = FA_KV;
     if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
     const sh = fcBootShaft();
     const parts = [{ geo: sh.outer }, ...fcBootParts(), { geo: sh.inner, dark: true }];
@@ -26079,8 +26083,8 @@ function buildBootCartoon() {
             const up = nr ? Math.max(0, nr.getY(i)) : 0;   // 정점색 = 형태 음영만: 위를 본 면이 밝고 안쪽이 어둡다
             const t = 0.86 + 0.16 * up - 0.10 * Math.max(0, -(nr ? nr.getY(i) : 0));
             col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = pt.dark ? 0.30 : t;
-            if (pt.dark) { const DR = faRect(15); uv.setXY(i, DR.u0 + k * (0.55 + uv.getX(i) * 0.40), DR.v1 - k * (0.55 + (1 - uv.getY(i)) * 0.40)); }
-            else uv.setXY(i, R.u0 + uv.getX(i) * k, R.v1 - (1 - uv.getY(i)) * k);
+            if (pt.dark) { const DR = faRect(15); uv.setXY(i, DR.u0 + k * (0.55 + uv.getX(i) * 0.40), DR.v1 - kv * (0.55 + (1 - uv.getY(i)) * 0.40)); }
+            else uv.setXY(i, R.u0 + uv.getX(i) * k, R.v1 - (1 - uv.getY(i)) * kv);
         }
         pt.geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     }
@@ -26207,14 +26211,14 @@ function fcPaintFrog(g) {   // 셀 9 — 위 절반 등(초록 얼룩·등줄·�
     g.restore();
 }
 function buildFrogCartoon() {
-    const A = fcAtlas(), k = 1 / FA_COLS, R = faRect(FC_FROG.cell);
+    const A = fcAtlas(), k = FA_KU, kv = FA_KV, R = faRect(FC_FROG.cell);
     if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
     const parts = [];
     for (const f of fcLoftGeo(fcFrogSpec())) {
         const uv = f.geo.attributes.uv, n = uv.count, col = new Float32Array(n * 3);
         const vr = f.top ? [0.5, 1] : [0, 0.5];
         for (let i = 0; i < n; i++) {
-            uv.setXY(i, R.u0 + uv.getX(i) * k, R.v1 - k * (1 - (vr[0] + (1 - uv.getY(i)) * (vr[1] - vr[0]))));
+            uv.setXY(i, R.u0 + uv.getX(i) * k, R.v1 - kv * (1 - (vr[0] + (1 - uv.getY(i)) * (vr[1] - vr[0]))));
             col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = 1;
         }
         f.geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -26224,7 +26228,7 @@ function buildFrogCartoon() {
         const P = pt.geo.attributes.position, nr = pt.geo.attributes.normal;
         const uvArr = new Float32Array(P.count * 2), col = new Float32Array(P.count * 3);
         for (let i = 0; i < P.count; i++) {
-            uvArr[i * 2] = R.u0 + k * 0.22; uvArr[i * 2 + 1] = R.v1 - k * 0.32;
+            uvArr[i * 2] = R.u0 + k * 0.22; uvArr[i * 2 + 1] = R.v1 - kv * 0.32;
             const up = nr ? Math.max(0, nr.getY(i)) : 0.5;
             const s = 0.86 + 0.20 * up;
             col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = s;
@@ -26239,13 +26243,236 @@ function buildFrogCartoon() {
     grp.add(m);
     return grp;
 }
+// ==== 🐚 조개 4종 — 종별 시그니처를 실루엣에 넣는다 =========================================
+// 구 조형은 눌린 구체 + 붙인 토러스·구슬이라 리브·성장융기·나선이 **표면에 얹힌 장식**으로 읽혔다.
+// 규율: 리브·돌기·융기는 **붙이지 말고 아웃라인/높이 필드를 변조**한다 → 삼각형만 늘고 드로우는 1.
+// 조개는 상시 표시물(해변 3 + 무인도 1~3)이라 드로우·재질이 예산이고, 삼각형은 여유가 크다.
+const FC_SHELL = {
+    scallop: { ko: '가리비', cell: 16, R: 0.062, arc: 1.16, ribs: 11, open: 0.16 },
+    conch:   { ko: '소라',   cell: 17, R: 0.058 },
+    clam:    { ko: '분홍조개', cell: 18, R: 0.056, arc: 1.34, ribs: 16, open: 0.10 },
+    pearl:   { ko: '진주조개', cell: 19, R: 0.058, arc: 1.28, ribs: 9,  open: 0.62 },
+};
+// ---- 부채꼴 판 (가리비·분홍조개·진주조개) --------------------------------------------------
+// 극좌표 (r=힌지→자유변, q=−1~1 부채 횡단). rib(q)를 **반지름과 높이에 같은 주기로** 넣는 게 핵심 —
+// 따로 넣으면 파상 변과 리브 음영이 어긋나 무늬 스티커처럼 보인다.
+function fcValveGeo(o) {
+    const NR = o.nr || 22, NA = o.na || 46, pos = [], uv = [], idx = [];
+    for (let i = 0; i <= NR; i++) {
+        const r = 0.055 + 0.945 * (i / NR);
+        for (let j = 0; j <= NA; j++) {
+            const q = (j / NA) * 2 - 1, ph = q * o.arc * 0.5;
+            const rib = Math.sin(((q + 1) * 0.5) * o.ribs * Math.PI * 2);
+            const rad = o.R * r * o.edge(q, rib);
+            const h = o.h(r, q, rib);
+            pos.push(rad * Math.sin(ph), h, rad * Math.cos(ph) - o.R * 0.30);
+            uv.push((q + 1) * 0.5, 1 - r);
+        }
+    }
+    for (let i = 0; i < NR; i++) for (let j = 0; j < NA; j++) {
+        const a = i * (NA + 1) + j, b = a + NA + 1;
+        if (o.flip) idx.push(a, a + 1, b, b, a + 1, b + 1);
+        else idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+}
+const fcHash = (n) => ((Math.sin(n * 73.13) * 41913.7) % 1 + 1) % 1;
+function fcShellValves(id) {
+    const S = FC_SHELL[id], out = [];
+    const grow = (r) => 1 + 0.055 * Math.sin(r * (id === 'clam' ? 26 : 17) - 1.1);   // 성장 융기 — 토러스 링 대신 높이 필드
+    const rough = id === 'pearl' ? (q) => 1 + 0.055 * Math.sin(q * 3.1 + 1.2) + 0.032 * Math.sin(q * 6.4 - 0.5) + 0.018 * Math.sin(q * 11.3)
+        : null;   // 굴처럼 거친 비대칭 변 — 해시 스텝을 쓰면 불연속이라 찢긴 천이 된다
+    for (const up of [false, true]) {
+        const sg = up ? 1 : -1;
+        const depth = id === 'scallop' ? 0.30 : id === 'clam' ? 0.46 : 0.36;   // 가리비는 얕고 새조개는 볼록
+        const g = fcValveGeo({
+            R: S.R, arc: S.arc, ribs: S.ribs, flip: !up, nr: 16, na: 76,   // ⚠️ 리브당 각도 샘플 6개 이상 — 적으면 리브가 패싯이 된다
+            edge: (q, rib) => (1 - 0.16 * Math.pow(Math.abs(q), 3.4)) * (1 + (id === 'scallop' ? 0.013 : 0.006) * rib) * (rough ? rough(q) : 1),   // 파상 변은 아주 얕게 — 크면 톱니가 된다
+            h: (r, q, rib) => sg * (
+                S.R * depth * Math.pow(Math.sin(Math.PI * Math.pow(r, 0.72)), 0.62) * (1 - 0.30 * q * q) * grow(r)
+                + S.R * (id === 'scallop' ? 0.052 : 0.026) * rib * Math.sin(Math.PI * r)   // ⚠️ 리브를 변까지 살리면 리브 끝마다 뾰족한 삼각(톱니)이 된다 — 양끝에서 죽인다
+                + S.R * 0.018 * Math.pow(r, 2.2)),                         // 자유변 쪽이 두꺼워진다
+        });
+        if (up) { g.rotateX(-S.open); g.translate(0, S.R * 0.045, -S.R * 0.10); }   // 위짝을 젖혀 자개 속이 보인다
+        out.push({ geo: g, up });
+    }
+    if (id === 'scallop') for (const sx of [1, -1]) {   // 힌지 귀(auricle) — 가리비 식별의 핵심
+        const ear = fcValveGeo({
+            R: S.R * 0.42, arc: 0.62, ribs: 3, nr: 5, na: 10,
+            edge: () => 1, h: (r) => -S.R * 0.05 * r,
+        });
+        ear.rotateY(sx * (S.arc * 0.5 + 0.30));
+        ear.translate(0, -S.R * 0.02, -S.R * 0.24);
+        out.push({ geo: ear, up: false });
+    }
+    return out;
+}
+// ---- 로그 나선 (소라) ----------------------------------------------------------------------
+// 구슬 스택이 아니라 **연속 튜브**여야 나선으로 읽힌다. 단면은 물방울(내측이 눌림) + 층별 돌기.
+function fcConchGeo() {
+    // ⚠️ 성장률 K가 크면 1.5바퀴만 보이고 바나나가 된다. K=0.115 · 3.2바퀴 = 총 10배 성장이
+    // 층이 맞물리는 구간이다(중심 간격 1.06R vs 단면 반지름 합 1.29R → 겹친다).
+    const S = FC_SHELL.conch, TURNS = 3.2, NT = 156, NC = 20, K = 0.115;
+    const TH = TURNS * Math.PI * 2, E = Math.exp(K * TH), R0 = S.R * 1.30 / E;
+    const pos = [], uv = [], idx = [];
+    for (let i = 0; i <= NT; i++) {
+        const t = i / NT, th = t * TH, gr = Math.exp(K * th);
+        const cr = R0 * gr, a = cr * 0.365, cy = R0 * 1.62 * gr - S.R * 0.90;   // 첨탑처럼 축이 오른다(단면이 뚱뚱하면 첨탑이 묻힌다)
+        const flare = t > 0.93 ? 1 + (t - 0.93) * 1.7 : 1;                       // 개구부 — 크면 매끈한 덩어리가 붙은 것처럼 보인다
+        for (let j = 0; j <= NC; j++) {
+            const ph = (j / NC) * Math.PI * 2;
+            const node = 1 + 0.17 * Math.max(0, Math.sin(ph - 0.35)) * Math.pow(Math.abs(Math.sin(th * 7)), 4);   // 층 어깨 돌기 열
+            const drop = 1 - 0.30 * Math.max(0, -Math.cos(ph));                 // 물방울 — 내측이 눌린다
+            const rr = a * node * drop * flare;
+            pos.push((cr + rr * Math.cos(ph)) * Math.cos(th), cy + rr * Math.sin(ph) * 1.10, (cr + rr * Math.cos(ph)) * Math.sin(th));
+            uv.push(j / NC, t);
+        }
+    }
+    for (let i = 0; i < NT; i++) for (let j = 0; j < NC; j++) {
+        const a = i * (NC + 1) + j, b = a + NC + 1;
+        idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+    {   // 개구부 마감 — 안쪽 어둠이 보이게 열린 채로 둔다(DoubleSide)
+        const base = pos.length / 3, cr = R0 * E, a = cr * 0.365, cy = R0 * 1.62 * E - S.R * 0.90, fl = 1.12;
+        pos.push(cr * Math.cos(TH), cy, cr * Math.sin(TH)); uv.push(0.5, 1);
+        for (let j = 0; j <= NC; j++) {
+            const ph = (j / NC) * Math.PI * 2;
+            const rr = a * (1 - 0.30 * Math.max(0, -Math.cos(ph))) * fl;
+            pos.push((cr + rr * Math.cos(ph)) * Math.cos(TH), cy + rr * Math.sin(ph) * 1.10, (cr + rr * Math.cos(ph)) * Math.sin(TH));
+            uv.push(j / NC, 0.985);
+        }
+        for (let j = 0; j < NC; j++) idx.push(base, base + 1 + j + 1, base + 1 + j);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    g.rotateZ(0.30);
+    return g;
+}
+// ---- 아틀라스 -----------------------------------------------------------------------------
+function fcPaintShell(g) {
+    for (const id in FC_SHELL) {
+        const S = FC_SHELL[id], R = faRect(S.cell), C = FA_CELL;
+        const X = (u) => R.x + u * C, Y = (v) => R.y + (1 - v) * C;
+        g.save();
+        g.beginPath(); g.rect(R.x, R.y, C, C); g.clip();
+        if (id === 'scallop') {   // 크림·살구 부채 + 성장 아치 + 리브 하이라이트(리브와 같은 각도 주기)
+            const gr = g.createLinearGradient(R.x, 0, R.x + C, 0);
+            gr.addColorStop(0, '#c99a6c'); gr.addColorStop(0.30, '#efd0a4'); gr.addColorStop(0.5, '#f8e3c2');
+            gr.addColorStop(0.70, '#efd0a4'); gr.addColorStop(1, '#c99a6c');
+            g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
+            for (let k = 0; k < S.ribs; k++) {   // 리브 — 밝은 능선 + 그늘진 골
+                const u = (k + 0.5) / S.ribs;
+                for (const [off, col, w] of [[-0.012, 'rgba(255,246,224,0.50)', 5], [0.012, 'rgba(118,82,48,0.34)', 4]]) {
+                    g.beginPath(); g.moveTo(X(u + off), Y(0.06)); g.lineTo(X(u + off), Y(1));
+                    g.strokeStyle = col; g.lineWidth = w; g.stroke();
+                }
+            }
+            for (let k = 0; k < 9; k++) {   // 성장 아치 — 자유변과 평행
+                const v = 0.16 + k * 0.093;
+                g.beginPath();
+                for (let j = 0; j <= 24; j++) { const u = j / 24, y = Y(v - 0.030 * (1 - Math.abs(u * 2 - 1))); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
+                g.strokeStyle = `rgba(140,100,60,${0.14 + (k % 2) * 0.10})`; g.lineWidth = 2.4; g.stroke();
+            }
+        } else if (id === 'conch') {   // 나선을 따라 흐르는 갈색 얼룩 띠 + 입술 안쪽 분홍 자개
+            const gr = g.createLinearGradient(0, R.y, 0, R.y + C);
+            gr.addColorStop(0, '#f2ddc4'); gr.addColorStop(0.45, '#e0b58c'); gr.addColorStop(1, '#c98a63');
+            g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
+            for (let k = 0; k < 30; k++) {   // 축 방향 화염 무늬 — 소라 특유
+                const v = fcHash(k + 3), u0 = fcHash(k + 40);
+                g.save(); g.translate(X(u0), Y(v)); g.rotate(0.5 + fcHash(k + 9) * 0.5);
+                g.beginPath(); g.ellipse(0, 0, C * (0.020 + fcHash(k + 12) * 0.030), C * 0.010, 0, 0, Math.PI * 2);
+                g.fillStyle = `rgba(122,74,40,${0.20 + fcHash(k + 21) * 0.26})`; g.fill(); g.restore();
+            }
+            for (let k = 0; k < 7; k++) {   // 층 경계(봉합선)
+                const u = k / 7;
+                g.beginPath(); g.moveTo(X(u), R.y); g.lineTo(X(u), R.y + C);
+                g.strokeStyle = 'rgba(110,68,36,0.24)'; g.lineWidth = 3; g.stroke();
+            }
+            const lip = g.createLinearGradient(0, Y(1), 0, Y(0.945));   // 개구부 근처만 = 분홍 자개(넓히면 체층 전체가 분홍이 된다)
+            lip.addColorStop(0, 'rgba(246,190,186,0.94)'); lip.addColorStop(1, 'rgba(246,196,190,0)');
+            g.fillStyle = lip; g.fillRect(R.x, Y(1), C, Y(0.945) - Y(1));
+        } else if (id === 'clam') {   // 분홍 → 크림 + 성장띠 + 얕은 방사 골
+            const gr = g.createLinearGradient(R.x, 0, R.x + C, 0);
+            gr.addColorStop(0, '#d98fa4'); gr.addColorStop(0.32, '#f4bcc8'); gr.addColorStop(0.5, '#fbdde2');
+            gr.addColorStop(0.68, '#f4bcc8'); gr.addColorStop(1, '#d98fa4');
+            g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
+            for (let k = 0; k < S.ribs; k++) {
+                const u = (k + 0.5) / S.ribs;
+                g.beginPath(); g.moveTo(X(u), Y(0.08)); g.lineTo(X(u), Y(1));
+                g.strokeStyle = 'rgba(176,110,124,0.22)'; g.lineWidth = 3; g.stroke();
+            }
+            for (let k = 0; k < 13; k++) {   // 성장띠 — 새조개의 정체성
+                const v = 0.12 + k * 0.068;
+                g.beginPath();
+                for (let j = 0; j <= 24; j++) { const u = j / 24, y = Y(v - 0.024 * (1 - Math.abs(u * 2 - 1))); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
+                g.strokeStyle = `rgba(168,102,118,${0.18 + (k % 2) * 0.12})`; g.lineWidth = 2.6; g.stroke();
+                g.beginPath();
+                for (let j = 0; j <= 24; j++) { const u = j / 24, y = Y(v + 0.006 - 0.024 * (1 - Math.abs(u * 2 - 1))); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
+                g.strokeStyle = 'rgba(255,240,242,0.34)'; g.lineWidth = 1.8; g.stroke();
+            }
+        } else if (id === 'pearl') {   // 자개 — 무지개 간섭색 띠(청록→분홍→금)가 정체성
+            const gr = g.createLinearGradient(R.x, 0, R.x + C, 0);
+            gr.addColorStop(0, '#8f9aa2'); gr.addColorStop(0.5, '#cfd6d4'); gr.addColorStop(1, '#8f9aa2');
+            g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
+            for (let k = 0; k < 22; k++) {   // 간섭색 — 각도별 색 띠
+                const v = k / 22, hue = ['rgba(120,214,206,', 'rgba(238,168,208,', 'rgba(246,224,150,', 'rgba(168,190,238,'][k % 4];
+                g.beginPath();
+                for (let j = 0; j <= 26; j++) { const u = j / 26, y = Y(v + 0.020 * Math.sin(u * Math.PI * 2.2 + k)); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
+                g.strokeStyle = hue + (0.16 + (k % 3) * 0.10) + ')'; g.lineWidth = 9; g.lineCap = 'round'; g.stroke();
+            }
+            for (let k = 0; k < 26; k++) {   // 거친 겉면 — 굴처럼 각질진 층
+                const v = fcHash(k + 5), u0 = fcHash(k + 60);
+                g.save(); g.translate(X(u0), Y(v)); g.rotate(fcHash(k + 11) * 3);
+                g.beginPath(); g.ellipse(0, 0, C * (0.024 + fcHash(k + 17) * 0.028), C * 0.009, 0, 0, Math.PI * 2);
+                g.fillStyle = `rgba(96,104,110,${0.16 + fcHash(k + 29) * 0.18})`; g.fill(); g.restore();
+            }
+        }
+        g.restore();
+    }
+}
+function buildShellCartoon(id) {
+    const A = fcAtlas(), S = FC_SHELL[id], R = faRect(S.cell), k = FA_KU, kv = FA_KV;
+    if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
+    const parts = [], glow = [];
+    const push = (geo, inner) => {
+        const uv = geo.attributes.uv, nr = geo.attributes.normal, n = uv.count, col = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) {
+            const up = nr ? nr.getY(i) : 0;
+            // 안쪽 면은 자개라 밝고, 겉면은 위를 본 쪽이 밝다 — 정점색은 형태 음영만
+            const t = inner ? 1.10 + 0.10 * Math.max(0, -up) : 0.86 + 0.20 * Math.max(0, up);
+            col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = t;
+            uv.setXY(i, R.u0 + uv.getX(i) * k, R.v1 - (1 - uv.getY(i)) * kv);
+        }
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+        parts.push(geo);
+    };
+    if (id === 'conch') push(fcConchGeo(), false);
+    else for (const v of fcShellValves(id)) push(v.geo, v.up);
+    if (id === 'pearl') {   // 진주 — 발광은 아귀 초롱 재질을 **재사용**한다(재질 총량 유지)
+        if (!fcGlowMat) fcGlowMat = new THREE.MeshStandardMaterial({ color: 0xfff4d8, emissive: 0xffe9a8, emissiveIntensity: 1.4, roughness: 0.3 });
+        glow.push(new THREE.SphereGeometry(S.R * 0.25, 14, 11).translate(0, S.R * 0.02, -S.R * 0.10));
+    }
+    const grp = new THREE.Group();
+    const m = new THREE.Mesh(mergeGeometries(parts, false), fcMat);
+    m.castShadow = true; m.receiveShadow = true;
+    grp.add(m);
+    if (glow.length) grp.add(new THREE.Mesh(mergeGeometries(glow, false), fcGlowMat));
+    return grp;
+}
+// ==== /🐚 조개 4종 =========================================================================
 // ---- 조립 ---------------------------------------------------------------------------------
 let fcMat = null, fcGlowMat = null, fcGlassMat = null;
 function buildFishCartoon(id) {
     const sp = FISHC[id], A = fcAtlas(), R = faRect(sp.cell), FR = faRect(FA_FIN), WR = faRect(15);
     if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
     if (!fcGlowMat) fcGlowMat = new THREE.MeshStandardMaterial({ color: 0xfff4d8, emissive: 0xffe9a8, emissiveIntensity: 1.4, roughness: 0.3 });
-    const k = 1 / FA_COLS, C = FA_CELL / FA_W;
+    const k = FA_KU, kv = FA_KV;
     const shade = (g, mode, col) => {   // 정점색: 몸통=형태 음영 · 지느러미=종별 착색 · 부속=단색
         const uvA = g.attributes.uv, n = uvA.count, out = new Float32Array(n * 3), c = new THREE.Color();
         for (let i = 0; i < n; i++) {
@@ -26266,13 +26493,13 @@ function buildFishCartoon(id) {
         const g = fcBodyGeo(sp, id === 'puffer' || id === 'angler' ? 24 : 20, id === 'puffer' ? 28 : 22);
         shade(g, 'body');
         const uv = g.attributes.uv;
-        for (let i = 0; i < uv.count; i++) uv.setXY(i, R.u0 + uv.getX(i) * k, R.v1 - fcV(sp, 1 - uv.getY(i)) * k);
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, R.u0 + uv.getX(i) * k, R.v1 - fcV(sp, 1 - uv.getY(i)) * kv);
         parts.push(g);
     }
     for (const f of fcFins(sp, false)) {   // 지느러미 — 공용 회색조 셀의 조 밀도 구간만 샘플
         shade(f.geo, 'fin', sp.fin.col);
         const uv = f.geo.attributes.uv;
-        for (let i = 0; i < uv.count; i++) uv.setXY(i, FR.u0 + uv.getX(i) * f.rays * k, FR.v1 - (1 - uv.getY(i)) * k);
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, FR.u0 + uv.getX(i) * f.rays * k, FR.v1 - (1 - uv.getY(i)) * kv);
         parts.push(f.geo);
     }
     const glow = [], opaque = [];
@@ -26283,9 +26510,9 @@ function buildFishCartoon(id) {
             for (let i = 0; i < P.count; i++) {
                 const dz = (P.getZ(i) - pt.sph.z) / pt.sph.r, dy = (P.getY(i) - pt.sph.y) / pt.sph.r;
                 uvArr[i * 2] = PR.u0 + k * (0.25 + THREE.MathUtils.clamp(dz * pt.sph.sx, -1, 1) * 0.20);
-                uvArr[i * 2 + 1] = PR.v1 - k * (0.25 - THREE.MathUtils.clamp(dy, -1, 1) * 0.20);
+                uvArr[i * 2 + 1] = PR.v1 - kv * (0.25 - THREE.MathUtils.clamp(dy, -1, 1) * 0.20);
             }
-        } else for (let i = 0; i < P.count; i++) { uvArr[i * 2] = WR.u0 + k * 0.5; uvArr[i * 2 + 1] = WR.v1 - k * 0.5; }
+        } else for (let i = 0; i < P.count; i++) { uvArr[i * 2] = WR.u0 + k * 0.5; uvArr[i * 2 + 1] = WR.v1 - kv * 0.5; }
         g.setAttribute('uv', new THREE.Float32BufferAttribute(uvArr, 2));
         if (pt.glow) { glow.push(g); continue; }
         shade(g, pt.patch !== undefined ? 'body' : 'flat', pt.col);
@@ -26310,7 +26537,7 @@ function buildFishCartoon(id) {
     return grp;
 }
 function buildRayCartoon() {   // 가오리 — 원반이라 독립. 등/배 셀을 따로 쓴다(들어올리면 배가 보인다)
-    const A = fcAtlas(), k = 1 / FA_COLS, WR = faRect(15);
+    const A = fcAtlas(), k = FA_KU, kv = FA_KV, WR = faRect(15);
     if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
     const parts = [];
     for (const f of fcLoftGeo(fcRaySpec())) {
@@ -26323,10 +26550,10 @@ function buildRayCartoon() {   // 가오리 — 원반이라 독립. 등/배 셀
         const P = pt.geo.attributes.position, col = new Float32Array(P.count * 3), c = new THREE.Color(pt.col || 0xffffff);
         if (pt.cell !== undefined) {   // 배지느러미는 배 셀을 그대로 쓴다(단색이면 원반과 톤이 어긋난다)
             const CR = faRect(pt.cell), uv = pt.geo.attributes.uv;
-            for (let i = 0; i < P.count; i++) { uv.setXY(i, CR.u0 + uv.getX(i) * k, CR.v1 - (1 - uv.getY(i)) * k); col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = 1; }
+            for (let i = 0; i < P.count; i++) { uv.setXY(i, CR.u0 + uv.getX(i) * k, CR.v1 - (1 - uv.getY(i)) * kv); col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = 1; }
         } else {
             const uvArr = new Float32Array(P.count * 2);
-            for (let i = 0; i < P.count; i++) { uvArr[i * 2] = WR.u0 + k * 0.5; uvArr[i * 2 + 1] = WR.v1 - k * 0.5; col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+            for (let i = 0; i < P.count; i++) { uvArr[i * 2] = WR.u0 + k * 0.5; uvArr[i * 2 + 1] = WR.v1 - kv * 0.5; col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
             pt.geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvArr, 2));
         }
         pt.geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
