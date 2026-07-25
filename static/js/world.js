@@ -9292,6 +9292,15 @@ if (statsOn) window.__worldDev = {
         const sz = new THREE.Box3().setFromObject(m).getSize(new THREE.Vector3());
         return { d, tri: Math.round(tri), len: +sz.z.toFixed(3), h: +sz.y.toFixed(3) };
     },
+    seaMake: (id, scale = 1.5, x = null, z = null) => {   // 해산물 메시 검수 — 드로우·삼각·치수, 좌표를 주면 실제 씬(해저 조명)에 놓는다
+        if (!SEAFOOD.some((q) => q.id === id)) return null;
+        const m = makeSeafoodMesh(id, scale);
+        let d = 0, tri = 0;
+        m.traverse((o) => { if (o.isMesh) { d++; const g = o.geometry; tri += (g.index ? g.index.count : g.attributes.position.count) / 3; } });
+        const sz = new THREE.Box3().setFromObject(m).getSize(new THREE.Vector3());
+        if (x != null) { m.position.set(x, seabedHeight(x, z) + 0.02, z); fruitLayer.add(m); }
+        return { d, tri: Math.round(tri), w: +sz.x.toFixed(3), h: +sz.y.toFixed(3), l: +sz.z.toFixed(3) };
+    },
     fishState: () => (fishing ? fishing.state : null),   // 낚시 헤드리스 검증용
     fishBigNext: () => { fishForceBig = true; return true; },   // 🐟 월척 강제 (E2E — 자축 폴짝 검증)
     aiFishState: () => (aiFishing ? aiFishing.state : null),   // 절친 자율 낚시 검증용
@@ -11613,6 +11622,13 @@ function makeSeafoodGeo(id) {
     return mergeGeometries(g, false);
 }
 function makeSeafoodMesh(id, scale = 1) {
+    // 🦪 카툰 조형으로 옮긴 종은 아틀라스 재질(fcMat)을 쓴다 — 조개 makeShellMesh와 같은 분기.
+    // 호출부(해저 스폰·머리 위 연출·도감 스냅샷·검수 랩)는 Group도 그대로 받으므로 무변경.
+    if (FC_SEA[id]) {
+        const grp = buildOysterCartoon();
+        if (scale !== 1) grp.scale.setScalar(scale);
+        return grp;
+    }
     const mesh = new THREE.Mesh(makeSeafoodGeo(id), gradMat);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -25567,6 +25583,7 @@ function fcAtlas() {
         g.restore();
     }
     fcPaintShell(g);  // 🐚 셀 16~19
+    fcPaintSea(g);    // 🦪 셀 20~22 (해산물 예약분)
     fcPaintFrog(g);   // 🐸 셀 9 — 등(위 절반) / 배(아래 절반)
     fcPaintBoot(g);   // 🥾 셀 12 — 통·발·밑창 3밴드
     {   // 흰 셀(15) 좌상 사분면에 개구리 눈 — 금색 홍채 + **가로 동공**. 중앙은 순백 유지(부속 파트가 샘플)
@@ -26262,7 +26279,7 @@ const FC_SHELL = {
 function fcValveGeo(o) {
     // ⚠️ 두께 0인 면 하나로 만들면 자유변이 무한히 얇아 **종잇장**으로 읽힌다(사용자 리포트).
     // 겉면(r 0→1) → r=1에서 림으로 이어짐 → 안쪽면(r 1→0, 두께만큼 안으로). 한 지오로 닫힌 껍데기.
-    const NR = o.nr || 14, NA = o.na || 48, TH = o.thick || 0, pos = [], uv = [], idx = [];
+    const NR = o.nr || 14, NA = o.na || 48, TH = o.thick || 0, pos = [], uv = [], idx = [], face = [];
     const ROWS = TH > 0 ? NR * 2 + 1 : NR;
     const rowAt = (i) => (TH > 0 ? (i <= NR ? { r: i / NR, in: 0 } : { r: (ROWS - i) / NR, in: 1 }) : { r: i / NR, in: 0 });
     for (let i = 0; i <= ROWS; i++) {
@@ -26287,6 +26304,7 @@ function fcValveGeo(o) {
             const umbo = (o.umbo || 0) * Math.pow(Math.max(0, 1 - rw.r / 0.5), 2);
             pos.push(o.R * wr * eg * Math.sin(ph), h, rad * Math.cos(ph) - o.R * (0.30 + umbo));
             uv.push((q + 1) * 0.5, 1 - r);
+            face.push(rw.in);   // faceAttr: 겉면 0 · 안쪽면 1 — 굴처럼 겉·안에 **다른 아틀라스 셀**을 물리는 쪽에서 쓴다
         }
     }
     for (let i = 0; i < ROWS; i++) for (let j = 0; j < NA; j++) {
@@ -26298,6 +26316,7 @@ function fcValveGeo(o) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    if (o.faceAttr) g.setAttribute('faceIn', new THREE.Float32BufferAttribute(face, 1));   // ⚠️ 병합 전에 지운다 — mergeGeometries는 속성 집합이 같아야 붙는다
     g.setIndex(idx); g.computeVertexNormals();
     return g;
 }
@@ -26553,6 +26572,189 @@ function buildShellCartoon(id) {
     return grp;
 }
 // ==== /🐚 조개 4종 =========================================================================
+
+// ==== 🦪 굴 — 이매패류니까 조개 골격을 그대로 쓴다 ==========================================
+// 구 조형의 문제(사용자 리포트 "형태부터 질감까지"): ① 뚜껑이 아래짝과 접점 없이 **공중에 떠**
+// 있었다(rotateX 후 translate) ② 뚜껑이 반구 껍질 하나라 옆에서 두께 0 블레이드 ③ 성장 골이
+// 토러스 4개 스택 = **등나무 바구니 테두리**(조개에서 이미 폐기한 '붙인 링' 안티패턴)
+// ④ 속살이 완벽한 타원체 = 바구니에 담긴 아이스크림 한 스쿱 ⑤ 껍데기 안쪽면이 없어 '그릇'이
+// 아니었다 ⑥ 해산물은 gradMat(정점색만, map 없음)이라 **질감이 나올 수가 없는 구조**였다.
+//
+// 해결: fcValveGeo를 그대로 재사용한다(벽 두께·경첩선 폭·부리·벌림=힌지축 회전이 전부 딸려온다).
+// 굴만의 규율 3가지:
+//   ① 굴의 정체성은 **비대칭**이다 — 두 짝의 rough 위상·깊이를 다르게(아래=깊은 컵, 위=얕은 뚜껑)
+//   ② 겉면과 안쪽면이 **다른 셀**을 쓴다(겉=백악질 박편, 안=매끈한 자개+근육 자국) → faceAttr
+//   ③ 속살도 fcValveGeo로 만든다 — 같은 힌지·같은 arc라 **컵에 저절로 맞는다**(구 조형은 별개
+//      구체라 안 맞았다)
+const FC_SEA = {
+    // ⚠️ 굴은 **납작하고 넓은 덩어리**다. 컵 depth 0.88·arc 1.85로 잡았더니 폭보다 높이가 커져
+    // 세로로 선 **헬멧/조개 지갑**이 됐다(실측). 폭(2R·sin(arc/2)) > 길이 > 높이 순서를 지킨다.
+    oyster: { ko: '굴', cellOut: 20, cellIn: 21, cellFlesh: 22, R: 0.066, arc: 2.05, open: 0.70, umbo: 0.16 },
+};
+// 저주파 3중 사인 — 해시 스텝은 불연속이라 찢긴 천이 된다(진주조개에서 배운 것). 위상만 바꿔
+// 두 짝을 서로 다르게 만든다: 이게 굴의 비대칭을 만드는 유일한 장치다.
+const oyRough = (ph0, amp) => (q) => 1
+    + amp * Math.sin(q * 2.3 + ph0)
+    + amp * 0.62 * Math.sin(q * 4.7 - ph0 * 1.7)
+    + amp * 0.33 * Math.sin(q * 9.1 + ph0 * 0.6);
+function fcOysterValves() {
+    const S = FC_SEA.oyster, out = [];
+    // 성장 융기: 토러스를 얹지 않고 **높이 필드**로. 굵고 성기게(굴은 층이 두껍다).
+    const grow = (r) => 1 + 0.085 * Math.sin(r * 7.5 - 0.8) + 0.040 * Math.sin(r * 15.0 + 1.3);
+    for (const up of [false, true]) {
+        const sg = up ? 1 : -1;
+        // ⚠️ 컵을 깊게(0.52) 파면 겉면이 **통째로 아래를 향한 반구**가 되고, 아래를 향한 면이 받는
+        // 빛은 hemiLight groundColor(0x8fca62)뿐이라 껍데기가 진초록으로 뜬다(해저 실측 — 정점 프로브로
+        // ny −0.99·텍셀 #dad5c8 확인, 즉 조형/텍스처가 아니라 **아래를 향한 면적**이 원인).
+        // 실물 굴도 해저에 납작하게 얹혀 있다: 얕게 파면 보이는 면이 옆~위를 향해 하늘빛·햇빛을 받는다.
+        const depth = up ? 0.16 : 0.36;                 // 위=얕은 뚜껑 · 아래=얕은 컵 (굴의 비대칭은 유지)
+        const rough = oyRough(up ? 2.1 : 0.0, up ? 0.030 : 0.055);   // 아래짝이 더 거칠다
+        const g = fcValveGeo({
+            R: S.R, arc: S.arc, ribs: 5, umbo: S.umbo, wmin: 0.32, wpow: 1.10,
+            flip: !up, nr: 12, na: 46, thick: S.R * 0.045, faceAttr: true,   // 0.075는 흰 개스킷 띠였다(조개와 같은 함정)
+            edge: (q) => (1 - 0.14 * Math.pow(Math.abs(q), 2.2)) * rough(q),
+            // 조개와 같은 불변식: h가 힌지에서 0이어야 두 짝이 뒤에서 붙는다. 벌리는 건 힌지축 회전으로만.
+            h: (r, q) => sg * S.R * depth * Math.pow(Math.sin(Math.PI * r), 0.72) * Math.min(1, r / 0.18)
+                * (1 - 0.20 * q * q) * grow(r) * (up ? 1 : 1 + 0.10 * Math.sin(q * 3.3 + 0.7)),   // 아래짝은 좌우로도 일그러진다
+        });
+        if (up) { const zH = -S.R * 0.245; g.translate(0, 0, -zH); g.rotateX(-S.open); g.translate(0, 0, zH); }
+        out.push({ geo: g, up });
+    }
+    return out;
+}
+// 속살 — 껍데기와 **같은 힌지·같은 arc**의 렌즈 두 짝. 위는 봉긋(0.55), 아래는 얕게(0.20) 붙여
+// 닫힌 덩어리로. 반지름을 0.78배로 줄여 컵 안에 앉힌다. 별개 구체를 놓던 구 방식은 컵과 안 맞았다.
+function fcOysterFlesh() {
+    const S = FC_SEA.oyster, out = [];
+    // ⚠️ 속살 윤곽의 무른 일그러짐. 껍데기 rough와 **위상이 다르므로** 크기가 컵에 가까우면 어떤
+    // q에서는 속살이 컵 밖으로 삐져나온다 — 옆에서 흰 날개처럼 보였다(실측). 0.80·0.94 → 0.70·0.88.
+    const wob = (q) => 1 + 0.038 * Math.sin(q * 2.9 + 1.1) + 0.020 * Math.sin(q * 6.2 - 0.4);
+    for (const up of [true, false]) {
+        const sg = up ? 1 : -1;
+        const g = fcValveGeo({
+            R: S.R * 0.70, arc: S.arc * 0.88, ribs: 3, umbo: S.umbo * 0.7, wmin: 0.34, wpow: 1.10,
+            flip: !up, nr: 9, na: 32, thick: 0,
+            edge: (q) => (1 - 0.12 * Math.pow(Math.abs(q), 2.2)) * wob(q),
+            h: (r, q) => sg * S.R * (up ? 0.36 : 0.15) * Math.pow(Math.sin(Math.PI * r), 0.66)
+                * (1 - 0.18 * q * q) * (1 + 0.10 * Math.sin(r * 6.1 + q * 2.0)),
+        });
+        // ⚠️ 렌즈는 y=0(껍데기 림 높이) 대칭으로 나온다 → 그대로 두면 속살이 컵 **위로 솟는다**
+        // (실측: 컵에 얹힌 달걀). 컵 안쪽으로 내려 앉힌다 — 윗면이 림에 겨우 닿는 깊이.
+        g.translate(0, -S.R * 0.28, 0);
+        out.push(g);
+    }
+    return out;
+}
+// ---- 아틀라스 (예약 셀 20~22 — 확장 없음) --------------------------------------------------
+// uv 규약은 조개와 같다: u = 부채 횡단 · v는 **셀 위쪽이 힌지, 아래쪽이 자유변**.
+function fcPaintSea(g) {
+    const C = FA_CELL;
+    const cell = (i, fn) => {
+        const R = faRect(i);
+        g.save(); g.beginPath(); g.rect(R.x, R.y, C, C); g.clip();
+        fn(R, (u) => R.x + u * C, (v) => R.y + (1 - v) * C);
+        g.restore();
+    };
+    cell(FC_SEA.oyster.cellOut, (R, X, Y) => {   // 겉면 — 백악질 회백색 + 겹쳐 벗겨지는 박편
+        const gr = g.createLinearGradient(R.x, 0, R.x + C, 0);
+        gr.addColorStop(0, '#8e8b84'); gr.addColorStop(0.42, '#cfcabd'); gr.addColorStop(0.62, '#ddd8cb');
+        gr.addColorStop(1, '#8e8b84');
+        g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
+        // ⚠️ 굴 껍데기의 정체성은 매끈한 방사 리브가 아니라 **층이 겹쳐 벗겨지는 것**이다.
+        // 박편 = 자유변과 평행한 불규칙 아치. 위 모서리는 밝게(들린 층) · 아래는 어둡게(그늘) —
+        // 이 한 쌍이 있어야 '얹힌 선'이 아니라 '겹친 판'으로 읽힌다. 96px 도감 아이콘 때문에 성기게.
+        for (let k = 0; k < 6; k++) {
+            const v = 0.14 + k * 0.145, amp = 0.020 + fcHash(k + 71) * 0.028, ph = fcHash(k + 12) * 6;
+            for (const [dy, col, w] of [[0.010, 'rgba(255,253,246,0.50)', 5], [0, 'rgba(96,90,78,0.34)', 8]]) {
+                g.beginPath();
+                for (let j = 0; j <= 26; j++) {
+                    const u = j / 26, y = Y(v + dy + amp * Math.sin(u * 3.4 + ph) * (1 - Math.abs(u * 2 - 1) * 0.5));
+                    j ? g.lineTo(X(u), y) : g.moveTo(X(u), y);
+                }
+                g.strokeStyle = col; g.lineWidth = w; g.stroke();
+            }
+        }
+        for (let k = 0; k < 5; k++) {   // 옅은 보라·초록 얼룩 — 굴 껍데기의 색 반점 (성기게)
+            const u0 = fcHash(k + 30), v0 = fcHash(k + 44);
+            g.save(); g.translate(X(u0), Y(v0)); g.rotate(fcHash(k + 8) * 3);
+            g.beginPath(); g.ellipse(0, 0, C * (0.05 + fcHash(k + 19) * 0.05), C * 0.026, 0, 0, Math.PI * 2);
+            g.fillStyle = k % 2 ? `rgba(126,110,148,${0.12 + fcHash(k + 3) * 0.10})` : `rgba(118,140,112,${0.10 + fcHash(k + 5) * 0.10})`;
+            g.fill(); g.restore();
+        }
+    });
+    cell(FC_SEA.oyster.cellIn, (R, X, Y) => {   // 안쪽면 — 매끈한 자개 + 근육 자국
+        const gr = g.createLinearGradient(0, R.y, 0, R.y + C);
+        gr.addColorStop(0, '#f4f1ea'); gr.addColorStop(0.55, '#eae7de'); gr.addColorStop(1, '#d8d2c6');
+        g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
+        const scar = g.createRadialGradient(X(0.5), Y(0.46), 0, X(0.5), Y(0.46), C * 0.15);   // 근육 자국 — "까먹은 굴"의 표식
+        scar.addColorStop(0, 'rgba(150,138,150,0.58)'); scar.addColorStop(0.7, 'rgba(160,150,158,0.24)'); scar.addColorStop(1, 'rgba(160,150,158,0)');
+        g.fillStyle = scar; g.beginPath(); g.ellipse(X(0.5), Y(0.46), C * 0.15, C * 0.115, 0, 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.ellipse(X(0.5), Y(0.06), C * 0.30, C * 0.055, 0, 0, Math.PI * 2);   // 자유변 가까이 얇게 비치는 테
+        g.fillStyle = 'rgba(198,190,178,0.34)'; g.fill();
+    });
+    cell(FC_SEA.oyster.cellFlesh, (R, X, Y) => {   // 속살 — 크림 + 가장자리 외투막 + 젖은 하이라이트
+        const gr = g.createLinearGradient(0, R.y, 0, R.y + C);
+        gr.addColorStop(0, '#fdf3dd'); gr.addColorStop(0.55, '#f6e6c6'); gr.addColorStop(1, '#e9d3ab');
+        g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
+        // 외투막(mantle) 주름 — 자유변 = 셀 아래쪽. 회갈색 띠 + 그 안쪽 물결 한 줄.
+        const man = g.createLinearGradient(0, Y(0.22), 0, Y(0));
+        man.addColorStop(0, 'rgba(158,132,104,0)'); man.addColorStop(1, 'rgba(146,118,92,0.62)');
+        g.fillStyle = man; g.fillRect(R.x, Y(0.22), C, Y(0) - Y(0.22));
+        g.beginPath();
+        for (let j = 0; j <= 30; j++) { const u = j / 30, y = Y(0.19 + 0.028 * Math.sin(u * 7.2)); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
+        g.strokeStyle = 'rgba(170,142,112,0.44)'; g.lineWidth = 6; g.stroke();
+        const wet = g.createRadialGradient(X(0.40), Y(0.66), 0, X(0.40), Y(0.66), C * 0.20);   // 젖은 광택 (드로우 안 늘리려고 텍스처로)
+        wet.addColorStop(0, 'rgba(255,255,250,0.62)'); wet.addColorStop(1, 'rgba(255,255,250,0)');
+        g.fillStyle = wet; g.fillRect(R.x, R.y, C, C);
+    });
+}
+function buildOysterCartoon() {
+    const A = fcAtlas(), S = FC_SEA.oyster, k = FA_KU, kv = FA_KV;
+    if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
+    const RO = faRect(S.cellOut), RI = faRect(S.cellIn), RF = faRect(S.cellFlesh);
+    const parts = [];
+    const push = (geo, up, rectFor) => {
+        const uv = geo.attributes.uv, nr = geo.attributes.normal, fa = geo.attributes.faceIn;
+        const n = uv.count, col = new Float32Array(n * 3), oY = up ? 1 : -1;
+        for (let i = 0; i < n; i++) {
+            const ny = nr ? nr.getY(i) : 0;
+            // ⚠️ 조개의 `0.84 + 0.18·dn`(dn = 자기 짝의 바깥쪽 향함)은 **아래짝의 아래를 향한 면을
+            // 가장 밝게(1.02)** 만든다. 얕은 조개에선 안 보이지만 굴의 깊은 컵은 겉면이 통째로
+            // 아래를 향하고, 그 면이 받는 빛은 hemiLight groundColor(0x8fca62)뿐이라 **껍데기 전체가
+            // 진초록**으로 떴다(해저 실측 — 옆의 성게는 보라 그대로였으니 조명이 아니라 이 규칙 탓).
+            // 월드 기준 톱라이트로 바꾼다: 아래를 향할수록 어둡게 → 초록 바운스가 '그늘'로 읽힌다.
+            // 조개의 안쪽면 규칙(0.99 = 자개 발광)도 굴의 공동엔 과하다 → 0.70.
+            const t = (ny * oY) < -0.55 ? 0.70 : 0.60 + 0.42 * (0.5 + 0.5 * ny);
+            // 남은 초록은 조명이 곱해지는 것이라 밝기만 눌러선 색조가 안 빠진다(계산·실측 일치).
+            // 아래를 향할수록 정점색을 **따뜻하게** 기울여 초록을 올리브·황갈로 끌어온다 —
+            // 이 월드가 원래 쓰는 bakeGrad 정점색 문법 안에서 해결한다(전역 조명은 건드리지 않는다).
+            const dw = Math.max(0, -ny);
+            col[i * 3] = t * (1 + 0.30 * dw);
+            col[i * 3 + 1] = t * (1 - 0.10 * dw);
+            col[i * 3 + 2] = t * (1 - 0.28 * dw);
+            // ⚠️ 림(법선이 수평)까지 안쪽 셀로 보내면 자개 크림색이 겉면 회색과 부딪혀 **흰 플라스틱
+            // 개스킷**으로 읽힌다(실측). 껍데기 단면은 실제로도 백악질이니 겉면 셀로 돌린다.
+            const R = rectFor(Math.abs(nr ? nr.getY(i) : 0) < 0.35 ? 0 : (fa ? fa.getX(i) : 0));
+            uv.setXY(i, R.u0 + uv.getX(i) * k, R.v1 - (1 - uv.getY(i)) * kv);
+        }
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+        geo.deleteAttribute('faceIn');   // ⚠️ 병합 전에 — 속성 집합이 다르면 mergeGeometries가 실패한다
+        parts.push(geo);
+    };
+    for (const v of fcOysterValves()) push(v.geo, v.up, (inF) => (inF > 0.5 ? RI : RO));
+    for (const f of fcOysterFlesh()) push(f, true, () => RF);
+    const geo = mergeGeometries(parts, false);
+    geo.computeBoundingBox();
+    // 조개와 같은 문법(월드는 origin을 지면에 놓는다) + 굴만 살짝 파묻는다: 실물 굴은 해저에
+    // 얹힌 게 아니라 가라앉아 있고, 가장 아래를 향한(=초록 바운스를 정면으로 받는) 면이 모래에 가린다.
+    geo.translate(0, -geo.boundingBox.min.y - FC_SEA.oyster.R * 0.10, 0);
+    const grp = new THREE.Group();
+    const m = new THREE.Mesh(geo, fcMat);
+    m.castShadow = true; m.receiveShadow = true;
+    grp.add(m);
+    return grp;
+}
+// ==== /🦪 굴 ===============================================================================
 // ---- 조립 ---------------------------------------------------------------------------------
 let fcMat = null, fcGlowMat = null, fcGlassMat = null;
 function buildFishCartoon(id) {
