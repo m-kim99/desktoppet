@@ -11502,7 +11502,7 @@ function makeSeafoodGeo(id) {
             const dir = new THREE.Vector3(Math.cos(th) * rr, dy, Math.sin(th) * rr);
             const long = i % 3 !== 0;
             const len = long ? 0.050 + (i % 5) * 0.0035 : 0.026;
-            const spike = new THREE.ConeGeometry(long ? 0.0055 : 0.0048, len, 6);
+            const spike = new THREE.ConeGeometry(long ? 0.0078 : 0.0068, len, 6);   // 밑동을 굵혀 빈틈을 메운다(사용자 지정)
             spike.translate(0, len * 0.5, 0);                       // 밑면을 원점에 — 회전 축이 뿌리가 된다
             bakeGrad(spike, 0x2b1f38, 0x6a5a82, { curve: 1 });      // 끝이 어둡게 (뿌리 밝음)
             spike.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, dir));
@@ -26818,13 +26818,13 @@ function buildOysterCartoon() {
 // 팔과 중심이 전혀 이어지지 않았다.
 // 규율: 불가사리는 극좌표 함수로 딱 떨어진다 — 반지름을 5주기 함수로 흔들면 팔이 **저절로**
 // 돋아나고 디스크에 녹아든다. 위·아래·림을 한 지오로 닫아 두께를 만든다(드로우는 1).
-const FC_STAR = { cell: 23, R: 0.098, H: 0.026, armMin: 0.28, armE: 2.3 };
+const FC_STAR = { cell: 23, R: 0.098, H: 0.026, armMin: 0.26, armE: 3.0 };
 // |cos(2.5θ)|는 2π에 봉우리가 정확히 5개 — 팔 축이 θ = 0, 0.4π, 0.8π, 1.2π, 1.6π에 온다.
 // ⚠️ 지수를 p와 무관하게 두면 팔의 **각폭이 일정**해서 선형 폭이 반지름과 함께 커진다 →
 // 끝이 뭉툭하게 벌어진 **꽃잎**이 된다(실측: 플루메리아처럼 보였다). 지수를 p와 함께 키우면
 // 뿌리는 넓고 끝은 좁은 진짜 팔이 된다.
 const fcStarLobe = (th, p) => FC_STAR.armMin
-    + (1 - FC_STAR.armMin) * Math.pow(Math.abs(Math.cos(2.5 * th)), FC_STAR.armE * (0.42 + 0.95 * p));
+    + (1 - FC_STAR.armMin) * Math.pow(Math.abs(Math.cos(2.5 * th)), FC_STAR.armE * (0.42 + 1.10 * p));
 function fcStarGeo() {
     const S = FC_STAR, NR = 10, NA = 60;   // NA는 5의 배수 — 팔 축이 uv 격자에 정렬돼 무늬를 맞출 수 있다
     const pos = [], uv = [], idx = [];
@@ -26841,7 +26841,13 @@ function fcStarGeo() {
             const body = S.H * Math.pow(Math.max(0, 1 - p * p), rw.dn ? 0.85 : 0.55) * (rw.dn ? -0.42 : 1);
             const tip = S.H * 0.34 * Math.pow(p, 3) * arm * arm;   // 실물처럼 팔끝을 살짝 들어올린다
             pos.push(rad * Math.cos(th), body + tip, rad * Math.sin(th));
-            uv.push(j / NA, 1 - p);        // u = 둘레(팔 축이 u 0·0.2·0.4·0.6·0.8) · v = 중심(1)→림(0)
+            // ⚠️ u에 둘레 전체(2π)를 담으면 셀 256px이 팔 5개를 나눠 가져, 팔끝에서 u가 v보다 6배
+            // 늘어난다 → 등방한 돌기를 그리려면 텍스처에 **0.4px 폭** 타원을 찍어야 해서 불가능하다
+            // (실측: 과립이 팔끝에서 사라지고 줄무늬만 남았다). 팔 5개는 서로 같으니 **한 팔 섹터를
+            // 접어** u에 담는다: u=0 팔 축 · u=1 팔 사이 골. 해상도 10배, 비등방 6.3배 → 1.6배.
+            // 대가: 무늬가 팔마다·좌우로 반복된다(천공판처럼 '하나만' 있어야 하는 건 못 넣는다).
+            const a = (th / (Math.PI * 0.4)) % 1;
+            uv.push(a < 0.5 ? a * 2 : (1 - a) * 2, 1 - p);
         }
     }
     for (let i = 0; i < ROWS; i++) for (let j = 0; j < NA; j++) {
@@ -26858,37 +26864,42 @@ function fcStarGeo() {
 function fcPaintStar(g) {
     const S = FC_STAR, R = faRect(S.cell), C = FA_CELL;
     const X = (u) => R.x + u * C, Y = (v) => R.y + (1 - v) * C;
+    // 접힌 uv 규약: u = 0 팔 축 → 1 팔 사이 골 · v = 1 중심 → 0 팔끝.
+    // 등방 보정: 원주 실길이 = Δu·0.2π·rad · 반경 실길이 = Δv·R · rad = R·lobe·p → Δu = Δv/(0.628·lobe·p).
+    const bump = (u, v, rv, light, dark) => {
+        const pp = Math.max(0.14, 1 - v);
+        const au = Math.min(3.2, 1 / (0.628 * Math.max(0.12, fcStarLobe(u * Math.PI * 0.2, pp)) * pp));
+        g.beginPath(); g.ellipse(X(u), Y(v) + rv * 0.5, rv * au, rv, 0, 0, Math.PI * 2);
+        g.fillStyle = dark; g.fill();
+        g.beginPath(); g.ellipse(X(u), Y(v), rv * au, rv, 0, 0, Math.PI * 2);
+        g.fillStyle = light; g.fill();
+    };
     g.save();
     g.beginPath(); g.rect(R.x, R.y, C, C); g.clip();
-    const gr = g.createLinearGradient(0, Y(1), 0, Y(0));   // 중심(진한 주황) → 팔끝(밝은 살구)
-    gr.addColorStop(0, '#e0722c'); gr.addColorStop(0.45, '#f59a44'); gr.addColorStop(1, '#ffc97e');
+    // 색: 파스텔 주황이 물빠져 보였다 → 붉은 벽돌빛까지 내린다(중심이 가장 진하고 팔끝이 밝다)
+    const gr = g.createLinearGradient(0, Y(1), 0, Y(0));
+    gr.addColorStop(0, '#8f2f10'); gr.addColorStop(0.42, '#c04e1c'); gr.addColorStop(0.78, '#df7a33'); gr.addColorStop(1, '#efa257');
     g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
-    for (let k = 0; k < 5; k++) {   // 팔 사이 골 — u 0.1·0.3·… 이 팔과 팔 사이다
-        const u = 0.1 + k * 0.2;
-        g.beginPath(); g.moveTo(X(u), Y(0.95)); g.lineTo(X(u), Y(0));
-        g.strokeStyle = 'rgba(176,80,26,0.30)'; g.lineWidth = 16; g.stroke();
+    const groove = g.createLinearGradient(X(0.62), 0, X(1), 0);   // 팔 사이 골 = u 1 쪽 (그라디언트라 이음선이 안 보인다)
+    groove.addColorStop(0, 'rgba(96,32,8,0)'); groove.addColorStop(1, 'rgba(88,28,6,0.50)');
+    g.fillStyle = groove; g.fillRect(X(0.62), R.y, C * 0.38, C);
+    const ridge = g.createLinearGradient(X(0), 0, X(0.20), 0);    // 팔 축 능선 = u 0 쪽
+    ridge.addColorStop(0, 'rgba(255,198,138,0.26)'); ridge.addColorStop(1, 'rgba(255,198,138,0)');
+    g.fillStyle = ridge; g.fillRect(R.x, R.y, C * 0.20, C);
+    // 질감: 실물 불가사리 등면은 **온면이 자잘한 과립으로 덮여 있다**. 접힌 uv 덕에 팔끝까지 또렷하다.
+    // 96px 도감 아이콘 때문에 크기는 성기게 — 큰 알 + 작은 알 두 층으로 결을 만든다.
+    // ⚠️ 크고 진하게 깔았더니 과립이 **바탕색을 다 덮어** 튀김옷처럼 됐다(실측). 사용자가 요청한
+    // '진한 색'이 보이려면 과립은 결만 만들고 물러나야 한다 — 크기·알파를 절반 수준으로.
+    for (let k = 0; k < 46; k++) {   // 큰 과립 — 팔 축 가까이에 몰린다(실물의 능선 과립)
+        const u = Math.pow(fcHash(k + 300), 1.5) * 0.86;
+        const v = 0.05 + fcHash(k + 411) * 0.88;
+        bump(u, v, C * (0.013 + fcHash(k + 520) * 0.008), 'rgba(255,226,180,0.56)', 'rgba(122,38,10,0.30)');
     }
-    // 등면 알갱이 — 팔 축(u 0·0.2·…)을 따라 2줄. 밝은 알 + 아래 그늘 한 쌍이라야 '박힌 돌기'로 읽힌다.
-    // 96px 도감 아이콘 때문에 성기게(조개·굴에서 배운 규율).
-    // ⚠️ **uv가 등방이 아니다**: u는 둘레(2π·rad) 전체를 256px에, v는 반지름 R만 256px에 담는다 →
-    // 림에서 u가 v보다 ~6배 늘어난다. 텍스처에 동그란 점을 찍으면 3D에서 **가로로 늘어난 잎맥**이
-    // 된다(실측). 텍스처에서 세로로 길쭉하게(폭 0.22배) 찍어야 3D에서 둥근 돌기가 된다.
-    // k는 0..5 — u=1.0까지 한 번 더 찍어 **u 0/1 이음선**에 걸친 팔이 반쪽만 그려지는 걸 막는다.
-    for (let k = 0; k <= 5; k++) for (const du of [-0.030, 0.030]) for (let n = 0; n < 5; n++) {
-        const u = k * 0.2 + du, v = 0.14 + n * 0.155, rr = C * (0.024 - n * 0.0024);
-        g.beginPath(); g.ellipse(X(u), Y(v) + rr * 0.5, rr * 0.22, rr, 0, 0, Math.PI * 2);
-        g.fillStyle = 'rgba(150,62,18,0.34)'; g.fill();
-        g.beginPath(); g.ellipse(X(u), Y(v), rr * 0.22, rr, 0, 0, Math.PI * 2);
-        g.fillStyle = 'rgba(255,225,170,0.80)'; g.fill();
+    for (let k = 0; k < 110; k++) {   // 잔 과립 — 전면에 고르게
+        const u = fcHash(k + 700) * 0.94;
+        const v = 0.04 + fcHash(k + 811) * 0.90;
+        bump(u, v, C * (0.007 + fcHash(k + 920) * 0.005), 'rgba(255,210,156,0.38)', 'rgba(104,32,8,0.22)');
     }
-    for (let k = 0; k <= 5; k++) {   // 팔 축 중앙선 — 알갱이 두 줄 사이 얕은 능선
-        const u = k * 0.2;
-        g.beginPath(); g.moveTo(X(u), Y(0.88)); g.lineTo(X(u), Y(0.03));
-        g.strokeStyle = 'rgba(255,214,150,0.34)'; g.lineWidth = 7; g.stroke();
-    }
-    const mad = g.createRadialGradient(X(0.13), Y(0.80), 0, X(0.13), Y(0.80), C * 0.045);   // 천공판(madreporite) — 불가사리 등면의 표식
-    mad.addColorStop(0, 'rgba(255,240,208,0.92)'); mad.addColorStop(0.65, 'rgba(250,205,150,0.55)'); mad.addColorStop(1, 'rgba(250,205,150,0)');
-    g.fillStyle = mad; g.beginPath(); g.ellipse(X(0.13), Y(0.80), C * 0.045, C * 0.040, 0, 0, Math.PI * 2); g.fill();
     g.restore();
 }
 function buildStarCartoon() {
