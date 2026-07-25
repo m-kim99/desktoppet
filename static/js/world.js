@@ -17022,7 +17022,7 @@ SPACE_POIS[0].padQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vect
 SPACE_POIS[1].padPos = new THREE.Vector3(SPACE_POIS[1].x, SPACE_POIS[1].y, SPACE_POIS[1].z + 2.2);   // 갑판 위 착륙 패드 (코어 비켜서)
 SPACE_POIS[1].padQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0));   // 한 좌석이 정거장 창을 마주본다
 const spacePoiGroup = new THREE.Group();
-let stationWingL = null, stationWingR = null, vendGroup = null, teleGroup = null;
+let stationWingL = null, stationWingR = null, stationAntenna = null, vendGroup = null, teleGroup = null;
 let teleYawG = null, teleTiltG = null;   // 🔭 요크 좌우 회전 / 하우징 상하 틸트 — 조형이 실제 축을 갖는다
 const TELE_PARK = { yaw: 0, tilt: -0.17 };   // 아무도 안 볼 땐 난간 바깥을 향해 살짝 숙인 자세
 let teleAim = { ...TELE_PARK };
@@ -17046,6 +17046,10 @@ const TELE_HOVER = { type: 'tele', x: 22 - 3.05, z: -13 + 1.8, labelY: 35.3 };
 PROP_CLICKS.tele = () => startTeleView();
 HOVER_PROMPTS.tele = () => '🔭 전망 망원경 — 클릭/⌘ 들여다보기 (←→ 풍경 전환)';
 const poiBeaconMat = new THREE.MeshBasicMaterial({ color: 0xff7a6a, transparent: true, opacity: 0.9, fog: false });
+// 🛰️ 착륙 패드 유도등 — 4위상 러닝(도킹 시퀀스 중엔 빨라진다) · 날개 끝 항법등(좌 적/우 녹)
+const padLightMats = [0, 1, 2, 3].map(() => new THREE.MeshBasicMaterial({ color: 0x9ff0ff, transparent: true, opacity: 0.5, fog: false }));
+const navRedMat = new THREE.MeshBasicMaterial({ color: 0xff6a5a, fog: false });
+const navGrnMat = new THREE.MeshBasicMaterial({ color: 0x7df0a4, fog: false });
 {
     // 천체는 대기 안개를 뚫고 또렷하게 (해·달 문법 fog:false) — 재질은 전용 (공유 M 변이 금지)
     const poiGrad = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.05, fog: false });
@@ -17118,69 +17122,210 @@ const poiBeaconMat = new THREE.MeshBasicMaterial({ color: 0xff7a6a, transparent:
         moonDigGroup.visible = moonDug.cycle !== moonDigCycle();
     }
     spacePoiGroup.add(moonG);
-    // 🛰️ 별빛 정거장 (ISS풍 대형): 원형 산책 갑판(r4.2, 난간) + 파일런 위 캡슐 코어 + 십자 모듈 +
-    // 태양전지판 날개(천천히 태양 추적) + 창문 스트립(Basic 발광) + 갑판 착륙 패드 링 + 안테나·비콘
+    // 🛰️ 별빛 정거장 — 갑판 지름(r4.2)만 고정하고 그 위 구조를 정거장답게 다시 짰다.
+    // P0 파일런 트러스 · 갑판 이음매/그레이팅/스텐실 · 착륙 패드 유도등(도킹 중 가속)
+    // P1 코어 링프레임·포트홀·MLI 은박 캡·핸드레일 + 패드 클램프 4·엄빌리컬(호버 문구 "클램프 정렬"의 실물)
+    //    ⚠️ 구창문 스트립은 코어 표면에서 0.22 떠 있던 판때기였다 → 십자 모듈 측면/끝면으로 옮겨 붙였다
+    // P2 태양전지판 셀 격자·요크·앞뒤 색 분리 + **진짜 태양 추적**(기존엔 그냥 무한 회전)
+    // P3 난간 2단+게이트 3 · 화물 컨테이너 · 파라볼라 안테나(스윕) · 라디에이터 · 조명 위계
     const sp = SPACE_POIS[1];
     const stG = new THREE.Group();
-    stG.position.set(sp.x, sp.y, sp.z);   // 원점 = 갑판 상판
-    const deckGeos = [bakeGrad(new THREE.CylinderGeometry(4.2, 3.85, 0.5, 30).translate(0, -0.25, 0), 0xf4e6c8, 0xb8a488, { curve: 1.2 })];
-    const coreGeos = [bakeGrad(new THREE.CylinderGeometry(0.85, 0.85, 4.2, 16).rotateZ(Math.PI / 2).translate(0, 3.8, -2.9), 0xf4e6c8, 0xcfa87a, { curve: 1.2 })];
+    stG.position.set(sp.x, sp.y, sp.z);   // 원점 = 갑판 상판(y=0)
+    const sGrad = [], sRed = [], sMetal = [], sFoil = [], sWarm = [], sCool = [];
+    const sbox = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+    const scyl = (rt, rb, h, seg, x, y, z, axis) => {
+        const g = new THREE.CylinderGeometry(rt, rb, h, seg);
+        if (axis === 'z') g.rotateX(Math.PI / 2); else if (axis === 'x') g.rotateZ(Math.PI / 2);
+        return g.translate(x, y, z);
+    };
+    const sring = (R, tube, seg, x, y, z, axis) => {
+        const g = new THREE.TorusGeometry(R, tube, 6, seg);
+        if (axis === 'y') g.rotateX(Math.PI / 2); else if (axis === 'x') g.rotateY(Math.PI / 2);
+        return g.translate(x, y, z);
+    };
+    const DECK = (g) => bakeGrad(g, 0xf4e6c8, 0xb8a488, { curve: 1.2 });
+    const HULL = (g) => bakeGrad(g, 0xf4e6c8, 0xcfa87a, { curve: 1.2 });
+    const SEAM = (g) => bakeGrad(g, 0x9c8d75, 0x6b5f50, { curve: 1 });
+    const YEL = (g) => bakeGrad(g, 0xf4d264, 0xc39a24, { curve: 1 });
+    const WHT = (g) => bakeGrad(g, 0xf2f5f8, 0xb9c2cb, { curve: 1 });
+    const FOILC = (g) => bakeGrad(g, 0xf8fbff, 0xb9c4d2, { curve: 1.1 });
+    // ── 갑판(지름 고정) 표면: 방사 이음매 16 · 동심 링 2 · 패드 그레이팅 · 위험 빗금 · 통행 셰브론 · 해치 2
+    sGrad.push(DECK(scyl(4.2, 3.85, 0.5, 30, 0, -0.25, 0)));
+    for (let i = 0; i < 16; i++) sGrad.push(SEAM(sbox(0.035, 0.012, 2.55, 0, 0.006, 2.78).rotateY((i / 16) * Math.PI * 2)));
+    sGrad.push(SEAM(sring(1.5, 0.022, 36, 0, 0.008, 0, 'y')));
+    sGrad.push(SEAM(sring(3.88, 0.026, 40, 0, 0.008, 0, 'y')));
+    for (let i = -3; i <= 3; i++) {   // 착륙 패드 그레이팅 — 레드 링(r1.32) 안쪽에 들어가야 한다
+        const L = 2 * Math.sqrt(Math.max(0.02, 1.26 * 1.26 - (i * 0.36) * (i * 0.36)));
+        sGrad.push(SEAM(sbox(L, 0.014, 0.05, 0, 0.01, 2.2 + i * 0.36)));
+        sGrad.push(SEAM(sbox(0.05, 0.014, L, i * 0.36, 0.01, 2.2)));
+    }
+    for (let i = 0; i < 14; i++) sGrad.push(YEL(sbox(0.13, 0.014, 0.34, 0, 0.012, 1.78).rotateY((i / 14) * Math.PI * 2).translate(0, 0, 2.2)));
+    for (const cz of [-1.68, -2.08]) for (const s_ of [-1, 1]) {   // 통행 셰브론 — 링 바깥 통행로에서 패드를 가리킨다
+        sGrad.push(YEL(sbox(0.62, 0.012, 0.14, 0, 0, 0).rotateY(s_ * 0.62).translate(s_ * 0.29, 0.011, 2.2 + cz)));
+    }
+    for (const [hx, hz] of [[-2.55, -0.7], [2.45, 0.95]]) {   // 해치 — 갑판 아래로 통한다는 신호
+        sGrad.push(SEAM(scyl(0.36, 0.36, 0.026, 14, hx, 0.013, hz)));
+        sMetal.push(sring(0.38, 0.03, 16, hx, 0.02, hz, 'y'));
+        sMetal.push(sbox(0.42, 0.035, 0.05, hx, 0.042, hz));
+        for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; sMetal.push(scyl(0.03, 0.03, 0.02, 6, hx + Math.cos(a) * 0.3, 0.028, hz + Math.sin(a) * 0.3)); }
+    }
+    sGrad.push(SEAM(scyl(0.62, 0.62, 0.028, 20, 0, 0.014, 0)));      // 중앙 에어록 해치 — 평평(0.03)이라 산책 간섭 0
+    sMetal.push(sring(0.64, 0.035, 22, 0, 0.022, 0, 'y'));
+    sMetal.push(sbox(0.9, 0.04, 0.055, 0, 0.045, 0));
+    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; sMetal.push(scyl(0.032, 0.032, 0.022, 6, Math.cos(a) * 0.53, 0.03, Math.sin(a) * 0.53)); }
+    sCool.push(sring(0.68, 0.018, 24, 0, 0.02, 0, 'y'));
+    sGrad.push(SEAM(sring(3.72, 0.03, 40, 0, 0.055, 0, 'y')));       // 케이블 트레이 + 서포트
+    for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; sMetal.push(sbox(0.06, 0.07, 0.1, Math.cos(a) * 3.72, 0.03, Math.sin(a) * 3.72)); }
+    sMetal.push(sring(4.0, 0.05, 40, 0, 0.05, 0, 'y'));              // 킥플레이트
+    // ── 착륙 패드: 레드 링 + 클램프 4 + 엄빌리컬 마스트
+    sRed.push(new THREE.RingGeometry(1.32, 1.48, 26).rotateX(-Math.PI / 2).translate(0, 0.014, 2.2));
+    sRed.push(sring(4.06, 0.055, 36, 0, 0.01, 0, 'y'));              // 갑판 트림
+    for (let i = 0; i < 4; i++) {
+        const a = Math.PI / 4 + (i / 4) * Math.PI * 2, cx = Math.cos(a) * 1.16, cz = 2.2 + Math.sin(a) * 1.16;
+        sMetal.push(sbox(0.26, 0.14, 0.26, cx, 0.07, cz));
+        sMetal.push(sbox(0.11, 0.42, 0.11, 0, 0.21, 0).rotateX(-Math.sin(a) * 0.5).rotateZ(Math.cos(a) * 0.5).translate(cx, 0.14, cz));
+        sGrad.push(YEL(sbox(0.2, 0.06, 0.14, cx - Math.cos(a) * 0.15, 0.5, cz - Math.sin(a) * 0.15)));
+    }
+    sMetal.push(scyl(0.09, 0.12, 1.15, 8, -1.05, 0.575, 3.35));      // 엄빌리컬 마스트 + 접이 암
+    sMetal.push(sbox(0.5, 0.09, 0.09, -0.82, 1.1, 3.35));
+    sFoil.push(FOILC(scyl(0.05, 0.05, 0.62, 8, -0.55, 0.95, 3.35, 'x')));
+    sCool.push(sbox(0.14, 0.05, 0.05, -0.58, 1.1, 3.35));
+    // ── 파일런 트러스 2기 (통짜 파이프 → 격자): 플랜지·기둥 4·가로 링 6단·사선 브레이스·상단 캡
+    for (const px of [-1.4, 1.4]) {
+        sMetal.push(scyl(0.34, 0.4, 0.07, 12, px, 0.035, -2.9));
+        for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; sMetal.push(scyl(0.04, 0.04, 0.05, 6, px + Math.cos(a) * 0.29, 0.07, -2.9 + Math.sin(a) * 0.29)); }
+        for (const [ox, oz] of [[-0.17, -0.17], [0.17, -0.17], [-0.17, 0.17], [0.17, 0.17]]) sMetal.push(sbox(0.055, 3.0, 0.055, px + ox, 1.5, -2.9 + oz));
+        for (let L = 0; L < 6; L++) {
+            const y = 0.36 + L * 0.52;
+            sMetal.push(sbox(0.4, 0.042, 0.042, px, y, -3.07));
+            sMetal.push(sbox(0.4, 0.042, 0.042, px, y, -2.73));
+            sMetal.push(sbox(0.042, 0.042, 0.4, px - 0.17, y, -2.9));
+            sMetal.push(sbox(0.042, 0.042, 0.4, px + 0.17, y, -2.9));
+        }
+        for (let L = 0; L < 5; L++) {   // 지그재그 브레이스 — 트러스로 읽히는 결정타
+            const y0 = 0.36 + L * 0.52 + 0.26, dir = L % 2 ? 1 : -1;
+            for (const oz of [-0.17, 0.17]) sMetal.push(sbox(0.036, 0.6, 0.036, 0, 0, 0).rotateZ(dir * 0.52).translate(px, y0, -2.9 + oz));
+            for (const ox of [-0.17, 0.17]) sMetal.push(sbox(0.036, 0.6, 0.036, 0, 0, 0).rotateX(-dir * 0.52).translate(px + ox, y0, -2.9));
+        }
+        sMetal.push(sbox(0.52, 0.07, 0.52, px, 3.04, -2.9));
+        sGrad.push(YEL(sbox(0.42, 0.035, 0.035, px, 3.14, -2.72)));   // 상단 핸드레일
+    }
+    // ── 코어: 링 프레임 5 + 세로 이음매 4 + MLI 은박 캡/밴드 + 포트홀 3 + 핸드레일
+    sGrad.push(HULL(scyl(0.85, 0.85, 4.2, 16, 0, 3.8, -2.9, 'x')));
+    for (const rx of [-1.6, -0.8, 0, 0.8, 1.6]) sMetal.push(sring(0.875, 0.045, 20, rx, 3.8, -2.9, 'x'));
+    for (let i = 0; i < 4; i++) {
+        const a = Math.PI / 4 + (i / 4) * Math.PI * 2;
+        sGrad.push(SEAM(sbox(4.2, 0.035, 0.035, 0, 3.8 + Math.sin(a) * 0.86, -2.9 + Math.cos(a) * 0.86)));
+    }
     for (const sx of [-2.1, 2.1]) {
-        const cap = bakeGrad(new THREE.SphereGeometry(0.85, 14, 12), 0xf4e6c8, 0xcfa87a, { curve: 1.2 });
-        cap.translate(sx, 3.8, -2.9);
-        coreGeos.push(cap);
+        sFoil.push(FOILC(new THREE.SphereGeometry(0.85, 14, 12).translate(sx, 3.8, -2.9)));
+        sFoil.push(FOILC(scyl(0.87, 0.87, 0.3, 16, sx * 0.9, 3.8, -2.9, 'x')));
     }
-    coreGeos.push(bakeGrad(new THREE.CylinderGeometry(0.52, 0.52, 2.6, 12).rotateX(Math.PI / 2).translate(0, 3.8, -2.9), 0xf4e6c8, 0xcfa87a, { curve: 1.2 }));
-    addMerged(stG, [...deckGeos, ...coreGeos], poiGrad);
-    const stRed = [];
-    const deckTrim = new THREE.TorusGeometry(4.06, 0.055, 8, 36).rotateX(Math.PI / 2);
-    deckTrim.translate(0, 0.01, 0);
-    stRed.push(deckTrim);
-    const padRing = new THREE.RingGeometry(1.32, 1.48, 26).rotateX(-Math.PI / 2);
-    padRing.translate(0, 0.012, 2.2);   // 갑판 착륙 패드 — 코어를 비켜선 자리
-    stRed.push(padRing);
-    addMerged(stG, stRed, poiRed);
-    const stMetal = [];
-    for (let i = 0; i < 10; i++) {   // 난간 — 기둥 10 + 상단 레일 링
-        const a = (i / 10) * Math.PI * 2;
-        const post = new THREE.BoxGeometry(0.055, 0.4, 0.055);
-        post.translate(Math.cos(a) * 4.02, 0.2, Math.sin(a) * 4.02);
-        stMetal.push(post);
+    for (const px2 of [-1.2, 1.2]) {   // 포트홀 (x=0은 십자 모듈 속이라 제외) — 갑판에서 올려다보이는 +z 면 (유리·글로우는 껍질 바깥)
+        sMetal.push(sring(0.175, 0.042, 16, px2, 3.8, -2.05, 'z'));
+        sGrad.push(bakeGrad(scyl(0.16, 0.16, 0.016, 14, px2, 3.8, -2.043, 'z'), 0x2c4d96, 0x0a1024, { curve: 1.4 }));
+        sWarm.push(scyl(0.12, 0.12, 0.012, 14, px2, 3.8, -2.036, 'z'));
     }
-    const rail = new THREE.TorusGeometry(4.02, 0.035, 6, 36).rotateX(Math.PI / 2);
-    rail.translate(0, 0.42, 0);
-    stMetal.push(rail);
-    for (const px_ of [-1.4, 1.4]) {   // 파일런 — 갑판에서 코어로
-        const py = new THREE.CylinderGeometry(0.15, 0.19, 3.0, 10);
-        py.translate(px_, 1.5, -2.9);
-        stMetal.push(py);
+    for (const hx2 of [-1.75, -0.55, 0.6, 1.8]) {   // 핸드레일 — 스케일을 알려주는 장치
+        sGrad.push(YEL(sbox(0.035, 0.035, 0.24, hx2, 3.34, -2.14)));
+        sGrad.push(YEL(sbox(0.035, 0.13, 0.035, hx2, 3.27, -2.24)));
     }
-    const mast = new THREE.CylinderGeometry(0.035, 0.05, 0.85, 6);
-    mast.translate(0, 5.1, -2.9);
-    stMetal.push(mast);
-    for (const s_ of [-1, 1]) {   // 날개 트러스 겨드랑이
-        const arm = new THREE.BoxGeometry(0.9, 0.12, 0.12);
-        arm.translate(s_ * 3.5, 3.8, -2.9);
-        stMetal.push(arm);
+    // ── 십자 모듈 + 창(측면 스트립 2 · 갑판을 내려다보는 끝면 원창)
+    sGrad.push(HULL(scyl(0.52, 0.52, 2.6, 12, 0, 3.8, -2.9, 'z')));
+    for (const rz of [-1.1, 1.1]) sMetal.push(sring(0.545, 0.04, 16, 0, 3.8, -2.9 + rz, 'z'));
+    for (const s_ of [-1, 1]) {
+        sWarm.push(sbox(0.02, 0.28, 1.9, s_ * 0.515, 3.86, -2.9));
+        sMetal.push(sbox(0.03, 0.05, 2.0, s_ * 0.52, 4.02, -2.9));
+        sMetal.push(sbox(0.03, 0.05, 2.0, s_ * 0.52, 3.7, -2.9));
     }
-    addMerged(stG, stMetal, poiMetal);
-    const winGeos = [];
-    for (const zOff of [1.06, -1.06]) {   // 코어 앞뒤 창문 스트립 — 갑판에서 올려다보인다
-        const w = new THREE.BoxGeometry(2.7, 0.34, 0.03);
-        w.translate(0, 3.68, -2.9 + zOff);
-        winGeos.push(w);
+    sMetal.push(sring(0.44, 0.05, 18, 0, 3.8, -1.6, 'z'));
+    sGrad.push(bakeGrad(scyl(0.4, 0.4, 0.016, 16, 0, 3.8, -1.594, 'z'), 0x2c4d96, 0x0a1024, { curve: 1.4 }));
+    sWarm.push(scyl(0.34, 0.34, 0.012, 16, 0, 3.8, -1.586, 'z'));
+    sGrad.push(WHT(sbox(0.6, 0.02, 0.16, 0, 4.24, -1.72)));           // 명판 + 코어 하부 작업등
+    sCool.push(sbox(0.46, 0.008, 0.06, 0, 4.252, -1.72));
+    for (const wx of [-0.9, 0.9]) sCool.push(sbox(0.16, 0.06, 0.1, wx, 2.98, -2.62));
+    // ── 라디에이터 2 (코어 뒤로 펼친 방열판) + 마스트
+    for (const s_ of [-1, 1]) {
+        sGrad.push(WHT(sbox(1.5, 0.04, 1.0, 0, 0, 0).rotateX(s_ * 0.42).translate(s_ * 1.5, 4.42, -3.95)));
+        for (let i = 0; i < 4; i++) sGrad.push(SEAM(sbox(1.52, 0.05, 0.045, 0, 0.005, i * 0.26 - 0.39).rotateX(s_ * 0.42).translate(s_ * 1.5, 4.42, -3.95)));
     }
-    addMerged(stG, winGeos, poiWarm);
-    for (const s_ of [-1, 1]) {   // 태양전지판 날개 (회전 그룹 — 도킹·산책과 무관한 축이라 안전)
+    sMetal.push(scyl(0.035, 0.05, 0.85, 6, 0, 5.1, -2.9));
+    addMerged(stG, sGrad, poiGrad);
+    addMerged(stG, sRed, poiRed);
+    addMerged(stG, sMetal, poiMetal);
+    addMerged(stG, sFoil, poiFoil);
+    addMerged(stG, sWarm, poiWarm);
+    addMerged(stG, sCool, vendCoolMat);
+    {   // 📡 파라볼라 안테나 — 천천히 스윕(별도 그룹)
+        const ant = new THREE.Group();
+        ant.position.set(0.85, 4.78, -3.5);
+        const dish = new THREE.SphereGeometry(0.34, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2.6);
+        dish.scale(1, 0.42, 1); dish.rotateX(-1.15);
+        ant.add(new THREE.Mesh(bakeGrad(dish, 0xf2f5f8, 0xb9c2cb, { curve: 1 }), poiGrad));
+        ant.add(new THREE.Mesh(mergeGeometries([scyl(0.035, 0.035, 0.36, 6, 0, -0.18, 0), scyl(0.028, 0.028, 0.3, 6, 0, 0.06, 0.17, 'z')], false), poiMetal));
+        stG.add(ant);
+        stationAntenna = ant;
+    }
+    for (let i = 0; i < 4; i++) {   // 🟦 패드 유도등 8 = 4위상 × 대칭쌍
+        const geos = [];
+        for (const k of [i, i + 4]) {
+            const a = (k / 8) * Math.PI * 2;
+            geos.push(scyl(0.085, 0.085, 0.022, 10, Math.cos(a) * 1.72, 0.016, 2.2 + Math.sin(a) * 1.72));
+        }
+        stG.add(new THREE.Mesh(mergeGeometries(geos, false), padLightMats[i]));
+    }
+    {   // ── 화물 존: 컨테이너 2 + 팔레트 + 고박 스트랩 (텅 비어 있던 갑판을 채운다)
+        const cGrad = [], cMetal = [];
+        for (const [cx, cz, cw, ry] of [[2.85, -1.35, 0.72, 0.35], [2.2, -2.25, 0.56, -0.2]]) {   // ⚠️ 좌현은 망원경(-3.05,1.8)·자판기(-2.35,-2.05) 자리 — 화물은 우현 후방에만
+            cGrad.push(WHT(sbox(cw, 0.5, cw * 0.8, 0, 0.31, 0).rotateY(ry).translate(cx, 0, cz)));
+            for (let i = -1; i <= 1; i++) cMetal.push(sbox(cw * 1.02, 0.045, 0.042, 0, 0.31 + i * 0.15, cw * 0.41).rotateY(ry).translate(cx, 0, cz));
+            cMetal.push(sbox(cw * 1.15, 0.06, cw * 0.95, 0, 0.03, 0).rotateY(ry).translate(cx, 0, cz));
+            cGrad.push(YEL(sbox(cw * 1.05, 0.03, 0.05, 0, 0.45, 0).rotateY(ry).translate(cx, 0, cz)));
+        }
+        addMerged(stG, cGrad, poiGrad);
+        addMerged(stG, cMetal, poiMetal);
+    }
+    {   // ── 난간: 기둥 20(게이트 3곳 비움) + 2단 레일 + 사선 브레이스 + 노란 체인/발판 + 가장자리 라인등
+        const rGrad = [], rMetal = [], rCool = [];
+        const GATES = [0, 5, 13];
+        for (let i = 0; i < 20; i++) {
+            if (GATES.includes(i)) continue;
+            const a = (i / 20) * Math.PI * 2;
+            rMetal.push(sbox(0.05, 0.44, 0.05, Math.cos(a) * 4.02, 0.22, Math.sin(a) * 4.02));
+            if (i % 2 === 0 && !GATES.includes(i + 1)) {
+                const a2 = ((i + 0.5) / 20) * Math.PI * 2;
+                rMetal.push(sbox(0.03, 0.5, 0.03, 0, 0, 0).rotateZ(0.85).translate(Math.cos(a2) * 4.02, 0.22, Math.sin(a2) * 4.02));
+            }
+        }
+        rMetal.push(sring(4.02, 0.035, 40, 0, 0.44, 0, 'y'));
+        rMetal.push(sring(4.02, 0.028, 40, 0, 0.24, 0, 'y'));
+        for (const gi of GATES) {
+            const a = (gi / 20) * Math.PI * 2;
+            rGrad.push(YEL(sbox(0.62, 0.03, 0.03, 0, 0, 0).rotateY(-a - Math.PI / 2).translate(Math.cos(a) * 4.02, 0.36, Math.sin(a) * 4.02)));
+            rGrad.push(YEL(sbox(0.5, 0.04, 0.34, 0, 0, 0).rotateY(-a - Math.PI / 2).translate(Math.cos(a) * 3.62, 0.02, Math.sin(a) * 3.62)));
+        }
+        rCool.push(sring(3.96, 0.022, 40, 0, 0.09, 0, 'y'));
+        addMerged(stG, rGrad, poiGrad);
+        addMerged(stG, rMetal, poiMetal);
+        addMerged(stG, rCool, vendCoolMat);
+    }
+    // ── 태양전지판: 요크(고정) + 회전 날개(셀 격자·프레임·앞뒤 색 분리) + 끝단 항법등
+    for (const s_ of [-1, 1]) {
+        const yGeo = mergeGeometries([scyl(0.16, 0.16, 0.5, 10, s_ * 3.45, 3.8, -2.9, 'x'), sbox(0.1, 0.5, 0.34, s_ * 3.78, 3.8, -2.9)], false);
+        stG.add(new THREE.Mesh(yGeo, poiMetal));
         const wing = new THREE.Group();
         wing.position.set(s_ * 4.15, 3.8, -2.9);
-        const panels = [];
+        const wGrad = [];
+        wGrad.push(WHT(sbox(0.14, 0.09, 3.7, 0, 0, 0)));                          // 스파
         for (const pz of [-1.75, 1.75]) {
-            const pn = new THREE.BoxGeometry(2.2, 0.05, 3.2);
-            pn.translate(0, 0, pz);
-            panels.push(pn);
+            wGrad.push(bakeGrad(sbox(2.2, 0.05, 3.2, 0, 0, pz), 0x2f4f9c, 0xc8a13c, { curve: 1 }));   // 위=셀 블루 / 아래=캡톤 금색
+            for (let c = -2; c <= 2; c++) wGrad.push(SEAM(sbox(2.2, 0.012, 0.035, 0, 0.028, pz + c * 0.62)));
+            for (const cx of [-0.73, 0.73]) wGrad.push(SEAM(sbox(0.035, 0.012, 3.2, cx, 0.028, pz)));
+            for (const [fw, fd, fx, fz] of [[2.26, 0.06, 0, pz - 1.6], [2.26, 0.06, 0, pz + 1.6], [0.06, 3.3, -1.11, pz], [0.06, 3.3, 1.11, pz]])
+                wGrad.push(WHT(sbox(fw, 0.075, fd, fx, 0, fz)));
         }
-        addMerged(wing, panels, poiPanel);
+        addMerged(wing, wGrad, poiGrad);
+        wing.add(new THREE.Mesh(scyl(0.075, 0.075, 0.06, 8, 0, 0.06, s_ * 3.45), s_ < 0 ? navRedMat : navGrnMat));
         stG.add(wing);
         if (s_ < 0) stationWingL = wing; else stationWingR = wing;
     }
@@ -18464,8 +18609,15 @@ function updateRocket(delta) {
     // 🌕🛰️ POI 라이브: 고도 게이트(지상에선 숨김) + 태양전지판 태양 추적 + 비콘 점멸
     spacePoiGroup.visible = camera.position.y > 6;
     if (spacePoiGroup.visible) {
-        stationWingL.rotation.x += delta * 0.16;
-        stationWingR.rotation.x += delta * 0.16;
+        // ☀️ 태양 추적 — 요크는 붐(x축) 회전뿐이고 해는 xy 평면(z=-7 고정)을 지나므로 방향을 그대로
+        // 겨누면 판이 뒤집혀 셀 면이 안 보인다(정거장이 해보다 30m 높다). 해의 동서 이동을 요크
+        // 기울기 ±0.62rad로 매핑 — 하루 종일 천천히 기울고 밤엔 끝자세로 대기한다.
+        const wAim = THREE.MathUtils.clamp(sunMesh.position.x / 16, -1, 1) * 0.62, wK = 1 - Math.pow(0.25, delta);
+        stationWingL.rotation.x += Math.atan2(Math.sin(wAim - stationWingL.rotation.x), Math.cos(wAim - stationWingL.rotation.x)) * wK;
+        stationWingR.rotation.x = stationWingL.rotation.x;
+        if (stationAntenna) stationAntenna.rotation.y += delta * 0.22;   // 📡 스윕
+        const padSpd = (ROCKET.poi && ROCKET.poi.id === 'station' && ROCKET.padK > 0.02 && ROCKET.padK < 0.99) ? 7 : 2.2;   // 도킹 중엔 유도등이 빨라진다
+        for (let i = 0; i < 4; i++) padLightMats[i].opacity = 0.22 + 0.6 * Math.pow(Math.max(0, Math.sin(wxTime.value * padSpd - i * 0.9)), 3);
         poiBeaconMat.opacity = 0.35 + 0.65 * Math.abs(Math.sin(wxTime.value * 2.6));
         vendGlowMat.opacity = 0.82 + Math.sin(wxTime.value * 1.8) * 0.13;   // 🥤 진열창 숨쉬는 펄스
         vendCoolMat.opacity = 0.72 + Math.sin(wxTime.value * 3.4 + 1.4) * 0.2;   // 스크린은 더 빠르고 차갑게 — 둘이 같은 위상이면 평평해진다
