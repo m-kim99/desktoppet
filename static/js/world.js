@@ -16997,7 +16997,7 @@ const MOON_FLAG_N = new THREE.Vector3(-1.9, 6.55, 1.3).normalize();             
 // 🌑 달 지형 — 크레이터는 표면에 붙이는 원반이 아니라 **정점 변위로 판 그릇**(대형 3·중형 8·
 // 소형 20)이고 저지대 마레 2곳은 넓고 얕은 분지. 조형과 보행 표면이 **같은 함수**를 공유해야
 // 펫이 크레이터 위를 떠서 지나가지 않는다(정거장 화물 상자 교훈). 착륙 패드·깃발 발밑은 비운다.
-const MOON_CRATERS = [], MOON_MARE = [];
+const MOON_CRATERS = [], MOON_MARE = [], MOON_TEX_CRATERS = [];
 {
     let cs_ = 77;
     const cr01 = () => { cs_ = (cs_ * 1664525 + 1013904223) >>> 0; return cs_ / 4294967296; };
@@ -17009,14 +17009,16 @@ const MOON_CRATERS = [], MOON_MARE = [];
         }
         return new THREE.Vector3(0, -1, 0);
     };
-    const CLASSES = [[3, 1.7, 2.5, 0.8, 0.9, true], [9, 0.8, 1.4, 0.9, 0.94, false], [16, 0.5, 0.95, 0.955, 0.975, false]];
+    // ⚠️ 지오메트리로 파는 건 **대형 3개뿐**. 나머지는 텍스처(노멀맵) 담당 — 폴리곤으로 다 파면
+    // 삼각형이 눈에 밟히고(사용자 리포트) 가까이서 구겨진 종이가 된다. 실제 게임 달 에셋과 같은 분업.
+    const CLASSES = [[3, 1.7, 2.5, 0.8, 0.9, true]];
     for (const [count, rMin, rMax, aPad, aFlag, big] of CLASSES) {
         for (let i = 0; i < count; i++) {
             const n = pick(aPad, aFlag), R = rMin + cr01() * (rMax - rMin);
             const tA = new THREE.Vector3(0, 1, 0).cross(n);
             if (tA.lengthSq() < 1e-6) tA.set(1, 0, 0);
             tA.normalize();
-            MOON_CRATERS.push({ n, R, depth: R * 0.22, rim: R * 0.115, big, phase: cr01() * 6.283,
+            MOON_CRATERS.push({ n, R, depth: R * 0.11, rim: R * 0.05, big, phase: cr01() * 6.283,
                 tA, tB: new THREE.Vector3().crossVectors(n, tA).normalize(),
                 cosOut: Math.cos(Math.min(Math.PI, (R * 1.5) / 7)) });
         }
@@ -17027,9 +17029,109 @@ const MOON_CRATERS = [], MOON_MARE = [];
         const n = n0 || pick(0.82, 0.88), R = 2.6 + cr01() * 1.1;
         MOON_MARE.push({ n, R, depth: 0.18, cosOut: Math.cos(Math.min(Math.PI, R / 7)) });
     }
+    for (let i = 0; i < 150; i++) {   // 🖌️ 텍스처 전용 크레이터 — 폴리곤 0, 노멀맵으로만 파인다
+        const n = pick(0.94, 0.965), r = cr01();
+        MOON_TEX_CRATERS.push({ n, R: 0.16 + r * r * 1.5 });
+    }
+    for (let i = 0; i < 130; i++) {   // 잔 크레이터 — 패드 코앞까지(맨바닥 링 방지)
+        MOON_TEX_CRATERS.push({ n: pick(0.988, 0.992), R: 0.07 + cr01() * 0.16 });
+    }
 }
 const moonRipple = (x, y, z) =>   // 넓은 기복 1옥타브만 — 고주파를 얹으면 가까이서 반죽처럼 뭉갠다
-    Math.sin(x * 4.1 + Math.sin(y * 2.7)) * Math.sin(y * 3.6 + Math.sin(z * 2.3)) * Math.sin(z * 4.7 + Math.sin(x * 3.1)) * 0.034;
+    Math.sin(x * 4.1 + Math.sin(y * 2.7)) * Math.sin(y * 3.6 + Math.sin(z * 2.3)) * Math.sin(z * 4.7 + Math.sin(x * 3.1)) * 0.022;
+// 🌕 달 표면 맵 — 실제 게임 달 에셋 문법: 지오메트리는 매끈하게 두고 **알베도 + 노멀맵**이
+// 크레이터를 만든다. 조명이 움직이면 노멀맵이 음영을 돌려주므로 "구운 그림자"가 아니라 진짜
+// 파인 것처럼 보인다. 알베도엔 빛 정보를 굽지 않는다(해가 움직이면 틀려진다).
+function makeMoonMaps() {
+    const AW = 2048, AH = 1024, HW = 1024, HH = 512;
+    const mk = (w, h) => { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; return cv; };
+    const aCv = mk(AW, AH), hCv = mk(HW, HH);
+    const a = aCv.getContext('2d'), hx = hCv.getContext('2d');
+    const uvOf = (n) => ({ u: (Math.atan2(n.z, -n.x) / (Math.PI * 2) + 1) % 1, v: Math.acos(Math.max(-1, Math.min(1, n.y))) / Math.PI });
+    // 등장방형은 극으로 갈수록 가로가 늘어난다 — 가로 반지름을 1/sinθ로 보정하고 좌우 wrap 3회 그린다
+    const stamp = (ctx, W, H, n, rad, draw) => {
+        const { u, v } = uvOf(n), sy = Math.max(0.12, Math.sin(v * Math.PI));
+        const ry = rad / Math.PI * H, rx = Math.min(W * 0.5, ry / sy);
+        for (const dx of [-W, 0, W]) {
+            ctx.save();
+            ctx.translate(u * W + dx, v * H);
+            ctx.scale(rx / ry, 1);
+            draw(ctx, ry);
+            ctx.restore();
+        }
+    };
+    a.fillStyle = '#b9b6ae'; a.fillRect(0, 0, AW, AH);
+    hx.fillStyle = '#808080'; hx.fillRect(0, 0, HW, HH);
+    for (let i = 0; i < 9000; i++) {   // 레골리스 잔입자 — 근접 컷에서 표면이 민무늬가 되지 않게
+        const x = Math.random() * AW, y = Math.random() * AH;
+        a.fillStyle = `rgba(${Math.random() < 0.5 ? '96,94,90' : '222,218,209'},${0.05 + Math.random() * 0.09})`;
+        a.beginPath(); a.arc(x, y, 0.8 + Math.random() * 2.6, 0, 6.283); a.fill();
+    }
+    for (let i = 0; i < 2600; i++) {   // 잔반점 — 큰 면이 밋밋하지 않게
+        const x = Math.random() * AW, y = Math.random() * AH, r = 2 + Math.random() * 22;
+        a.fillStyle = `rgba(${Math.random() < 0.5 ? '90,88,84' : '214,210,201'},${0.03 + Math.random() * 0.05})`;
+        a.beginPath(); a.arc(x, y, r, 0, 6.283); a.fill();
+    }
+    for (const m of MOON_MARE) {   // 마레 — 넓고 어두운 저지대
+        stamp(a, AW, AH, m.n, m.R / 7, (ctx, r) => {
+            const g = ctx.createRadialGradient(0, 0, r * 0.15, 0, 0, r);
+            g.addColorStop(0, 'rgba(108,110,120,0.92)'); g.addColorStop(0.65, 'rgba(120,122,131,0.72)'); g.addColorStop(1, 'rgba(140,140,145,0)');
+            ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.283); ctx.fill();
+        });
+        stamp(hx, HW, HH, m.n, m.R / 7, (ctx, r) => {
+            const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+            g.addColorStop(0, 'rgba(96,96,96,0.85)'); g.addColorStop(1, 'rgba(128,128,128,0)');
+            ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.283); ctx.fill();
+        });
+    }
+    for (const c of MOON_CRATERS) if (c.big) {   // 광조 — 대형 크레이터에서 뻗는 밝은 줄
+        const { u, v } = uvOf(c.n), cx = u * AW, cy = v * AH;
+        a.save(); a.translate(cx, cy);
+        for (let k = 0; k < 8; k++) {
+            const ang = c.phase + k * 0.785 + Math.random() * 0.12, len = (c.R / 7) / Math.PI * AH * (2.0 + Math.random() * 3.0);
+            const g = a.createLinearGradient(0, 0, Math.cos(ang) * len, Math.sin(ang) * len);
+            g.addColorStop(0, 'rgba(236,233,225,0.15)'); g.addColorStop(1, 'rgba(236,233,225,0)');
+            a.strokeStyle = g; a.lineWidth = 4 + Math.random() * 9; a.lineCap = 'round';
+            a.beginPath(); a.moveTo(0, 0); a.lineTo(Math.cos(ang) * len, Math.sin(ang) * len); a.stroke();
+        }
+        a.restore();
+    }
+    const drawCrater = (n, R) => {   // 알베도는 바닥만 살짝 어둡게 + 림 살짝 밝게(빛은 굽지 않는다)
+        stamp(a, AW, AH, n, R / 7 * 1.35, (ctx, r) => {
+            const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+            g.addColorStop(0, 'rgba(128,126,122,0.32)'); g.addColorStop(0.62, 'rgba(142,140,135,0.2)');
+            g.addColorStop(0.78, 'rgba(224,220,211,0.24)'); g.addColorStop(1, 'rgba(224,220,211,0)');
+            ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.283); ctx.fill();
+        });
+        stamp(hx, HW, HH, n, R / 7 * 1.35, (ctx, r) => {   // 높이: 바닥 낮게 → 벽 → 림 솟음
+            const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+            g.addColorStop(0, 'rgba(58,58,58,1)'); g.addColorStop(0.44, 'rgba(64,64,64,1)');
+            g.addColorStop(0.68, 'rgba(150,150,150,1)'); g.addColorStop(0.76, 'rgba(206,206,206,1)');
+            g.addColorStop(0.9, 'rgba(140,140,140,0.7)'); g.addColorStop(1, 'rgba(128,128,128,0)');
+            ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.283); ctx.fill();
+        });
+    };
+    for (const c of MOON_CRATERS) drawCrater(c.n, c.R);
+    for (const c of MOON_TEX_CRATERS) drawCrater(c.n, c.R);
+    const map = new THREE.CanvasTexture(aCv);
+    map.colorSpace = THREE.SRGBColorSpace;
+    map.wrapS = THREE.RepeatWrapping;
+    map.anisotropy = 4;
+    // 높이맵 → 노멀맵(Sobel). 크레이터가 조명 방향에 따라 진짜로 파여 보이는 건 이 맵 덕분.
+    const hd = hx.getImageData(0, 0, HW, HH).data, nd = new Uint8Array(HW * HH * 4);
+    const at = (x, y) => hd[(((y + HH) % HH) * HW + ((x + HW) % HW)) * 4] / 255;
+    for (let y = 0; y < HH; y++) {
+        for (let x = 0; x < HW; x++) {
+            const gx = (at(x + 1, y) - at(x - 1, y)) * 3.8, gy = (at(x, y + 1) - at(x, y - 1)) * 3.8;
+            const l = Math.hypot(gx, gy, 1), i = (y * HW + x) * 4;
+            nd[i] = (-gx / l * 0.5 + 0.5) * 255; nd[i + 1] = (-gy / l * 0.5 + 0.5) * 255; nd[i + 2] = (1 / l * 0.5 + 0.5) * 255; nd[i + 3] = 255;
+        }
+    }
+    const normalMap = new THREE.DataTexture(nd, HW, HH, THREE.RGBAFormat);
+    normalMap.wrapS = THREE.RepeatWrapping;
+    normalMap.needsUpdate = true;
+    return { map, normalMap };
+}
 function moonSurfOffset(nx, ny, nz) {   // 단위법선 → 반경 오프셋(그릇 −, 림 +). 조형·보행 공용
     // 패드 발밑(dot≥0.955)은 기복을 0으로 — 데크는 평면이라 지형이 울렁이면 펫이 뚫고 들어간다
     const padK = Math.min(1, Math.max(0, (nx * MOON_PAD_N.x + ny * MOON_PAD_N.y + nz * MOON_PAD_N.z - 0.955) / 0.045));
@@ -17154,54 +17256,24 @@ const navGrnMat = new THREE.MeshBasicMaterial({ color: 0x7df0a4, fog: false });
     const mp = SPACE_POIS[0];
     const moonG = new THREE.Group();
     moonG.position.set(mp.x, mp.y, mp.z);
-    const poiMoon = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, emissive: 0x11151f, fog: false });
     const _mv = new THREE.Vector3(), _mt = new THREE.Vector3(), _mq = new THREE.Quaternion(), _mUp = new THREE.Vector3(0, 1, 0);
-    {   // 구 = 정점 변위 + **플랫 셰이딩**(면마다 각진 음영). 스무스 셰이딩 + 고주파 노이즈는
-        // 가까이서 저해상 그림처럼 뭉갠다 — 저폴리 게임 문법으로 형태를 또렷하게 세운다.
-        const g0 = new THREE.SphereGeometry(mp.R, 72, 46);
-        const pos0 = g0.attributes.position;
-        for (let i = 0; i < pos0.count; i++) {
-            _mv.set(pos0.getX(i), pos0.getY(i), pos0.getZ(i)).normalize();
+    {   // 구 = **매끈한 스무스 구 + 알베도/노멀맵**. 크레이터를 폴리곤으로 파면 삼각형이 눈에
+        // 밟히고 가까이서 구겨진 종이가 된다 — 실제 게임 달 에셋처럼 큰 지형만 변위로 남기고
+        // 요철은 전부 노멀맵에 맡긴다.
+        const g = new THREE.SphereGeometry(mp.R, 96, 64);
+        const pos = g.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+            _mv.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
             const off = moonSurfOffset(_mv.x, _mv.y, _mv.z);
-            pos0.setXYZ(i, _mv.x * (mp.R + off), _mv.y * (mp.R + off), _mv.z * (mp.R + off));
+            pos.setXYZ(i, _mv.x * (mp.R + off), _mv.y * (mp.R + off), _mv.z * (mp.R + off));
         }
-        const g = g0.toNonIndexed();   // 정점 분리 → computeVertexNormals가 면 법선을 만든다
-        const pos = g.attributes.position, cols = new Float32Array(pos.count * 3);
-        const HI = new THREE.Color(0xe8e4da), LO = new THREE.Color(0x8e8c88), MARE = new THREE.Color(0x6b6f7c), RAY = new THREE.Color(0xfbf8f1), c = new THREE.Color();
-        const hsh = (x, y, z) => { const t = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453; return t - Math.floor(t); };
-        for (let f = 0; f < pos.count; f += 3) {   // 색은 **면 단위** — 정점 보간을 끊어야 저폴리 면이 또렷하다
-            _mv.set(
-                (pos.getX(f) + pos.getX(f + 1) + pos.getX(f + 2)) / 3,
-                (pos.getY(f) + pos.getY(f + 1) + pos.getY(f + 2)) / 3,
-                (pos.getZ(f) + pos.getZ(f + 1) + pos.getZ(f + 2)) / 3).normalize();
-            const off = moonSurfOffset(_mv.x, _mv.y, _mv.z);
-            let mareW = 0;
-            for (const m of MOON_MARE) {
-                const dp = _mv.dot(m.n);
-                if (dp < m.cosOut) continue;
-                const k = 1 - Math.acos(Math.min(1, dp)) * mp.R / m.R;
-                if (k > 0) mareW = Math.max(mareW, k * k);
-            }
-            let rayW = 0;   // 광조 — 대형 크레이터에서 뻗는 밝은 줄(달의 시그니처)
-            for (const cr of MOON_CRATERS) {
-                if (!cr.big) continue;
-                const dp = _mv.dot(cr.n);
-                const d = Math.acos(Math.max(-1, Math.min(1, dp))) * mp.R;
-                if (d < cr.R * 1.15 || d > cr.R * 4.4) continue;
-                _mt.copy(_mv).addScaledVector(cr.n, -dp).normalize();
-                const ang = Math.atan2(_mt.dot(cr.tB), _mt.dot(cr.tA));
-                const spoke = Math.pow(Math.max(0, Math.cos(ang * 5 + cr.phase)), 6);
-                rayW = Math.max(rayW, spoke * (1 - (d - cr.R * 1.15) / (cr.R * 3.25)) * 0.62);
-            }
-            const t = THREE.MathUtils.clamp(0.52 + off * 2.6 + (hsh(_mv.x * 9, _mv.y * 9, _mv.z * 9) - 0.5) * 0.12, 0, 1);
-            c.copy(LO).lerp(HI, t);
-            if (mareW > 0) c.lerp(MARE, Math.min(0.95, mareW * 1.35));
-            if (rayW > 0) c.lerp(RAY, rayW);
-            for (let k = 0; k < 3; k++) { cols[(f + k) * 3] = c.r; cols[(f + k) * 3 + 1] = c.g; cols[(f + k) * 3 + 2] = c.b; }
-        }
-        g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
         g.computeVertexNormals();
-        moonG.add(new THREE.Mesh(g, poiMoon));
+        const maps = makeMoonMaps();
+        moonG.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+            color: 0xffffff, map: maps.map, normalMap: maps.normalMap,
+            normalScale: new THREE.Vector2(1, 1), roughness: 1, metalness: 0,
+            emissive: 0x0e1119, fog: false,
+        })));
     }
     {   // 🪨 레골리스 — 발치에 뭔가 있어야 "걷는 땅"이 된다(1드로우 병합)
         let rs_ = 4242;
