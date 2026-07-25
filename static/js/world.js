@@ -9409,6 +9409,10 @@ if (statsOn) window.__worldDev = {
     balloonState: () => ({ mode: BALLOON.mode, x: +BALLOON.x.toFixed(2), y: +BALLOON.y.toFixed(2), z: +BALLOON.z.toFixed(2), riding: !!balloonRide, rider: balloonRide && balloonRide.p ? balloonRide.p.name : null, friend: balloonRide && balloonRide.friend ? balloonRide.friend.name : null, lap: balloonRide ? balloonRide.lap : 0, pois: balloonRide && balloonRide.route ? balloonRide.route.names.length : 0 }),
     rocketState: () => ({ mode: ROCKET.mode, x: +ROCKET.x.toFixed(2), y: +ROCKET.y.toFixed(2), z: +ROCKET.z.toFixed(2), pitch: +ROCKET.pitch.toFixed(2), lap: +ROCKET.lapAcc.toFixed(2), burn: +ROCKET.burn.toFixed(2), spaceF: +spaceF.toFixed(2), riding: !!rocketRide, empty: !!(rocketRide && rocketRide.empty), friend: !!(rocketRide && rocketRide.friend), ai: !!(rocketRide && rocketRide.isAI), walk: !!aiRocketWalk, hop: !!rocketHop, light: rocketLightOn, padK: +(ROCKET.padK || 0).toFixed(2), padDir: ROCKET.padDir || 0, aiDwell: (!ROCKET.aiDwell || ROCKET.aiDwell > 1e8) ? null : +ROCKET.aiDwell.toFixed(1), graceT: +(ROCKET.poiGraceT || 0).toFixed(1), poi: ROCKET.poi ? ROCKET.poi.id : null, found: Object.keys(spacePoiFound).length, out: pets.filter((q) => q.poiWalk).length, course: ROCKET.route ? ROCKET.route.names.join('·') : null, wp: ROCKET.route ? `${ROCKET.route.i}/${ROCKET.route.pts.length}` : null, dwell: ROCKET.route ? +ROCKET.route.dwellT.toFixed(1) : 0, tether: rocketTether ? +rocketTether.off.length().toFixed(2) : null, reeling: !!(rocketTether && rocketTether.reeling), evaT: +(ROCKET.aiEvaT || 0).toFixed(1), land: ROCKET.aiLand ? ROCKET.aiLand.id : null }),
     rocketJump: () => { doJump(); return !!rocketTether; },
+    teleAim: (x, y, z) => {   // 🔭 요크 조준 훅 — 인자를 주면 그 월드 좌표를 겨누게 하고 현재 목표각을 돌려준다
+        if (x !== undefined) teleAimAt([x, y, z]);
+        return { yaw: +teleAim.yaw.toFixed(4), tilt: +teleAim.tilt.toFixed(4), viewing: !!teleView };
+    },
     petBounce: (name) => { const q = pets.find((o) => o.name === name); return q ? +q.pet.wrap.position.y.toFixed(3) : null; },
     moonTp: (nx, ny, nz) => { const p = possessed; if (!p || !p.poiWalk || !p.poiWalk.R) return false; const poi = p.poiWalk; const L = Math.hypot(nx, ny, nz) || 1; p.mover.position.set(poi.x + (nx / L) * poi.R, poi.y + (ny / L) * poi.R, poi.z + (nz / L) * poi.R); return true; },   // E2E — 구면 워프
     moonDig: () => ({ visible: !!(moonDigGroup && moonDigGroup.visible), n: [+moonDigN.x.toFixed(3), +moonDigN.y.toFixed(3), +moonDigN.z.toFixed(3)], stones: moonDug.stones, meteors: moonDug.meteors, helmet: accUnlocked.has('space-helmet'), digging: !!moonDigging }),
@@ -16769,6 +16773,9 @@ SPACE_POIS[1].padPos = new THREE.Vector3(SPACE_POIS[1].x, SPACE_POIS[1].y, SPACE
 SPACE_POIS[1].padQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0));   // 한 좌석이 정거장 창을 마주본다
 const spacePoiGroup = new THREE.Group();
 let stationWingL = null, stationWingR = null, vendGroup = null, teleGroup = null;
+let teleYawG = null, teleTiltG = null;   // 🔭 요크 좌우 회전 / 하우징 상하 틸트 — 조형이 실제 축을 갖는다
+const TELE_PARK = { yaw: 0, tilt: -0.17 };   // 아무도 안 볼 땐 난간 바깥을 향해 살짝 숙인 자세
+let teleAim = { ...TELE_PARK };
 // 🔭 전망 망원경 좌표계: 갑판 세계 쪽 난간 (자판기 반대편 균형점), 바깥을 향해 설치
 const TELE_A = Math.atan2(-3.05, 1.8);
 const TELE = { x: 22 - 3.05, z: -13 + 1.8 };
@@ -16780,7 +16787,8 @@ const vendLocalPt = (lx, lz) => ({ x: VEND.x + lx * Math.cos(VEND_A) + lz * Math
 const VEND_FRONT = vendLocalPt(0, 0.62);    // 펫이 서는 자리
 const VEND_TRAY = vendLocalPt(-0.045, 0.3); // 배출구 — 여기서 간식이 둥실 떠나온다
 const vendGlowMat = new THREE.MeshBasicMaterial({ color: 0xffeecb, transparent: true, opacity: 0.9, fog: false });
-const vendCoolMat = new THREE.MeshBasicMaterial({ color: 0x8ce8ff, transparent: true, opacity: 0.85, fog: false });   // 스크린 — 진열 크림등과 색온도·위상을 분리해야 정보 위계가 산다
+const vendCoolMat = new THREE.MeshBasicMaterial({ color: 0x8ce8ff, transparent: true, opacity: 0.85, fog: false });
+const teleGlowMat = new THREE.MeshBasicMaterial({ color: 0xffe2b0, transparent: true, opacity: 0.55, fog: false });   // 🔭 접안 글로우 — 자판기 펄스 공유를 끊고 전용(보는 중엔 밝아진다)   // 스크린 — 진열 크림등과 색온도·위상을 분리해야 정보 위계가 산다
 const VEND_HOVER = { type: 'vend', x: VEND.x, z: VEND.z, labelY: 35.5 };   // 호버 라벨용 의사 프롭 (PROPS엔 절대 안 넣는다 — layoutId 불변식)
 PROP_CLICKS.vend = () => toggleVendPanel();
 HOVER_PROMPTS.vend = () => '🥤 우주 자판기 — 클릭 골라주기 · ⌘ 랜덤 뽑기';
@@ -16796,11 +16804,12 @@ const poiBeaconMat = new THREE.MeshBasicMaterial({ color: 0xff7a6a, transparent:
     const poiMetal = new THREE.MeshStandardMaterial({ color: 0x5a5f66, roughness: 0.7, fog: false });
     const poiPanel = new THREE.MeshStandardMaterial({ color: 0x2c4a7c, roughness: 0.45, metalness: 0.35, fog: false, side: THREE.DoubleSide });
     const poiWarm = new THREE.MeshBasicMaterial({ color: 0xffe9c6, fog: false });
-    // 🥤 자판기 전용 — 진열 유리(정점색 폴오프)와 간식 미니 3계보(공유 M 변이 금지 규율에 따라 clone + fog off)
+    // 🥤🔭 POI 전용 — 진열 유리(정점색 폴오프) + 은박/광택 계보(공유 M 변이 금지 규율에 따라 clone + fog off).
+    // poiFoil = 간식 은박 · 망원경 단열 랩 / poiGloss = 간식 글레이즈 · 망원경 렌즈 코팅.
     const vendGlassMat = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.15, roughness: 0.1, metalness: 0, side: THREE.DoubleSide, depthWrite: false, fog: false });
     const vendSnackMat = gradMat.clone(); vendSnackMat.fog = false;
-    const vendSnackFoil = gradMatFoil.clone(); vendSnackFoil.fog = false;
-    const vendSnackGloss = gradMatGloss.clone(); vendSnackGloss.fog = false;
+    const poiFoil = gradMatFoil.clone(); poiFoil.fog = false;
+    const poiGloss = gradMatGloss.clone(); poiGloss.fog = false;
     const addMerged = (parent, arr, mat) => { const g = mergeGeometries(arr, false); if (g) parent.add(new THREE.Mesh(g, mat)); };
     // 🌕 꼬마 달 (R7 — 펫이 정상 캡 r4.2를 걸어다니는 체급): 회백 구 + 크레이터 14 + 빨간 깃발
     const mp = SPACE_POIS[0];
@@ -17041,46 +17050,96 @@ const poiBeaconMat = new THREE.MeshBasicMaterial({ color: 0xff7a6a, transparent:
     for (const cz of [0.33, 0.44]) { const ch = vbox(0.2, 0.005, 0.03, 0, 0.0045, cz); ch.rotateX(0); vMetal.push(ch); }
     for (const [arr, mat] of [[vGrad, poiGrad], [vRed, poiRed], [vMetal, poiMetal], [vPanel, poiPanel],
         [vGlass, vendGlassMat], [vWarm, vendGlowMat], [vCool, vendCoolMat],
-        [mBase, vendSnackMat], [mFoil, vendSnackFoil], [mGloss, vendSnackGloss]]) {
+        [mBase, vendSnackMat], [mFoil, poiFoil], [mGloss, poiGloss]]) {
         const g = mergeGeometries(arr.map((q) => (q.index ? q.toNonIndexed() : q)), false);
         if (g) vendG.add(new THREE.Mesh(g, mat));
     }
     stG.add(vendG);
     vendGroup = vendG;
-    // 🔭 전망 망원경 (관광 쌍안경 스타일): 기둥 + 스위블 + 쌍둥이 경통 + 레드 밴드 + 발광 접안점
+    // 🔭 전망 망원경 — 쌍안경 형태 문법 + 정거장 기기 디테일(각진 8각 대물·방열핀·은박 단열
+    // 랩·상태 LED·★뱃지). 기둥 위에 **요크(fork) 마운트**를 세워 좌우 요(teleYawG)와 상하
+    // 틸트(teleTiltG)를 실제 축으로 분리 — 보는 중엔 그 풍경 쪽을 겨누고, 아니면 바깥을 향해
+    // 살짝 숙인 파킹 자세로 돌아온다(updateTeleAim). 접안 글로우는 자판기 펄스 공유를 끊고 전용.
     const teleG = new THREE.Group();
     teleG.position.set(-3.05, 0, 1.8);
     teleG.rotation.y = TELE_A;   // 경통(+z)이 난간 바깥을 본다
-    const tGrad = [], tMetal = [], tRed = [];
-    const tPole = new THREE.CylinderGeometry(0.035, 0.045, 0.5, 10);
-    tPole.translate(0, 0.25, 0);
-    tMetal.push(tPole);
-    const tBase = new THREE.CylinderGeometry(0.12, 0.14, 0.03, 12);
-    tBase.translate(0, 0.015, 0);
-    tMetal.push(tBase);
-    const tSwiv = new THREE.SphereGeometry(0.055, 10, 8);
-    tSwiv.translate(0, 0.53, 0);
-    tMetal.push(tSwiv);
-    for (const sx of [-0.062, 0.062]) {   // 쌍둥이 경통 — 살짝 아래를 향해
-        const barrel = new THREE.CylinderGeometry(0.052, 0.058, 0.3, 12);
-        barrel.rotateX(Math.PI / 2 + 0.22);
-        barrel.translate(sx, 0.585, 0.04);
-        tGrad.push(bakeGrad(barrel, 0xf4e6c8, 0xcfa87a, { curve: 1.2 }));
-        const lens = new THREE.TorusGeometry(0.05, 0.014, 8, 14);
-        lens.rotateX(0.22);
-        lens.translate(sx, 0.552, 0.185);
-        tMetal.push(lens);
+    const tGrad = [], tMetal = [], tFoil = [];                                  // 고정부(플레이트·발판·기둥)
+    const yMetal = [];                                                          // 요크 — 좌우 회전
+    const hGrad = [], hMetal = [], hFoil = [], hGloss = [], hCool = [], hWarm = [];   // 하우징 — 상하 틸트
+    const tcyl = (rt, rb, h, seg, x, y, z, axis) => {
+        const g = new THREE.CylinderGeometry(rt, rb, h, seg);
+        if (axis === 'z') g.rotateX(Math.PI / 2); else if (axis === 'x') g.rotateZ(Math.PI / 2);
+        g.translate(x, y, z);
+        return g;
+    };
+    const STEEL = (g) => bakeGrad(g, 0xc2ccd6, 0x6d767f, { curve: 1.1 });   // 정거장 기기 = 차가운 스틸(자판기 크림과 대비되는 SF 톤)
+    const SHELL = (g) => bakeGrad(g, 0xeaf0f6, 0x8d99a6, { curve: 1.2 });   // 하우징 외피
+    const RUB = (g) => bakeGrad(g, 0x3f4750, 0x1b2026, { curve: 1 });        // 러버(아이컵·그립)
+    const RED = (g) => bakeGrad(g, 0xe0705c, 0xa93f2c, { curve: 1 });
+    const FOIL = (g) => bakeGrad(g, 0xf8fbff, 0xb9c4d2, { curve: 1.1 });     // 은박 단열 — 밝을수록 반사가 산다(파우치 문법)
+    // ── 고정부: 볼트 4개 박힌 앵커 플레이트 + 펫이 올라서는 발판 + 6각 기둥 + 케이블 컨듀잇
+    tGrad.push(STEEL(tcyl(0.15, 0.17, 0.024, 8, 0, 0.012, 0)));
+    for (const [bx, bz] of [[0.105, 0.105], [-0.105, 0.105], [0.105, -0.105], [-0.105, -0.105]]) tMetal.push(tcyl(0.013, 0.013, 0.016, 6, bx, 0.028, bz));
+    tGrad.push(STEEL(tcyl(0.115, 0.125, 0.03, 12, 0, 0.015, -0.3)));         // 발판 — 접안부가 펫 키보다 높다(까치발 해소)
+    for (const rz of [-0.34, -0.30, -0.26]) tMetal.push(vbox(0.17, 0.006, 0.014, 0, 0.031, rz));   // 미끄럼 방지 리브
+    tFoil.push(FOIL(tcyl(0.052, 0.056, 0.11, 10, 0, 0.09, 0)));              // 기둥 밑동 단열 랩
+    tGrad.push(STEEL(tcyl(0.036, 0.044, 0.28, 6, 0, 0.285, 0)));             // 6각 기둥 — 원통보다 기계적
+    tMetal.push(tcyl(0.009, 0.009, 0.30, 6, 0.05, 0.27, 0.006));             // 케이블 컨듀잇
+    for (const cy of [0.17, 0.34]) tMetal.push(vbox(0.03, 0.012, 0.03, 0.048, cy, 0.006));
+    tMetal.push(tcyl(0.062, 0.062, 0.028, 12, 0, 0.436, 0));                 // 요 베어링(고정 하단)
+    tGrad.push(bakeGrad(tcyl(0.058, 0.058, 0.008, 12, 0, 0.452, 0), 0x2a3038, 0x14181d, { curve: 1 }));   // 회전 틈 — 이 어두운 링이 있어야 위가 도는 물건으로 읽힌다
+    // ── 요크: 베어링 위에서 두 팔이 하우징 옆구리를 잡는다 (피벗 = 눈에 보이는 축)
+    const teleYaw = new THREE.Group();
+    teleYaw.position.set(0, 0.456, 0);
+    yMetal.push(tcyl(0.058, 0.062, 0.03, 12, 0, 0.015, 0));
+    for (const s_ of [-1, 1]) {
+        const arm = new THREE.BoxGeometry(0.026, 0.185, 0.058);
+        arm.rotateZ(s_ * -0.13);
+        arm.translate(s_ * 0.112, 0.096, 0);
+        yMetal.push(arm);
+        yMetal.push(tcyl(0.028, 0.028, 0.026, 10, s_ * 0.126, 0.17, 0, 'x'));   // 피벗 허브
+        yMetal.push(tcyl(0.014, 0.014, 0.014, 6, s_ * 0.142, 0.17, 0, 'x'));    // 볼트 캡
     }
-    const tBand = new THREE.BoxGeometry(0.21, 0.035, 0.03);
-    tBand.translate(0, 0.6, 0.06);
-    tRed.push(tBand);
-    for (const [arr, mat] of [[tGrad, poiGrad], [tMetal, poiMetal], [tRed, poiRed]]) {
+    // ── 하우징(틸트): 브릿지 + 8각 대물 + 방열핀 + 은박 슬리브 + 러버 아이컵 + 렌즈 코팅
+    const teleTilt = new THREE.Group();
+    teleTilt.position.set(0, 0.17, 0);
+    hGrad.push(SHELL(vbox(0.088, 0.072, 0.2, 0, 0, 0)));                     // 브릿지 — 경통 2개를 한 몸으로 묶는다
+    hGrad.push(SHELL(vbox(0.05, 0.02, 0.13, 0, 0.042, -0.01)));              // 등 리지
+    for (const s_ of [-1, 1]) {
+        const bx = s_ * 0.062;
+        hGrad.push(SHELL(tcyl(0.046, 0.046, 0.13, 10, bx, 0, 0.03, 'z')));            // 허리
+        hGrad.push(SHELL(tcyl(0.05, 0.058, 0.055, 8, bx, 0, 0.125, 'z')));            // 8각 대물 벨
+        { const rim = new THREE.TorusGeometry(0.054, 0.0075, 6, 10); rim.translate(bx, 0, 0.1525); hGrad.push(RED(rim)); }   // 대물 림(레드) — ⚠️ 원판으로 만들면 렌즈를 덮어 "빨간 눈"이 된다(실측), 반드시 링
+        hGrad.push(SHELL(tcyl(0.046, 0.033, 0.05, 10, bx, 0, -0.06, 'z')));           // 접안 테이퍼
+        hGrad.push(RUB(tcyl(0.035, 0.031, 0.026, 12, bx, 0, -0.098, 'z')));           // 러버 아이컵 — 펫이 얼굴 대는 자리
+        for (const fz of [-0.012, 0.018, 0.048]) hMetal.push(tcyl(0.056, 0.056, 0.005, 10, bx, 0, fz, 'z'));   // 방열핀
+        hFoil.push(FOIL(tcyl(0.049, 0.049, 0.036, 10, bx, 0, 0.082, 'z')));           // 단열 랩
+        hGloss.push(bakeGrad(tcyl(0.05, 0.05, 0.004, 12, bx, 0, 0.149, 'z'), 0x2c4d96, 0x05080f, { curve: 1.7 }));   // 렌즈 유리
+        const co = vbox(0.072, 0.009, 0.003, 0, 0, 0); co.rotateZ(0.62); co.translate(bx, 0, 0.1515);
+        hGloss.push(bakeGrad(co, 0xbfe6ff, 0x6aa8d8, { curve: 1 }));                  // 코팅 사선 스트릭 — 전면 광택 금지, 좁게 한 줄
+        hWarm.push(tcyl(0.028, 0.028, 0.004, 10, bx, 0, -0.113, 'z'));                // 접안 글로우 링
+        const gr = vbox(0.02, 0.02, 0.076, 0, 0, 0); gr.rotateX(0.34); gr.rotateY(s_ * 0.1); gr.translate(s_ * 0.082, -0.046, -0.022);
+        hGrad.push(RUB(gr));                                                          // 손잡이(러버)
+        hMetal.push(tcyl(0.012, 0.012, 0.036, 6, s_ * 0.062, -0.036, -0.018, 'x'));   // 그립 스터브
+
+    }
+    { const st = vStar(0.018, 0.0075, 0.005); st.rotateX(-Math.PI / 2); st.translate(0, 0.053, 0.026); hGrad.push(RED(st)); }   // ★ 뱃지 — 등 리지 위
+    hMetal.push(tcyl(0.023, 0.023, 0.032, 8, 0, 0.048, 0.012, 'x'));                  // 포커스 노브
+    hGrad.push(RED(vbox(0.006, 0.008, 0.008, 0, 0.07, 0.012)));
+    hMetal.push(vbox(0.05, 0.018, 0.005, 0, 0.004, -0.101));                          // 명판 — 펫이 서는 뒤쪽 면
+    hCool.push(vbox(0.036, 0.006, 0.003, 0, 0.004, -0.104));
+    for (const lz of [-0.045, -0.02]) hCool.push(vbox(0.012, 0.006, 0.008, 0, 0.053, lz));   // 상태 LED — 등 리지 위(자판기 스크린과 같은 색온도)
+    for (const [arr, mat, parent] of [[tGrad, poiGrad, teleG], [tMetal, poiMetal, teleG], [tFoil, poiFoil, teleG],
+        [yMetal, poiMetal, teleYaw],
+        [hGrad, poiGrad, teleTilt], [hMetal, poiMetal, teleTilt], [hFoil, poiFoil, teleTilt],
+        [hGloss, poiGloss, teleTilt], [hCool, vendCoolMat, teleTilt], [hWarm, teleGlowMat, teleTilt]]) {
         const g = mergeGeometries(arr.map((q) => (q.index ? q.toNonIndexed() : q)), false);
-        if (g) teleG.add(new THREE.Mesh(g, mat));
+        if (g) parent.add(new THREE.Mesh(g, mat));
     }
-    const tEye = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), vendGlowMat);   // 접안 글로우 — 자판기 펄스 공유
-    tEye.position.set(0, 0.615, -0.115);
-    teleG.add(tEye);
+    teleYaw.add(teleTilt);
+    teleG.add(teleYaw);
+    teleYawG = teleYaw; teleTiltG = teleTilt;
+    teleTilt.rotation.x = TELE_PARK.tilt;
     stG.add(teleG);
     teleGroup = teleG;
     spacePoiGroup.add(stG);
@@ -17391,6 +17450,28 @@ function makeTeleVistas() {
     list.push({ label: '🌌 별하늘', sky: true });
     return { list, i: Math.floor(Math.random() * list.length) };
 }
+// 🔭 요크 조준 — 보는 중이면 그 풍경 쪽으로, 아니면 파킹(바깥·살짝 숙임)으로 감쇠 이동.
+// 각도는 항상 짧은 쪽으로 감으며(wrapPi), 정거장이 섬보다 35m 위라 틸트는 -0.62~+0.5로 클램프
+// (실제 각도 그대로면 거의 수직으로 꺾여 부러진 것처럼 보인다).
+const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+function updateTeleAim(delta) {
+    if (!teleYawG || !teleTiltG) return;
+    const aim = teleView ? teleAim : TELE_PARK;
+    const k = 1 - Math.pow(0.02, delta);
+    teleYawG.rotation.y += wrapPi(aim.yaw - teleYawG.rotation.y) * k;
+    teleTiltG.rotation.x += (aim.tilt - teleTiltG.rotation.x) * k;
+    teleGlowMat.opacity = teleView ? 0.72 + Math.sin(wxTime.value * 2.2) * 0.16 : 0.34;
+}
+const _teleWP = new THREE.Vector3();
+function teleAimAt(tgt) {   // 월드 좌표 목표 → 요크 로컬 각도 (그룹이 TELE_A만큼 이미 돌아 있다)
+    if (!teleYawG || !tgt) return;
+    teleYawG.getWorldPosition(_teleWP);
+    const dx = tgt[0] - _teleWP.x, dz = tgt[2] - _teleWP.z, dy = tgt[1] - _teleWP.y;
+    teleAim = {
+        yaw: wrapPi(Math.atan2(dx, dz) - TELE_A),
+        tilt: THREE.MathUtils.clamp(Math.atan2(dy, Math.hypot(dx, dz)), -0.62, 0.5),
+    };
+}
 function applyTeleVista() {
     const v = teleView.vistas.list[teleView.vistas.i];
     let pos = v.pos, tgt = v.tgt, label = v.label;
@@ -17407,6 +17488,7 @@ function applyTeleVista() {
         pos = [TELE.x, 35.4, TELE.z];
         tgt = [TELE.x - 6, 44.5, TELE.z - 4.5];   // maxDistance(15) 안 — 밖이면 컨트롤이 카메라를 끌어당긴다
     }
+    teleAimAt(tgt);   // 밖에서 보면 망원경이 실제로 그 풍경을 겨눈다
     camera.position.set(pos[0], pos[1], pos[2]);
     controls.target.set(tgt[0], tgt[1], tgt[2]);
     // ⚠️ 커스텀 휠줌 글라이드가 매 프레임 zoomTargetDist로 끌어당긴다 — 컷 거리로 동기하지 않으면
@@ -18137,6 +18219,7 @@ function updateRocket(delta) {
         poiBeaconMat.opacity = 0.35 + 0.65 * Math.abs(Math.sin(wxTime.value * 2.6));
         vendGlowMat.opacity = 0.82 + Math.sin(wxTime.value * 1.8) * 0.13;   // 🥤 진열창 숨쉬는 펄스
         vendCoolMat.opacity = 0.72 + Math.sin(wxTime.value * 3.4 + 1.4) * 0.2;   // 스크린은 더 빠르고 차갑게 — 둘이 같은 위상이면 평평해진다
+        updateTeleAim(delta);
     }
     // 🥤 무중력 디스펜스 아크 — 간식이 트레이에서 둥실 떠나와 펫 손으로
     if (vendFly) {
@@ -18490,6 +18573,7 @@ function makeFerryRoute() {
             if (Math.hypot(pt.x, pt.z) > 19.6) ok = false;
             for (const isl of ISLANDS) if (Math.hypot(pt.x - isl.x, pt.z - isl.z) < isl.r + 0.6) ok = false;
             for (const br of BRIDGES) {   // 다리 밑 통과 불가 — 차선 1.25 회피
+                if (!br) continue;   // 모래섬 홀
                 const bdx = br.B.x - br.A.x, bdz = br.B.z - br.A.z;
                 const len2 = bdx * bdx + bdz * bdz;
                 const tt = Math.max(0, Math.min(1, ((pt.x - br.A.x) * bdx + (pt.z - br.A.z) * bdz) / len2));
