@@ -9283,6 +9283,15 @@ if (statsOn) window.__worldDev = {
     season: (id) => setManualSeason(id),
     // 펫 몸통의 화면 좌표 — 스모크의 우클릭 프로브가 격자 스캔(위치 랜덤) 대신 정확히 조준한다
     petScreenXY: () => pets.map((p) => { const a = fxPoint(p, 50, 45); return { x: Math.round(a.x), y: Math.round(a.y) }; }),
+    fishMake: (id) => {   // 어종 메시 배선 검증 — 종별 목표 체장·드로우·삼각 (카툰 9종 / 구 빌더 4종)
+        const sp = FISH_SPECIES.find((q) => q.id === id);
+        if (!sp) return null;
+        const m = makeFishMesh(sp, 1);
+        let d = 0, tri = 0;
+        m.traverse((o) => { if (o.isMesh) { d++; const g = o.geometry; tri += (g.index ? g.index.count : g.attributes.position.count) / 3; } });
+        const sz = new THREE.Box3().setFromObject(m).getSize(new THREE.Vector3());
+        return { d, tri: Math.round(tri), len: +sz.z.toFixed(3), h: +sz.y.toFixed(3) };
+    },
     fishState: () => (fishing ? fishing.state : null),   // 낚시 헤드리스 검증용
     fishBigNext: () => { fishForceBig = true; return true; },   // 🐟 월척 강제 (E2E — 자축 폴짝 검증)
     aiFishState: () => (aiFishing ? aiFishing.state : null),   // 절친 자율 낚시 검증용
@@ -12663,7 +12672,7 @@ function makeFoodGeo(f, bites = 0) {
                 else { pos.setX(i, x + (n - 0.5) * 0.0006); pos.setZ(i, z + (hsh2(y * 500, x * 170) - 0.5) * 0.0006); }
             }
             if (b) fruitBiteDent(g2, { cy: 0.0066, ry: 0.006, ft: 0xf5e6d2, fb: 0xe0c4a8 },
-                b >= 2 ? [{ x: -0.013, y: 0.006, z: 0.003, r: 0.010 }, { x: 0.002, y: 0.007, z: -0.009, r: 0.009 }] : [{ x: -0.026, y: 0.006, z: 0.004, r: 0.0125 }], true);
+                b >= 2 ? [{ x: -0.013, y: 0.006, z: 0.003, r: 0.010 }, { x: 0.002, y: 0.007, z: -0.009, r: 0.009 }] : [{ x: -0.026, y: 0.006, z: 0.004, r: 0.024 }], true);
             g2.computeVertexNormals(); g2.rotateY(-0.16); g2.translate(0.018, 0.007, 0.010); parts.push(g2);
         }
         if (b < 2) {   // 소스 — 커틀릿 윗면에 "부어져 퍼진" 드레이프 패치. 1입에도 크기 유지(물린 건 커틀릿 끝 — 소스가 줄면 부자연, 사용자 확정)
@@ -23508,7 +23517,26 @@ function fishConditionActive(sp) {
 function speciesPool(water) {
     return FISH_SPECIES.filter((s) => s.water === water && s.rarity > 0 && fishConditionActive(s));
 }
+// 카툰 조형으로 교체된 종. 개구리·헌 장화·가오리·아귀는 아직 구 빌더 — 조형 재작업 대기.
+// gameK: 구 빌더는 종에 무관하게 z 0.45~0.55였다(크기 차이가 sizeK에만 있었다). 카툰은 **종별 실제 크기**를
+// 반영하되 실측 cm를 그대로 쓰면 빙어(11cm)가 점이 되고 연어(62cm)가 펫보다 커진다 →
+//   목표 체장 = 0.44 × (실측 cm / 25)^0.45      (25cm = 8종 중위값 · 지수 0.45 = 완화)
+// 결과 0.29(금붕어) ~ 0.67(연어) = 2.3배 폭. 여기에 낚인 개체 길이(sizeK 0.55~1.20)가 곱해진다.
+const FC_GAME = {
+    crucian: 0.798, goldfish: 0.717, koi: 0.935, mackerel: 1.278, salmon: 0.977,
+    smelt: 1.877, catfish: 0.876, puffer: 1.746,
+    bottle: 0.635,   // 잡동사니는 비례 대상 아님 — 구 병 높이(0.14)에 맞춘다
+};
 function makeFishMesh(sp, sizeK) {
+    const gk = FC_GAME[sp.id];
+    if (gk) {   // 아틀라스는 첫 호출에서 한 번 구워지고 이후 공유된다(재질도 1개)
+        const inner = buildFishCartoon(sp.id);
+        if (sp.id === 'bottle') { inner.rotation.x = -Math.PI / 2; inner.position.y = 0.126; }   // 구 빌더처럼 세워 놓는다
+        const w = new THREE.Group();
+        w.add(inner);
+        w.scale.setScalar(sizeK * gk);
+        return w;
+    }
     const g = new THREE.Group();
     if (sp.body === 'boot') {
         const shaft = new THREE.Mesh(bakeGrad(new RoundedBoxGeometry(0.07, 0.13, 0.09, 2, 0.02), sp.back, sp.belly), gradMat);
@@ -25178,3 +25206,1034 @@ document.addEventListener('visibilitychange', async () => {
         setTimeout(() => location.reload(), 1400);
     }
 });
+// ==== 🐟 카툰 어종 조형 — 지오는 실루엣만, 색·무늬는 아틀라스 텍스처 ==========================
+// 규약 5개. 종을 추가할 때 이 5개를 채우면 끝난다.
+//   ① 프로파일 표는 **체장 1 기준 정규화** — top/bot/hw 전부 체장 비율. hw 열이 곧 단면 종횡비 조절기다
+//      (메기 머리는 hw > 체고 → 납작 넓음, 꼬리는 hw ≪ 체고 → 장어형. 별도 aspect 함수 불필요)
+//   ② 아틀라스 1024×1024 = 256² 셀 16개. u→둘레(이음선=배 용골) · v→체장(**머리 우선 워프** 필수)
+//   ③ 무늬는 만화식 — 굵고 성긴 초승달 비늘 + 일정 굵기 외곽선. 촘촘하면 96px에서 노이즈가 되고 원경에 모아레
+//   ④ 지느러미 텍스처는 **회색조 공용 1셀**, 색은 정점색으로 종별 착색(vertexColors × map) → 셀 13개 절약
+//   ⑤ 정점색은 형태 음영 + 지느러미 착색만. 색·무늬는 텍스처 몫
+const FA_W = 1024, FA_CELL = 256, FA_COLS = 4;
+const faRect = (i) => {
+    const c = i % FA_COLS, r = (i / FA_COLS) | 0;
+    return { x: c * FA_CELL, y: r * FA_CELL, u0: c / FA_COLS, v1: 1 - r / FA_COLS, k: 1 / FA_COLS };
+};
+const FA_FIN = 13;   // 공용 지느러미 셀
+
+// ---- 종별 데이터 -------------------------------------------------------------------------
+// prof: [s, top, bot, hw] · edge: 등날 날카로움(0=둥근 단면, 1=날) · headV: 머리에 줄 셀 높이 비율
+// fin.caudal.notch: 0=둥근 부채 · 1=깊은 초승달 · scales: null이면 무린(비늘 안 그림)
+const FISHC = {
+    crucian: {
+        ko: '붕어', cell: 0, L: 0.40, edge: 0.45, headS: 0.18, headV: 0.38, bend: 0.018,
+        prof: [[0, 0.0175, -0.0175, 0.0125], [0.04, 0.0525, -0.045, 0.0375], [0.095, 0.100, -0.0825, 0.070],
+            [0.17, 0.155, -0.1125, 0.090], [0.255, 0.2075, -0.135, 0.100], [0.35, 0.2375, -0.145, 0.1025],
+            [0.46, 0.230, -0.1425, 0.0975], [0.57, 0.2025, -0.130, 0.085], [0.68, 0.160, -0.110, 0.070],
+            [0.78, 0.115, -0.0825, 0.0525], [0.865, 0.075, -0.0575, 0.035], [0.94, 0.055, -0.0425, 0.025], [1, 0.045, -0.0375, 0.019]],
+        ramp: [[0, '#f4eeda'], [0.19, '#cdb271'], [0.30, '#a89a4c'], [0.42, '#757d38'], [0.5, '#58632a']],
+        fin: { col: 0x8d8a4c, dorsal: { s0: 0.315, s1: 0.61, h: 0.105, rays: 0.66 }, anal: { s0: 0.70, s1: 0.79, h: 0.090, rays: 0.36 },
+            caudal: { h: 0.200, len: 0.190, notch: 0.55, rays: 0.74 },
+            pect: { s0: 0.192, s1: 0.228, c0: -0.18, c1: -0.54, l0: 0.145, l1: 0.050, down: 0.60, rays: 0.46 },
+            pelvic: { s0: 0.452, s1: 0.474, c0: -0.64, c1: -0.92, l0: 0.100, l1: 0.035, down: 1.15, rays: 0.30 } },
+        scales: { rows: 16, cols: 12, s0: 0.185, s1: 0.985 }, gill: 0.150, mouth: 0.62, eye: { s: 0.098, c: 0.42, r: 0.033, iris: '#b8913f' },
+    },
+    goldfish: {   // 짧고 깊은 몸 + 길게 나풀거리는 베일테일(2겹) — 정체성이 꼬리에 있다
+        ko: '금붕어', cell: 1, L: 0.26, edge: 0.40, headS: 0.20, headV: 0.36, bend: 0.020,
+        prof: [[0, 0.020, -0.020, 0.016], [0.045, 0.065, -0.055, 0.048], [0.105, 0.130, -0.105, 0.092],
+            [0.19, 0.205, -0.150, 0.125], [0.29, 0.262, -0.185, 0.145], [0.36, 0.278, -0.192, 0.150],
+            [0.47, 0.268, -0.185, 0.143], [0.58, 0.232, -0.163, 0.122], [0.69, 0.180, -0.128, 0.094],
+            [0.79, 0.125, -0.092, 0.065], [0.88, 0.082, -0.062, 0.042], [0.95, 0.062, -0.048, 0.030], [1, 0.052, -0.042, 0.024]],
+        ramp: [[0, '#fff0d2'], [0.17, '#ffc474'], [0.30, '#f8862f'], [0.44, '#e2591a'], [0.5, '#d64a14']],
+        fin: { col: 0xf07a3a, dorsal: { s0: 0.30, s1: 0.60, h: 0.190, rays: 0.60 }, anal: { s0: 0.70, s1: 0.80, h: 0.150, rays: 0.34 },
+            caudal: { h: 0.360, len: 0.560, notch: 0.72, rays: 0.80, veil: true },
+            pect: { s0: 0.20, s1: 0.24, c0: -0.20, c1: -0.56, l0: 0.180, l1: 0.070, down: 0.65, rays: 0.44 },
+            pelvic: { s0: 0.47, s1: 0.50, c0: -0.62, c1: -0.90, l0: 0.150, l1: 0.055, down: 1.20, rays: 0.32 } },
+        scales: { rows: 13, cols: 11, s0: 0.20, s1: 0.985 }, gill: 0.160, mouth: 0.60, eye: { s: 0.100, c: 0.40, r: 0.038, iris: '#8a5a2a' },
+        extra: 'goldcap',
+    },
+    koi: {   // 길고 두툼 · 수염 2쌍 · 홍백 반점(정체성)
+        ko: '잉어', cell: 2, L: 0.52, edge: 0.38, headS: 0.17, headV: 0.36, bend: 0.016,
+        prof: [[0, 0.022, -0.024, 0.018], [0.045, 0.058, -0.052, 0.045], [0.105, 0.098, -0.082, 0.072],
+            [0.18, 0.135, -0.105, 0.088], [0.27, 0.166, -0.122, 0.096], [0.38, 0.180, -0.128, 0.0995],
+            [0.49, 0.174, -0.125, 0.095], [0.60, 0.155, -0.113, 0.084], [0.70, 0.128, -0.096, 0.069],
+            [0.80, 0.096, -0.074, 0.052], [0.88, 0.070, -0.056, 0.038], [0.945, 0.054, -0.044, 0.028], [1, 0.046, -0.038, 0.022]],
+        ramp: [[0, '#fdf8f0'], [0.20, '#f4ece0'], [0.34, '#e7dccc'], [0.46, '#cdbfae'], [0.5, '#c0b1a0']],
+        fin: { col: 0xe8dccb, dorsal: { s0: 0.30, s1: 0.70, h: 0.090, rays: 0.72 }, anal: { s0: 0.76, s1: 0.86, h: 0.070, rays: 0.32 },
+            caudal: { h: 0.185, len: 0.190, notch: 0.42, rays: 0.72 },
+            pect: { s0: 0.185, s1: 0.222, c0: -0.20, c1: -0.56, l0: 0.130, l1: 0.048, down: 0.60, rays: 0.46 },
+            pelvic: { s0: 0.50, s1: 0.525, c0: -0.62, c1: -0.90, l0: 0.095, l1: 0.034, down: 1.10, rays: 0.30 } },
+        scales: { rows: 18, cols: 12, s0: 0.175, s1: 0.985 }, gill: 0.145, mouth: 0.58, eye: { s: 0.092, c: 0.30, r: 0.024, iris: '#3a3026' },
+        parts: [{ kind: 'barbels', s: 0.052, pairs: [[-0.32, 0.085, 1.25], [-0.58, 0.062, 1.55]], col: 0x8a7a5e }],
+        extra: 'kohaku',
+    },
+    mackerel: {   // 방추 + 아주 좁은 꼬리자루 + 깊은 초승달 꼬리 + 핀렛 · 등의 물결 무늬
+        ko: '고등어', cell: 3, L: 0.32, edge: 0.55, headS: 0.16, headV: 0.34, bend: 0.014,
+        prof: [[0, 0.010, -0.010, 0.008], [0.05, 0.045, -0.040, 0.032], [0.12, 0.078, -0.068, 0.055],
+            [0.20, 0.100, -0.086, 0.068], [0.29, 0.117, -0.098, 0.076], [0.36, 0.124, -0.100, 0.078],
+            [0.47, 0.118, -0.096, 0.074], [0.58, 0.104, -0.086, 0.064], [0.69, 0.084, -0.070, 0.050],
+            [0.79, 0.062, -0.052, 0.036], [0.88, 0.040, -0.034, 0.022], [0.95, 0.026, -0.022, 0.014], [1, 0.020, -0.017, 0.010]],
+        ramp: [[0, '#fdfeff'], [0.06, '#f6fbfd'], [0.12, '#dfebf1'], [0.18, '#a8c0cc'], [0.24, '#6e94a6'], [0.33, '#4d7689'], [0.5, '#3a5f72']],   // 은빛 강철 — 코발트도 먹색도 아닌 중간
+        fin: { col: 0x8fa8b8, dorsal: { s0: 0.28, s1: 0.44, h: 0.110, rays: 0.42 }, dorsal2: { s0: 0.58, s1: 0.70, h: 0.075, rays: 0.32 },
+            anal: { s0: 0.60, s1: 0.71, h: 0.070, rays: 0.32 }, caudal: { h: 0.215, len: 0.170, notch: 0.92, rays: 0.70, pow: 1.35 },
+            pect: { s0: 0.215, s1: 0.245, c0: -0.10, c1: -0.44, l0: 0.135, l1: 0.045, down: 0.50, rays: 0.42 },
+            pelvic: { s0: 0.40, s1: 0.425, c0: -0.62, c1: -0.90, l0: 0.080, l1: 0.030, down: 1.05, rays: 0.28 },
+            finlets: 5 },
+        scales: null, gill: 0.150, mouth: 0.66, eye: { s: 0.098, c: 0.24, r: 0.028, iris: '#3d4e5c' },
+        extra: 'macwaves',
+    },
+    salmon: {   // 혼인색 수컷 — 들린 주둥이 + 옆구리 붉은 띠 + 등 반점 + 기름지느러미
+        ko: '연어', cell: 4, L: 0.58, edge: 0.48, headS: 0.17, headV: 0.34, bend: 0.015,
+        prof: [[0, 0.038, 0.004, 0.010], [0.03, 0.048, -0.030, 0.024], [0.07, 0.072, -0.060, 0.044],
+            [0.15, 0.108, -0.086, 0.062], [0.25, 0.132, -0.100, 0.068], [0.36, 0.142, -0.098, 0.070],
+            [0.47, 0.136, -0.096, 0.067], [0.58, 0.120, -0.086, 0.058], [0.69, 0.098, -0.072, 0.046],
+            [0.79, 0.072, -0.055, 0.033], [0.88, 0.048, -0.038, 0.021], [0.95, 0.032, -0.026, 0.013], [1, 0.026, -0.021, 0.010]],
+        ramp: [[0, '#f6f2ea'], [0.16, '#e2dcd2'], [0.28, '#b8a89c'], [0.42, '#6d6f6a'], [0.5, '#4e5450']],
+        fin: { col: 0x8a7a70, dorsal: { s0: 0.34, s1: 0.48, h: 0.100, rays: 0.40 }, anal: { s0: 0.72, s1: 0.82, h: 0.080, rays: 0.32 },
+            caudal: { h: 0.195, len: 0.175, notch: 0.35, rays: 0.72 },
+            pect: { s0: 0.20, s1: 0.235, c0: -0.16, c1: -0.50, l0: 0.130, l1: 0.045, down: 0.55, rays: 0.44 },
+            pelvic: { s0: 0.50, s1: 0.525, c0: -0.62, c1: -0.90, l0: 0.085, l1: 0.030, down: 1.10, rays: 0.28 },
+            adipose: { s: 0.63, h: 0.030 } },
+        scales: { rows: 22, cols: 13, s0: 0.185, s1: 0.985, soft: 0.55 }, gill: 0.150, mouth: 0.70, eye: { s: 0.075, c: 0.34, r: 0.019, iris: '#2c2a22' },
+        extra: 'salmonrun',
+    },
+    smelt: {   // 아주 가늘고 길다 · 옆구리 은띠가 정체성 · 기름지느러미
+        ko: '빙어', cell: 5, L: 0.14, edge: 0.50, headS: 0.18, headV: 0.34, bend: 0.016,
+        prof: [[0, 0.008, -0.010, 0.006], [0.045, 0.030, -0.030, 0.020], [0.11, 0.052, -0.048, 0.034],
+            [0.20, 0.070, -0.062, 0.044], [0.30, 0.080, -0.070, 0.052], [0.38, 0.082, -0.072, 0.057],
+            [0.48, 0.078, -0.068, 0.054], [0.59, 0.070, -0.060, 0.047], [0.70, 0.058, -0.050, 0.038],
+            [0.80, 0.044, -0.038, 0.028], [0.88, 0.032, -0.028, 0.020], [0.95, 0.022, -0.019, 0.013], [1, 0.018, -0.015, 0.010]],
+        ramp: [[0, '#fbfaf6'], [0.20, '#e6eeee'], [0.32, '#b6c4bc'], [0.44, '#6f8076'], [0.5, '#54655c']],
+        fin: { col: 0xc8d0c8, dorsal: { s0: 0.36, s1: 0.48, h: 0.085, rays: 0.34 }, anal: { s0: 0.62, s1: 0.74, h: 0.070, rays: 0.30 },
+            caudal: { h: 0.180, len: 0.155, notch: 0.62, rays: 0.62 },
+            pect: { s0: 0.215, s1: 0.245, c0: -0.20, c1: -0.52, l0: 0.105, l1: 0.038, down: 0.55, rays: 0.36 },
+            pelvic: { s0: 0.45, s1: 0.472, c0: -0.64, c1: -0.90, l0: 0.075, l1: 0.028, down: 1.10, rays: 0.26 },
+            adipose: { s: 0.56, h: 0.026 } },
+        scales: null, gill: 0.155, mouth: 0.60, eye: { s: 0.088, c: 0.30, r: 0.032, iris: '#3e4e4c' },
+        extra: 'silverband',
+    },
+    catfish: {   // 머리는 위아래로 납작·좌우로 넓고(0.73:1), 몸은 뒤로 갈수록 장어형(3:1) — hw 열로 뒤집는다
+        ko: '메기', cell: 6, L: 0.62, edge: 0.22, headS: 0.20, headV: 0.36, bend: 0.020,
+        prof: [[0, 0.028, -0.028, 0.030], [0.06, 0.052, -0.050, 0.070], [0.13, 0.062, -0.058, 0.075],
+            [0.21, 0.070, -0.062, 0.070], [0.30, 0.072, -0.062, 0.058], [0.42, 0.070, -0.060, 0.046],
+            [0.55, 0.064, -0.054, 0.034], [0.68, 0.056, -0.046, 0.024], [0.79, 0.046, -0.038, 0.017],
+            [0.88, 0.036, -0.030, 0.012], [0.95, 0.028, -0.024, 0.009], [1, 0.024, -0.020, 0.008]],
+        ramp: [[0, '#e8e0c8'], [0.20, '#c8bc9c'], [0.32, '#8d8468'], [0.44, '#57523e'], [0.5, '#413d2e']],
+        fin: { col: 0x6a6450, dorsal: { s0: 0.24, s1: 0.32, h: 0.075, rays: 0.26 }, anal: { s0: 0.55, s1: 0.90, h: 0.070, rays: 0.60 },
+            caudal: { h: 0.140, len: 0.130, notch: 0.05, rays: 0.52 },
+            pect: { s0: 0.155, s1: 0.185, c0: -0.34, c1: -0.66, l0: 0.130, l1: 0.045, down: 0.35, rays: 0.42 },
+            pelvic: { s0: 0.50, s1: 0.525, c0: -0.70, c1: -0.92, l0: 0.085, l1: 0.030, down: 0.95, rays: 0.28 } },
+        scales: null, gill: 0.125, mouth: 0.92, eye: { s: 0.070, c: 0.52, r: 0.012, iris: '#1c1e16' },
+        parts: [{ kind: 'barbels', s: 0.030, back: true, pairs: [[0.18, 0.340, 0.30], [-0.40, 0.210, 0.95], [-0.66, 0.150, 1.25]], col: 0x59533f }],
+        extra: 'marble',
+    },
+    puffer: {   // 거의 구(1.02:1) · 가시를 **구면 전체**에 분포(허리 링 버그 수정) · 등에 눈알 무늬
+        ko: '복어', cell: 7, L: 0.20, edge: 0.10, headS: 0.22, headV: 0.34, bend: 0.010,
+        prof: [[0, 0.030, -0.030, 0.028], [0.06, 0.100, -0.095, 0.095], [0.15, 0.185, -0.175, 0.180],
+            [0.27, 0.250, -0.240, 0.245], [0.40, 0.272, -0.262, 0.262], [0.53, 0.250, -0.238, 0.238],
+            [0.65, 0.200, -0.185, 0.180], [0.76, 0.140, -0.125, 0.115], [0.85, 0.090, -0.078, 0.065],
+            [0.92, 0.058, -0.048, 0.038], [1, 0.040, -0.032, 0.024]],
+        ramp: [[0, '#fbf6e4'], [0.22, '#f0e6c4'], [0.36, '#d6c48a'], [0.46, '#a89658'], [0.5, '#8d7c44']],
+        fin: { col: 0xe0d2a0, dorsal: { s0: 0.66, s1: 0.78, h: 0.085, rays: 0.28 }, anal: { s0: 0.68, s1: 0.79, h: 0.075, rays: 0.26 },
+            caudal: { h: 0.170, len: 0.140, notch: 0.08, rays: 0.50 },
+            pect: { s0: 0.28, s1: 0.33, c0: -0.12, c1: -0.46, l0: 0.130, l1: 0.055, down: 0.45, rays: 0.38 } },
+        scales: null, gill: 0.190, mouth: 1.05, eye: { s: 0.105, c: 0.42, r: 0.042, iris: '#a07c38' },
+        parts: [{ kind: 'spikes', n: 56, len: 0.056, r: 0.015, col: 0xc9b77e }],
+        extra: 'ocelli',
+    },
+    angler: {   // 머리가 몸의 절반 · 좌우로 아주 넓고(0.64:1) 위아래로 납작 · 벌어진 입 + 초롱
+        ko: '아귀', cell: 8, L: 0.46, edge: 0.18, headS: 0.24, headV: 0.40, bend: 0.012,
+        prof: [[0, 0.078, -0.098, 0.062], [0.08, 0.138, -0.138, 0.150], [0.18, 0.152, -0.142, 0.165],
+            [0.30, 0.136, -0.120, 0.130], [0.43, 0.110, -0.092, 0.090], [0.56, 0.086, -0.070, 0.058],
+            [0.69, 0.054, -0.044, 0.036], [0.80, 0.040, -0.032, 0.022], [0.89, 0.028, -0.022, 0.014],
+            [0.95, 0.020, -0.016, 0.009], [1, 0.016, -0.013, 0.007]],
+        ramp: [[0, '#8d8478'], [0.22, '#6a6154'], [0.36, '#4a4238'], [0.46, '#332c26'], [0.5, '#28221d']],
+        fin: { col: 0x4e463a, dorsal: { s0: 0.42, s1: 0.56, h: 0.070, rays: 0.28 }, anal: { s0: 0.62, s1: 0.74, h: 0.060, rays: 0.26 },
+            caudal: { h: 0.130, len: 0.115, notch: 0.06, rays: 0.46 },
+            pect: { s0: 0.24, s1: 0.30, c0: -0.20, c1: -0.60, l0: 0.170, l1: 0.070, down: 0.40, rays: 0.44 } },
+        scales: null, gill: 0.205, mouth: 1.7, eye: { s: 0.108, c: 0.62, r: 0.030, iris: '#c8b048' },
+        parts: [{ kind: 'lure', s: 0.10, h: 0.115 }, { kind: 'teeth', s0: 0.012, s1: 0.055, n: 9 }],
+        extra: 'anglermarble',
+    },
+};
+
+function cruMembrane(baseFn, marginFn, na, nb, bow) {
+    const pos = [], uv = [], idx = [], b = new THREE.Vector3(), m = new THREE.Vector3(), p = new THREE.Vector3();
+    for (let i = 0; i <= na; i++) {
+        const a = i / na;
+        baseFn(a, b); marginFn(a, m);
+        for (let j = 0; j <= nb; j++) {
+            const t = j / nb;
+            p.lerpVectors(b, m, t);
+            if (bow) p.x += bow(a) * Math.sin(t * Math.PI) * 0.55;   // 살짝 휜 막 — 완전 평면은 종이로 읽힌다
+            pos.push(p.x, p.y, p.z);
+            uv.push(a, t);
+        }
+    }
+    for (let i = 0; i < na; i++) for (let j = 0; j < nb; j++) {
+        const q = i * (nb + 1) + j, r = q + nb + 1;
+        idx.push(q, r, q + 1, r, r + 1, q + 1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
+}
+const cruTbl = (tbl, a) => {   // 지느러미 자유변 높이표 보간 — 슬래브(직선변)가 되지 않게 아웃라인을 표로 못박는다
+    const n = tbl.length - 1, f = THREE.MathUtils.clamp(a, 0, 1) * n, i = Math.min(n - 1, Math.floor(f)), t = f - i;
+    return tbl[i] + (tbl[i + 1] - tbl[i]) * (t * t * (3 - 2 * t));
+};
+// ---- 지오메트리 -------------------------------------------------------------------------
+function fcAt(sp, col, s) {   // 스테이션 사이 = Catmull-Rom 탄젠트 에르미트 (선형보간은 법선이 꺾인다)
+    const T = sp.prof;
+    let i = 0;
+    while (i < T.length - 2 && s > T[i + 1][0]) i++;
+    const p0 = T[Math.max(0, i - 1)], p1 = T[i], p2 = T[i + 1], p3 = T[Math.min(T.length - 1, i + 2)];
+    const h = p2[0] - p1[0], t = THREE.MathUtils.clamp(h > 0 ? (s - p1[0]) / h : 0, 0, 1);
+    const m1 = (p2[col] - p0[col]) / Math.max(1e-6, p2[0] - p0[0]) * h;
+    const m2 = (p3[col] - p1[col]) / Math.max(1e-6, p3[0] - p1[0]) * h;
+    const t2 = t * t, t3 = t2 * t;
+    return ((2 * t3 - 3 * t2 + 1) * p1[col] + (t3 - 2 * t2 + t) * m1 + (-2 * t3 + 3 * t2) * p2[col] + (t3 - t2) * m2) * sp.L;
+}
+const fcBend = (sp, s) => sp.L * (sp.bend * Math.sin(s * Math.PI * 1.2) - sp.bend * 0.3);   // 얕은 S — 직선축은 박제로 읽힌다
+const _fcSpineCache = new WeakMap();
+const fcPhi = (sp, s) => THREE.MathUtils.smoothstep(s, sp.spineArc[0], sp.spineArc[1]) * Math.PI * 0.5;
+function fcSpine(sp, s) {   // 척추 꺾임 — 방향벡터 [0,-cosφ,-sinφ]를 적분. 장화의 발목 90°가 이 값 하나로 나온다
+    if (!sp.spineArc) return null;
+    let tbl = _fcSpineCache.get(sp);
+    if (!tbl) {
+        tbl = []; let y = 0, z = 0;
+        const N = 64;
+        for (let i = 0; i <= N; i++) {
+            const t = i / N;
+            tbl.push([y, z + t]);   // z는 기본 경로(-s·L)를 되돌린 오프셋
+            const ph = THREE.MathUtils.smoothstep(t, sp.spineArc[0], sp.spineArc[1]) * Math.PI * 0.5;
+            y -= Math.cos(ph) / N; z -= Math.sin(ph) / N;
+        }
+        _fcSpineCache.set(sp, tbl);
+    }
+    const f = THREE.MathUtils.clamp(s, 0, 1) * (tbl.length - 1), i = Math.min(tbl.length - 2, Math.floor(f)), t = f - i;
+    return [(tbl[i][0] + (tbl[i + 1][0] - tbl[i][0]) * t) * sp.L, (tbl[i][1] + (tbl[i + 1][1] - tbl[i][1]) * t) * sp.L];
+}
+function fcPoint(sp, s, th, out) {   // th: 0=배 용골, π=등날 (이음선을 배 밑에 — 가장 안 보이는 자리)
+    const top = fcAt(sp, 1, s), bot = fcAt(sp, 2, s), hw = fcAt(sp, 3, s);
+    const c = -Math.cos(th), st = Math.sin(th);
+    const kk = 1 + sp.edge * Math.max(0, c) - 0.10 * Math.max(0, -c);
+    const wp = 1 - 0.09 * c;
+    const lx = hw * wp * Math.sign(st) * Math.pow(Math.abs(st), kk) + fcBend(sp, s);
+    const ly = (top - bot) / 2 * c, cy = (top + bot) / 2, cz = (0.5 - s) * sp.L;
+    const sn = fcSpine(sp, s);
+    if (!sn) return out.set(lx, cy + ly, cz);
+    const th2 = fcPhi(sp, s) - Math.PI / 2;   // 단면을 접선에 수직으로 세운다 (안 하면 통이 납작한 리본이 된다)
+    return out.set(lx, cy + sn[0] + ly * Math.cos(th2), cz + sn[1] + ly * Math.sin(th2));
+}
+const _fA = new THREE.Vector3(), _fB = new THREE.Vector3(), _fC = new THREE.Vector3(), _fD = new THREE.Vector3();
+function fcNormal(sp, s, th, out) {
+    fcPoint(sp, s, th, _fA);
+    fcPoint(sp, Math.min(1, s + 0.004), th, _fB);
+    fcPoint(sp, s, th + 0.02, _fC);
+    return out.crossVectors(_fB.sub(_fA), _fC.sub(_fA)).normalize();
+}
+const fcV = (sp, s) => s < sp.headS ? (s / sp.headS) * sp.headV : sp.headV + (s - sp.headS) / (1 - sp.headS) * (1 - sp.headV);
+const fcVd = (sp, s) => s < sp.headS ? sp.headV / sp.headS : (1 - sp.headV) / (1 - sp.headS);
+function fcBodyGeo(sp, stations, seg) {
+    const pos = [], uv = [], idx = [], p = new THREE.Vector3();
+    for (let i = 0; i <= stations; i++) {
+        const s = Math.pow(i / stations, 0.88);   // 머리 쪽 스테이션 촘촘 — 곡률이 급하다
+        for (let j = 0; j <= seg; j++) {
+            const u = j / seg;
+            fcPoint(sp, s, u * Math.PI * 2, p);
+            pos.push(p.x, p.y, p.z); uv.push(u, 1 - s);
+        }
+    }
+    for (let i = 0; i < stations; i++) for (let j = 0; j < seg; j++) {
+        const a = i * (seg + 1) + j, b = a + seg + 1;
+        idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+    for (const [s, flip] of [[0, true], [1, false]]) {   // 열린 튜브 끝 막기 (주둥이 입술판 · 꼬리자루 마감)
+        const base = pos.length / 3;
+        pos.push(fcBend(sp, s), (fcAt(sp, 1, s) + fcAt(sp, 2, s)) / 2, (0.5 - s) * sp.L);
+        uv.push(0.5, 1 - s);
+        for (let j = 0; j <= seg; j++) { fcPoint(sp, s, (j / seg) * Math.PI * 2, p); pos.push(p.x, p.y, p.z); uv.push(j / seg, 1 - s); }
+        for (let j = 0; j < seg; j++) idx.push(base, base + 1 + j + (flip ? 1 : 0), base + 1 + j + (flip ? 0 : 1));
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+}
+const FC_DORS = [0.30, 0.64, 0.88, 1.00, 0.93, 0.70, 0.26];   // 자유변 높이표 — 첫 조가 짧고 앞 20%에서 최고, 뒤로 오목
+const FC_ANAL = [0.52, 0.96, 1.00, 0.84, 0.60, 0.24];
+function fcFins(sp, dense) {
+    const NB = dense ? 5 : 2, out = [], F = sp.fin, L = sp.L;
+    const na = (k) => Math.max(4, Math.round((dense ? 22 : 11) * k));
+    const sail = (d, sign, tbl) => {   // 등/뒷지느러미 — 기저는 몸 표면에 정확히 앉는다
+        const th = sign > 0 ? Math.PI : 0, H = d.h * L;
+        out.push({ rays: d.rays, geo: cruMembrane(
+            (a, o) => fcPoint(sp, d.s0 + a * (d.s1 - d.s0), th, o),
+            (a, o) => { const h = H * cruTbl(tbl, a); fcPoint(sp, d.s0 + a * (d.s1 - d.s0), th, o); o.y += sign * h; o.z -= h * 0.40; },
+            na(Math.max(0.5, (d.s1 - d.s0) * 3.4)), NB, (a) => 0.009 * L * Math.sin(a * 5.2)) });
+    };
+    if (F.dorsal) sail(F.dorsal, 1, FC_DORS);
+    if (F.dorsal2) sail(F.dorsal2, 1, FC_DORS);
+    if (F.anal) sail(F.anal, -1, FC_ANAL);
+    if (F.caudal) {
+        const d = F.caudal, zc = -0.5 * L, yc = (fcAt(sp, 1, 1) + fcAt(sp, 2, 1)) / 2, pw = d.pow || 1.15;
+        const nb = 1 - d.notch;
+        const lobe = (veilK) => cruMembrane(
+            (a, o) => { const q = a * 2 - 1; o.set(fcBend(sp, 1) + 0.005 * L * q, yc + q * fcAt(sp, 1, 1) * 0.42, zc); },
+            (a, o) => {
+                const q = a * 2 - 1, sg = Math.sign(q) || 1, ab = Math.abs(q);
+                o.set(fcBend(sp, 1) + 0.010 * L * q, yc + sg * d.h * L * veilK * Math.pow(ab, 0.86),
+                    zc - d.len * L * veilK * (nb + d.notch * Math.pow(ab, pw)));
+            }, na(1.2), NB, (a) => 0.015 * L * Math.sin(a * Math.PI * 2));
+        out.push({ rays: d.rays, geo: lobe(1) });
+        if (d.veil) { const g2 = lobe(0.68); g2.rotateZ(0.10); out.push({ rays: d.rays, geo: g2 }); }   // 베일테일 = 2겹
+    }
+    const blade = (d, sx) => {
+        const rootAt = (a, o) => fcPoint(sp, d.s0 + (d.s1 - d.s0) * a, Math.acos(THREE.MathUtils.clamp(-(d.c0 + (d.c1 - d.c0) * a), -1, 1)) * (sx > 0 ? 1 : -1), o);
+        const sm = (d.s0 + d.s1) / 2, cm = (d.c0 + d.c1) / 2, thm = Math.acos(-cm) * (sx > 0 ? 1 : -1);
+        fcNormal(sp, sm, thm, _fD);
+        const nrm = _fD.clone();
+        out.push({ rays: d.rays, geo: cruMembrane(
+            (a, o) => rootAt(a, o),
+            (a, o) => {
+                const len = (d.l0 + (d.l1 - d.l0) * a) * L * (1 + 0.10 * Math.sin(a * Math.PI));
+                rootAt(a, o);
+                o.addScaledVector(nrm, len * 0.22).add(_fA.set(0, -d.down * len * (0.35 + 0.5 * a), -len * (0.90 - 0.18 * a)));
+            }, na(0.55), NB, () => sx * 0.011 * L) });
+    };
+    if (F.pect) for (const sx of [1, -1]) blade(F.pect, sx);
+    if (F.pelvic) for (const sx of [1, -1]) blade(F.pelvic, sx);
+    if (F.finlets) for (let k = 0; k < F.finlets; k++) {   // 핀렛 — 작지만 실루엣에 걸린다
+        const s0 = 0.74 + k * 0.045;
+        for (const sign of [1, -1]) out.push({ rays: 0.10, geo: cruMembrane(
+            (a, o) => fcPoint(sp, s0 + a * 0.026, sign > 0 ? Math.PI : 0, o),
+            (a, o) => { fcPoint(sp, s0 + a * 0.026, sign > 0 ? Math.PI : 0, o); o.y += sign * 0.022 * L * (1 - a * 0.5); o.z -= 0.012 * L; },
+            4, NB, null) });
+    }
+    if (F.adipose) {   // 기름지느러미 — 작은 살 혹(막이 아니라 두툼)
+        const d = F.adipose;
+        out.push({ rays: 0.10, geo: cruMembrane(
+            (a, o) => fcPoint(sp, d.s + a * 0.05, Math.PI, o),
+            (a, o) => { fcPoint(sp, d.s + a * 0.05, Math.PI, o); o.y += d.h * L * Math.sin(a * Math.PI) * 1.1; o.z -= 0.006 * L; },
+            6, NB, null) });
+    }
+    return out;
+}
+function fcParts(sp) {   // 부속 지오메트리 — 칠할 수 없어서 만들어야 하는 것만
+    const out = [], L = sp.L, P = new THREE.Vector3(), N = new THREE.Vector3();
+    for (const pt of sp.parts || []) {
+        if (pt.kind === 'barbels') {   // 수염 — 테이퍼 튜브, 살짝 늘어짐
+            for (const [c0, len, droop] of pt.pairs) for (const sx of [1, -1]) {
+                const th = Math.acos(THREE.MathUtils.clamp(-c0, -1, 1)) * sx;
+                fcPoint(sp, pt.s, th, P); fcNormal(sp, pt.s, th, N);
+                const pts = [];
+                for (let k = 0; k <= 5; k++) {
+                    const t = k / 5;
+                    pts.push(new THREE.Vector3(P.x + N.x * 0.20 * len * L * t + sx * 0.34 * len * L * t,
+                        P.y - droop * len * L * t * t * 0.95, P.z + len * L * t * (pt.back ? -0.55 - 0.35 * t : 0.62 - 0.30 * t)));
+                }
+                const tb = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 9, 0.0038 * L, 4, false);   // 굵으면 상아로 읽힌다
+                out.push({ geo: tb, col: pt.col, flat: true });
+            }
+        } else if (pt.kind === 'spikes') {   // 가시 — **구면 전체 균등 분포**(피보나치). 허리 링이 아니다
+            for (let i = 0; i < pt.n; i++) {
+                const y = 1 - (i / (pt.n - 1)) * 2, rr = Math.sqrt(Math.max(0, 1 - y * y)), ph = i * 2.39996;
+                const dir = new THREE.Vector3(Math.cos(ph) * rr, y, Math.sin(ph) * rr);
+                const s = THREE.MathUtils.clamp(0.5 - dir.z * 0.42, 0.10, 0.90);
+                const th = Math.atan2(dir.x, -(-dir.y)) || 0;
+                fcPoint(sp, s, Math.acos(THREE.MathUtils.clamp(dir.y, -1, 1)) * (dir.x >= 0 ? 1 : -1), P);
+                fcNormal(sp, s, Math.acos(THREE.MathUtils.clamp(dir.y, -1, 1)) * (dir.x >= 0 ? 1 : -1), N);
+                const ln = pt.len * L * (0.72 + 0.5 * Math.max(0, -dir.y));   // 배쪽이 더 길다
+                const cn = new THREE.ConeGeometry(pt.r * L, ln, 5);
+                cn.translate(0, ln * 0.42, 0);
+                cn.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), N));
+                cn.translate(P.x, P.y, P.z);
+                out.push({ geo: cn, col: pt.col, flat: true });
+            }
+        } else if (pt.kind === 'lure') {   // 초롱 — 줄기 + 발광 구슬(별도 재질)
+            fcPoint(sp, pt.s, Math.PI, P);
+            const pts = [];
+            for (let k = 0; k <= 5; k++) { const t = k / 5; pts.push(new THREE.Vector3(P.x + 0.02 * L * Math.sin(t * 2), P.y + pt.h * L * t, P.z + pt.h * L * t * 0.55)); }
+            out.push({ geo: new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 9, 0.012 * L, 5, false), col: 0x3a332b, flat: true });
+            const tip = pts[5];
+            out.push({ geo: new THREE.SphereGeometry(0.038 * L, 10, 8).translate(tip.x, tip.y, tip.z), glow: true });
+        } else if (pt.kind === 'teeth') {   // 이빨 — 실루엣에 걸리는 앞줄만 지오, 나머지는 텍스처
+            for (let i = 0; i < pt.n; i++) {
+                const u = 0.5 + (i / (pt.n - 1) - 0.5) * 0.62, th = u * Math.PI * 2;
+                const s = pt.s0 + (pt.s1 - pt.s0) * (0.3 + 0.7 * Math.abs(i / (pt.n - 1) - 0.5) * 2);
+                fcPoint(sp, s, th, P); fcNormal(sp, s, th, N);
+                const ln = 0.055 * L * (0.7 + 0.5 * Math.random() * 0);
+                const cn = new THREE.ConeGeometry(0.011 * L, ln, 4);
+                cn.translate(0, ln * 0.45, 0);
+                cn.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), N.negate()));
+                cn.translate(P.x, P.y, P.z);
+                out.push({ geo: cn, col: 0xf2ece0, flat: true });
+            }
+        }
+    }
+    return out;
+}
+
+// ---- 아틀라스 -----------------------------------------------------------------------------
+let _fcAtlas = null;
+function fcAtlas() {
+    if (_fcAtlas) return _fcAtlas;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = FA_W;
+    const g = cv.getContext('2d');
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, FA_W, FA_W);   // 셀 15 = 순백(부속 파트가 정점색만 쓰도록)
+    for (const id in FISHC) {
+        const sp = FISHC[id], R = faRect(sp.cell), C = FA_CELL;
+        const xOf = (u) => R.x + u * C, yOf = (s) => R.y + fcV(sp, s) * C, cOf = (u) => -Math.cos(u * Math.PI * 2);
+        const girth = (s) => { const a = (fcAt(sp, 1, s) - fcAt(sp, 2, s)) / 2, b = fcAt(sp, 3, s); return Math.PI * (3 * (a + b) - Math.sqrt(Math.max(0, (3 * a + b) * (a + 3 * b)))); };
+        const pxU = (s) => C / Math.max(1e-4, girth(s)), pxV = (s) => C * fcVd(sp, s) / sp.L;
+        g.save();
+        g.beginPath(); g.rect(R.x, R.y, C, C); g.clip();
+        if (sp.glass) g.clearRect(R.x, R.y, C, C);   // ⚠️ 유리는 **알파를 텍스처가 쥔다**(재질 opacity로 낮추면 반사광까지 같이 눌린다)
+        const grd = g.createLinearGradient(R.x, 0, R.x + C, 0);   // 카운터셰이딩 — 배(양끝)에서 등(중앙), 좌우 대칭
+        for (const [t, c] of sp.ramp) { grd.addColorStop(t, c); if (t < 0.5) grd.addColorStop(1 - t, c); }
+        g.globalAlpha = sp.glass ? 0.17 : 1;
+        g.fillStyle = grd; g.fillRect(R.x, R.y, C, C);
+        g.globalAlpha = 1;
+        if (sp.glass) { fcExtra(g, sp, { R, C, xOf, yOf, cOf, pxU, pxV }); g.restore(); continue; }
+        const sh = g.createLinearGradient(0, R.y, 0, R.y + C);    // 머리는 짙고 꼬리자루는 옅게
+        sh.addColorStop(0, 'rgba(46,44,28,0.26)'); sh.addColorStop(fcV(sp, 0.26), 'rgba(46,44,28,0.04)');
+        sh.addColorStop(fcV(sp, 0.74), 'rgba(255,252,235,0)'); sh.addColorStop(1, 'rgba(250,246,228,0.18)');
+        g.fillStyle = sh; g.fillRect(R.x, R.y, C, C);
+        if (sp.scales) {   // 만화식 비늘 — 굵고 성긴 초승달, 일정 굵기 외곽선
+            const SC = sp.scales, al = SC.soft || 1;
+            for (let r = 0; r < SC.rows; r++) {
+                const s0 = SC.s0 + (r / SC.rows) * (SC.s1 - SC.s0), s1 = SC.s0 + ((r + 1) / SC.rows) * (SC.s1 - SC.s0);
+                const y = yOf(s0), hy = yOf(s1) - yOf(s0), off = (r % 2) * 0.5;
+                for (let k = 0; k < SC.cols; k++) {
+                    const u = (k + off) / SC.cols, x = xOf(u), wx = C / SC.cols;
+                    const fd = THREE.MathUtils.clamp((1 - Math.abs(cOf(u)) * 0.45) * (1 - Math.max(0, s0 - 0.90) * 7) * THREE.MathUtils.smoothstep(s0, SC.s0, SC.s0 + 0.06), 0.12, 1) * al;
+                    g.beginPath(); g.ellipse(x, y, wx * 0.56, hy * 0.92, 0, Math.PI * 0.06, Math.PI * 0.94);
+                    g.strokeStyle = `rgba(48,44,26,${0.46 * fd})`; g.lineWidth = 2.0; g.stroke();
+                    g.beginPath(); g.ellipse(x, y - hy * 0.20, wx * 0.48, hy * 0.74, 0, Math.PI * 0.14, Math.PI * 0.86);
+                    g.strokeStyle = `rgba(255,252,232,${0.26 * fd})`; g.lineWidth = 1.3; g.stroke();
+                }
+            }
+        }
+        fcExtra(g, sp, { R, C, xOf, yOf, cOf, pxU, pxV });
+        if (sp.gill) {   // 아가미뚜껑 뒤끝 — 체고 중앙에서 가장 뒤로 밀리는 곡선
+            g.beginPath();
+            for (let k = 0; k <= 40; k++) { const u = k / 40, s0 = sp.gill + 0.042 * (1 - cOf(u) * cOf(u)); k ? g.lineTo(xOf(u), yOf(s0)) : g.moveTo(xOf(u), yOf(s0)); }
+            g.strokeStyle = 'rgba(42,40,24,0.50)'; g.lineWidth = 2.2; g.lineJoin = 'round'; g.stroke();
+        }
+        if (sp.mouth) {   // 입선 — 이음선(배 용골)을 넘어가므로 두 조각으로
+            const w = 0.19 * sp.mouth, sT = 0.020 * sp.mouth, sC = 0.052 * sp.mouth;
+            g.beginPath();
+            for (const [u0, u1] of [[1 - w, 1.0], [0.0, w]]) {
+                g.moveTo(xOf(u0), yOf(u0 > 0.5 ? sC : sT)); g.quadraticCurveTo(xOf((u0 + u1) / 2), yOf(sT * 0.7), xOf(u1), yOf(u1 > 0.5 ? sT : sC));
+            }
+            g.strokeStyle = 'rgba(66,54,36,0.62)'; g.lineWidth = 2.4 * Math.min(1.6, sp.mouth * 1.5); g.stroke();
+        }
+        if (sp.eye) {   // 눈 = 전부 그림. px 종횡비 보정으로 몸에서 원형이 된다
+            const E = sp.eye, uE = Math.acos(THREE.MathUtils.clamp(-E.c, -1, 1)) / (Math.PI * 2);
+            for (const [su, sg] of [[uE, 1], [1 - uE, -1]]) {
+                const ex = xOf(su), ey = yOf(E.s), rw = E.r * sp.L, rx = rw * pxU(E.s), ry = rw * pxV(E.s);   // ⚠️ E.r은 체장 비율
+                const ring = g.createRadialGradient(ex, ey, ry * 0.12, ex, ey, ry);
+                ring.addColorStop(0, '#14150f'); ring.addColorStop(0.40, '#191a12'); ring.addColorStop(0.54, E.iris);
+                ring.addColorStop(0.84, E.iris); ring.addColorStop(1, 'rgba(40,34,20,0.9)');
+                g.save(); g.translate(ex, ey); g.scale(rx / Math.max(1e-3, ry), 1); g.translate(-ex, -ey);
+                g.beginPath(); g.arc(ex, ey, ry, 0, Math.PI * 2); g.fillStyle = ring; g.fill();
+                g.beginPath(); g.arc(ex, ey, ry * 1.12, 0, Math.PI * 2); g.strokeStyle = 'rgba(38,36,20,0.42)'; g.lineWidth = Math.max(1, ry * 0.14); g.stroke();
+                g.beginPath(); g.arc(ex + sg * ry * 0.36, ey - ry * 0.32, Math.max(1.1, ry * 0.16), 0, Math.PI * 2); g.fillStyle = 'rgba(250,253,244,0.94)'; g.fill();
+                g.restore();
+            }
+        }
+        g.restore();
+    }
+    for (const [cell, top] of [[FC_RAY.cellTop, true], [FC_RAY.cellBot, false]]) {   // 가오리 — 등=회갈 대리석·반점 / 배=흰색 + 아가미 슬릿 5쌍 + 입
+        const R = faRect(cell), C = FA_CELL;
+        g.save(); g.beginPath(); g.rect(R.x, R.y, C, C); g.clip();
+        if (top) {
+            const gr = g.createLinearGradient(R.x, 0, R.x + C, 0);
+            gr.addColorStop(0, '#4b4a5c'); gr.addColorStop(0.5, '#7d7c90'); gr.addColorStop(1, '#4b4a5c');
+            g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
+            for (let kk = 0; kk < 46; kk++) {
+                const x = R.x + ((kk * 7) % 19) / 19 * C, y = R.y + ((kk * 11) % 23) / 23 * C;
+                g.beginPath(); g.ellipse(x, y, C * (0.022 + (kk % 4) * 0.010), C * (0.016 + (kk % 3) * 0.008), kk, 0, Math.PI * 2);
+                g.fillStyle = `rgba(30,28,40,${0.16 + (kk % 3) * 0.07})`; g.fill();
+            }
+            for (let kk = 0; kk < 18; kk++) {
+                const x = R.x + ((kk * 5) % 13) / 13 * C, y = R.y + ((kk * 3) % 11) / 11 * C;
+                g.beginPath(); g.arc(x, y, C * 0.012, 0, Math.PI * 2); g.fillStyle = 'rgba(196,196,214,0.32)'; g.fill();
+            }
+        } else {
+            g.fillStyle = '#efeae2'; g.fillRect(R.x, R.y, C, C);
+            const vg = g.createRadialGradient(R.x + C * 0.5, R.y + C * 0.4, C * 0.05, R.x + C * 0.5, R.y + C * 0.4, C * 0.5);
+            vg.addColorStop(0, 'rgba(214,204,192,0.55)'); vg.addColorStop(1, 'rgba(240,236,228,0)');
+            g.fillStyle = vg; g.fillRect(R.x, R.y, C, C);
+            g.strokeStyle = 'rgba(96,88,84,0.62)'; g.lineWidth = 3.4; g.lineCap = 'round';
+            for (const sx of [-1, 1]) for (let kk = 0; kk < 5; kk++) {   // 아가미 슬릿 5쌍
+                const x = R.x + C * (0.5 + sx * (0.10 + kk * 0.045)), y0 = R.y + C * (0.34 + kk * 0.012);
+                g.beginPath(); g.moveTo(x, y0); g.quadraticCurveTo(x + sx * C * 0.012, y0 + C * 0.055, x, y0 + C * 0.10); g.stroke();
+            }
+            g.strokeStyle = 'rgba(88,78,74,0.72)'; g.lineWidth = 4.2;   // 입
+            g.beginPath(); g.moveTo(R.x + C * 0.40, R.y + C * 0.24); g.quadraticCurveTo(R.x + C * 0.5, R.y + C * 0.29, R.x + C * 0.60, R.y + C * 0.24); g.stroke();
+        }
+        g.restore();
+    }
+    {   // 흰 셀(15) 좌상 사분면에 개구리 눈 — 금색 홍채 + **가로 동공**. 중앙은 순백 유지(부속 파트가 샘플)
+        const R = faRect(15), C = FA_CELL, ex = R.x + C * 0.25, ey = R.y + C * 0.25, rr = C * 0.22;
+        const gr = g.createRadialGradient(ex, ey, rr * 0.15, ex, ey, rr);
+        gr.addColorStop(0, '#f0c23a'); gr.addColorStop(0.62, '#d19c1e'); gr.addColorStop(0.88, '#8a6410'); gr.addColorStop(1, '#3a2c08');
+        g.beginPath(); g.arc(ex, ey, rr, 0, Math.PI * 2); g.fillStyle = gr; g.fill();
+        g.beginPath(); g.ellipse(ex, ey, rr * 0.82, rr * 0.24, 0, 0, Math.PI * 2); g.fillStyle = '#141208'; g.fill();
+        g.beginPath(); g.arc(ex - rr * 0.34, ey - rr * 0.40, rr * 0.14, 0, Math.PI * 2); g.fillStyle = 'rgba(252,255,246,0.92)'; g.fill();
+    }
+    {   // 공용 지느러미 셀 — **회색조**. 색은 정점색이 곱한다(종별 셀 13개 절약)
+        const R = faRect(FA_FIN), C = FA_CELL;
+        const fg = g.createLinearGradient(0, R.y, 0, R.y + C);
+        fg.addColorStop(0, '#6e6e6e'); fg.addColorStop(0.55, '#b4b4b4'); fg.addColorStop(1, '#eaeaea');
+        g.fillStyle = fg; g.fillRect(R.x, R.y, C, C);
+        for (let k = 0; k <= 18; k++) {   // 지느러미 조 — 성기고 굵게
+            const x = R.x + (k / 18) * C;
+            g.beginPath(); g.moveTo(x, R.y); g.quadraticCurveTo(x + (k % 2 ? 1.6 : -1.6), R.y + C * 0.55, x, R.y + C);
+            g.strokeStyle = 'rgba(60,58,52,0.34)'; g.lineWidth = 2.0; g.stroke();
+        }
+        for (let k = 0; k < 5; k++) { const y = R.y + C * (0.30 + k * 0.16); g.beginPath(); g.moveTo(R.x, y); g.lineTo(R.x + C, y); g.strokeStyle = 'rgba(70,68,60,0.16)'; g.lineWidth = 1.6; g.stroke(); }
+    }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    _fcAtlas = { tex, C: FA_CELL, W: FA_W };
+    return _fcAtlas;
+}
+function fcExtra(g, sp, H) {   // 종별 시그니처 무늬 — 비늘 위, 아가미·눈 아래 레이어
+    const { xOf, yOf, cOf, C, R } = H;
+    const blob = (u, s, rw, rh, fill, rot) => { g.save(); g.beginPath(); g.ellipse(xOf(u), yOf(s), rw * C, rh * C, rot || 0, 0, Math.PI * 2); g.fillStyle = fill; g.fill(); g.restore(); };
+    if (sp.extra === 'goldcap') {   // 등~머리에 얹힌 흰 캡
+        for (const u of [0.42, 0.58]) blob(u, 0.16, 0.10, 0.06, 'rgba(255,250,238,0.86)', 0.3);
+        blob(0.5, 0.11, 0.13, 0.05, 'rgba(255,250,238,0.80)', 0);
+    } else if (sp.extra === 'kohaku') {   // 홍백 — 흰 바탕(ramp)에 부드러운 경계의 붉은 얼룩. 비늘 위에 얹고 하이라이트 재적용
+        g.globalAlpha = 0.92;
+        for (const [u, s, rw, rh, rot] of [[0.5, 0.13, 0.15, 0.055, 0], [0.40, 0.30, 0.11, 0.075, 0.4], [0.60, 0.33, 0.09, 0.065, -0.35],
+            [0.47, 0.55, 0.13, 0.070, 0.15], [0.55, 0.78, 0.085, 0.045, -0.2]]) {
+            const gr = g.createRadialGradient(xOf(u), yOf(s), 2, xOf(u), yOf(s), rw * C);
+            gr.addColorStop(0, '#e04a2a'); gr.addColorStop(0.62, '#d8422a'); gr.addColorStop(1, 'rgba(216,66,42,0)');
+            g.save(); g.beginPath(); g.ellipse(xOf(u), yOf(s), rw * C, rh * C, rot, 0, Math.PI * 2); g.fillStyle = gr; g.fill(); g.restore();
+        }
+        blob(0.5, 0.42, 0.055, 0.030, 'rgba(38,34,30,0.72)', 0.2);   // 쇼와 검은 얼룩 하나
+        g.globalAlpha = 1;
+        for (let r = 0; r < 18; r++) {   // 반점 위에 비늘 하이라이트 재적용 — 안 하면 얼룩이 스티커처럼 뜬다
+            const s0 = 0.175 + (r / 18) * 0.81, y = yOf(s0), hy = yOf(0.175 + ((r + 1) / 18) * 0.81) - y;
+            for (let k = 0; k < 12; k++) {
+                const u = (k + (r % 2) * 0.5) / 12, fd = THREE.MathUtils.clamp(1 - Math.abs(cOf(u)) * 0.45, 0.15, 1);
+                g.beginPath(); g.ellipse(xOf(u), y - hy * 0.20, (C / 12) * 0.48, hy * 0.74, 0, Math.PI * 0.14, Math.PI * 0.86);
+                g.strokeStyle = `rgba(255,252,232,${0.22 * fd})`; g.lineWidth = 1.3; g.stroke();
+            }
+        }
+    } else if (sp.extra === 'macwaves') {   // 등=촘촘한 벌레무늬 · 옆줄 아래=은빛 — 고등어의 정체성
+        for (let k = 0; k < 23; k++) {   // 실물은 얇고 촘촘하다. 굵고 성기면 호랑이로 읽힌다(11줄 3.4px → 23줄 2.6px)
+            const s0 = 0.175 + k * 0.0311;   // ⚠️ 진폭이 줄 간격(0.031)보다 크면 이웃과 교차해 X자 낙서가 된다
+            g.beginPath();
+            for (let j = 0; j <= 32; j++) {
+                const u = 0.245 + (j / 32) * 0.51;   // 옆줄 위(등)로만 — 아래로 내리면 은빛 배를 침범한다
+                const sw = s0 + 0.0072 * Math.sin(u * Math.PI * 7.6 + k * 2.3) + 0.0028 * Math.sin(u * Math.PI * 15.1 + k * 1.1);
+                j ? g.lineTo(xOf(u), yOf(sw)) : g.moveTo(xOf(u), yOf(sw));
+            }
+            g.strokeStyle = `rgba(16,38,55,${k % 3 === 2 ? 0.46 : 0.70})`;   // 줄마다 농담 차이 — 균일하면 프린트 천이 된다
+            g.lineWidth = k % 4 === 1 ? 1.9 : 2.6; g.lineCap = 'round'; g.stroke();
+        }
+        for (const [ua, ub] of [[0.0, 0.205], [1.0, 0.795]]) {   // 배~아래 옆구리 은빛: 본체 재질은 13종 공용이라
+            const sg = g.createLinearGradient(xOf(ua), 0, xOf(ub), 0);   // metalness를 못 올린다 → 광택을 텍스처로 만든다
+            sg.addColorStop(0, 'rgba(255,255,255,0.46)');
+            sg.addColorStop(0.34, 'rgba(253,255,255,0.66)');
+            sg.addColorStop(0.66, 'rgba(232,244,250,0.30)');
+            sg.addColorStop(1, 'rgba(206,228,242,0)');
+            g.fillStyle = sg;
+            g.fillRect(Math.min(xOf(ua), xOf(ub)), yOf(0.09), Math.abs(xOf(ub) - xOf(ua)), yOf(1) - yOf(0.09));
+        }
+        for (const u0 of [0.145, 0.855]) {   // 은빛 위 초록·금빛 어른거림 — 실물 옆구리의 무지개빛
+            const ir = g.createLinearGradient(xOf(u0) - C * 0.05, 0, xOf(u0) + C * 0.05, 0);
+            ir.addColorStop(0, 'rgba(198,214,150,0)'); ir.addColorStop(0.5, 'rgba(200,216,152,0.16)'); ir.addColorStop(1, 'rgba(198,214,150,0)');
+            g.fillStyle = ir; g.fillRect(xOf(u0) - C * 0.05, yOf(0.14), C * 0.10, yOf(0.96) - yOf(0.14));
+        }
+        for (const u0 of [0.235, 0.765]) {   // 옆줄 — 등무늬가 끊기고 은빛이 시작되는 경계
+            g.beginPath();
+            for (let j = 0; j <= 24; j++) { const sw = 0.14 + (j / 24) * 0.82; j ? g.lineTo(xOf(u0) + C * 0.006 * Math.sin(sw * 9), yOf(sw)) : g.moveTo(xOf(u0), yOf(sw)); }
+            g.strokeStyle = 'rgba(96,120,140,0.30)'; g.lineWidth = 2.2; g.stroke();
+        }
+    } else if (sp.extra === 'salmonrun') {   // 혼인색 — 옆구리 붉은 띠 + 등 검은 반점
+        for (const u0 of [0.155, 0.845]) {
+            const gr = g.createLinearGradient(0, yOf(0.20), 0, yOf(0.92));
+            gr.addColorStop(0, 'rgba(168,58,48,0)'); gr.addColorStop(0.32, 'rgba(172,64,52,0.36)');
+            gr.addColorStop(0.72, 'rgba(154,54,44,0.30)'); gr.addColorStop(1, 'rgba(140,50,42,0)');
+            g.fillStyle = gr; g.fillRect(xOf(u0) - C * 0.055, yOf(0.20), C * 0.11, yOf(0.92) - yOf(0.20));
+        }
+        for (let k = 0; k < 26; k++) {
+            const u = 0.34 + ((k * 7) % 11) / 11 * 0.32, s0 = 0.18 + ((k * 5) % 13) / 13 * 0.68;
+            blob(u, s0, 0.016 + (k % 3) * 0.005, 0.010 + (k % 2) * 0.004, 'rgba(34,32,28,0.58)', k * 0.7);
+        }
+        blob(0.5, 0.30, 0.06, 0.020, 'rgba(58,60,56,0.35)', 0);
+    } else if (sp.extra === 'silverband') {   // 빙어 — 옆구리 굵은 은띠 + 반투명 내장 그림자
+        for (const u0 of [0.24, 0.76]) {
+            const gr = g.createLinearGradient(xOf(u0) - C * 0.035, 0, xOf(u0) + C * 0.035, 0);
+            gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.5, 'rgba(252,255,255,0.62)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+            g.fillStyle = gr; g.fillRect(xOf(u0) - C * 0.035, yOf(0.16), C * 0.07, yOf(0.97) - yOf(0.16));
+        }
+        blob(0.5, 0.30, 0.085, 0.055, 'rgba(96,104,96,0.26)', 0);   // 내장 그림자
+    } else if (sp.extra === 'marble') {   // 메기 — 무린이라 비늘 대신 대리석 얼룩 + 젖은 광택
+        for (let k = 0; k < 34; k++) {
+            const u = ((k * 5) % 17) / 17, s0 = 0.10 + ((k * 7) % 19) / 19 * 0.86;
+            blob(u, s0, 0.030 + (k % 4) * 0.012, 0.020 + (k % 3) * 0.010, `rgba(28,26,18,${0.19 + (k % 3) * 0.07})`, k * 0.9);
+        }
+        const gl = g.createLinearGradient(xOf(0.34), 0, xOf(0.50), 0);
+        gl.addColorStop(0, 'rgba(255,255,240,0)'); gl.addColorStop(1, 'rgba(255,255,240,0.20)');
+        g.fillStyle = gl; g.fillRect(xOf(0.34), R.y, C * 0.32, C);
+    } else if (sp.extra === 'ocelli') {   // 복어 — 등에 눈알 무늬 + 배는 흰색
+        g.fillStyle = 'rgba(255,253,244,0.80)';
+        g.fillRect(xOf(0), yOf(0.10), C * 0.13, yOf(1) - yOf(0.10));
+        g.fillRect(xOf(0.87), yOf(0.10), C * 0.13, yOf(1) - yOf(0.10));
+        for (const [u, s0, rr] of [[0.40, 0.28, 0.040], [0.60, 0.30, 0.036], [0.47, 0.52, 0.032], [0.55, 0.70, 0.026], [0.5, 0.16, 0.022]]) {
+            blob(u, s0, rr, rr * 0.66, 'rgba(28,26,20,0.72)', 0);
+            blob(u, s0, rr * 0.55, rr * 0.36, 'rgba(232,222,188,0.55)', 0);
+        }
+        for (let k = 0; k < 22; k++) blob(((k * 5) % 13) / 13, 0.14 + ((k * 7) % 17) / 17 * 0.74, 0.012, 0.008, 'rgba(40,36,26,0.30)', 0);
+    } else if (sp.extra === 'frogskin' || sp.extra === 'leather' || sp.extra === 'glasslabel') {
+        fcExtra2(g, sp, H);
+    } else if (sp.extra === 'anglermarble') {   // 아귀 — 검갈색 얼룩 + 입 안쪽 분홍 + 피부 돌기
+        g.fillStyle = 'rgba(214,140,138,0.80)';   // 벌어진 입 안쪽
+        g.beginPath(); g.ellipse(xOf(0.5), yOf(0.028), C * 0.30, (yOf(0.062) - yOf(0)) * 0.9, 0, 0, Math.PI * 2); g.fill();
+        for (let k = 0; k < 40; k++) {
+            const u = ((k * 5) % 19) / 19, s0 = 0.06 + ((k * 11) % 23) / 23 * 0.88;
+            blob(u, s0, 0.024 + (k % 4) * 0.010, 0.016 + (k % 3) * 0.008, `rgba(16,14,12,${0.16 + (k % 3) * 0.06})`, k * 1.1);
+        }
+        for (let k = 0; k < 16; k++) blob(((k * 7) % 11) / 11, 0.10 + ((k * 3) % 7) / 7 * 0.28, 0.010, 0.007, 'rgba(150,138,120,0.30)', 0);
+        g.fillStyle = 'rgba(248,244,232,0.94)';   // 이빨 — 실루엣에 걸리는 앞줄만 지오, 나머지는 여기서 칠한다
+        for (let k = 0; k < 15; k++) {
+            const u = 0.5 + (k / 14 - 0.5) * 0.60, tw = C * 0.011, th = (yOf(0.052) - yOf(0)) * 0.55;
+            g.beginPath(); g.moveTo(xOf(u) - tw, yOf(0.050)); g.lineTo(xOf(u) + tw, yOf(0.050)); g.lineTo(xOf(u), yOf(0.050) + th); g.closePath(); g.fill();
+            g.beginPath(); g.moveTo(xOf(u) - tw, yOf(0.014)); g.lineTo(xOf(u) + tw, yOf(0.014)); g.lineTo(xOf(u), yOf(0.014) - th * 0.8); g.closePath(); g.fill();
+        }
+    }
+}
+// ---- 특수 골격 4종 (개구리·가오리·헌 장화·유리병) -----------------------------------------
+// 튜브 문법이 통하는 것(개구리·장화·유리병)은 FISHC에 얹고, 원반인 가오리만 독립 빌더.
+// 장화는 **척추 오프셋**(spine)으로 L자로 꺾는다 — 같은 프로파일 기계를 재사용하는 값.
+Object.assign(FISHC, {
+    frog: {   // 체폭 > 체고인 납작 돔 · 눈두덩은 몸에서 이어진 융기(별도 구체 금지가 원칙이지만 눈알만 전용 패치)
+        ko: '개구리', cell: 9, L: 0.11, edge: 0.05, headS: 0.24, headV: 0.40, bend: 0.008,
+        prof: [[0, 0.038, -0.028, 0.036], [0.09, 0.078, -0.052, 0.098], [0.20, 0.108, -0.066, 0.160],
+            [0.36, 0.128, -0.074, 0.205], [0.52, 0.132, -0.076, 0.218], [0.68, 0.122, -0.072, 0.198],
+            [0.82, 0.098, -0.062, 0.152], [0.93, 0.064, -0.046, 0.092], [1, 0.036, -0.030, 0.046]],
+        ramp: [[0, '#f2ecc8'], [0.20, '#dfe2a4'], [0.34, '#a8c268'], [0.46, '#6f9c3e'], [0.5, '#5c8a34']],
+        fin: { col: 0x7fa848 },   // 지느러미 없음
+        scales: null, gill: 0, mouth: 1.5, eye: null,
+        parts: [{ kind: 'frogeye', s: 0.145, c: 0.70, r: 0.062 }, { kind: 'frogleg' }],
+        extra: 'frogskin',
+    },
+    boot: {   // 실루엣이 곧 정체성 — 통(수직) → 발목에서 꺾여 → 발등·발가락(수평). spine이 L자를 만든다
+        ko: '헌 장화', cell: 12, L: 0.30, edge: 0.06, headS: 0.30, headV: 0.34, bend: 0.004,
+        prof: [[0, 0.148, -0.148, 0.148], [0.09, 0.150, -0.150, 0.150], [0.30, 0.138, -0.138, 0.138],
+            [0.48, 0.128, -0.128, 0.130], [0.64, 0.118, -0.140, 0.126], [0.78, 0.108, -0.148, 0.120],
+            [0.90, 0.098, -0.146, 0.112], [0.96, 0.090, -0.142, 0.104], [1, 0.078, -0.132, 0.090]],
+        spineArc: [0.30, 0.68],   // 통(수직) → 발목에서 90° → 발등(수평)
+        ramp: [[0, '#6a4a30'], [0.22, '#7d5838'], [0.36, '#8d6540'], [0.46, '#6f4d2e'], [0.5, '#5e4126']],
+        fin: { col: 0x4a3520 },
+        scales: null, gill: 0, mouth: 0, eye: null,
+        parts: [{ kind: 'sole' }],
+        extra: 'leather',
+    },
+    bottle: {   // 투명해야 정체성이 생긴다 — 유리는 별도 재질, 안의 편지·코르크는 불투명
+        ko: '유리병', cell: 14, L: 0.24, edge: 0, headS: 0.22, headV: 0.30, bend: 0,
+        prof: [[0, 0.048, -0.048, 0.048], [0.05, 0.052, -0.052, 0.052], [0.12, 0.050, -0.050, 0.050],
+            [0.20, 0.062, -0.062, 0.062], [0.30, 0.098, -0.098, 0.098], [0.40, 0.118, -0.118, 0.118],
+            [0.60, 0.120, -0.120, 0.120], [0.85, 0.118, -0.118, 0.118], [0.95, 0.112, -0.112, 0.112], [1, 0.070, -0.070, 0.070]],
+        ramp: [[0, '#f4fdfb'], [0.22, '#fbfffe'], [0.36, '#eef9f6'], [0.46, '#e2f2ee'], [0.5, '#dcefea']],   // 맑은 유리는 색이 없다 — 회청색을 곱하면 우윳빛이 된다
+        fin: { col: 0xc0ded6 },
+        scales: null, gill: 0, mouth: 0, eye: null, glass: true,
+        parts: [{ kind: 'note' }, { kind: 'cork' }],
+        extra: 'glasslabel',
+    },
+});
+const FC_RAY = {   // 가오리 — 원반이라 독립 빌더. 폭 1.30×체장 · 두께 0.11×체장(중심) → 날개끝 0.01
+    ko: '가오리', cellTop: 10, cellBot: 11, L: 0.55, tail: 1.15,
+    ramp: [[0, '#8f8ea0'], [0.5, '#6c6b80'], [1, '#4e4d60']],
+};
+function fcRayGeo() {   // 위·아래 두 면 + 물결 날개. uv는 평면(x,z) → 등 셀 / 배 셀
+    const L = FC_RAY.L, HW = 0.65 * L, NR = 16, NA = 30;
+    const outline = (a) => {   // a: -1(왼) ~ 1(오) = 날개 끝. 시위(z 폭)가 끝에서 0으로 수렴 → 뾰족한 다이아
+        const ab = Math.abs(a);
+        return { zf: 0.52 - 0.50 * Math.pow(ab, 1.3), zb: -0.48 + 0.44 * Math.pow(ab, 1.5) };
+    };
+    const parts = [];
+    for (const side of [1, -1]) {
+        const pos = [], uv = [], idx = [], nrm = [];
+        for (let i = 0; i <= NA; i++) {
+            const a = (i / NA) * 2 - 1, o = outline(a), x = HW * Math.sign(a) * Math.pow(Math.abs(a), 0.85);
+            for (let j = 0; j <= NR; j++) {
+                const t = j / NR, z = (o.zf + (o.zb - o.zf) * t) * L;
+                const ez = 1 - Math.abs(2 * t - 1);                       // 앞뒤 끝에서 0
+                const ex = 1 - Math.pow(Math.abs(a), 1.7);                // 날개 끝에서 0
+                const th = 0.11 * L * ex * ez;
+                const wave = 0.035 * L * Math.sin(Math.abs(a) * 4.2) * Math.pow(Math.abs(a), 1.6);   // 정지 상태의 얕은 물결
+                pos.push(x, side * th + wave, z);
+                uv.push((x / HW) * 0.5 + 0.5, 1 - t);
+            }
+        }
+        for (let i = 0; i < NA; i++) for (let j = 0; j < NR; j++) {
+            const p = i * (NR + 1) + j, q = p + NR + 1;
+            if (side > 0) idx.push(p, q, p + 1, q, q + 1, p + 1);
+            else idx.push(p, p + 1, q, q, p + 1, q + 1);
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        g.setIndex(idx); g.computeVertexNormals();
+        parts.push({ geo: g, cell: side > 0 ? FC_RAY.cellTop : FC_RAY.cellBot });
+    }
+    return parts;
+}
+function fcRayParts() {
+    const L = FC_RAY.L, out = [];
+    const pts = [];   // 채찍 꼬리 — 테이퍼 튜브
+    for (let k = 0; k <= 8; k++) { const t = k / 8; pts.push(new THREE.Vector3(0.012 * L * Math.sin(t * 3), 0.02 * L * Math.sin(t * 2.2), (-0.48 - FC_RAY.tail * t) * L)); }
+    const tb = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.020 * L, 5, false);
+    const rp = tb.attributes.position, sc = tb.getAttribute('uv');
+    for (let i = 0; i < rp.count; i++) { const t = THREE.MathUtils.clamp(1 - (rp.getZ(i) / L + 0.48) / -FC_RAY.tail, 0, 1); rp.setX(i, rp.getX(i) * (1 - 0.85 * t)); rp.setY(i, rp.getY(i) * (1 - 0.85 * t)); }
+    tb.computeVertexNormals();
+    out.push({ geo: tb, col: 0x5a5968 });
+    for (const sx of [1, -1]) {   // 등 위로 솟은 눈 두 개
+        const e = new THREE.SphereGeometry(0.030 * L, 10, 8);
+        e.scale(1, 0.85, 1);
+        e.translate(sx * 0.085 * L, 0.062 * L, 0.30 * L);
+        out.push({ geo: e, col: 0x2a2a34 });
+    }
+    for (let k = 0; k < 4; k++) {   // 등 가시
+        const cn = new THREE.ConeGeometry(0.014 * L, 0.055 * L, 5);
+        cn.translate(0, 0.055 * L + 0.028 * L, (-0.20 - k * 0.10) * L);
+        out.push({ geo: cn, col: 0x40404e });
+    }
+    return out;
+}
+function fcSpecialParts(sp) {   // 개구리 다리·눈 · 장화 밑창 · 유리병 편지·코르크
+    const out = [], L = sp.L, P = new THREE.Vector3(), N = new THREE.Vector3();
+    for (const pt of sp.parts || []) {
+        if (pt.kind === 'frogeye') {
+            for (const sx of [1, -1]) {
+                const th = Math.acos(THREE.MathUtils.clamp(-pt.c, -1, 1)) * sx;
+                fcPoint(sp, pt.s, th, P); fcNormal(sp, pt.s, th, N);
+                const e = new THREE.SphereGeometry(pt.r * L, 14, 10);
+                e.scale(1, 0.92, 1);
+                e.translate(P.x + N.x * pt.r * L * 0.42, P.y + N.y * pt.r * L * 0.42, P.z + N.z * pt.r * L * 0.42);
+                out.push({ geo: e, patch: 15, sph: { x: P.x + N.x * pt.r * L * 0.42, y: P.y + N.y * pt.r * L * 0.42, z: P.z + N.z * pt.r * L * 0.42, r: pt.r * L, sx } });
+            }
+        } else if (pt.kind === 'frogleg') {
+            for (const sx of [1, -1]) {
+                for (const [s0, c0, knee, len, r0] of [[0.24, -0.52, 0.85, 0.155, 0.048], [0.76, -0.44, 1.60, 0.235, 0.062]]) {
+                    const th = Math.acos(THREE.MathUtils.clamp(-c0, -1, 1)) * sx;
+                    fcPoint(sp, s0, th, P);
+                    const pl = [];
+                    for (let k = 0; k <= 6; k++) {
+                        const t = k / 6, bend2 = Math.sin(t * Math.PI) * knee;
+                        pl.push(new THREE.Vector3(P.x + sx * len * L * (0.42 * t + 0.20 * bend2),
+                            P.y - len * L * (0.55 * t * t + 0.12 * bend2) - 0.02 * L,
+                            P.z + len * L * t * (s0 < 0.5 ? 0.42 - 0.9 * t : -0.55 + 0.30 * t)));
+                    }
+                    const cur = new THREE.CatmullRomCurve3(pl);
+                    const lg = new THREE.TubeGeometry(cur, 14, r0 * L, 7, false);
+                    const lp = lg.attributes.position, lu = lg.attributes.uv;
+                    for (let i = 0; i < lp.count; i++) {   // 뿌리에서 발목으로 가늘어진다 (일정 굵기면 파이프로 읽힌다)
+                        const t = lu.getX(i), c2 = cur.getPoint(t), k2 = 1 - 0.42 * t;
+                        lp.setXYZ(i, c2.x + (lp.getX(i) - c2.x) * k2, c2.y + (lp.getY(i) - c2.y) * k2, c2.z + (lp.getZ(i) - c2.z) * k2);
+                    }
+                    lg.computeVertexNormals();
+                    out.push({ geo: lg, col: 0x74a03e });
+                    const foot = new THREE.SphereGeometry(r0 * L * 1.6, 12, 8);   // 물갈퀴 발 — 납작 판
+                    foot.scale(1.35, 0.26, 2.1);
+                    foot.translate(pl[6].x + sx * 0.02 * L, pl[6].y - 0.01 * L, pl[6].z + (s0 < 0.5 ? -0.05 : -0.06) * L);
+                    out.push({ geo: foot, col: 0x86ae4c });
+                }
+            }
+        } else if (pt.kind === 'sole') {   // 밑창 — 척추를 따라 발바닥 아래에 깔린다(고정 좌표면 공중에 뜬다)
+            const pts = [];
+            for (let k2 = 0; k2 <= 6; k2++) {
+                const s0 = 0.52 + (k2 / 6) * 0.48;
+                fcPoint(sp, s0, 0, P);
+                pts.push(new THREE.Vector3(0, P.y - 0.022 * L, P.z));
+            }
+            const so = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 10, 0.062 * L, 4, false);
+            so.scale(1.9, 0.55, 1);
+            out.push({ geo: so, col: 0x2e2620 });
+            fcPoint(sp, 0.56, 0, P);
+            const hl = new THREE.BoxGeometry(0.22 * L, 0.075 * L, 0.16 * L);
+            hl.translate(0, P.y - 0.055 * L, P.z);
+            out.push({ geo: hl, col: 0x241e18 });
+        } else if (pt.kind === 'note') {   // 돌돌 말린 편지 — 병 안, 불투명
+            const n = new THREE.CylinderGeometry(0.052 * L, 0.052 * L, 0.44 * L, 10);
+            n.rotateX(Math.PI / 2); n.rotateY(0.22);
+            n.translate(0, -0.01 * L, 0.02 * L);
+            out.push({ geo: n, col: 0xf6ecd2, opaque: true });
+        } else if (pt.kind === 'cork') {
+            const c = new THREE.CylinderGeometry(0.052 * L, 0.048 * L, 0.10 * L, 10);
+            c.rotateX(Math.PI / 2);
+            c.translate(0, 0, 0.50 * L);
+            out.push({ geo: c, col: 0xc09a5e, opaque: true });
+        }
+    }
+    return out;
+}
+function fcExtra2(g, sp, H) {   // 특수 4종 무늬
+    const { xOf, yOf, cOf, C, R } = H;
+    const blob = (u, s, rw, rh, fill, rot) => { g.save(); g.beginPath(); g.ellipse(xOf(u), yOf(s), rw * C, rh * C, rot || 0, 0, Math.PI * 2); g.fillStyle = fill; g.fill(); g.restore(); };
+    if (sp.extra === 'frogskin') {   // 등 얼룩 + 등줄 + 배는 크림
+        g.fillStyle = 'rgba(250,246,210,0.86)';
+        g.fillRect(xOf(0), yOf(0.10), C * 0.15, yOf(1) - yOf(0.10));
+        g.fillRect(xOf(0.85), yOf(0.10), C * 0.15, yOf(1) - yOf(0.10));
+        for (let k = 0; k < 26; k++) {
+            const u = 0.24 + ((k * 7) % 13) / 13 * 0.52, s0 = 0.14 + ((k * 5) % 17) / 17 * 0.78;
+            blob(u, s0, 0.026 + (k % 3) * 0.012, 0.018 + (k % 2) * 0.010, `rgba(52,68,26,${0.32 + (k % 3) * 0.10})`, k * 0.8);
+        }
+        g.strokeStyle = 'rgba(226,238,170,0.60)'; g.lineWidth = 3.6;   // 등줄
+        g.beginPath(); g.moveTo(xOf(0.5), yOf(0.16)); g.lineTo(xOf(0.5), yOf(0.94)); g.stroke();
+        g.strokeStyle = 'rgba(48,40,26,0.70)'; g.lineWidth = 2.6;      // 입선 — 넓게 씩 웃는다
+        g.beginPath(); g.moveTo(xOf(0.80), yOf(0.075)); g.quadraticCurveTo(xOf(0.5), yOf(0.115), xOf(0.20), yOf(0.075)); g.stroke();
+        for (const u of [0.42, 0.58]) blob(u, 0.055, 0.010, 0.006, 'rgba(40,34,22,0.55)', 0);   // 콧구멍
+    } else if (sp.extra === 'leather') {   // 낡은 가죽 결 + 물때·이끼 + 통 입구 안쪽 어둠
+        for (let k = 0; k < 40; k++) {
+            const u = ((k * 5) % 19) / 19, s0 = ((k * 7) % 23) / 23;
+            blob(u, s0, 0.030 + (k % 4) * 0.014, 0.014 + (k % 3) * 0.008, `rgba(40,26,14,${0.10 + (k % 3) * 0.06})`, k * 1.3);
+        }
+        for (let k = 0; k < 14; k++) {   // 이끼·물때
+            const u = ((k * 3) % 11) / 11, s0 = 0.55 + ((k * 5) % 9) / 9 * 0.42;
+            blob(u, s0, 0.026, 0.016, `rgba(72,92,48,${0.16 + (k % 2) * 0.10})`, k);
+        }
+        g.strokeStyle = 'rgba(30,20,10,0.55)'; g.lineWidth = 4;        // 발목 접힘선
+        g.beginPath(); g.moveTo(xOf(0), yOf(0.42)); g.lineTo(xOf(1), yOf(0.42)); g.stroke();
+        g.fillStyle = 'rgba(18,12,7,0.92)'; g.fillRect(R.x, yOf(0), C, yOf(0.045) - yOf(0));   // 입구 안쪽 어둠
+    } else if (sp.extra === 'glasslabel') {   // 유리 하이라이트 + 반쯤 떨어진 라벨
+        for (const [u0, w, al] of [[0.315, 0.070, 0.98], [0.435, 0.030, 0.72], [0.125, 0.042, 0.58]]) {   // 정반사 하이라이트 3줄 — 유리는 밝은 띠로 읽힌다
+            const hl = g.createLinearGradient(xOf(u0), 0, xOf(u0 + w), 0);
+            hl.addColorStop(0, 'rgba(255,255,255,0)'); hl.addColorStop(0.5, `rgba(255,255,255,${al})`); hl.addColorStop(1, 'rgba(255,255,255,0)');
+            g.fillStyle = hl; g.fillRect(xOf(u0), R.y, C * w, C);
+        }
+        for (const [u0, dir] of [[0.0, 1], [0.94, -1]]) {   // 림 = 밝은 선 + 바로 안쪽 얇은 어두운 띠 → 유리 두께로 읽힌다
+            const rl = g.createLinearGradient(xOf(u0), 0, xOf(u0 + dir * 0.06), 0);
+            rl.addColorStop(0, 'rgba(244,254,255,0.96)'); rl.addColorStop(0.34, 'rgba(150,190,196,0.42)'); rl.addColorStop(1, 'rgba(200,230,235,0)');
+            g.fillStyle = rl; g.fillRect(Math.min(xOf(u0), xOf(u0 + dir * 0.06)), R.y, C * 0.06, C);
+        }
+        g.save();   // 반쯤 떨어진 라벨 — 크면 안의 편지와 겹쳐 편지가 두 개로 읽힌다(실측)
+        g.beginPath(); g.rect(xOf(0.205), yOf(0.50), C * 0.105, yOf(0.655) - yOf(0.50)); g.clip();
+        g.fillStyle = 'rgba(236,226,196,0.74)'; g.fillRect(xOf(0.205), yOf(0.50), C * 0.105, yOf(0.655) - yOf(0.50));
+        g.strokeStyle = 'rgba(120,96,60,0.42)'; g.lineWidth = 1.8;
+        for (let k = 0; k < 3; k++) { const y = yOf(0.525) + k * (yOf(0.635) - yOf(0.525)) / 3; g.beginPath(); g.moveTo(xOf(0.218), y); g.lineTo(xOf(0.298), y); g.stroke(); }
+        g.restore();
+    }
+}
+// ---- 조립 ---------------------------------------------------------------------------------
+let fcMat = null, fcGlowMat = null, fcGlassMat = null;
+function buildFishCartoon(id) {
+    const sp = FISHC[id], A = fcAtlas(), R = faRect(sp.cell), FR = faRect(FA_FIN), WR = faRect(15);
+    if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
+    if (!fcGlowMat) fcGlowMat = new THREE.MeshStandardMaterial({ color: 0xfff4d8, emissive: 0xffe9a8, emissiveIntensity: 1.4, roughness: 0.3 });
+    const k = 1 / FA_COLS, C = FA_CELL / FA_W;
+    const shade = (g, mode, col) => {   // 정점색: 몸통=형태 음영 · 지느러미=종별 착색 · 부속=단색
+        const uvA = g.attributes.uv, n = uvA.count, out = new Float32Array(n * 3), c = new THREE.Color();
+        for (let i = 0; i < n; i++) {
+            if (mode === 'body') {
+                const cv = -Math.cos(uvA.getX(i) * Math.PI * 2), s = 1 - uvA.getY(i);
+                const t = 0.90 + 0.10 * THREE.MathUtils.smoothstep(cv, -1, 0.4) - 0.06 * Math.max(0, 0.16 - s) * 6;
+                out[i * 3] = out[i * 3 + 1] = out[i * 3 + 2] = t;
+            } else if (mode === 'fin') {
+                c.setHex(col).multiplyScalar(0.90 + 0.14 * uvA.getY(i));
+                out[i * 3] = c.r; out[i * 3 + 1] = c.g; out[i * 3 + 2] = c.b;
+            } else { c.setHex(col); out[i * 3] = c.r; out[i * 3 + 1] = c.g; out[i * 3 + 2] = c.b; }
+        }
+        g.setAttribute('color', new THREE.Float32BufferAttribute(out, 3));
+        return g;
+    };
+    const parts = [];
+    {   // 몸통 — uv를 셀로 옮기고 머리 우선 v 워프 적용 (⚠️ shade는 재매핑 **전에**)
+        const g = fcBodyGeo(sp, id === 'puffer' || id === 'angler' ? 24 : 20, id === 'puffer' ? 28 : 22);
+        shade(g, 'body');
+        const uv = g.attributes.uv;
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, R.u0 + uv.getX(i) * k, R.v1 - fcV(sp, 1 - uv.getY(i)) * k);
+        parts.push(g);
+    }
+    for (const f of fcFins(sp, false)) {   // 지느러미 — 공용 회색조 셀의 조 밀도 구간만 샘플
+        shade(f.geo, 'fin', sp.fin.col);
+        const uv = f.geo.attributes.uv;
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, FR.u0 + uv.getX(i) * f.rays * k, FR.v1 - (1 - uv.getY(i)) * k);
+        parts.push(f.geo);
+    }
+    const glow = [], opaque = [];
+    for (const pt of [...fcParts(sp), ...fcSpecialParts(sp)]) {   // 부속 — 순백 텍셀 + 정점색 (발광·불투명만 분리)
+        const g = pt.geo, P = g.attributes.position, uvArr = new Float32Array(P.count * 2);
+        if (pt.patch !== undefined && pt.sph) {   // 전용 패치 — 구 중심 기준 (z,y) 투영 (개구리 눈)
+            const PR = faRect(pt.patch);
+            for (let i = 0; i < P.count; i++) {
+                const dz = (P.getZ(i) - pt.sph.z) / pt.sph.r, dy = (P.getY(i) - pt.sph.y) / pt.sph.r;
+                uvArr[i * 2] = PR.u0 + k * (0.25 + THREE.MathUtils.clamp(dz * pt.sph.sx, -1, 1) * 0.20);
+                uvArr[i * 2 + 1] = PR.v1 - k * (0.25 - THREE.MathUtils.clamp(dy, -1, 1) * 0.20);
+            }
+        } else for (let i = 0; i < P.count; i++) { uvArr[i * 2] = WR.u0 + k * 0.5; uvArr[i * 2 + 1] = WR.v1 - k * 0.5; }
+        g.setAttribute('uv', new THREE.Float32BufferAttribute(uvArr, 2));
+        if (pt.glow) { glow.push(g); continue; }
+        shade(g, pt.patch !== undefined ? 'body' : 'flat', pt.col);
+        if (pt.patch !== undefined) { const cc = g.attributes.color; for (let i = 0; i < cc.count; i++) cc.setXYZ(i, 1, 1, 1); }
+        (pt.opaque ? opaque : parts).push(g);
+    }
+    const grp = new THREE.Group();
+    if (sp.glass) {   // 유리병 — 투명해야 정체성이 생긴다. 유리만 별도 재질, 안의 편지·코르크는 불투명
+        if (!fcGlassMat) fcGlassMat = new THREE.MeshPhysicalMaterial({   // transmission은 별도 렌더패스라 금지(발열) — clearcoat+envMap으로 유리감을 낸다
+            vertexColors: true, map: A.tex, transparent: true, opacity: 1, roughness: 0.02, metalness: 0,   // 투명도는 맵 알파가 쥔다
+            clearcoat: 1, clearcoatRoughness: 0.06, envMap: scene.userData.envTex, envMapIntensity: 0.75,   // 2.2는 곡면 전체가 균일하게 밝아져 젖빛이 된다
+            side: THREE.DoubleSide, depthWrite: false });
+        if (opaque.length) { const om = new THREE.Mesh(mergeGeometries(opaque, false), fcMat); om.castShadow = true; grp.add(om); }
+        const gm = new THREE.Mesh(mergeGeometries(parts, false), fcGlassMat);
+        grp.add(gm);
+        return grp;
+    }
+    const m = new THREE.Mesh(mergeGeometries(parts.concat(opaque), false), fcMat);
+    m.castShadow = true; m.receiveShadow = true;
+    grp.add(m);
+    if (glow.length) grp.add(new THREE.Mesh(mergeGeometries(glow, false), fcGlowMat));
+    return grp;
+}
+function buildRayCartoon() {   // 가오리 — 원반이라 독립. 등/배 셀을 따로 쓴다(들어올리면 배가 보인다)
+    const A = fcAtlas(), k = 1 / FA_COLS, WR = faRect(15);
+    if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
+    const parts = [];
+    for (const f of fcRayGeo()) {
+        const R = faRect(f.cell), uv = f.geo.attributes.uv, n = uv.count, col = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) { uv.setXY(i, R.u0 + uv.getX(i) * k, R.v1 - (1 - uv.getY(i)) * k); col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = 1; }
+        f.geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+        parts.push(f.geo);
+    }
+    for (const pt of fcRayParts()) {
+        const P = pt.geo.attributes.position, uvArr = new Float32Array(P.count * 2), col = new Float32Array(P.count * 3), c = new THREE.Color(pt.col);
+        for (let i = 0; i < P.count; i++) { uvArr[i * 2] = WR.u0 + k * 0.5; uvArr[i * 2 + 1] = WR.v1 - k * 0.5; col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+        pt.geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvArr, 2));
+        pt.geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+        parts.push(pt.geo);
+    }
+    const grp = new THREE.Group();
+    const m = new THREE.Mesh(mergeGeometries(parts, false), fcMat);
+    m.castShadow = true; m.receiveShadow = true;
+    grp.add(m);
+    return grp;
+}
+// ==== /🐟 카툰 어종 조형 ====================================================================
+// TEMP SEA LAB — ?sealab: 어종 13 + 조개 4 + 해산물 8 + 요리 참고 4 격자 (조형 검수용, 커밋 전 제거)
+// ?sealab=<id> 로 그 종 앞에서 시작 (예: ?sealab=scallop · ?sealab=octopus). 마지막 종은 기억한다.
+if (location.search.includes('sealab')) {
+    // 랩이 만든 것만 남기고 월드는 scene에서 **뺀다**. visible=false로는 안 된다 — 은하수·스카이돔은
+    // 매 프레임 자기 visible을 다시 켠다(673행 등). 제거하면 그 대입은 무해한 no-op가 된다.
+    const _labOwn = new Set();
+    const _sweep = () => { for (const o of [...scene.children]) if (!_labOwn.has(o)) scene.remove(o); };
+    scene.fog = new THREE.FogExp2(0x2a3244, 0);   // ⚠️ null로 두면 updateDayNight의 fog.color.copy가 터진다 — 밀도 0으로 무력화
+    const _hide = document.createElement('style');   // 도크·채팅바 등 DOM UI 숨김 (나중에 생기는 것까지)
+    _hide.textContent = 'body > *:not(canvas):not(style) { display: none !important; }';
+    document.head.appendChild(_hide);
+    for (const [L, ix, iy, iz, col] of [[1.7, 4, 40, 12, 0xffffff], [0.55, -6, 34, -8, 0xcfe0ff]]) {
+        const d = new THREE.DirectionalLight(col, L); d.position.set(ix, iy, iz); scene.add(d); _labOwn.add(d);
+    }
+    const _amb = new THREE.AmbientLight(0xffffff, 0.5); scene.add(_amb); _labOwn.add(_amb);
+    const CELL = 1.3, Y0 = 34;
+    const fishOf = (id) => { const sp = FISH_SPECIES.find((q) => q.id === id); return { key: id, ko: sp.ko, obj: makeFishMesh(sp, 1), side: true }; };
+    const shellOf = (t) => ({ key: t.id, ko: t.ko, obj: makeShellMesh(t) });
+    const sfOf = (t) => ({ key: t.id, ko: t.ko, obj: makeSeafoodMesh(t.id, 1) });
+    const dishOf = (id) => {   // 참고 열: 요리 계보의 같은 소재 = 목표 퀄리티
+        const r = RECIPES.concat(GRILL_RECIPES).find((q) => q.id === id);
+        const m = new THREE.Mesh(makeFoodGeo({ id }, 0), gradMat);
+        syncShinyParts(m, m.geometry);
+        return { key: id, ko: '참고·' + r.ko, obj: m };
+    };
+    const cartoonOf = (id) => ({ key: 'c-' + id, ko: FISHC[id].ko, obj: buildFishCartoon(id), side: true });
+    const ROWS = [
+        ['crucian', 'goldfish', 'koi', 'mackerel'].map(cartoonOf),
+        ['salmon', 'smelt', 'catfish', 'puffer', 'angler'].map(cartoonOf),
+        [...['frog', 'boot', 'bottle'].map(cartoonOf), { key: 'c-ray', ko: '가오리', obj: buildRayCartoon() }],
+        [{ key: 'crucian-now', ko: '붕어 현재', obj: makeFishMesh(FISH_SPECIES[0], 1), side: true }],
+        ['crucian', 'goldfish', 'koi', 'frog', 'catfish', 'smelt'].map(fishOf),
+        ['mackerel', 'puffer', 'ray', 'salmon', 'angler'].map(fishOf),
+        ['boot', 'bottle'].map(fishOf),
+        SHELL_TYPES.map(shellOf),
+        SEAFOOD.slice(0, 4).map(sfOf),
+        SEAFOOD.slice(4).map(sfOf),
+        ['clamsteam', 'grilledclam', 'grilledfish', 'fishskewer'].map(dishOf),
+    ];
+    const labelSprite = (text) => {   // 이름표 — 캔버스 텍스처 스프라이트(랩 전용이라 드로우 비용 무시)
+        const cv = document.createElement('canvas');
+        cv.width = 256; cv.height = 64;
+        const c = cv.getContext('2d');
+        c.font = 'bold 34px sans-serif';
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        c.fillStyle = text.startsWith('참고') ? '#ffd678' : '#e8eef8';
+        c.fillText(text, 128, 34);
+        const tex = new THREE.CanvasTexture(cv);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+        sp.scale.set(0.72, 0.18, 1);
+        return sp;
+    };
+    const cellOf = {};
+    ROWS.forEach((row, r) => row.forEach((it, c) => {
+        const holder = new THREE.Group();
+        holder.add(it.obj);
+        const box = new THREE.Box3().setFromObject(holder);
+        const size = box.getSize(new THREE.Vector3()), ctr = box.getCenter(new THREE.Vector3());
+        const k = 0.92 / (Math.max(size.x, size.y, size.z) || 1);
+        it.obj.scale.multiplyScalar(k);
+        it.obj.position.sub(ctr.multiplyScalar(k));
+        if (it.side) holder.rotation.y = -Math.PI / 2;   // 어종은 머리 +z → 정면 카메라가 옆모습을 본다
+        const x = c * CELL, y = Y0 - r * CELL;
+        holder.position.set(x, y, 0);
+        scene.add(holder);
+        _labOwn.add(holder);
+        const lb = labelSprite(it.ko);
+        lb.position.set(x, y - 0.58, 0);
+        scene.add(lb);
+        _labOwn.add(lb);
+        cellOf[it.key] = { x, y };
+    }));
+    _sweep();
+    for (const ms of [300, 1200, 3000, 6000]) setTimeout(_sweep, ms);   // 지연 생성물(구름·별·반딧불이)까지 쓸어담는다
+    const _bg = new THREE.Color(0x2a3244);
+    _bg.copy = () => _bg;   // 하늘 갱신(scene.background.copy)이 랩 배경을 덮지 않게 무력화
+    scene.background = _bg;
+    controls.minDistance = 0.32;   // 랩은 접사 허용
+    const labGo = (key) => {
+        const cell = cellOf[key];
+        if (!cell) return false;
+        camera.position.set(cell.x, cell.y + 0.34, 1.9);
+        controls.target.set(cell.x, cell.y, 0);
+        zoomTargetDist = camera.position.distanceTo(controls.target);   // ⚠️ 휠줌 글라이드가 매 프레임 끌어당긴다 — 동기 필수
+        controls.update();
+        return true;
+    };
+    let want = (location.search.match(/sealab=([a-z0-9-]+)/) || [])[1];
+    if (want && want !== '1') { try { localStorage.setItem('world-sealab-focus', want); } catch (e) {} }
+    else { try { want = localStorage.getItem('world-sealab-focus') || ''; } catch (e) {} }
+    if (!labGo(want)) {
+        const gx = (6 - 1) / 2 * CELL, gy = Y0 - (ROWS.length - 1) / 2 * CELL;   // 격자 중심(최대 6열 × 9행)
+        camera.position.set(gx, gy, 16.6);                                        // fov 45 → 10행 세로로 담긴다
+        controls.target.set(gx, gy, 0);
+        zoomTargetDist = camera.position.distanceTo(controls.target);
+        controls.update();
+    }
+    // 검수 훅: 방위/고도/거리 + 셀 안 오프셋으로 임의 각도·접사.
+    // ⚠️ zoomTargetDist 동기가 없으면 휠줌 글라이드가 매 프레임 카메라를 원래 거리로 되돌린다(두 번 데었다).
+    const labView = (key, yaw, elev, d = 1.25, ox = 0, oy = 0) => {
+        const cell = cellOf[key];
+        if (!cell) return false;
+        const ra = yaw * Math.PI / 180, el = elev * Math.PI / 2, tx = cell.x + ox, ty = cell.y + oy;
+        camera.position.set(tx + d * Math.cos(el) * Math.sin(ra), ty + d * Math.sin(el), d * Math.cos(el) * Math.cos(ra));
+        controls.target.set(tx, ty, 0);
+        controls.minDistance = Math.min(controls.minDistance, d * 0.9);
+        zoomTargetDist = d;
+        controls.update();
+        return true;
+    };
+    window.__sealab = { camera, renderer, scene, controls, CELL, Y0, cellOf, go: labGo, view: labView };
+}
