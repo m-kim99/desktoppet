@@ -26296,7 +26296,9 @@ function fcValveGeo(o) {
             // 분리해 힌지에서도 wmin만큼 벌려 두면: 힌지 행이 **넓고 z가 눌린 직선**이 되어 두 짝이
             // 그 선 전체에서 맞물린다 = 진짜 경첩선. 벌림 각도를 줄이지 않고도 쐐기가 사라진다.
             const wmin = o.wmin ?? 0.055;                  // 0.055 = 옛 파이 형태(귀 등 그대로 쓰는 쪽)
-            const wr = wmin + (1 - wmin) * Math.pow(rw.r, o.wpow ?? 1);
+            // wprofile: 폭 프로파일을 호출부가 직접 준다. 굴처럼 **부채 모서리를 없애야** 하는 쪽만
+            // 쓴다 — 기본식(wmin + (1−wmin)·r^wpow)은 조개 4종이 쓰는 그대로 남는다.
+            const wr = o.wprofile ? o.wprofile(rw.r) : wmin + (1 - wmin) * Math.pow(rw.r, o.wpow ?? 1);
             const h = o.h(r, q, rib) - (rw.in ? Math.sign(o.h(0.6, 0, 0) || 1) * thk : 0);
             // 부리(umbo): **h가 아니라 z로만** 만든다. h를 힌지에서 들면 두 짝이 뒤에서 벌어지고,
             // r 시작값을 키워 힌지를 뭉툭하게 하면 렌즈 h가 0에서 멀어져 같은 문제가 생긴다.
@@ -26589,7 +26591,7 @@ function buildShellCartoon(id) {
 const FC_SEA = {
     // ⚠️ 굴은 **납작하고 넓은 덩어리**다. 컵 depth 0.88·arc 1.85로 잡았더니 폭보다 높이가 커져
     // 세로로 선 **헬멧/조개 지갑**이 됐다(실측). 폭(2R·sin(arc/2)) > 길이 > 높이 순서를 지킨다.
-    oyster: { ko: '굴', cellOut: 20, cellIn: 21, cellFlesh: 22, R: 0.066, arc: 2.05, open: 0.70, umbo: 0.16 },
+    oyster: { ko: '굴', cellOut: 20, cellIn: 21, cellFlesh: 22, R: 0.066, arc: 2.25, open: 0.70, umbo: 0.16 },
 };
 // 저주파 3중 사인 — 해시 스텝은 불연속이라 찢긴 천이 된다(진주조개에서 배운 것). 위상만 바꿔
 // 두 짝을 서로 다르게 만든다: 이게 굴의 비대칭을 만드는 유일한 장치다.
@@ -26610,9 +26612,15 @@ function fcOysterValves() {
         const depth = up ? 0.16 : 0.36;                 // 위=얕은 뚜껑 · 아래=얕은 컵 (굴의 비대칭은 유지)
         const rough = oyRough(up ? 2.1 : 0.0, up ? 0.030 : 0.055);   // 아래짝이 더 거칠다
         const g = fcValveGeo({
-            R: S.R, arc: S.arc, ribs: 5, umbo: S.umbo, wmin: 0.32, wpow: 1.10,
+            R: S.R, arc: S.arc, ribs: 5, umbo: S.umbo,
+            // ⚠️ **부채꼴 모서리 제거**(사용자 지정: "굴 껍데기 형태"). fcValveGeo의 패치는 (r,q) 사각형
+            // 이라 평면 윤곽이 사다리꼴 = 힌지 끝과 자유변 끝에 각진 모서리가 4개 생긴다. 조개는 그게
+            // 부채라서 맞지만 굴은 **불규칙한 타원 덩어리**다. 힌지 쪽 폭을 0.32 → 0.10으로 좁혀
+            // 각정(umbo)을 뾰족한 점으로 모으고(모서리 2개가 둥근 부리로 합쳐진다), 자유변 쪽은
+            // edge의 코너 컷을 0.14 → 0.34로 키워 앞끝을 둥글린다. arc도 넓혀 앞이 더 감긴다.
+            wprofile: (t) => 0.10 + 0.90 * Math.pow(Math.sin(Math.PI * 0.5 * Math.pow(t, 0.62)), 1.35),
             flip: !up, nr: 12, na: 46, thick: S.R * 0.045, faceAttr: true,   // 0.075는 흰 개스킷 띠였다(조개와 같은 함정)
-            edge: (q) => (1 - 0.14 * Math.pow(Math.abs(q), 2.2)) * rough(q),
+            edge: (q) => (1 - 0.34 * Math.pow(Math.abs(q), 1.9)) * rough(q),
             // 조개와 같은 불변식: h가 힌지에서 0이어야 두 짝이 뒤에서 붙는다. 벌리는 건 힌지축 회전으로만.
             h: (r, q) => sg * S.R * depth * Math.pow(Math.sin(Math.PI * r), 0.72) * Math.min(1, r / 0.18)
                 * (1 - 0.20 * q * q) * grow(r) * (up ? 1 : 1 + 0.10 * Math.sin(q * 3.3 + 0.7)),   // 아래짝은 좌우로도 일그러진다
@@ -26636,21 +26644,26 @@ function fcOysterFlesh() {
             // 쪽(0.30R)과 림 쪽(1.0R)에서 둘 다 h=0으로 올라온다. 그래서 큰 덩어리를 가운데 놓으면
             // 힌지 쪽 벽을 뚫고 나와 옆에서 **날카로운 V 홈과 검은 틈**으로 보였다(실측).
             // 0.70R·−0.28R → 0.58R·−0.12R: 골에서 가장 넓고 얕은 구간에 얹힌다.
-            R: S.R * 0.58, arc: S.arc * 0.88, ribs: 3, umbo: S.umbo * 0.7, wmin: 0.34, wpow: 1.10,
+            R: S.R * 0.58, arc: S.arc * 0.88, ribs: 3, umbo: S.umbo * 0.7,
+            wprofile: (t) => 0.14 + 0.86 * Math.pow(Math.sin(Math.PI * 0.5 * Math.pow(t, 0.62)), 1.35),   // 껍데기와 같은 계보 — 각진 모서리 없는 타원
             flip: !up, nr: 9, na: 32, thick: 0,
-            edge: (q) => (1 - 0.12 * Math.pow(Math.abs(q), 2.2)) * wob(q),
+            edge: (q) => (1 - 0.30 * Math.pow(Math.abs(q), 1.9)) * wob(q),
             // ⚠️ 두 짝이 **힌지 끝에서 만나야** 닫힌 덩어리가 된다. 렌즈 h는 r=0.055(첫 행)에서
             // sin(π·0.055)^0.66 = 0.31, 즉 이미 부풀어 있어서 위·아래가 0.19R 떨어져 있었다 →
             // DoubleSide로 그 틈이 들여다보여 **속살에 구멍이 뚫린 것처럼** 보였다(사용자 리포트).
             // (r−0.055)/0.18 램프로 첫 행을 정확히 0으로 눌러 두 짝을 봉합한다.
-            h: (r, q) => sg * S.R * (up ? 0.30 : 0.10) * Math.pow(Math.sin(Math.PI * r), 0.66)
+            // ⚠️ 아래 볼륨 0.10은 밑면이 거의 **평평**해서, 눈높이에서 보면 속살이 검은 띠에서 끝나고
+            // 그 아래로 컵 안쪽면이 드러난다 → 살이 뚫린 것처럼 읽혔다(사용자 리포트 2회). 실제로
+            // 구멍은 없었고 **밑면 볼륨이 없던 것**이 원인이다. 0.22로 부풀려 통통한 덩어리로 만든다
+            // (컵 바닥은 lateral 0.58R에서 h≈−0.35R, 속살 밑면은 −0.248R이라 여유가 있다).
+            h: (r, q) => sg * S.R * (up ? 0.34 : 0.22) * Math.pow(Math.sin(Math.PI * r), 0.82)
                 * Math.min(1, (r - 0.055) / 0.18)
                 * (1 - 0.18 * q * q) * (1 + 0.10 * Math.sin(r * 6.1 + q * 2.0)),
         });
         // ⚠️ 렌즈는 y=0(껍데기 림 높이) 대칭으로 나온다 → 그대로 두면 속살이 컵 **위로 솟는다**
         // (실측: 컵에 얹힌 달걀). 컵 안쪽으로 내려 앉힌다 — 너무 내리면 골 바닥을 뚫는다.
         g.translate(0, -S.R * 0.12, 0);
-        out.push(g);
+        out.push({ geo: g, up });
     }
     return out;
 }
@@ -26723,16 +26736,16 @@ function fcPaintSea(g) {
         // ⚠️ **uv 폭 ≠ 3D 폭이다.** 렌즈에서 v 0~0.26은 얇은 테가 아니라 넓은 고리(반지름 0.74~1.0)라,
         // 0.26 폭에 숯빛을 깔았더니 속살 절반이 검은 치마가 되어 오히려 구멍처럼 보였다(실측).
         // 반지름 비는 (0.34 + 0.66·r^1.10)이므로 v 0~0.08 ≈ 반지름 0.94~1.0 = 진짜 테두리 폭이다.
-        const man = g.createLinearGradient(0, Y(0.14), 0, Y(0));
+        const man = g.createLinearGradient(0, Y(0.10), 0, Y(0));
         man.addColorStop(0, 'rgba(46,38,36,0)'); man.addColorStop(0.42, 'rgba(44,36,34,0.46)');
         man.addColorStop(0.70, 'rgba(30,25,24,0.90)'); man.addColorStop(1, 'rgba(24,20,19,0.94)');
-        g.fillStyle = man; g.fillRect(R.x, Y(0.14), C, Y(0) - Y(0.14));
+        g.fillStyle = man; g.fillRect(R.x, Y(0.10), C, Y(0) - Y(0.10));
         // 프릴 — 외투막은 매끈한 띠가 아니라 물결지는 주름이다. 안쪽 경계를 흔들어 준다.
         g.beginPath();
-        for (let j = 0; j <= 40; j++) { const u = j / 40, y = Y(0.098 + 0.020 * Math.sin(u * 8.4) + 0.010 * Math.sin(u * 17.1 + 1.0)); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
+        for (let j = 0; j <= 40; j++) { const u = j / 40, y = Y(0.072 + 0.016 * Math.sin(u * 8.4) + 0.008 * Math.sin(u * 17.1 + 1.0)); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
         g.strokeStyle = 'rgba(38,31,30,0.62)'; g.lineWidth = 6; g.lineCap = 'round'; g.stroke();
         g.beginPath();   // 프릴 바로 위 얇은 밝은 선 — 검은 테가 '떠 보이지' 않게 받쳐 준다
-        for (let j = 0; j <= 40; j++) { const u = j / 40, y = Y(0.150 + 0.020 * Math.sin(u * 8.4)); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
+        for (let j = 0; j <= 40; j++) { const u = j / 40, y = Y(0.112 + 0.016 * Math.sin(u * 8.4)); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
         g.strokeStyle = 'rgba(255,246,224,0.50)'; g.lineWidth = 4; g.stroke();
         const wet = g.createRadialGradient(X(0.40), Y(0.66), 0, X(0.40), Y(0.66), C * 0.20);   // 젖은 광택 (드로우 안 늘리려고 텍스처로)
         wet.addColorStop(0, 'rgba(255,255,250,0.62)'); wet.addColorStop(1, 'rgba(255,255,250,0)');
@@ -26744,7 +26757,7 @@ function buildOysterCartoon() {
     if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
     const RO = faRect(S.cellOut), RI = faRect(S.cellIn), RF = faRect(S.cellFlesh);
     const parts = [];
-    const push = (geo, up, rectFor) => {
+    const push = (geo, up, rectFor, warm = true) => {
         const uv = geo.attributes.uv, nr = geo.attributes.normal, fa = geo.attributes.faceIn;
         const n = uv.count, col = new Float32Array(n * 3), oY = up ? 1 : -1;
         for (let i = 0; i < n; i++) {
@@ -26759,13 +26772,19 @@ function buildOysterCartoon() {
             // 남은 초록은 조명이 곱해지는 것이라 밝기만 눌러선 색조가 안 빠진다(계산·실측 일치).
             // 아래를 향할수록 정점색을 **따뜻하게** 기울여 초록을 올리브·황갈로 끌어온다 —
             // 이 월드가 원래 쓰는 bakeGrad 정점색 문법 안에서 해결한다(전역 조명은 건드리지 않는다).
-            const dw = Math.max(0, -ny);
+            // ⚠️ warm=false로 **속살은 제외**한다. 속살은 컵 안에 있어 초록 바운스를 안 받는데,
+            // 따뜻하게 기울이면 밑면만 분홍으로 떠서 위·아래가 딴 물건처럼 갈리고 그 경계가
+            // 구멍 테두리로 읽혔다(사용자 리포트 "옆에서 살 뚫려있어").
+            const dw = warm ? Math.max(0, -ny) : 0;
             col[i * 3] = t * (1 + 0.30 * dw);
             col[i * 3 + 1] = t * (1 - 0.10 * dw);
             col[i * 3 + 2] = t * (1 - 0.28 * dw);
             // ⚠️ 림(법선이 수평)까지 안쪽 셀로 보내면 자개 크림색이 겉면 회색과 부딪혀 **흰 플라스틱
             // 개스킷**으로 읽힌다(실측). 껍데기 단면은 실제로도 백악질이니 겉면 셀로 돌린다.
             const R = rectFor(Math.abs(nr ? nr.getY(i) : 0) < 0.35 ? 0 : (fa ? fa.getX(i) : 0));
+            // ⚠️ 아래짝만 v 하단을 잘라내 봤더니(검은 띠 제외) 적도에서 알파가 뚝 끊겨 **하드한 분리선**이
+            // 생겼다 — 그게 오히려 구멍 테두리로 보였다. 밑면 볼륨을 살린 뒤로는 v 0~0.10이 얇은
+            // 고리라 자를 필요가 없다 → 위·아래 같은 uv로 두어 검은 테가 적도를 **끊김 없이** 감는다.
             uv.setXY(i, R.u0 + uv.getX(i) * k, R.v1 - (1 - uv.getY(i)) * kv);
         }
         geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -26773,7 +26792,7 @@ function buildOysterCartoon() {
         parts.push(geo);
     };
     for (const v of fcOysterValves()) push(v.geo, v.up, (inF) => (inF > 0.5 ? RI : RO));
-    for (const f of fcOysterFlesh()) push(f, true, () => RF);
+    for (const f of fcOysterFlesh()) push(f.geo, true, () => RF, false);   // warm=false — 속살은 컵 안이라 초록 바운스를 안 받는다
     const geo = mergeGeometries(parts, false);
     geo.computeBoundingBox();
     // 조개와 같은 문법(월드는 origin을 지면에 놓는다) + 굴만 살짝 파묻는다: 실물 굴은 해저에
