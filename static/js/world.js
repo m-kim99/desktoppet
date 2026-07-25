@@ -26526,16 +26526,10 @@ if (location.search.includes('sealab')) {
         syncShinyParts(m, m.geometry);
         return { key: id, ko: '참고·' + r.ko, obj: m };
     };
-    const cartoonOf = (id) => ({ key: 'c-' + id, ko: FISHC[id].ko, obj: buildFishCartoon(id), side: true });
-    const ROWS = [
-        ['crucian', 'goldfish', 'koi', 'mackerel'].map(cartoonOf),
-        ['salmon', 'smelt', 'catfish', 'puffer', 'angler'].map(cartoonOf),
-        [cartoonOf('bottle'), { key: 'c-boot', ko: '헌 장화', obj: buildBootCartoon() },
-            { key: 'c-frog', ko: '개구리', obj: buildFrogCartoon() }, { key: 'c-ray', ko: '가오리', obj: buildRayCartoon() }],
-        [{ key: 'crucian-now', ko: '붕어 현재', obj: makeFishMesh(FISH_SPECIES[0], 1), side: true }],
-        ['crucian', 'goldfish', 'koi', 'frog', 'catfish', 'smelt'].map(fishOf),
-        ['mackerel', 'puffer', 'ray', 'salmon', 'angler'].map(fishOf),
-        ['boot', 'bottle'].map(fishOf),
+    const ROWS = [   // fishOf = makeFishMesh — **실게임 경로 그대로** 본다(별도 빌더 직접 호출은 배선 오류를 못 잡는다)
+        ['crucian', 'goldfish', 'koi', 'mackerel', 'salmon'].map(fishOf),
+        ['smelt', 'catfish', 'puffer', 'angler', 'frog'].map(fishOf),
+        ['ray', 'boot', 'bottle'].map(fishOf),
         SHELL_TYPES.map(shellOf),
         SEAFOOD.slice(0, 4).map(sfOf),
         SEAFOOD.slice(4).map(sfOf),
@@ -26593,10 +26587,13 @@ if (location.search.includes('sealab')) {
     };
     let want = (location.search.match(/sealab=([a-z0-9-]+)/) || [])[1];
     if (want && want !== '1') { try { localStorage.setItem('world-sealab-focus', want); } catch (e) {} }
-    else { try { want = localStorage.getItem('world-sealab-focus') || ''; } catch (e) {} }
+    else { want = ''; try { localStorage.removeItem('world-sealab-focus'); } catch (e) {} }   // ?sealab=1 = 전체보기(저장된 접사 해제)
     if (!labGo(want)) {
-        const gx = (6 - 1) / 2 * CELL, gy = Y0 - (ROWS.length - 1) / 2 * CELL;   // 격자 중심(최대 6열 × 9행)
-        camera.position.set(gx, gy, 16.6);                                        // fov 45 → 10행 세로로 담긴다
+        const cols = Math.max(...ROWS.map((r) => r.length));
+        const gx = (cols - 1) / 2 * CELL, gy = Y0 - (ROWS.length - 1) / 2 * CELL;
+        const T = Math.tan((45 * Math.PI / 180) / 2), asp = Math.max(0.6, camera.aspect || 1.4);
+        const d = Math.max((ROWS.length * CELL) / (2 * T), (cols * CELL) / (2 * T * asp)) * 1.10;   // 행·열에서 계산 — 하드코딩하면 행이 늘 때마다 잘린다
+        camera.position.set(gx, gy, d);
         controls.target.set(gx, gy, 0);
         zoomTargetDist = camera.position.distanceTo(controls.target);
         controls.update();
