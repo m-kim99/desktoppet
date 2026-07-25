@@ -17009,14 +17009,14 @@ const MOON_CRATERS = [], MOON_MARE = [];
         }
         return new THREE.Vector3(0, -1, 0);
     };
-    const CLASSES = [[3, 1.7, 2.5, 0.8, 0.9, true], [9, 0.8, 1.4, 0.9, 0.94, false], [18, 0.36, 0.7, 0.955, 0.975, false]];
+    const CLASSES = [[3, 1.7, 2.5, 0.8, 0.9, true], [9, 0.8, 1.4, 0.9, 0.94, false], [16, 0.5, 0.95, 0.955, 0.975, false]];
     for (const [count, rMin, rMax, aPad, aFlag, big] of CLASSES) {
         for (let i = 0; i < count; i++) {
             const n = pick(aPad, aFlag), R = rMin + cr01() * (rMax - rMin);
             const tA = new THREE.Vector3(0, 1, 0).cross(n);
             if (tA.lengthSq() < 1e-6) tA.set(1, 0, 0);
             tA.normalize();
-            MOON_CRATERS.push({ n, R, depth: R * 0.2, rim: R * 0.095, big, phase: cr01() * 6.283,
+            MOON_CRATERS.push({ n, R, depth: R * 0.22, rim: R * 0.115, big, phase: cr01() * 6.283,
                 tA, tB: new THREE.Vector3().crossVectors(n, tA).normalize(),
                 cosOut: Math.cos(Math.min(Math.PI, (R * 1.5) / 7)) });
         }
@@ -17028,9 +17028,8 @@ const MOON_CRATERS = [], MOON_MARE = [];
         MOON_MARE.push({ n, R, depth: 0.18, cosOut: Math.cos(Math.min(Math.PI, R / 7)) });
     }
 }
-const moonRipple = (x, y, z) =>   // 미세 기복 2옥타브 — 크레이터만 있으면 반죽처럼 매끈하다
-    Math.sin(x * 5.3 + Math.sin(y * 3.1)) * Math.sin(y * 4.7 + Math.sin(z * 2.9)) * Math.sin(z * 6.1 + Math.sin(x * 3.7)) * 0.05
-    + Math.sin(x * 13.7) * Math.sin(y * 11.3) * Math.sin(z * 12.9) * 0.018;
+const moonRipple = (x, y, z) =>   // 넓은 기복 1옥타브만 — 고주파를 얹으면 가까이서 반죽처럼 뭉갠다
+    Math.sin(x * 4.1 + Math.sin(y * 2.7)) * Math.sin(y * 3.6 + Math.sin(z * 2.3)) * Math.sin(z * 4.7 + Math.sin(x * 3.1)) * 0.034;
 function moonSurfOffset(nx, ny, nz) {   // 단위법선 → 반경 오프셋(그릇 −, 림 +). 조형·보행 공용
     // 패드 발밑(dot≥0.955)은 기복을 0으로 — 데크는 평면이라 지형이 울렁이면 펫이 뚫고 들어간다
     const padK = Math.min(1, Math.max(0, (nx * MOON_PAD_N.x + ny * MOON_PAD_N.y + nz * MOON_PAD_N.z - 0.955) / 0.045));
@@ -17039,8 +17038,11 @@ function moonSurfOffset(nx, ny, nz) {   // 단위법선 → 반경 오프셋(그
         const dp = nx * c.n.x + ny * c.n.y + nz * c.n.z;
         if (dp < c.cosOut) continue;
         const d = Math.acos(Math.min(1, dp)) * 7;
-        if (d < c.R) off -= c.depth * (1 - (d / c.R) * (d / c.R));
-        const e = (d - c.R) / (c.R * 0.17);
+        if (d < c.R) {   // 평평한 바닥 + 가파른 벽 — 포물선 그릇은 가까이서 "눌린 자국"으로 읽힌다
+            const k = d / c.R;
+            off -= c.depth * (k < 0.5 ? 1 : 1 - (k - 0.5) * (k - 0.5) * 4);
+        }
+        const e = (d - c.R) / (c.R * 0.14);
         if (e > -3 && e < 3) off += c.rim * Math.exp(-e * e);
     }
     for (const m of MOON_MARE) {
@@ -17095,6 +17097,7 @@ SPACE_POIS[0].padQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vect
 SPACE_POIS[1].padPos = new THREE.Vector3(SPACE_POIS[1].x, SPACE_POIS[1].y, SPACE_POIS[1].z + 2.2);   // 갑판 위 착륙 패드 (코어 비켜서)
 SPACE_POIS[1].padQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0));   // 한 좌석이 정거장 창을 마주본다
 const spacePoiGroup = new THREE.Group();
+let moonFlagWave = null;
 let stationWingL = null, stationWingR = null, stationWingBase = 0, stationAntenna = null, vendGroup = null, teleGroup = null;
 let teleYawG = null, teleTiltG = null;   // 🔭 요크 좌우 회전 / 하우징 상하 틸트 — 조형이 실제 축을 갖는다
 const TELE_PARK = { yaw: 0, tilt: -0.17 };   // 아무도 안 볼 땐 난간 바깥을 향해 살짝 숙인 자세
@@ -17153,15 +17156,25 @@ const navGrnMat = new THREE.MeshBasicMaterial({ color: 0x7df0a4, fog: false });
     moonG.position.set(mp.x, mp.y, mp.z);
     const poiMoon = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, emissive: 0x11151f, fog: false });
     const _mv = new THREE.Vector3(), _mt = new THREE.Vector3(), _mq = new THREE.Quaternion(), _mUp = new THREE.Vector3(0, 1, 0);
-    {   // 구 = 정점 변위 + 지질 정점색
-        const g = new THREE.SphereGeometry(mp.R, 96, 64);
+    {   // 구 = 정점 변위 + **플랫 셰이딩**(면마다 각진 음영). 스무스 셰이딩 + 고주파 노이즈는
+        // 가까이서 저해상 그림처럼 뭉갠다 — 저폴리 게임 문법으로 형태를 또렷하게 세운다.
+        const g0 = new THREE.SphereGeometry(mp.R, 72, 46);
+        const pos0 = g0.attributes.position;
+        for (let i = 0; i < pos0.count; i++) {
+            _mv.set(pos0.getX(i), pos0.getY(i), pos0.getZ(i)).normalize();
+            const off = moonSurfOffset(_mv.x, _mv.y, _mv.z);
+            pos0.setXYZ(i, _mv.x * (mp.R + off), _mv.y * (mp.R + off), _mv.z * (mp.R + off));
+        }
+        const g = g0.toNonIndexed();   // 정점 분리 → computeVertexNormals가 면 법선을 만든다
         const pos = g.attributes.position, cols = new Float32Array(pos.count * 3);
         const HI = new THREE.Color(0xe8e4da), LO = new THREE.Color(0x8e8c88), MARE = new THREE.Color(0x6b6f7c), RAY = new THREE.Color(0xfbf8f1), c = new THREE.Color();
         const hsh = (x, y, z) => { const t = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453; return t - Math.floor(t); };
-        for (let i = 0; i < pos.count; i++) {
-            _mv.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
+        for (let f = 0; f < pos.count; f += 3) {   // 색은 **면 단위** — 정점 보간을 끊어야 저폴리 면이 또렷하다
+            _mv.set(
+                (pos.getX(f) + pos.getX(f + 1) + pos.getX(f + 2)) / 3,
+                (pos.getY(f) + pos.getY(f + 1) + pos.getY(f + 2)) / 3,
+                (pos.getZ(f) + pos.getZ(f + 1) + pos.getZ(f + 2)) / 3).normalize();
             const off = moonSurfOffset(_mv.x, _mv.y, _mv.z);
-            pos.setXYZ(i, _mv.x * (mp.R + off), _mv.y * (mp.R + off), _mv.z * (mp.R + off));
             let mareW = 0;
             for (const m of MOON_MARE) {
                 const dp = _mv.dot(m.n);
@@ -17180,11 +17193,11 @@ const navGrnMat = new THREE.MeshBasicMaterial({ color: 0x7df0a4, fog: false });
                 const spoke = Math.pow(Math.max(0, Math.cos(ang * 5 + cr.phase)), 6);
                 rayW = Math.max(rayW, spoke * (1 - (d - cr.R * 1.15) / (cr.R * 3.25)) * 0.62);
             }
-            const t = THREE.MathUtils.clamp(0.52 + off * 2.6 + (hsh(_mv.x * 9, _mv.y * 9, _mv.z * 9) - 0.5) * 0.22, 0, 1);
+            const t = THREE.MathUtils.clamp(0.52 + off * 2.6 + (hsh(_mv.x * 9, _mv.y * 9, _mv.z * 9) - 0.5) * 0.12, 0, 1);
             c.copy(LO).lerp(HI, t);
             if (mareW > 0) c.lerp(MARE, Math.min(0.95, mareW * 1.35));
             if (rayW > 0) c.lerp(RAY, rayW);
-            cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b;
+            for (let k = 0; k < 3; k++) { cols[(f + k) * 3] = c.r; cols[(f + k) * 3 + 1] = c.g; cols[(f + k) * 3 + 2] = c.b; }
         }
         g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
         g.computeVertexNormals();
@@ -17204,7 +17217,7 @@ const navGrnMat = new THREE.MeshBasicMaterial({ color: 0x7df0a4, fog: false });
             _mq.setFromUnitVectors(_mUp, n);
             g.applyQuaternion(_mq);
             g.translate(n.x * (mp.R + off - sz * 0.1), n.y * (mp.R + off - sz * 0.1), n.z * (mp.R + off - sz * 0.1));
-            rocks.push(bakeGrad(g, 0xa8a49c, 0x5e5b57, { curve: 1 }));   // 밝으면 진주알로 읽힌다
+            rocks.push(bakeGrad(g.toNonIndexed(), 0xa8a49c, 0x5e5b57, { curve: 1 }));   // 밝거나 매끄러우면 진주알로 읽힌다
         }
         addMerged(moonG, rocks, poiGrad);
     }
@@ -17286,20 +17299,44 @@ const navGrnMat = new THREE.MeshBasicMaterial({ color: 0x7df0a4, fog: false });
         const fOff = moonSurfOffset(MOON_FLAG_N.x, MOON_FLAG_N.y, MOON_FLAG_N.z);
         fG.position.copy(MOON_FLAG_N).multiplyScalar(mp.R + fOff);
         fG.quaternion.setFromUnitVectors(_mUp, MOON_FLAG_N);
-        const fMetal = [new THREE.CylinderGeometry(0.035, 0.045, 1.5, 8).translate(0, 0.75, 0),
-            new THREE.BoxGeometry(0.62, 0.028, 0.028).translate(0.31, 1.44, 0),
-            new THREE.CylinderGeometry(0.24, 0.28, 0.035, 12).translate(0, 0.017, 0)];
+        const fMetal = [new THREE.CylinderGeometry(0.03, 0.04, 1.62, 8).translate(0, 0.81, 0),
+            new THREE.SphereGeometry(0.045, 8, 6).translate(0, 1.64, 0),
+            new THREE.CylinderGeometry(0.22, 0.26, 0.035, 12).translate(0, 0.017, 0)];
         addMerged(fG, fMetal, poiMetal);
-        const flag = new THREE.PlaneGeometry(0.6, 0.4, 8, 3);
-        const fp = flag.attributes.position;
-        for (let i = 0; i < fp.count; i++) {   // 주름 — 깃대에서 멀수록 크게
-            const u = (fp.getX(i) + 0.3) / 0.6;
-            fp.setZ(i, Math.sin(u * 7.5) * 0.045 * u + Math.sin(fp.getY(i) * 9) * 0.012 * u);
+        // 🚩 삼각 페넌트 — 깃대에서 뾰족한 끝으로 좁아지고, 끝으로 갈수록 크게 흩날린다.
+        // 정점은 매 프레임 갱신(POI가 보일 때만) — moonFlagWave가 조형·애니메이션을 공용한다.
+        const SEG = 14, FH = 0.38, FL = 1.18;
+        const fGeo = new THREE.BufferGeometry();
+        const fPos = new Float32Array((SEG + 1) * 2 * 3), fCol = new Float32Array((SEG + 1) * 2 * 3);
+        const idx = [];
+        for (let i = 0; i < SEG; i++) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
+        const cT = new THREE.Color(0xe4705c), cB = new THREE.Color(0xb44636);
+        for (let i = 0; i <= SEG; i++) {
+            for (let k = 0; k < 2; k++) {
+                const c2 = k ? cB : cT, j = (i * 2 + k) * 3;
+                fCol[j] = c2.r; fCol[j + 1] = c2.g; fCol[j + 2] = c2.b;
+            }
         }
-        flag.computeVertexNormals();
-        flag.rotateY(Math.PI / 2);
-        flag.translate(0.31, 1.24, 0);
-        fG.add(new THREE.Mesh(flag, new THREE.MeshStandardMaterial({ color: 0xd05a4a, roughness: 0.85, side: THREE.DoubleSide, fog: false })));
+        fGeo.setAttribute('position', new THREE.BufferAttribute(fPos, 3));
+        fGeo.setAttribute('color', new THREE.BufferAttribute(fCol, 3));
+        fGeo.setIndex(idx);
+        moonFlagWave = (t) => {   // u=0 깃대(높이 FH) → u=1 뾰족한 끝(높이 0)
+            for (let i = 0; i <= SEG; i++) {
+                const u = i / SEG, hh = FH * 0.5 * (1 - u) * (1 - u * 0.35);
+                const wav = Math.sin(u * 5.6 - t * 1.9) * 0.075 * u * u + Math.sin(u * 9.1 - t * 2.7) * 0.022 * u;
+                const lift = Math.sin(u * 3.1 - t * 1.5) * 0.035 * u;
+                for (let k = 0; k < 2; k++) {
+                    const j = (i * 2 + k) * 3;
+                    fPos[j] = u * FL;
+                    fPos[j + 1] = 1.6 - u * 0.13 + (k ? -hh : hh) + lift;
+                    fPos[j + 2] = wav + (k ? 0.012 : -0.012) * u;
+                }
+            }
+            fGeo.attributes.position.needsUpdate = true;
+            fGeo.computeVertexNormals();
+        };
+        moonFlagWave(0.9);   // 초기 포즈도 접혀 있어야 첫 프레임이 뻣뻣하지 않다
+        fG.add(new THREE.Mesh(fGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, side: THREE.DoubleSide, fog: false })));
         moonG.add(fG);
     }
     {   // ⛏️ 크레이터 보물 마커: ✕ + 봉분 + 삽 — 병합 안 함(발굴 뒤 단독 숨김), 위치는 주기 시드.
@@ -18842,6 +18879,7 @@ function updateRocket(delta) {
         stationWingL.rotation.z = Math.sin(wxTime.value * 0.21) * 0.014;
         stationWingR.rotation.z = Math.sin(wxTime.value * 0.21 + 1.7) * 0.014;
         if (stationAntenna) stationAntenna.rotation.y += delta * 0.22;   // 📡 스윕
+        if (moonFlagWave) moonFlagWave(wxTime.value);   // 🚩 페넌트 — 보일 때만 정점 갱신(30정점)
         const padSpd = (ROCKET.poi && ROCKET.poi.id === 'station' && ROCKET.padK > 0.02 && ROCKET.padK < 0.99) ? 7 : 2.2;   // 도킹 중엔 유도등이 빨라진다
         for (let i = 0; i < 4; i++) padLightMats[i].opacity = 0.22 + 0.6 * Math.pow(Math.max(0, Math.sin(wxTime.value * padSpd - i * 0.9)), 3);
         poiBeaconMat.opacity = 0.35 + 0.65 * Math.abs(Math.sin(wxTime.value * 2.6));
