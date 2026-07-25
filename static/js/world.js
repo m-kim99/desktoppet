@@ -26248,30 +26248,36 @@ function buildFrogCartoon() {
 // 규율: 리브·돌기·융기는 **붙이지 말고 아웃라인/높이 필드를 변조**한다 → 삼각형만 늘고 드로우는 1.
 // 조개는 상시 표시물(해변 3 + 무인도 1~3)이라 드로우·재질이 예산이고, 삼각형은 여유가 크다.
 const FC_SHELL = {
-    scallop: { ko: '가리비', cell: 16, R: 0.062, arc: 1.16, ribs: 11, open: 0.16 },
+    scallop: { ko: '가리비', cell: 16, R: 0.062, arc: 1.16, ribs: 8,  open: 0.16 },
     conch:   { ko: '소라',   cell: 17, R: 0.058 },
-    clam:    { ko: '분홍조개', cell: 18, R: 0.056, arc: 1.34, ribs: 16, open: 0.10 },
-    pearl:   { ko: '진주조개', cell: 19, R: 0.058, arc: 1.28, ribs: 9,  open: 0.62 },
+    clam:    { ko: '분홍조개', cell: 18, R: 0.056, arc: 1.34, ribs: 10, open: 0.10 },
+    pearl:   { ko: '진주조개', cell: 19, R: 0.058, arc: 1.28, ribs: 6,  open: 0.62 },
 };
 // ---- 부채꼴 판 (가리비·분홍조개·진주조개) --------------------------------------------------
 // 극좌표 (r=힌지→자유변, q=−1~1 부채 횡단). rib(q)를 **반지름과 높이에 같은 주기로** 넣는 게 핵심 —
 // 따로 넣으면 파상 변과 리브 음영이 어긋나 무늬 스티커처럼 보인다.
 function fcValveGeo(o) {
-    const NR = o.nr || 22, NA = o.na || 46, pos = [], uv = [], idx = [];
-    for (let i = 0; i <= NR; i++) {
-        const r = 0.055 + 0.945 * (i / NR);
+    // ⚠️ 두께 0인 면 하나로 만들면 자유변이 무한히 얇아 **종잇장**으로 읽힌다(사용자 리포트).
+    // 겉면(r 0→1) → r=1에서 림으로 이어짐 → 안쪽면(r 1→0, 두께만큼 안으로). 한 지오로 닫힌 껍데기.
+    const NR = o.nr || 14, NA = o.na || 48, TH = o.thick || 0, pos = [], uv = [], idx = [];
+    const ROWS = TH > 0 ? NR * 2 + 1 : NR;
+    const rowAt = (i) => (TH > 0 ? (i <= NR ? { r: i / NR, in: 0 } : { r: (ROWS - i) / NR, in: 1 }) : { r: i / NR, in: 0 });
+    for (let i = 0; i <= ROWS; i++) {
+        const rw = rowAt(i), r = 0.055 + 0.945 * rw.r;
         for (let j = 0; j <= NA; j++) {
             const q = (j / NA) * 2 - 1, ph = q * o.arc * 0.5;
             const rib = Math.sin(((q + 1) * 0.5) * o.ribs * Math.PI * 2);
-            const rad = o.R * r * o.edge(q, rib);
-            const h = o.h(r, q, rib);
+            const shrink = rw.in ? 1 - TH * 0.9 / Math.max(0.2, o.R) * 0.10 : 1;
+            const rad = o.R * r * o.edge(q, rib) * shrink;
+            const h = o.h(r, q, rib) - (rw.in ? Math.sign(o.h(0.6, 0, 0) || 1) * TH : 0);
             pos.push(rad * Math.sin(ph), h, rad * Math.cos(ph) - o.R * 0.30);
             uv.push((q + 1) * 0.5, 1 - r);
         }
     }
-    for (let i = 0; i < NR; i++) for (let j = 0; j < NA; j++) {
+    for (let i = 0; i < ROWS; i++) for (let j = 0; j < NA; j++) {
         const a = i * (NA + 1) + j, b = a + NA + 1;
-        if (o.flip) idx.push(a, a + 1, b, b, a + 1, b + 1);
+        const rev = TH > 0 && i >= NR;   // 안쪽면은 와인딩이 뒤집힌다
+        if (o.flip !== rev) idx.push(a, a + 1, b, b, a + 1, b + 1);
         else idx.push(a, b, a + 1, b, b + 1, a + 1);
     }
     const g = new THREE.BufferGeometry();
@@ -26283,18 +26289,18 @@ function fcValveGeo(o) {
 const fcHash = (n) => ((Math.sin(n * 73.13) * 41913.7) % 1 + 1) % 1;
 function fcShellValves(id) {
     const S = FC_SHELL[id], out = [];
-    const grow = (r) => 1 + 0.055 * Math.sin(r * (id === 'clam' ? 26 : 17) - 1.1);   // 성장 융기 — 토러스 링 대신 높이 필드
+    const grow = (r) => 1 + 0.070 * Math.sin(r * (id === 'clam' ? 13 : 9) - 1.1);   // 성장 융기 — 토러스 링 대신 높이 필드(굵고 성기게)
     const rough = id === 'pearl' ? (q) => 1 + 0.055 * Math.sin(q * 3.1 + 1.2) + 0.032 * Math.sin(q * 6.4 - 0.5) + 0.018 * Math.sin(q * 11.3)
         : null;   // 굴처럼 거친 비대칭 변 — 해시 스텝을 쓰면 불연속이라 찢긴 천이 된다
     for (const up of [false, true]) {
         const sg = up ? 1 : -1;
         const depth = id === 'scallop' ? 0.30 : id === 'clam' ? 0.46 : 0.36;   // 가리비는 얕고 새조개는 볼록
         const g = fcValveGeo({
-            R: S.R, arc: S.arc, ribs: S.ribs, flip: !up, nr: 16, na: 76,   // ⚠️ 리브당 각도 샘플 6개 이상 — 적으면 리브가 패싯이 된다
+            R: S.R, arc: S.arc, ribs: S.ribs, flip: !up, nr: 13, na: 52, thick: S.R * 0.030,   // 리브당 각도 샘플 6개 이상 — 적으면 리브가 패싯이 된다
             edge: (q, rib) => (1 - 0.16 * Math.pow(Math.abs(q), 3.4)) * (1 + (id === 'scallop' ? 0.013 : 0.006) * rib) * (rough ? rough(q) : 1),   // 파상 변은 아주 얕게 — 크면 톱니가 된다
             h: (r, q, rib) => sg * (
                 S.R * depth * Math.pow(Math.sin(Math.PI * Math.pow(r, 0.72)), 0.62) * (1 - 0.30 * q * q) * grow(r)
-                + S.R * (id === 'scallop' ? 0.052 : 0.026) * rib * Math.sin(Math.PI * r)   // ⚠️ 리브를 변까지 살리면 리브 끝마다 뾰족한 삼각(톱니)이 된다 — 양끝에서 죽인다
+                + S.R * (id === 'scallop' ? 0.070 : 0.038) * rib * Math.sin(Math.PI * r)   // 성기게 갈수록 골은 깊어야 카툰식으로 읽힌다   // ⚠️ 리브를 변까지 살리면 리브 끝마다 뾰족한 삼각(톱니)이 된다 — 양끝에서 죽인다
                 + S.R * 0.018 * Math.pow(r, 2.2)),                         // 자유변 쪽이 두꺼워진다
         });
         if (up) { g.rotateX(-S.open); g.translate(0, S.R * 0.045, -S.R * 0.10); }   // 위짝을 젖혀 자개 속이 보인다
@@ -26321,14 +26327,19 @@ function fcConchGeo() {
     const pos = [], uv = [], idx = [];
     for (let i = 0; i <= NT; i++) {
         const t = i / NT, th = t * TH, gr = Math.exp(K * th);
-        const cr = R0 * gr, a = cr * 0.365, cy = R0 * 1.62 * gr - S.R * 0.90;   // 첨탑처럼 축이 오른다(단면이 뚱뚱하면 첨탑이 묻힌다)
-        const flare = t > 0.93 ? 1 + (t - 0.93) * 1.7 : 1;                       // 개구부 — 크면 매끈한 덩어리가 붙은 것처럼 보인다
+        const cr = R0 * gr, a = cr * 0.46, cy = R0 * 1.02 * gr - S.R * 0.58;   // 축 상승을 낮춰 층이 세로로도 붙는다
+        const flare = t > 0.93 ? 1 + (t - 0.93) * 1.7 : 1;                      // 개구부 — 크면 매끈한 덩어리가 붙은 것처럼 보인다
+        // ⚠️ 층이 떨어져 있으면 **스프링**으로 읽힌다(사용자 리포트). 안쪽면을 이전 층의 겉면에
+        // 밀착시켜(클램프) 봉합선을 만든다 — 조개껍데기는 층이 융합돼 있고 틈이 없다.
+        const rPrev = th > Math.PI * 2 ? (cr + a) * Math.exp(-K * Math.PI * 2) : -1;
+        const yPrev = th > Math.PI * 2 ? (R0 * 1.02 * gr * Math.exp(-K * Math.PI * 2) - S.R * 0.58) : -1e9;
         for (let j = 0; j <= NC; j++) {
             const ph = (j / NC) * Math.PI * 2;
-            const node = 1 + 0.17 * Math.max(0, Math.sin(ph - 0.35)) * Math.pow(Math.abs(Math.sin(th * 7)), 4);   // 층 어깨 돌기 열
-            const drop = 1 - 0.30 * Math.max(0, -Math.cos(ph));                 // 물방울 — 내측이 눌린다
-            const rr = a * node * drop * flare;
-            pos.push((cr + rr * Math.cos(ph)) * Math.cos(th), cy + rr * Math.sin(ph) * 1.10, (cr + rr * Math.cos(ph)) * Math.sin(th));
+            const node = 1 + 0.20 * Math.max(0, Math.sin(ph - 0.35)) * Math.pow(Math.abs(Math.sin(th * 3.5)), 4);   // 층 어깨 돌기 (성기게)
+            const rr = a * node * flare;
+            let rad = cr + rr * Math.cos(ph), yy = cy + rr * Math.sin(ph) * 1.08;
+            if (rPrev > 0 && Math.cos(ph) < 0 && rad < rPrev) { rad = rPrev; yy = Math.max(yy, yPrev + (yy - cy) * 0.25); }   // 봉합
+            pos.push(rad * Math.cos(th), yy, rad * Math.sin(th));
             uv.push(j / NC, t);
         }
     }
@@ -26337,12 +26348,12 @@ function fcConchGeo() {
         idx.push(a, b, a + 1, b, b + 1, a + 1);
     }
     {   // 개구부 마감 — 안쪽 어둠이 보이게 열린 채로 둔다(DoubleSide)
-        const base = pos.length / 3, cr = R0 * E, a = cr * 0.365, cy = R0 * 1.62 * E - S.R * 0.90, fl = 1.12;
+        const base = pos.length / 3, cr = R0 * E, a = cr * 0.46, cy = R0 * 1.02 * E - S.R * 0.58, fl = 1.12;
         pos.push(cr * Math.cos(TH), cy, cr * Math.sin(TH)); uv.push(0.5, 1);
         for (let j = 0; j <= NC; j++) {
             const ph = (j / NC) * Math.PI * 2;
-            const rr = a * (1 - 0.30 * Math.max(0, -Math.cos(ph))) * fl;
-            pos.push((cr + rr * Math.cos(ph)) * Math.cos(TH), cy + rr * Math.sin(ph) * 1.10, (cr + rr * Math.cos(ph)) * Math.sin(TH));
+            const rr = a * fl;
+            pos.push((cr + rr * Math.cos(ph)) * Math.cos(TH), cy + rr * Math.sin(ph) * 1.08, (cr + rr * Math.cos(ph)) * Math.sin(TH));
             uv.push(j / NC, 0.985);
         }
         for (let j = 0; j < NC; j++) idx.push(base, base + 1 + j + 1, base + 1 + j);
@@ -26368,31 +26379,31 @@ function fcPaintShell(g) {
             g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
             for (let k = 0; k < S.ribs; k++) {   // 리브 — 밝은 능선 + 그늘진 골
                 const u = (k + 0.5) / S.ribs;
-                for (const [off, col, w] of [[-0.012, 'rgba(255,246,224,0.50)', 5], [0.012, 'rgba(118,82,48,0.34)', 4]]) {
+                for (const [off, col, w] of [[-0.018, 'rgba(255,246,224,0.58)', 11], [0.020, 'rgba(118,82,48,0.40)', 9]]) {
                     g.beginPath(); g.moveTo(X(u + off), Y(0.06)); g.lineTo(X(u + off), Y(1));
                     g.strokeStyle = col; g.lineWidth = w; g.stroke();
                 }
             }
-            for (let k = 0; k < 9; k++) {   // 성장 아치 — 자유변과 평행
-                const v = 0.16 + k * 0.093;
+            for (let k = 0; k < 5; k++) {   // 성장 아치 — 자유변과 평행
+                const v = 0.20 + k * 0.170;
                 g.beginPath();
                 for (let j = 0; j <= 24; j++) { const u = j / 24, y = Y(v - 0.030 * (1 - Math.abs(u * 2 - 1))); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
-                g.strokeStyle = `rgba(140,100,60,${0.14 + (k % 2) * 0.10})`; g.lineWidth = 2.4; g.stroke();
+                g.strokeStyle = `rgba(140,100,60,${0.24 + (k % 2) * 0.10})`; g.lineWidth = 6; g.stroke();
             }
         } else if (id === 'conch') {   // 나선을 따라 흐르는 갈색 얼룩 띠 + 입술 안쪽 분홍 자개
             const gr = g.createLinearGradient(0, R.y, 0, R.y + C);
             gr.addColorStop(0, '#f2ddc4'); gr.addColorStop(0.45, '#e0b58c'); gr.addColorStop(1, '#c98a63');
             g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
-            for (let k = 0; k < 30; k++) {   // 축 방향 화염 무늬 — 소라 특유
+            for (let k = 0; k < 12; k++) {   // 축 방향 화염 무늬 — 소라 특유
                 const v = fcHash(k + 3), u0 = fcHash(k + 40);
                 g.save(); g.translate(X(u0), Y(v)); g.rotate(0.5 + fcHash(k + 9) * 0.5);
-                g.beginPath(); g.ellipse(0, 0, C * (0.020 + fcHash(k + 12) * 0.030), C * 0.010, 0, 0, Math.PI * 2);
-                g.fillStyle = `rgba(122,74,40,${0.20 + fcHash(k + 21) * 0.26})`; g.fill(); g.restore();
+                g.beginPath(); g.ellipse(0, 0, C * (0.040 + fcHash(k + 12) * 0.055), C * 0.024, 0, 0, Math.PI * 2);
+                g.fillStyle = `rgba(122,74,40,${0.26 + fcHash(k + 21) * 0.26})`; g.fill(); g.restore();
             }
-            for (let k = 0; k < 7; k++) {   // 층 경계(봉합선)
-                const u = k / 7;
+            for (let k = 0; k < 4; k++) {   // 층 경계(봉합선)
+                const u = k / 4;
                 g.beginPath(); g.moveTo(X(u), R.y); g.lineTo(X(u), R.y + C);
-                g.strokeStyle = 'rgba(110,68,36,0.24)'; g.lineWidth = 3; g.stroke();
+                g.strokeStyle = 'rgba(110,68,36,0.30)'; g.lineWidth = 7; g.stroke();
             }
             const lip = g.createLinearGradient(0, Y(1), 0, Y(0.945));   // 개구부 근처만 = 분홍 자개(넓히면 체층 전체가 분홍이 된다)
             lip.addColorStop(0, 'rgba(246,190,186,0.94)'); lip.addColorStop(1, 'rgba(246,196,190,0)');
@@ -26405,31 +26416,31 @@ function fcPaintShell(g) {
             for (let k = 0; k < S.ribs; k++) {
                 const u = (k + 0.5) / S.ribs;
                 g.beginPath(); g.moveTo(X(u), Y(0.08)); g.lineTo(X(u), Y(1));
-                g.strokeStyle = 'rgba(176,110,124,0.22)'; g.lineWidth = 3; g.stroke();
+                g.strokeStyle = 'rgba(176,110,124,0.28)'; g.lineWidth = 8; g.stroke();
             }
-            for (let k = 0; k < 13; k++) {   // 성장띠 — 새조개의 정체성
-                const v = 0.12 + k * 0.068;
+            for (let k = 0; k < 6; k++) {   // 성장띠 — 새조개의 정체성
+                const v = 0.16 + k * 0.145;
                 g.beginPath();
                 for (let j = 0; j <= 24; j++) { const u = j / 24, y = Y(v - 0.024 * (1 - Math.abs(u * 2 - 1))); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
-                g.strokeStyle = `rgba(168,102,118,${0.18 + (k % 2) * 0.12})`; g.lineWidth = 2.6; g.stroke();
+                g.strokeStyle = `rgba(168,102,118,${0.26 + (k % 2) * 0.12})`; g.lineWidth = 7; g.stroke();
                 g.beginPath();
                 for (let j = 0; j <= 24; j++) { const u = j / 24, y = Y(v + 0.006 - 0.024 * (1 - Math.abs(u * 2 - 1))); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
-                g.strokeStyle = 'rgba(255,240,242,0.34)'; g.lineWidth = 1.8; g.stroke();
+                g.strokeStyle = 'rgba(255,240,242,0.42)'; g.lineWidth = 4; g.stroke();
             }
         } else if (id === 'pearl') {   // 자개 — 무지개 간섭색 띠(청록→분홍→금)가 정체성
             const gr = g.createLinearGradient(R.x, 0, R.x + C, 0);
             gr.addColorStop(0, '#8f9aa2'); gr.addColorStop(0.5, '#cfd6d4'); gr.addColorStop(1, '#8f9aa2');
             g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
-            for (let k = 0; k < 22; k++) {   // 간섭색 — 각도별 색 띠
-                const v = k / 22, hue = ['rgba(120,214,206,', 'rgba(238,168,208,', 'rgba(246,224,150,', 'rgba(168,190,238,'][k % 4];
+            for (let k = 0; k < 8; k++) {   // 간섭색 — 각도별 색 띠
+                const v = (k + 0.5) / 8, hue = ['rgba(120,214,206,', 'rgba(238,168,208,', 'rgba(246,224,150,', 'rgba(168,190,238,'][k % 4];
                 g.beginPath();
                 for (let j = 0; j <= 26; j++) { const u = j / 26, y = Y(v + 0.020 * Math.sin(u * Math.PI * 2.2 + k)); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
-                g.strokeStyle = hue + (0.16 + (k % 3) * 0.10) + ')'; g.lineWidth = 9; g.lineCap = 'round'; g.stroke();
+                g.strokeStyle = hue + (0.26 + (k % 3) * 0.12) + ')'; g.lineWidth = 26; g.lineCap = 'round'; g.stroke();
             }
-            for (let k = 0; k < 26; k++) {   // 거친 겉면 — 굴처럼 각질진 층
+            for (let k = 0; k < 12; k++) {   // 거친 겉면 — 굴처럼 각질진 층
                 const v = fcHash(k + 5), u0 = fcHash(k + 60);
                 g.save(); g.translate(X(u0), Y(v)); g.rotate(fcHash(k + 11) * 3);
-                g.beginPath(); g.ellipse(0, 0, C * (0.024 + fcHash(k + 17) * 0.028), C * 0.009, 0, 0, Math.PI * 2);
+                g.beginPath(); g.ellipse(0, 0, C * (0.048 + fcHash(k + 17) * 0.050), C * 0.020, 0, 0, Math.PI * 2);
                 g.fillStyle = `rgba(96,104,110,${0.16 + fcHash(k + 29) * 0.18})`; g.fill(); g.restore();
             }
         }
@@ -26440,12 +26451,14 @@ function buildShellCartoon(id) {
     const A = fcAtlas(), S = FC_SHELL[id], R = faRect(S.cell), k = FA_KU, kv = FA_KV;
     if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
     const parts = [], glow = [];
-    const push = (geo, inner) => {
+    const push = (geo, up) => {
         const uv = geo.attributes.uv, nr = geo.attributes.normal, n = uv.count, col = new Float32Array(n * 3);
+        const oY = up ? 1 : -1;   // 그 짝의 겉면이 향하는 방향
         for (let i = 0; i < n; i++) {
-            const up = nr ? nr.getY(i) : 0;
-            // 안쪽 면은 자개라 밝고, 겉면은 위를 본 쪽이 밝다 — 정점색은 형태 음영만
-            const t = inner ? 1.10 + 0.10 * Math.max(0, -up) : 0.86 + 0.20 * Math.max(0, up);
+            // ⚠️ 한 지오에 겉면·안쪽면·림이 다 들어 있다 → **면 방향으로** 판정해야 한다.
+            // 지오 단위로 하면 위짝 전체가 자개 밝기가 되고 림이 흰 개스킷 띠로 보인다(실측).
+            const dn = (nr ? nr.getY(i) : 0) * oY;
+            const t = dn < -0.25 ? 1.06 : 0.84 + 0.18 * Math.max(0, dn);   // 안쪽=자개 · 림=어둡게 · 겉면=위를 본 쪽이 밝다
             col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = t;
             uv.setXY(i, R.u0 + uv.getX(i) * k, R.v1 - (1 - uv.getY(i)) * kv);
         }
