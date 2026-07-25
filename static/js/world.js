@@ -26272,13 +26272,20 @@ function fcValveGeo(o) {
             const rib = Math.sin(((q + 1) * 0.5) * o.ribs * Math.PI * 2);
             const thk = TH * Math.min(1, rw.r / 0.22);   // 힌지에서 두께 0 — 두 짝 안쪽면 교차 방지
             const shrink = rw.in ? 1 - thk * 0.9 / Math.max(0.2, o.R) * 0.10 : 1;
-            const rad = o.R * r * o.edge(q, rib) * shrink;
+            const eg = o.edge(q, rib) * shrink;
+            const rad = o.R * r * eg;                      // 힌지 → 자유변 (깊이 = z 방향)
+            // ⚠️ **폭을 rad에 묶으면 부채가 파이 조각이 되어 힌지에서 한 점으로 수렴한다**(사용자 지적).
+            // 그 수렴점이 크게 벌어진 진주조개 안쪽에서 검은 쐐기로 보였다. 폭 프로파일을 깊이와
+            // 분리해 힌지에서도 wmin만큼 벌려 두면: 힌지 행이 **넓고 z가 눌린 직선**이 되어 두 짝이
+            // 그 선 전체에서 맞물린다 = 진짜 경첩선. 벌림 각도를 줄이지 않고도 쐐기가 사라진다.
+            const wmin = o.wmin ?? 0.055;                  // 0.055 = 옛 파이 형태(귀 등 그대로 쓰는 쪽)
+            const wr = wmin + (1 - wmin) * Math.pow(rw.r, o.wpow ?? 1);
             const h = o.h(r, q, rib) - (rw.in ? Math.sign(o.h(0.6, 0, 0) || 1) * thk : 0);
             // 부리(umbo): **h가 아니라 z로만** 만든다. h를 힌지에서 들면 두 짝이 뒤에서 벌어지고,
             // r 시작값을 키워 힌지를 뭉툭하게 하면 렌즈 h가 0에서 멀어져 같은 문제가 생긴다.
             // 안쪽 절반을 −z로 넓게 밀어내면 렌즈 두께가 이미 있는 구간이 부리로 부풀어 오른다.
             const umbo = (o.umbo || 0) * Math.pow(Math.max(0, 1 - rw.r / 0.5), 2);
-            pos.push(rad * Math.sin(ph), h, rad * Math.cos(ph) - o.R * (0.30 + umbo));
+            pos.push(o.R * wr * eg * Math.sin(ph), h, rad * Math.cos(ph) - o.R * (0.30 + umbo));
             uv.push((q + 1) * 0.5, 1 - r);
         }
     }
@@ -26314,7 +26321,9 @@ function fcShellValves(id) {
         const g = fcValveGeo({
             // 두께: 0.030R(58mm 조개에 1.7mm)은 벌어진 진주조개 안쪽에서 **깨진 달걀 껍데기**였고,
             // 0.085R은 반대로 림이 넓은 **고무 개스킷 띠**가 됐다(둘 다 실측). 0.055R이 그 사이.
-            R: S.R, arc: S.arc, ribs: S.ribs, umbo: S.umbo, flip: !up, nr: 14, na: 52, thick: S.R * 0.055,
+            // wmin = 힌지선 폭(최대폭 대비) · wpow = 폭이 벌어지는 속도. 0.42·0.62는 중간 깊이에서
+            // 이미 최대폭 80%라 실루엣이 **드럼통**이 됐다(실측) → 0.30·1.15가 경첩선을 주면서 타원 유지.
+            R: S.R, arc: S.arc, ribs: S.ribs, umbo: S.umbo, wmin: 0.30, wpow: 1.15, flip: !up, nr: 14, na: 52, thick: S.R * 0.055,
             // 코너 컷 지수: arc를 넓히면 3.4는 양끝을 각지게 남긴다 → 2.2로 완만하게
             // 반경 물결은 **자유변에서 살아 있어야** 가리비 특유의 파상 변이 된다(높이 리브만 감쇠한다).
             // 새조개·진주조개는 0 — 실물의 매끈한 변.
