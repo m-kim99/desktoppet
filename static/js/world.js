@@ -11488,21 +11488,26 @@ const SEAFOOD = [
 function makeSeafoodGeo(id) {
     const g = [];
     if (id === 'urchin') {   // 성게 — 검보라 구 + 가시 침 (실루엣이 곧 정체성)
-        const body = new THREE.SphereGeometry(0.045, 12, 10);
+        const body = new THREE.SphereGeometry(0.045, 16, 12);   // 가시가 늘어난 만큼 몸통 실루엣도 매끄럽게
         body.translate(0, -0.055, 0);
-        g.push(bakeGrad(body, 0x4a3a5e, 0x241830, { curve: 1.2 }));
-        for (let i = 0; i < 22; i++) {
-            const a = (i / 22) * Math.PI * 2, b = ((i * 7) % 11) / 11 * Math.PI - Math.PI / 2;
-            const spike = new THREE.ConeGeometry(0.006, 0.05, 4);
-            const dx = Math.cos(a) * Math.cos(b), dy = Math.sin(b), dz = Math.sin(a) * Math.cos(b);
-            spike.rotateX(Math.PI / 2);
-            spike.lookAt ? null : null;
-            const m4 = new THREE.Matrix4().lookAt(new THREE.Vector3(0, 0, 0), new THREE.Vector3(dx, dy, dz), new THREE.Vector3(0, 1, 0));
-            const spike2 = new THREE.ConeGeometry(0.006, 0.05, 4);
-            spike2.rotateX(Math.PI / 2);
-            spike2.applyMatrix4(m4);
-            spike2.translate(dx * 0.062, -0.055 + dy * 0.062, dz * 0.062);
-            g.push(bakeGrad(spike2, 0x5a4a70, 0x32243f, { curve: 1 }));
+        g.push(bakeGrad(body, 0x54426a, 0x241830, { curve: 1.2 }));   // 가시(뿌리 0x6a5a82)와 갈리도록 몸통을 살짝 어둡게 유지
+        // ⚠️ 구 배치는 위도가 `(i*7)%11`로 **11단계뿐이고 경도와 상관관계**가 있어 가시가 뭉치고
+        // 대머리 구역이 생겼다. 피보나치 구면(황금각)은 몇 개를 뽑아도 균일하다.
+        // 4각 원뿔은 각도에 따라 **납작한 판**으로 보였다(탑뷰의 사각형들이 그 증거) → 6각.
+        // 실물처럼 긴 주가시 + 짧은 보조가시를 섞고, 그라디언트는 **회전 전에** 구워 침 길이 방향으로
+        // 흐르게 한다(bakeGrad는 지오의 y 범위를 쓰므로 회전 후에 구우면 방향이 엉킨다).
+        const N = 65, GA = Math.PI * (3 - Math.sqrt(5)), UP = new THREE.Vector3(0, 1, 0);
+        for (let i = 0; i < N; i++) {
+            const dy = 1 - ((i + 0.5) / N) * 2, rr = Math.sqrt(Math.max(0, 1 - dy * dy)), th = GA * i;
+            const dir = new THREE.Vector3(Math.cos(th) * rr, dy, Math.sin(th) * rr);
+            const long = i % 3 !== 0;
+            const len = long ? 0.050 + (i % 5) * 0.0035 : 0.026;
+            const spike = new THREE.ConeGeometry(long ? 0.0055 : 0.0048, len, 6);
+            spike.translate(0, len * 0.5, 0);                       // 밑면을 원점에 — 회전 축이 뿌리가 된다
+            bakeGrad(spike, 0x2b1f38, 0x6a5a82, { curve: 1 });      // 끝이 어둡게 (뿌리 밝음)
+            spike.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, dir));
+            spike.translate(dir.x * 0.040, -0.055 + dir.y * 0.040, dir.z * 0.040);
+            g.push(spike);
         }
     } else if (id === 'starfish') {   // 불가사리 — 5팔 별, 끝으로 갈수록 밝은 주황
         for (let i = 0; i < 5; i++) {
@@ -11622,12 +11627,12 @@ function makeSeafoodGeo(id) {
     return mergeGeometries(g, false);
 }
 function makeSeafoodMesh(id, scale = 1) {
-    // 🦪 카툰 조형으로 옮긴 종은 아틀라스 재질(fcMat)을 쓴다 — 조개 makeShellMesh와 같은 분기.
+    // 🦪⭐ 카툰 조형으로 옮긴 종은 아틀라스 재질(fcMat)을 쓴다 — 조개 makeShellMesh와 같은 분기.
     // 호출부(해저 스폰·머리 위 연출·도감 스냅샷·검수 랩)는 Group도 그대로 받으므로 무변경.
-    if (FC_SEA[id]) {
-        const grp = buildOysterCartoon();
-        if (scale !== 1) grp.scale.setScalar(scale);
-        return grp;
+    const cartoon = fcSeaBuild(id);   // ⚠️ 맵 상수 대신 함수 — 선언 호이스팅 덕에 TDZ가 없다(빌더는 파일 뒤쪽)
+    if (cartoon) {
+        if (scale !== 1) cartoon.scale.setScalar(scale);
+        return cartoon;
     }
     const mesh = new THREE.Mesh(makeSeafoodGeo(id), gradMat);
     mesh.castShadow = true;
@@ -25584,6 +25589,7 @@ function fcAtlas() {
     }
     fcPaintShell(g);  // 🐚 셀 16~19
     fcPaintSea(g);    // 🦪 셀 20~22 (해산물 예약분)
+    fcPaintStar(g);   // ⭐ 셀 23
     fcPaintFrog(g);   // 🐸 셀 9 — 등(위 절반) / 배(아래 절반)
     fcPaintBoot(g);   // 🥾 셀 12 — 통·발·밑창 3밴드
     {   // 흰 셀(15) 좌상 사분면에 개구리 눈 — 금색 홍채 + **가로 동공**. 중앙은 순백 유지(부속 파트가 샘플)
@@ -26805,6 +26811,117 @@ function buildOysterCartoon() {
     return grp;
 }
 // ==== /🦪 굴 ===============================================================================
+
+// ==== ⭐ 불가사리 — 팔은 붙이는 게 아니라 반지름 함수에서 돋아난다 ==========================
+// 구 조형: 5각 원뿔을 z로 42% 눌러 만든 **납작한 칼날 5개**를 눌린 구체에 꽂았다(사용자 리포트
+// "심각하다"). 팔이 두께 0에 가깝고, 중심 돔이 팔보다 높아 **햄버거에 칼 꽂은** 실루엣이었고,
+// 팔과 중심이 전혀 이어지지 않았다.
+// 규율: 불가사리는 극좌표 함수로 딱 떨어진다 — 반지름을 5주기 함수로 흔들면 팔이 **저절로**
+// 돋아나고 디스크에 녹아든다. 위·아래·림을 한 지오로 닫아 두께를 만든다(드로우는 1).
+const FC_STAR = { cell: 23, R: 0.098, H: 0.026, armMin: 0.28, armE: 2.3 };
+// |cos(2.5θ)|는 2π에 봉우리가 정확히 5개 — 팔 축이 θ = 0, 0.4π, 0.8π, 1.2π, 1.6π에 온다.
+// ⚠️ 지수를 p와 무관하게 두면 팔의 **각폭이 일정**해서 선형 폭이 반지름과 함께 커진다 →
+// 끝이 뭉툭하게 벌어진 **꽃잎**이 된다(실측: 플루메리아처럼 보였다). 지수를 p와 함께 키우면
+// 뿌리는 넓고 끝은 좁은 진짜 팔이 된다.
+const fcStarLobe = (th, p) => FC_STAR.armMin
+    + (1 - FC_STAR.armMin) * Math.pow(Math.abs(Math.cos(2.5 * th)), FC_STAR.armE * (0.42 + 0.95 * p));
+function fcStarGeo() {
+    const S = FC_STAR, NR = 10, NA = 60;   // NA는 5의 배수 — 팔 축이 uv 격자에 정렬돼 무늬를 맞출 수 있다
+    const pos = [], uv = [], idx = [];
+    const ROWS = NR * 2 + 1;               // 윗면(0..NR) → 림(p=1에서 위·아래가 같은 점) → 밑면(NR+1..ROWS)
+    const rowAt = (i) => (i <= NR ? { p: i / NR, dn: 0 } : { p: (ROWS - i) / NR, dn: 1 });
+    for (let i = 0; i <= ROWS; i++) {
+        const rw = rowAt(i), p = rw.p;
+        for (let j = 0; j <= NA; j++) {
+            const th = (j / NA) * Math.PI * 2;
+            const arm = Math.abs(Math.cos(2.5 * th));
+            const rad = S.R * fcStarLobe(th, p) * p;
+            // 두께: 중심에서 두껍고 림(p=1)에서 0 → 팔이 끝으로 갈수록 얇아진다. 밑면은 더 납작(0.42).
+            // ⚠️ p=1에서 위·아래가 **같은 y**라야 닫힌다 — 여기에 (1−p²) 항이 0이 되게 둔다.
+            const body = S.H * Math.pow(Math.max(0, 1 - p * p), rw.dn ? 0.85 : 0.55) * (rw.dn ? -0.42 : 1);
+            const tip = S.H * 0.34 * Math.pow(p, 3) * arm * arm;   // 실물처럼 팔끝을 살짝 들어올린다
+            pos.push(rad * Math.cos(th), body + tip, rad * Math.sin(th));
+            uv.push(j / NA, 1 - p);        // u = 둘레(팔 축이 u 0·0.2·0.4·0.6·0.8) · v = 중심(1)→림(0)
+        }
+    }
+    for (let i = 0; i < ROWS; i++) for (let j = 0; j < NA; j++) {
+        const a = i * (NA + 1) + j, b = a + NA + 1;
+        if (i < NR) idx.push(a, a + 1, b, b, a + 1, b + 1);
+        else idx.push(a, b, a + 1, b, b + 1, a + 1);   // 밑면은 와인딩 반전
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+}
+function fcPaintStar(g) {
+    const S = FC_STAR, R = faRect(S.cell), C = FA_CELL;
+    const X = (u) => R.x + u * C, Y = (v) => R.y + (1 - v) * C;
+    g.save();
+    g.beginPath(); g.rect(R.x, R.y, C, C); g.clip();
+    const gr = g.createLinearGradient(0, Y(1), 0, Y(0));   // 중심(진한 주황) → 팔끝(밝은 살구)
+    gr.addColorStop(0, '#e0722c'); gr.addColorStop(0.45, '#f59a44'); gr.addColorStop(1, '#ffc97e');
+    g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
+    for (let k = 0; k < 5; k++) {   // 팔 사이 골 — u 0.1·0.3·… 이 팔과 팔 사이다
+        const u = 0.1 + k * 0.2;
+        g.beginPath(); g.moveTo(X(u), Y(0.95)); g.lineTo(X(u), Y(0));
+        g.strokeStyle = 'rgba(176,80,26,0.30)'; g.lineWidth = 16; g.stroke();
+    }
+    // 등면 알갱이 — 팔 축(u 0·0.2·…)을 따라 2줄. 밝은 알 + 아래 그늘 한 쌍이라야 '박힌 돌기'로 읽힌다.
+    // 96px 도감 아이콘 때문에 성기게(조개·굴에서 배운 규율).
+    // ⚠️ **uv가 등방이 아니다**: u는 둘레(2π·rad) 전체를 256px에, v는 반지름 R만 256px에 담는다 →
+    // 림에서 u가 v보다 ~6배 늘어난다. 텍스처에 동그란 점을 찍으면 3D에서 **가로로 늘어난 잎맥**이
+    // 된다(실측). 텍스처에서 세로로 길쭉하게(폭 0.22배) 찍어야 3D에서 둥근 돌기가 된다.
+    // k는 0..5 — u=1.0까지 한 번 더 찍어 **u 0/1 이음선**에 걸친 팔이 반쪽만 그려지는 걸 막는다.
+    for (let k = 0; k <= 5; k++) for (const du of [-0.030, 0.030]) for (let n = 0; n < 5; n++) {
+        const u = k * 0.2 + du, v = 0.14 + n * 0.155, rr = C * (0.024 - n * 0.0024);
+        g.beginPath(); g.ellipse(X(u), Y(v) + rr * 0.5, rr * 0.22, rr, 0, 0, Math.PI * 2);
+        g.fillStyle = 'rgba(150,62,18,0.34)'; g.fill();
+        g.beginPath(); g.ellipse(X(u), Y(v), rr * 0.22, rr, 0, 0, Math.PI * 2);
+        g.fillStyle = 'rgba(255,225,170,0.80)'; g.fill();
+    }
+    for (let k = 0; k <= 5; k++) {   // 팔 축 중앙선 — 알갱이 두 줄 사이 얕은 능선
+        const u = k * 0.2;
+        g.beginPath(); g.moveTo(X(u), Y(0.88)); g.lineTo(X(u), Y(0.03));
+        g.strokeStyle = 'rgba(255,214,150,0.34)'; g.lineWidth = 7; g.stroke();
+    }
+    const mad = g.createRadialGradient(X(0.13), Y(0.80), 0, X(0.13), Y(0.80), C * 0.045);   // 천공판(madreporite) — 불가사리 등면의 표식
+    mad.addColorStop(0, 'rgba(255,240,208,0.92)'); mad.addColorStop(0.65, 'rgba(250,205,150,0.55)'); mad.addColorStop(1, 'rgba(250,205,150,0)');
+    g.fillStyle = mad; g.beginPath(); g.ellipse(X(0.13), Y(0.80), C * 0.045, C * 0.040, 0, 0, Math.PI * 2); g.fill();
+    g.restore();
+}
+function buildStarCartoon() {
+    const A = fcAtlas(), S = FC_STAR, R = faRect(S.cell), k = FA_KU, kv = FA_KV;
+    if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
+    const geo = fcStarGeo();
+    const uv = geo.attributes.uv, nr = geo.attributes.normal, n = uv.count, col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+        // 굴에서 정한 문법: 월드 기준 톱라이트(아래를 향할수록 그늘) + 아래쪽만 따뜻하게 기울여
+        // hemiLight groundColor(초록)를 올리브로 끌어온다. 불가사리는 납작해서 밑면이 거의 안 보이지만
+        // 옆에서 보이는 림이 초록으로 뜨는 걸 막아 준다.
+        const ny = nr.getY(i), t = 0.62 + 0.40 * (0.5 + 0.5 * ny), dw = Math.max(0, -ny);
+        col[i * 3] = t * (1 + 0.26 * dw);
+        col[i * 3 + 1] = t * (1 - 0.10 * dw);
+        col[i * 3 + 2] = t * (1 - 0.24 * dw);
+        uv.setXY(i, R.u0 + uv.getX(i) * k, R.v1 - (1 - uv.getY(i)) * kv);
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    geo.computeBoundingBox();
+    geo.translate(0, -geo.boundingBox.min.y, 0);   // 조개·굴과 같은 문법 — 월드는 origin을 지면에 놓는다
+    const grp = new THREE.Group();
+    const m = new THREE.Mesh(geo, fcMat);
+    m.castShadow = true; m.receiveShadow = true;
+    grp.add(m);
+    return grp;
+}
+// 카툰 조형으로 옮긴 해산물 디스패치. 새 종을 옮길 때 여기 한 줄만 추가한다.
+function fcSeaBuild(id) {
+    if (id === 'oyster') return buildOysterCartoon();
+    if (id === 'starfish') return buildStarCartoon();
+    return null;
+}
+// ==== /⭐ 불가사리 =========================================================================
 // ---- 조립 ---------------------------------------------------------------------------------
 let fcMat = null, fcGlowMat = null, fcGlassMat = null;
 function buildFishCartoon(id) {
