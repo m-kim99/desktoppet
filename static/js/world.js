@@ -4840,6 +4840,7 @@ function endGrill(dropped) {
     if (dropped) logWorldEvent(`${petKo(grilling.p)}가 꼬치를 모래에 떨어뜨렸다… 💧`);
     grilling = null;
 }
+const _grillHand = new THREE.Vector3();
 function updateGrill(delta) {
     if (!grilling) return;
     const { p, r } = grilling;
@@ -4849,7 +4850,13 @@ function updateGrill(delta) {
     const dx = pr.x - p.mover.position.x, dz = pr.z - p.mover.position.z;
     const d = Math.hypot(dx, dz) || 1;
     const ux = dx / d, uz = dz / d;
-    grilling.grp.position.set(p.mover.position.x + ux * 0.17, p.mover.position.y + p.height * 0.42, p.mover.position.z + uz * 0.17);
+    // 손잡이는 옆구리 "손"에 — 가슴 정면(+0.17)에 두면 막대가 몸통을 관통한 채 굽는다(사용자 리포트).
+    // 든 음식과 같은 문법: flankX 레이캐스트로 실제 털 표면을 찍고 그 바깥으로 조금 띄운다.
+    const dims = p.pet.dims;
+    const handY = dims.y * 0.34, handZ = -dims.z * 0.12;   // 든 음식·음료와 같은 손 좌표(부리보다 아래 = 가슴 높이)
+    const sideX = flankX(p, 1, handY, handZ);
+    p.pet.wrap.localToWorld(_grillHand.set(sideX + 0.03, handY, handZ));
+    grilling.grp.position.copy(_grillHand);
     grilling.grp.rotation.y = Math.atan2(ux, uz);
     const dip = Math.sin(grilling.t * 2.6);
     grilling.grp.rotation.x = 0.3 + dip * 0.24;   // 꼬치 끝을 불에 대었다 들었다 — 굽기 모션의 본체
