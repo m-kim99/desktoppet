@@ -17029,12 +17029,22 @@ const MOON_CRATERS = [], MOON_MARE = [], MOON_TEX_CRATERS = [];
         const n = n0 || pick(0.82, 0.88), R = 2.6 + cr01() * 1.1;
         MOON_MARE.push({ n, R, depth: 0.18, cosOut: Math.cos(Math.min(Math.PI, R / 7)) });
     }
-    for (let i = 0; i < 150; i++) {   // 🖌️ 텍스처 전용 크레이터 — 폴리곤 0, 노멀맵으로만 파인다
-        const n = pick(0.94, 0.965), r = cr01();
-        MOON_TEX_CRATERS.push({ n, R: 0.16 + r * r * 1.5 });
+    // 🖌️ 텍스처 전용 크레이터 — 폴리곤 0, 노멀맵으로만 파인다.
+    // ⚠️ 최소 반지름 0.16(높이맵에서 ~7px) — 그보다 작으면 텍셀이 모자라 "화질 다른 점"으로 보인다.
+    // 30%는 기존 크레이터 곁에 붙여 군집/중첩을 만든다 — 균일 난수는 도장을 흩뿌린 느낌이 난다.
+    for (let i = 0; i < 165; i++) {
+        const r = cr01();
+        let n;
+        if (i > 12 && cr01() < 0.3) {   // 군집 — 앞서 찍힌 것 곁에
+            const host = MOON_TEX_CRATERS[Math.floor(cr01() * MOON_TEX_CRATERS.length)];
+            const t = new THREE.Vector3(cr01() - 0.5, cr01() - 0.5, cr01() - 0.5);
+            n = host.n.clone().addScaledVector(t, host.R * 0.55).normalize();
+            if (n.dot(MOON_PAD_N) > 0.94) n = pick(0.94, 0.965);
+        } else n = pick(0.94, 0.965);
+        MOON_TEX_CRATERS.push({ n, R: 0.16 + r * r * 1.55, age: cr01(), ecc: 0.86 + cr01() * 0.28, rot: cr01() * Math.PI, peak: cr01() < 0.18 });
     }
-    for (let i = 0; i < 130; i++) {   // 잔 크레이터 — 패드 코앞까지(맨바닥 링 방지)
-        MOON_TEX_CRATERS.push({ n: pick(0.988, 0.992), R: 0.07 + cr01() * 0.16 });
+    for (let i = 0; i < 55; i++) {   // 패드 코앞의 작은 것들 — 맨바닥 링 방지(단, 그릴 수 있는 크기로)
+        MOON_TEX_CRATERS.push({ n: pick(0.988, 0.992), R: 0.17 + cr01() * 0.22, age: cr01(), ecc: 0.9 + cr01() * 0.2, rot: cr01() * Math.PI, peak: false });
     }
 }
 const moonRipple = (x, y, z) =>   // 넓은 기복 1옥타브만 — 고주파를 얹으면 가까이서 반죽처럼 뭉갠다
@@ -17043,7 +17053,7 @@ const moonRipple = (x, y, z) =>   // 넓은 기복 1옥타브만 — 고주파�
 // 크레이터를 만든다. 조명이 움직이면 노멀맵이 음영을 돌려주므로 "구운 그림자"가 아니라 진짜
 // 파인 것처럼 보인다. 알베도엔 빛 정보를 굽지 않는다(해가 움직이면 틀려진다).
 function makeMoonMaps() {
-    const AW = 2048, AH = 1024, HW = 1024, HH = 512;
+    const AW = 2048, AH = 1024, HW = 2048, HH = 1024;   // 높이맵을 알베도와 같은 해상도로 — 반쪽이면 작은 크레이터만 뭉개진다
     const mk = (w, h) => { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; return cv; };
     const aCv = mk(AW, AH), hCv = mk(HW, HH);
     const a = aCv.getContext('2d'), hx = hCv.getContext('2d');
@@ -17096,27 +17106,54 @@ function makeMoonMaps() {
         }
         a.restore();
     }
-    const drawCrater = (n, R) => {   // 알베도는 바닥만 살짝 어둡게 + 림 살짝 밝게(빛은 굽지 않는다)
-        stamp(a, AW, AH, n, R / 7 * 1.35, (ctx, r) => {
-            const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
-            g.addColorStop(0, 'rgba(128,126,122,0.32)'); g.addColorStop(0.62, 'rgba(142,140,135,0.2)');
-            g.addColorStop(0.78, 'rgba(224,220,211,0.24)'); g.addColorStop(1, 'rgba(224,220,211,0)');
-            ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.283); ctx.fill();
+    // 크레이터 = 같은 도장의 반복이 아니다. **나이**(신선↔낡음)가 림 높이·바닥 대비·에젝타를
+    // 좌우하고, 타원율·회전·중앙봉이 개체차를 만든다. 큰 것부터 그려 나중 것이 먼저 것을 덮는다.
+    const drawCrater = (n, R, age = 0.5, ecc = 1, rot = 0, peak = false) => {
+        const fresh = 1 - age;                       // 1 = 갓 생김
+        const shape = (ctx, r) => { ctx.rotate(rot); ctx.scale(ecc, 1 / ecc); ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.283); ctx.fill(); };
+        stamp(a, AW, AH, n, R / 7 * (1.3 + fresh * 0.9), (ctx, r) => {   // 에젝타 — 신선할수록 넓고 밝게
+            const rr = r / (1.3 + fresh * 0.9);
+            if (fresh > 0.35) {
+                const g0 = ctx.createRadialGradient(0, 0, rr * 0.9, 0, 0, r);
+                g0.addColorStop(0, `rgba(226,222,214,${0.16 * fresh})`); g0.addColorStop(1, 'rgba(226,222,214,0)');
+                ctx.fillStyle = g0; shape(ctx, r);
+                ctx.setTransform(1, 0, 0, 1, 0, 0); return;   // 변환 초기화는 stamp의 save/restore가 맡는다
+            }
         });
-        stamp(hx, HW, HH, n, R / 7 * 1.35, (ctx, r) => {   // 높이: 바닥 낮게 → 벽 → 림 솟음
+        stamp(a, AW, AH, n, R / 7 * 1.3, (ctx, r) => {
             const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
-            g.addColorStop(0, 'rgba(58,58,58,1)'); g.addColorStop(0.44, 'rgba(64,64,64,1)');
-            g.addColorStop(0.68, 'rgba(150,150,150,1)'); g.addColorStop(0.76, 'rgba(206,206,206,1)');
-            g.addColorStop(0.9, 'rgba(140,140,140,0.7)'); g.addColorStop(1, 'rgba(128,128,128,0)');
-            ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.283); ctx.fill();
+            const floorA = 0.16 + fresh * 0.26, rimA = 0.1 + fresh * 0.24;
+            g.addColorStop(0, `rgba(122,120,116,${floorA})`);
+            g.addColorStop(0.58, `rgba(140,138,133,${floorA * 0.6})`);
+            g.addColorStop(0.76, `rgba(226,222,213,${rimA})`);
+            g.addColorStop(1, 'rgba(226,222,213,0)');
+            ctx.fillStyle = g; shape(ctx, r);
+        });
+        stamp(hx, HW, HH, n, R / 7 * 1.3, (ctx, r) => {   // 높이: 낡을수록 얕고 림이 뭉툭
+            const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+            const deep = 128 - (54 + fresh * 16), rim = 128 + (46 + fresh * 34);
+            g.addColorStop(0, `rgba(${deep},${deep},${deep},1)`);
+            g.addColorStop(0.42, `rgba(${deep + 6},${deep + 6},${deep + 6},1)`);
+            g.addColorStop(0.66 + age * 0.06, 'rgba(150,150,150,1)');
+            g.addColorStop(0.76, `rgba(${rim},${rim},${rim},1)`);
+            g.addColorStop(0.88, 'rgba(140,140,140,0.65)');
+            g.addColorStop(1, 'rgba(128,128,128,0)');
+            ctx.fillStyle = g; shape(ctx, r);
+            if (peak) {   // 중앙봉 — 큰 충돌구의 반동 지형
+                const p = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.22);
+                p.addColorStop(0, 'rgba(180,180,180,1)'); p.addColorStop(1, 'rgba(128,128,128,0)');
+                ctx.fillStyle = p; ctx.beginPath(); ctx.arc(0, 0, r * 0.22, 0, 6.283); ctx.fill();
+            }
         });
     };
-    for (const c of MOON_CRATERS) drawCrater(c.n, c.R);
-    for (const c of MOON_TEX_CRATERS) drawCrater(c.n, c.R);
+    const drawList = MOON_CRATERS.map((c) => ({ n: c.n, R: c.R, age: 0.25, ecc: 1.04, rot: c.phase, peak: true }))
+        .concat(MOON_TEX_CRATERS)
+        .sort((x, y) => y.R - x.R);   // 큰 것 → 작은 것 순서라야 중첩이 지질처럼 읽힌다
+    for (const c of drawList) drawCrater(c.n, c.R, c.age, c.ecc, c.rot, c.peak);
     const map = new THREE.CanvasTexture(aCv);
     map.colorSpace = THREE.SRGBColorSpace;
     map.wrapS = THREE.RepeatWrapping;
-    map.anisotropy = 4;
+    map.anisotropy = 8;
     // 높이맵 → 노멀맵(Sobel). 크레이터가 조명 방향에 따라 진짜로 파여 보이는 건 이 맵 덕분.
     const hd = hx.getImageData(0, 0, HW, HH).data, nd = new Uint8Array(HW * HH * 4);
     const at = (x, y) => hd[(((y + HH) % HH) * HW + ((x + HW) % HW)) * 4] / 255;
@@ -17129,6 +17166,11 @@ function makeMoonMaps() {
     }
     const normalMap = new THREE.DataTexture(nd, HW, HH, THREE.RGBAFormat);
     normalMap.wrapS = THREE.RepeatWrapping;
+    // ⚠️ DataTexture는 밉맵이 기본 OFF — 그대로 두면 멀어질 때 노멀맵만 지글거려 "화질이 제각각"으로 보인다
+    normalMap.generateMipmaps = true;
+    normalMap.minFilter = THREE.LinearMipmapLinearFilter;
+    normalMap.magFilter = THREE.LinearFilter;
+    normalMap.anisotropy = 8;
     normalMap.needsUpdate = true;
     return { map, normalMap };
 }
