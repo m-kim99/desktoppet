@@ -11509,47 +11509,6 @@ function makeSeafoodGeo(id) {
             spike.translate(dir.x * 0.040, -0.055 + dir.y * 0.040, dir.z * 0.040);
             g.push(spike);
         }
-    } else if (id === 'starfish') {   // 불가사리 — 5팔 별, 끝으로 갈수록 밝은 주황
-        for (let i = 0; i < 5; i++) {
-            const a = (i / 5) * Math.PI * 2;
-            const arm = new THREE.ConeGeometry(0.026, 0.085, 5);
-            arm.scale(1, 1, 0.42);
-            arm.rotateX(Math.PI / 2);
-            arm.rotateY(-a);
-            arm.translate(Math.sin(a) * 0.045, -0.06, Math.cos(a) * 0.045);
-            g.push(bakeGrad(arm, 0xffab52, 0xe0702e, { curve: 1.1 }));
-        }
-        const core = new THREE.SphereGeometry(0.03, 8, 6);
-        core.scale(1, 0.55, 1);
-        core.translate(0, -0.052, 0);
-        g.push(bakeGrad(core, 0xffb866, 0xe0702e, { curve: 1.1 }));
-    } else if (id === 'seacuke') {   // 해삼 — 길쭉 오돌토돌 검갈색
-        const body = new THREE.CapsuleGeometry ? new THREE.CapsuleGeometry(0.028, 0.09, 4, 10) : new THREE.SphereGeometry(0.04, 10, 8);
-        body.rotateZ(Math.PI / 2);
-        body.translate(0, -0.055, 0);
-        g.push(bakeGrad(body, 0x4a3c30, 0x291f16, { curve: 1.15 }));
-        for (let i = 0; i < 9; i++) {
-            const bump = new THREE.SphereGeometry(0.007, 5, 4);
-            bump.translate(-0.05 + (i % 5) * 0.025, -0.028 + (i % 2) * -0.008, (i % 3 - 1) * 0.02);
-            g.push(bakeGrad(bump, 0x5c4c3c, 0x38291c, { curve: 1 }));
-        }
-    } else if (id === 'seasquirt') {   // 멍게 — 빨간 울퉁불퉁 덩이 + 뿔 두 개
-        const body = new THREE.SphereGeometry(0.042, 10, 8);
-        body.scale(1, 1.12, 1);
-        body.translate(0, -0.06, 0);
-        g.push(bakeGrad(body, 0xf25c3c, 0xb92e18, { curve: 1.25 }));
-        for (const [sx, sz] of [[0.014, 0.01], [-0.016, -0.008]]) {
-            const horn = new THREE.CylinderGeometry(0.008, 0.013, 0.03, 6);
-            horn.rotateZ(sx > 0 ? -0.4 : 0.45);
-            horn.translate(sx, -0.012, sz);
-            g.push(bakeGrad(horn, 0xff7a52, 0xc93d20, { curve: 1 }));
-        }
-        for (let i = 0; i < 7; i++) {
-            const wart = new THREE.SphereGeometry(0.006, 5, 4);
-            const a = i * 0.9;
-            wart.translate(Math.cos(a) * 0.038, -0.06 + Math.sin(i * 1.7) * 0.028, Math.sin(a) * 0.038);
-            g.push(bakeGrad(wart, 0xff8a62, 0xd24824, { curve: 1 }));
-        }
     } else if (id === 'wakame') {   // 미역 — 초록 리본 세 가닥이 하늘하늘
         for (let i = 0; i < 3; i++) {
             const pts = [];
@@ -11561,28 +11520,6 @@ function makeSeafoodGeo(id) {
             ribbon.scale(1.6, 1, 0.42);   // 납작 리본화
             g.push(bakeGrad(ribbon, 0x4f9a44, 0x2a5c26, { curve: 1.1 }));
         }
-    } else if (id === 'oyster') {   // 굴 — 벌어진 입이 위를 본다: 아래 껍데기(그릇) + 크림 속살 + 젖혀진 뚜껑
-        const bottom = new THREE.SphereGeometry(0.052, 10, 7, 0, Math.PI * 2, 0, Math.PI / 2);
-        bottom.scale(1, 0.5, 0.85);
-        bottom.rotateX(Math.PI);
-        bottom.translate(0, -0.075, 0);
-        g.push(bakeGrad(bottom, 0x9a938a, 0x5c554b, { curve: 1 }));
-        for (let i = 0; i < 4; i++) {   // 껍데기 성장 골(거친 굴 질감)
-            const ridge = new THREE.TorusGeometry(0.028 + i * 0.008, 0.0035, 4, 14);
-            ridge.rotateX(Math.PI / 2);
-            ridge.scale(1, 1, 0.85);
-            ridge.translate(0, -0.086 + i * 0.007, 0);
-            g.push(bakeGrad(ridge, 0x8a8378, 0x504a41, { curve: 1 }));
-        }
-        const flesh = new THREE.SphereGeometry(0.038, 9, 7);
-        flesh.scale(1, 0.35, 0.8);
-        flesh.translate(0, -0.068, 0);
-        g.push(bakeGrad(flesh, 0xfff4de, 0xe3cba6, { curve: 1.2 }));
-        const top = new THREE.SphereGeometry(0.05, 10, 7, 0, Math.PI * 2, 0, Math.PI / 2);   // 뚜껑 — 뒤로 활짝
-        top.scale(1, 0.42, 0.82);
-        top.rotateX(-1.15);
-        top.translate(0, -0.05, -0.052);
-        g.push(bakeGrad(top, 0xa39c92, 0x635c52, { curve: 1 }));
     } else if (id === 'shrimp') {   // 새우 — 굽은 마디 몸 + 꼬리 부채
         for (let i = 0; i < 5; i++) {
             const t = i / 4;
@@ -25590,6 +25527,7 @@ function fcAtlas() {
     fcPaintShell(g);  // 🐚 셀 16~19
     fcPaintSea(g);    // 🦪 셀 20~22 (해산물 예약분)
     fcPaintStar(g);   // ⭐ 셀 23
+    fcPaintSeaTex(g); // 🥒🍊 셀 24·25
     fcPaintFrog(g);   // 🐸 셀 9 — 등(위 절반) / 배(아래 절반)
     fcPaintBoot(g);   // 🥾 셀 12 — 통·발·밑창 3밴드
     {   // 흰 셀(15) 좌상 사분면에 개구리 눈 — 금색 홍채 + **가로 동공**. 중앙은 순백 유지(부속 파트가 샘플)
@@ -26926,10 +26864,229 @@ function buildStarCartoon() {
     grp.add(m);
     return grp;
 }
+// ==== 🥒🍊 회전 로프트 몸통 (해삼·멍게 공용) =================================================
+// ⚠️ 이름 주의: 위쪽 fcLoftGeo는 **가오리용 평면 로프트**(위 아웃라인 + 상하 높이 필드)다. 여기는
+// 축을 따라 단면을 훑는 **관형** 로프트라 fcTubeGeo — 둘은 골격이 다르니 합치지 않는다.
+// 둘 다 "축을 따라 단면을 훑는 닫힌 곡면"이다. 조개의 fcValveGeo처럼 공용으로 뽑는다 — 남은
+// 새우 몸통·문어 머리에도 그대로 쓴다.
+// 규율: **돌기·혹은 붙이지 말고 disp(반지름 변위)로** 만든다 → 실루엣 자체가 울퉁불퉁해지고
+// 드로우는 1. 붙인 구체는 실루엣에서 떠 보이거나 반쯤 박혀 보인다(구 해삼·멍게가 그랬다).
+//   rad(s) : 단면 반지름 배율. **s=0·1에서 0**이어야 양끝이 극으로 닫힌다.
+//   sec(ph, s) : 단면 단위 방향 {x, y} — D자(평평한 발바닥) 같은 변형은 여기서
+//   disp(ph, s) : 반지름 변위 (돌기·혹). 양끝에서 0으로 수렴시켜야 극이 지저분해지지 않는다
+//   axis(s) : 축 좌표 {x, y} — 아치·S곡선
+function fcTubeGeo(o) {
+    const NS = o.ns || 26, NP = o.np || 24, pos = [], uv = [], idx = [];
+    for (let i = 0; i <= NS; i++) {
+        const s = i / NS, ax = o.axis ? o.axis(s) : { x: 0, y: 0 }, rr = o.rad(s);
+        for (let j = 0; j <= NP; j++) {
+            const ph = (j / NP) * Math.PI * 2;
+            const r = o.R * (rr + (o.disp ? o.disp(ph, s) : 0));
+            const sc = o.sec ? o.sec(ph, s) : { x: Math.cos(ph), y: Math.sin(ph) };
+            pos.push(ax.x + r * sc.x, ax.y + r * sc.y, (s - 0.5) * o.L);
+            uv.push(j / NP, s);
+        }
+    }
+    for (let i = 0; i < NS; i++) for (let j = 0; j < NP; j++) {
+        const a = i * (NP + 1) + j, b = a + NP + 1;
+        if (o.flip) idx.push(a, b, a + 1, b, b + 1, a + 1);
+        else idx.push(a, a + 1, b, b, a + 1, b + 1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+}
+const fcAngGap = (a, b) => { let d = (a - b) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
+// 굴에서 정한 정점색 문법을 공용화: 월드 기준 톱라이트 + 아래를 향할수록 따뜻하게(hemiLight
+// groundColor 0x8fca62가 아래 향한 면만 초록으로 물들이는 걸 올리브로 끌어온다). 아틀라스 셀로 uv 이전.
+function fcSeaShade(geo, rect, warm = true) {
+    const uv = geo.attributes.uv, nr = geo.attributes.normal, n = uv.count, col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+        const ny = nr.getY(i), t = 0.62 + 0.40 * (0.5 + 0.5 * ny), dw = warm ? Math.max(0, -ny) : 0;
+        col[i * 3] = t * (1 + 0.26 * dw);
+        col[i * 3 + 1] = t * (1 - 0.10 * dw);
+        col[i * 3 + 2] = t * (1 - 0.24 * dw);
+        uv.setXY(i, rect.u0 + uv.getX(i) * FA_KU, rect.v1 - (1 - uv.getY(i)) * FA_KV);
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    return geo;
+}
+
+// ---- 🥒 해삼 ------------------------------------------------------------------------------
+// 구 조형: 지름이 일정한 캡슐 + 붙인 구체 9개 = **초콜릿 롤에 조약돌**. 양끝 테이퍼도, 바닥에
+// 붙는 평평한 발바닥도, 등쪽 돌기 종렬도 없었다.
+const FC_CUKE = { cell: 24, R: 0.029, L: 0.215, rows: [0.62, 1.20, 1.94, 2.52], nBump: 7 };   // 길이/지름 ≈ 3.7 — 캡슐 시절(2.9)보다 실물에 가깝다
+// 등쪽 종렬 돌기(papillae) — 붙이지 않고 반지름 변위로. 줄마다 s 위상을 어긋내 실물처럼 교대한다.
+function fcCukeDisp(ph, s) {
+    const C = FC_CUKE, win = Math.pow(Math.sin(Math.PI * s), 0.6);
+    let d = 0;
+    for (let k = 0; k < C.rows.length; k++) {
+        const dp = fcAngGap(ph, C.rows[k]);
+        // ⚠️ 지수 7·진폭 0.34는 **톱니(가시)**가 됐다(실측). 해삼 돌기는 부드러운 원뿔 융기다 →
+        // 지수를 4로 낮춰 봉우리를 넓히고 진폭을 줄인다. 줄마다 개수·크기를 흔들어 기계적 반복을 깬다.
+        const nb = C.nBump - (k % 2);
+        const along = Math.pow(Math.abs(Math.sin((s + k * 0.068) * Math.PI * nb)), 4);
+        d += (0.23 + 0.05 * (k % 3)) * Math.exp(-Math.pow(dp / 0.34, 2)) * along;
+    }
+    return d * win;
+}
+function buildCukeCartoon() {
+    const A = fcAtlas(), C = FC_CUKE;
+    if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
+    const geo = fcTubeGeo({
+        R: C.R, L: C.L, ns: 30, np: 26,
+        rad: (s) => Math.pow(Math.sin(Math.PI * s), 0.42) * (1 - 0.20 * (1 - s)),   // 양끝 테이퍼 + 머리(s=0)를 살짝 좁게
+        sec: (ph) => ({ x: Math.cos(ph), y: Math.sin(ph) * (Math.sin(ph) < 0 ? 0.52 : 1) }),   // D자 — 아래를 눌러 **평평한 발바닥**
+        disp: fcCukeDisp,
+        axis: (s) => ({ x: C.R * 0.55 * Math.sin(s * Math.PI * 1.15 - 0.35), y: C.R * 0.26 * Math.sin(Math.PI * s) }),   // 곧은 막대는 죽은 것처럼 보인다 — 아치 + 완만한 S
+    });
+    fcSeaShade(geo, faRect(C.cell));
+    geo.computeBoundingBox();
+    geo.translate(0, -geo.boundingBox.min.y, 0);
+    const grp = new THREE.Group();
+    const m = new THREE.Mesh(geo, fcMat);
+    m.castShadow = true; m.receiveShadow = true;
+    grp.add(m);
+    return grp;
+}
+// ---- 🍊 멍게 ------------------------------------------------------------------------------
+// 구 조형: 면수 낮은 구체 + 납작한 원통 굴뚝 2개 + 붙인 여드름 7개. **멍게의 정체성인 파인애플
+// 같은 울퉁불퉁함이 아예 없었다** — 그게 가장 큰 문제였다.
+const FC_SQUIRT = { cell: 25, R: 0.046, L: 0.125 };
+// 혹(파인애플) — φ 계수는 **정수**여야 φ=0/2π에서 이어진다. 정수 3개를 겹쳐 준랜덤 덩이를 만든다.
+function fcSquirtKnob(ph, s) {
+    const win = Math.pow(Math.sin(Math.PI * s), 0.5);
+    const k = Math.pow(Math.max(0, Math.sin(ph * 5 + s * 9.0)), 2) * 0.62
+        + Math.pow(Math.max(0, Math.sin(ph * 7 - s * 13.0 + 1.2)), 2) * 0.50
+        + Math.pow(Math.max(0, Math.sin(ph * 3 + s * 6.0 + 2.4)), 2) * 0.52;
+    return { k, d: 0.30 * k * win };   // ⚠️ 0.15는 실루엣이 매끈해 텍스처가 무늬를 다 짊어졌다(칠한 위장색처럼) → 조형이 짊어지게
+}
+function buildSquirtCartoon() {
+    const A = fcAtlas(), C = FC_SQUIRT, R = faRect(C.cell);
+    if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
+    const body = fcTubeGeo({
+        R: C.R, L: C.L, ns: 30, np: 30,
+        // 서양배: pow(s, 1.35)로 봉우리를 s≈0.60까지 밀어올린다(밑동 좁고 중간 위가 가장 넓다)
+        rad: (s) => Math.pow(Math.sin(Math.PI * Math.pow(s, 1.35)), 0.52),
+        disp: (ph, s) => fcSquirtKnob(ph, s).d,
+    });
+    body.rotateX(-Math.PI / 2);   // 로프트 축은 +z — 멍게는 서 있다
+    const parts = [fcSeaShade(body, R)];
+    // 사이펀 2개 — ⚠️ 원통은 **굴뚝**으로 읽힌다(구 조형). 소라 개구부에서 쓴 수법대로 중심 정점을
+    // 안쪽으로 밀어 얕은 깔때기로 만들면 파이프가 아니라 **구멍**이 된다.
+    // 사이펀 2개 — ⚠️ 세 번 고쳤다. ① 원통은 **굴뚝**으로 읽혔다(구 조형) ② 얕은 깔때기 + 1.45배
+    // 치마로 만들었더니 **찢어진 판지 조각**이 됐고, 몸통 반지름보다 작아 파묻히기까지 했다.
+    // ③ 정답은 작은 **화산(분화구)**: 밑동이 몸통에 잠기고 위로 좁아지다가 테두리에서 안으로 말려
+    // 오목한 구멍이 된다. 이래야 파이프가 아니라 '입'으로 읽힌다(소라 개구부와 같은 원리).
+    for (const [tilt, yaw] of [[0.26, 0.6], [-0.22, -0.8]]) {
+        const rr = C.R * 0.34, h = C.R * 0.46, NP = 14, pos = [], uv = [], idx = [];
+        const RING = [[0, 1.18, 0.30], [0.34, 1.00, 0.22], [0.68, 0.86, 0.14], [1.00, 0.70, 0.10]];   // [y비, 반지름비, uv v]
+        for (const [hy, rk, vv] of RING) for (let j = 0; j <= NP; j++) {
+            const ph = (j / NP) * Math.PI * 2;
+            const pk = 1 + 0.10 * Math.cos(ph * 4) * hy;     // 입구만 4갈래로 살짝 오므린다
+            pos.push(Math.cos(ph) * rr * rk * pk, hy * h, Math.sin(ph) * rr * rk * pk);
+            uv.push(j / NP, vv);
+        }
+        const base = pos.length / 3;
+        pos.push(0, h * 0.62, 0); uv.push(0.5, 0.02);        // 분화구 바닥 — 테두리보다 낮게(오목)
+        for (let i = 0; i < RING.length - 1; i++) for (let j = 0; j < NP; j++) {
+            const p0 = i * (NP + 1) + j, p1 = p0 + NP + 1;
+            idx.push(p0, p1, p0 + 1, p1, p1 + 1, p0 + 1);
+        }
+        const last = (RING.length - 1) * (NP + 1);
+        for (let j = 0; j < NP; j++) idx.push(base, last + j, last + j + 1);   // 오목한 입
+        const sg = new THREE.BufferGeometry();
+        sg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        sg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        sg.setIndex(idx); sg.computeVertexNormals();
+        sg.rotateZ(tilt); sg.rotateY(yaw);
+        sg.translate(Math.sin(tilt) * C.R * 0.55, C.L * 0.40, Math.sin(yaw) * C.R * 0.26);
+        parts.push(fcSeaShade(sg, R));
+    }
+    const geo = mergeGeometries(parts, false);
+    geo.computeBoundingBox();
+    geo.translate(0, -geo.boundingBox.min.y, 0);
+    const grp = new THREE.Group();
+    const m = new THREE.Mesh(geo, fcMat);
+    m.castShadow = true; m.receiveShadow = true;
+    grp.add(m);
+    return grp;
+}
+// ---- 아틀라스 (셀 24·25) ------------------------------------------------------------------
+// 둘 다 u = 둘레 · v = 축 방향. 등방성 확인: 해삼은 둘레 2πR≈0.20 vs 길이 0.185 → 거의 1:1이라
+// 보정·접기 불필요. 멍게는 0.29 vs 0.125로 u가 2.3배 늘어나므로 얼룩만 폭 0.43배로 눌러 찍는다.
+function fcPaintSeaTex(g) {
+    const C = FA_CELL;
+    {   // 🥒 해삼 — 가죽질 진갈색 + 밝은 얼룩 + 몸통을 가로지르는 주름 + 어두운 발바닥
+        const S = FC_CUKE, R = faRect(S.cell);
+        const X = (u) => R.x + u * C, Y = (v) => R.y + (1 - v) * C;
+        g.save(); g.beginPath(); g.rect(R.x, R.y, C, C); g.clip();
+        const gr = g.createLinearGradient(0, Y(1), 0, Y(0));
+        gr.addColorStop(0, '#3a2c21'); gr.addColorStop(0.5, '#5a4633'); gr.addColorStop(1, '#3a2c21');
+        g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
+        const sole = g.createLinearGradient(X(0.62), 0, X(0.88), 0);   // 발바닥(φ≈1.5π → u 0.75)은 어둡고 매끈
+        sole.addColorStop(0, 'rgba(24,18,13,0)'); sole.addColorStop(0.5, 'rgba(24,18,13,0.55)'); sole.addColorStop(1, 'rgba(24,18,13,0)');
+        g.fillStyle = sole; g.fillRect(X(0.62), R.y, C * 0.26, C);
+        for (let k = 0; k < 16; k++) {   // 주름 — 몸통을 가로지른다(u 방향 = 가로선)
+            const v = 0.05 + k * 0.058;
+            g.beginPath();
+            for (let j = 0; j <= 20; j++) { const u = j / 20, y = Y(v + 0.010 * Math.sin(u * 6.3 + k)); j ? g.lineTo(X(u), y) : g.moveTo(X(u), y); }
+            g.strokeStyle = `rgba(28,20,14,${0.16 + (k % 2) * 0.10})`; g.lineWidth = 5; g.stroke();
+        }
+        for (let k = 0; k < 22; k++) {   // 밝은 얼룩 — 실물의 불균일한 색
+            const u = fcHash(k + 900), v = 0.06 + fcHash(k + 933) * 0.88;
+            g.save(); g.translate(X(u), Y(v)); g.rotate((fcHash(k + 947) - 0.5) * 1.2);
+            g.beginPath(); g.ellipse(0, 0, C * (0.03 + fcHash(k + 961) * 0.035), C * (0.012 + fcHash(k + 979) * 0.012), 0, 0, Math.PI * 2);
+            g.fillStyle = `rgba(150,122,84,${0.16 + fcHash(k + 991) * 0.16})`; g.fill(); g.restore();
+        }
+        for (const rw of S.rows) {   // 돌기 줄 정수리만 살짝 밝게 — 조형이 이미 솟아 있으니 거들기만
+            const u = ((rw / (Math.PI * 2)) + 1) % 1;
+            const hl = g.createLinearGradient(X(u - 0.05), 0, X(u + 0.05), 0);
+            hl.addColorStop(0, 'rgba(178,148,104,0)'); hl.addColorStop(0.5, 'rgba(178,148,104,0.22)'); hl.addColorStop(1, 'rgba(178,148,104,0)');
+            g.fillStyle = hl; g.fillRect(X(u - 0.05), R.y, C * 0.10, C);
+        }
+        g.restore();
+    }
+    {   // 🍊 멍게 — 주홍 + 혹 사이 골 어둡게 + 혹 정수리 황토
+        const S = FC_SQUIRT, R = faRect(S.cell);
+        const X = (u) => R.x + u * C, Y = (v) => R.y + (1 - v) * C;
+        g.save(); g.beginPath(); g.rect(R.x, R.y, C, C); g.clip();
+        const gr = g.createLinearGradient(0, Y(1), 0, Y(0));
+        gr.addColorStop(0, '#c0341a'); gr.addColorStop(0.45, '#e0552c'); gr.addColorStop(1, '#a8280f');
+        g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
+        // ⚠️ 무늬를 따로 그리면 조형의 혹과 **엇갈린다**(스티커로 읽힌다) → 조형과 **같은 함수**를
+        // 샘플링해 골은 어둡게·정수리는 밝게 칠한다. 이러면 텍스처가 실루엣과 저절로 맞는다.
+        // ⚠️ fillRect 격자(64×64 = 4px 셀)로 칠했더니 **모아레 그물**이 됐다 → 픽셀을 직접 쓴다
+        // (256² 루프는 putImageData 한 번이라 fillRect 65,536번보다 훨씬 싸다).
+        const img = g.getImageData(R.x, R.y, C, C), px = img.data;
+        const mix = (i4, r2, g2, b2, a2) => {
+            px[i4] += (r2 - px[i4]) * a2; px[i4 + 1] += (g2 - px[i4 + 1]) * a2; px[i4 + 2] += (b2 - px[i4 + 2]) * a2;
+        };
+        for (let b = 0; b < C; b++) for (let a = 0; a < C; a++) {
+            const u = (a + 0.5) / C, v = 1 - (b + 0.5) / C;
+            const t = Math.min(1, fcSquirtKnob(u * Math.PI * 2, v).k / 1.25);
+            const i4 = (b * C + a) * 4;
+            if (t > 0.5) mix(i4, 255, 196, 96, (t - 0.5) * 0.36);       // 정수리 = 황토 하이라이트
+            else mix(i4, 84, 20, 8, (0.5 - t) * 0.44);                  // 골 = 진한 그늘
+        }
+        g.putImageData(img, R.x, R.y);
+        // 사이펀 uv는 v 0.02~0.30. ⚠️ 그 범위를 통째로 어둡게 하니 사이펀이 **새까만 판지**가 됐다 →
+        // 분화구 안쪽(v < 0.12)만 어둡게, 바깥 목은 몸통 색에 가깝게 둔다.
+        const sip = g.createLinearGradient(0, Y(0.13), 0, Y(0));
+        sip.addColorStop(0, 'rgba(96,20,6,0)'); sip.addColorStop(1, 'rgba(78,16,4,0.80)');
+        g.fillStyle = sip; g.fillRect(R.x, Y(0.13), C, Y(0) - Y(0.13));
+        g.restore();
+    }
+}
+// ==== /🥒🍊 =================================================================================
 // 카툰 조형으로 옮긴 해산물 디스패치. 새 종을 옮길 때 여기 한 줄만 추가한다.
 function fcSeaBuild(id) {
     if (id === 'oyster') return buildOysterCartoon();
     if (id === 'starfish') return buildStarCartoon();
+    if (id === 'seacuke') return buildCukeCartoon();
+    if (id === 'seasquirt') return buildSquirtCartoon();
     return null;
 }
 // ==== /⭐ 불가사리 =========================================================================
