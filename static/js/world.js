@@ -12731,13 +12731,18 @@ function makeFoodGeo(f, bites = 0) {
                 if (raw) {
                     // 겹친 비늘 — 행마다 반 칸 엇갈린 브릭 배열의 "낱장"을 각각 볼록하게. 행 이음선만 강조하면
                     // 골판지 주름으로 읽히므로(실측) 셀 중심 거리로 낱장을 세운다.
-                    const rowH = 0.0050, rw = y / rowH, ri = Math.floor(rw), rf = rw - ri;
-                    const cw = (th / (Math.PI * 2)) * 17 + (ri % 2 ? 0.5 : 0), cf = cw - Math.floor(cw);
-                    const cell = Math.max(0, 1 - Math.hypot((cf - 0.5) * 1.15, rf - 0.5) * 2.1);   // 1=비늘 중앙 → 0=경계
-                    cc.offsetHSL(Math.sin(y * 90 + th * 3) * 0.012, 0.02, 0.032 * cell - 0.048 * (1 - cell));   // 비늘 격자는 바탕 결로만 (강하면 골프공처럼 보인다 — 무늬는 아래 물결 밴드가 전담)
+                    const rowH = 0.0062, rw = y / rowH, ri = Math.floor(rw), rf = rw - ri;
+                    const cw = (th / (Math.PI * 2)) * 15 + (ri % 2 ? 0.5 : 0), cf = cw - Math.floor(cw);
+                    const dc = Math.hypot(cf - 0.5, (rf - 0.5) * 1.15);
+                    const cell = Math.max(0, 1 - dc * 2.1);                                        // 1=비늘 중앙 → 0=경계
+                    // 🎨 그림 같은 비늘 물결 문양(세이가이하) — 낱장의 "외곽 아치"를 또렷한 선으로 그린다.
+                    // 굽이치는 밴드 방식은 원기둥 각도 위상 때문에 실루엣 가장자리에 무늬가 몰려 어색했다(실측) →
+                    // 셀 기반 아치는 몸 전체에 고르게 깔린다.
+                    const arc = Math.exp(-Math.pow((dc - 0.40) / 0.085, 2));
+                    cc.offsetHSL(Math.sin(y * 90 + th * 3) * 0.012, 0.02, 0.03 * cell);
+                    cc.lerp(MK_R, arc * 0.62 * THREE.MathUtils.clamp((0.85 - side) / 0.6, 0, 1));   // 배로 갈수록 옅게 — 등·측면이 진한 실제 비늘 톤
                     if (side < -0.25 && hsh2(Math.round(y * 260), Math.round(th * 34)) > 0.74) cc.lerp(RB, 0.4);          // 등 얼룩
                     if (Math.abs(side) < 0.07) cc.lerp(SILV, 0.24);                                                      // 측선 은빛
-                    if (Math.abs(y - 0.0862) < 0.0018 && side > -0.75) cc.lerp(RB, 0.45);                                // 아가미뚜껑 선 — 토러스로 세우면 눈 옆 사선 흠집(찡그림)이 된다(실측)
                     h = 0.0003 * cell - 0.0002 * (1 - cell);                                                             // 낱장 볼록 + 경계 골
                 } else {
                     const bl = hsh2(Math.round(y * 420), Math.round(th * 26));    // 부풀어 터진 물집 — 바삭함의 정체
@@ -12745,15 +12750,23 @@ function makeFoodGeo(f, bites = 0) {
                     const band = Math.sin(y * 128 + th * 0.45);                   // 시어링 띠 — th 계수가 크면 사탕처럼 몸을 감는다(실측): 거의 몸축 직각으로
                     if (band > 0.80) cc.lerp(CHAR, Math.min(0.62, (band - 0.80) * 3.1));
                     if (side > 0.1 && Math.abs(Math.sin(y * 88 + th * 2.6)) > 0.989) { cc.lerp(FLESH, 0.7); h -= 0.0005; }   // 껍질이 터져 드러난 흰 속살 — 배쪽에만 조금
-                    if (Math.abs(y - 0.0862) < 0.0018 && side > -0.75) cc.lerp(CHAR, 0.4);                               // 아가미뚜껑 선(구운 뒤엔 더 진하게 그을린다)
                     cc.offsetHSL(0, 0, (hsh2(y * 700, th * 60) - 0.5) * 0.03);
                 }
-                // 🌊 물결 무늬 — 등을 가로지르는 굽이치는 밴드 5줄(고등어 무늬 문법). 비늘 격자보다 "생선"이 즉시 읽히고,
-                // 상태별 색을 그대로 짙게 쓴다: raw=심해 청록 / cooked=진한 호박갈색.
-                const wy = y - Math.sin(th * 2.6 + 0.6) * 0.0092 - Math.sin(th * 5.1 + 1.9) * 0.0028;   // 굽이 폭이 작으면 얼룩으로 보인다(실측)
-                const wv = Math.sin(wy * 255);
-                const bandK = THREE.MathUtils.smoothstep(wv, 0.08, 0.60) * THREE.MathUtils.clamp((0.55 - side) / 0.6, 0, 1);   // 등~중측면만, 배는 말끔히
-                if (bandK > 0.01) cc.lerp(raw ? MK_R : MK_C, bandK * (raw ? 0.88 : 0.82));
+                if (!raw) {   // 🌊 구운 뒤의 물결 무늬 — 등을 가로지르는 굽이치는 밴드(껍질이 진하게 그을린 결). raw는 위의 아치 비늘 문양이 전담
+                    const wy = y - Math.sin(th * 2.6 + 0.6) * 0.0092 - Math.sin(th * 5.1 + 1.9) * 0.0028;
+                    const bandK = THREE.MathUtils.smoothstep(Math.sin(wy * 255), 0.08, 0.60) * THREE.MathUtils.clamp((0.55 - side) / 0.6, 0, 1);
+                    if (bandK > 0.01) cc.lerp(MK_C, bandK * 0.82);
+                }
+                // 🫧 아가미뚜껑 — 정점색 선만으론 흐리멍텅했다(사용자 리포트). 머리 쪽 표면을 통째로 부풀려
+                // 아가미 호에서 두께가 0으로 수렴시키면 "겹쳐 얹힌 판 + 단차"가 되어 실제 아가미처럼 읽힌다.
+                const gyv = 0.0895 - 0.0085 * Math.pow((side + 1) / 2, 1.35);   // 등에서 높고 배로 내려오는 호
+                const over = y - gyv, bandT = 0.0088;                           // ⚠️판은 "눈 뒤 띠"로 한정 — 머리 전체를 부풀리면 눈이 파묻힌다(실측)
+                if (over > 0 && over < bandT) h += 0.0012 * THREE.MathUtils.clamp(Math.min(over, bandT - over) / 0.0028, 0, 1);
+                if (over > -0.0022 && over < 0.0009 && side > -0.92) {          // 단차 바로 아래 그림자 골 = 뚜껑 뒷선
+                    const k3 = 1 - Math.abs(over + 0.0007) / 0.0016;
+                    if (k3 > 0) { cc.lerp(raw ? RB : CHAR, 0.5 * k3 * (1 - Math.max(0, side) * 0.45)); h -= 0.0004 * k3; }
+                }
+                if (over > 0.0009 && over < 0.010) cc.offsetHSL(0, 0, 0.028 * (1 - over / 0.010));   // 뚜껑 면은 살짝 밝게 — 판이 도드라진다
                 cols[i * 3] = cc.r; cols[i * 3 + 1] = cc.g; cols[i * 3 + 2] = cc.b;
                 if (h) { const nx = x0, nz = z / (ZK * ZK), nl = Math.hypot(nx, nz) || 1; pos.setX(i, x0 + nx / nl * h); pos.setZ(i, z + nz / nl * h); }
             }
@@ -12812,7 +12825,7 @@ function makeFoodGeo(f, bites = 0) {
         }
         {   // 😊 얼굴 — 눈은 raw·cooked 모두 유지(감은 눈은 "눈이 없다"로 읽혀 오히려 징그럽다 — 사용자 확정).
             // 구운 뒤에는 흰자가 익어 뽀얘지는 실제 구이 생선 문법 + 반짝이 하이라이트로 귀엽게.
-            const eyY = 0.0925, eyZ = rAt(eyY) * ZK * 0.78;
+            const eyY = 0.0972, eyZ = rAt(eyY) * ZK * 0.78;   // 눈은 주둥이 쪽 — 아가미뚜껑 띠(0.086~0.095) 앞에 둬야 안 묻힌다
             for (const zf of [1, -1]) {
                 if (!raw) { const sc2 = new THREE.SphereGeometry(0.0033, 10, 8); sc2.scale(1, 1, 0.6); sc2.translate(-0.0016, eyY, zf * (eyZ - 0.0004)); add(put(sc2), 0xfdf6e4, 0xe4d2b0, { curve: 1 }); }   // 익은 흰자
                 const eye = new THREE.SphereGeometry(0.0027, 10, 8); eye.scale(1, 1, 0.72); eye.translate(-0.0016, eyY, zf * eyZ);
@@ -12825,66 +12838,116 @@ function makeFoodGeo(f, bites = 0) {
             add(put(lip), raw ? 0x4e6472 : 0x6b3a16, raw ? 0x35464f : 0x3e1f08, { curve: 1 });
         }
         topH = (Y0 + L / 2) * 2;   // 꼬치의 topH = "먹이 중심 × 2" — 입 정렬(mouth − topH/2)이 스틱 중간이 아니라 생선에 맞도록
-    } else if (f.id === 'grilledclam') {   // 🦪🍢 조개구이 — raw=꽉 닫힌 조개 2, cooked=활짝 벌어짐+윤기 조갯살+육즙, 살 2→1→0
+    } else if (f.id === 'grilledclam') {   // 🦪🍢 조개구이 — raw=이음선만 보이는 꽉 닫힌 조개 2, cooked=40°만 살짝 벌어짐+초승달 조갯살+육즙, 살 2→1→0
         const raw = !!f.raw;
         skStick(0.185, !raw);
-        const valve2 = (R, charK) => {   // 신규 고퀄 밸브 — 리브 11·성장륜 릿지 변위·방사 크림 줄무늬·자개 안, charK=가장자리 그을림
-            const TH = 0.0018, pts = [];
-            for (let i = 0; i <= 36; i++) {
-                const t = i / 36, a = -1.08 + t * 2.16;
-                const rr = R * (0.88 + 0.12 * Math.cos(a * 1.2)) * (1 + 0.035 * Math.sin(t * Math.PI * 11));
-                pts.push(new THREE.Vector2(Math.sin(a) * rr, Math.cos(a) * rr));
-            }
-            pts.push(new THREE.Vector2(0.0022, -0.004)); pts.push(new THREE.Vector2(-0.0022, -0.004));
-            const g = new THREE.ExtrudeGeometry(new THREE.Shape(pts), { depth: TH, bevelEnabled: true, bevelThickness: 0.0007, bevelSize: 0.0007, bevelSegments: 1, curveSegments: 2 });
-            const pos = g.attributes.position, col = new Float32Array(pos.count * 3);
-            const cOutE = new THREE.Color(0xd9b988), cOutU = new THREE.Color(0x8a5f38), cBand = new THREE.Color(0xb08850), cStreak = new THREE.Color(0xf0e2c8);
-            const cInE = new THREE.Color(0xfdfaf2), cInU = new THREE.Color(0xefdfc2), cEdge = new THREE.Color(0xcfa878), cChar = new THREE.Color(0x503018), cc = new THREE.Color();
-            for (let i = 0; i < pos.count; i++) {
-                const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-                const r = Math.hypot(x, y) / R, t = (Math.atan2(x, y) + 1.08) / 2.16;
-                const dome = Math.sin(Math.pow(Math.min(r, 1), 0.88) * Math.PI) * R * 0.34;
-                const rib = Math.sin(t * Math.PI * 11) * R * 0.055 * Math.pow(Math.min(r, 1), 1.25);
-                const ring = Math.sin(Math.min(r, 1) * 34) * R * 0.012 * Math.min(1, r * 2);
-                pos.setZ(i, z + Math.max(0, dome + rib + ring));
-                const spk = Math.sin(t * 91 + r * 63) * Math.sin(r * 157 - t * 43);
-                if (z < TH * 0.5) {
-                    cc.copy(cInU).lerp(cInE, Math.pow(Math.min(r, 1), 0.9));
-                    cc.offsetHSL(Math.sin(r * 9 + t * 6) * 0.015, 0.02, Math.sin(t * Math.PI * 11) * 0.03 + spk * 0.015);
-                    if (r > 0.86) cc.lerp(cEdge, (r - 0.86) / 0.14 * 0.7);
-                } else {
-                    cc.copy(cOutU).lerp(cOutE, Math.pow(Math.min(r, 1), 0.75));
-                    for (const gw of [0.28, 0.46, 0.62, 0.78, 0.92]) if (Math.abs(r - gw) < 0.022) cc.lerp(cBand, 0.6);
-                    if (Math.abs(Math.sin(t * Math.PI * 5.5 + 0.4)) > 0.93 && r > 0.3) cc.lerp(cStreak, 0.45);
-                    cc.offsetHSL(0, 0, Math.sin(t * Math.PI * 11) * 0.05 + spk * 0.02);
+        // 밸브 = 극좌표 격자 셸(겉면+속면 두 시트 + 마진 테두리 스트립). ⚠️ExtrudeGeometry로는 불가:
+        // 셰이프 삼각분할이 외곽선 정점만 쓰므로 면 내부에 정점이 없어 리브·성장륜·돔이 아예 렌더되지 않는다(실측 — 껍데기가 웨이퍼로 보인 원인).
+        const valve2 = (R, charK, hideInner) => {
+            const NU = 46, NV = 16, TH = 0.0016, A0 = -1.34, A1 = 1.34;   // 부채를 넓혀 반원에 가깝게(좁으면 경첩 쪽이 뚫려 보인다)
+            const outR = (t) => R * (0.90 + 0.10 * Math.cos((A0 + t * (A1 - A0)) * 1.15)) * (1 + 0.012 * Math.sin(t * Math.PI * 12));   // 스캘럽은 아주 얕게 — 깊으면 크림프 파이 껍질로 읽힌다(실측)
+            // 기복은 얕게(사용자 확정: 개선 전의 납작한 형태 유지) — 결은 아래 정점색 격자가 전담한다.
+            const lift = (t, v) => Math.max(0, Math.sin(Math.pow(v, 0.85) * Math.PI) * R * 0.42      // 완만하되 렌즈로 읽힐 만큼의 돔
+                + Math.sin(t * Math.PI * 12) * R * 0.030 * Math.pow(v, 1.5)                          // 방사 리브 — 얕은 능선
+                + Math.cos(Math.pow(v, 0.8) * 26) * R * 0.006 * Math.min(1, v * 2.2));               // 성장륜 — 리브와 교차해 격자를 만든다
+            const NPT = (NU + 1) * (NV + 1);
+            const pos = new Float32Array(NPT * 2 * 3), col = new Float32Array(NPT * 2 * 3), uvs = new Float32Array(NPT * 2 * 2);   // ⚠️uv 필수 — 없으면 mergeGeometries가 속성 불일치로 null을 반환해 요리 전체가 소실된다(실측)
+            const cOutE = new THREE.Color(0xe6cda2), cOutU = new THREE.Color(0x8f6636), cBand = new THREE.Color(0x9d7842);
+            const cInE = new THREE.Color(0xfdfaf2), cInU = new THREE.Color(0xf0e2c8), cScorch = new THREE.Color(0xa8763a), cc = new THREE.Color();
+            for (let s2 = 0; s2 < 2; s2++) {
+                for (let iu = 0; iu <= NU; iu++) {
+                    const t = iu / NU, a = A0 + t * (A1 - A0), ro = outR(t);
+                    for (let iv = 0; iv <= NV; iv++) {
+                        const v = iv / NV, rr = ro * v, vi2 = s2 * NPT + iu * (NV + 1) + iv, k = vi2 * 3;
+                        pos[k] = Math.sin(a) * rr; pos[k + 1] = Math.cos(a) * rr; pos[k + 2] = lift(t, v) - (s2 ? TH : 0);
+                        uvs[vi2 * 2] = t; uvs[vi2 * 2 + 1] = v;
+                        if (s2 && hideInner) {   // 닫힘 — 속면도 껍데기 톤(그늘진 밑면). 자개 흰빛이 보이면 벌어진 조개로 읽힌다(실측)
+                            cc.copy(cOutU).lerp(cOutE, Math.pow(v, 0.7) * 0.5);
+                            cc.offsetHSL(0, 0, -0.06 + Math.sin(t * Math.PI * 12) * 0.03);
+                        } else if (s2) {   // 속면 = 자개(가장자리로 밝게) + 무지개빛 + 은은한 방사결
+                            cc.copy(cInU).lerp(cInE, Math.pow(v, 0.85));
+                            cc.offsetHSL(Math.sin(v * 9 + t * 6) * 0.016, 0.02, Math.sin(t * Math.PI * 12) * 0.038);
+                        } else {   // 겉면 = 리브 명암 × 성장륜 명암 격자
+                            cc.copy(cOutU).lerp(cOutE, Math.pow(v, 0.7));
+                            for (const gw of [0.30, 0.48, 0.64, 0.80, 0.93]) if (Math.abs(v - gw) < 0.024) cc.lerp(cBand, 0.72);
+                            cc.offsetHSL(0, 0, Math.sin(t * Math.PI * 12) * 0.09 + Math.cos(Math.pow(v, 0.8) * 26) * 0.055);
+                            // 그을림은 테두리 링이 아니라 겉면의 부드러운 얼룩 — 테를 검게 칠하면 "탄 톱니"로 읽힌다(실측)
+                            if (charK) cc.lerp(cScorch, Math.min(0.6, Math.max(0, Math.sin(t * Math.PI * 2.2 + 0.7)) * Math.max(0, v - 0.25) / 0.75 * 0.75 * charK));
+                        }
+                        col[k] = cc.r; col[k + 1] = cc.g; col[k + 2] = cc.b;
+                    }
                 }
-                if (charK && r > 0.88) cc.lerp(cChar, (r - 0.88) / 0.12 * 0.8 * charK);
-                col[i * 3] = cc.r; col[i * 3 + 1] = cc.g; col[i * 3 + 2] = cc.b;
             }
+            const idx = [];
+            for (let s2 = 0; s2 < 2; s2++) for (let iu = 0; iu < NU; iu++) for (let iv = 0; iv < NV; iv++) {
+                const b = s2 * NPT, A = b + iu * (NV + 1) + iv, B = A + (NV + 1);
+                if (!s2) idx.push(A, B, A + 1, A + 1, B, B + 1); else idx.push(A, A + 1, B, A + 1, B + 1, B);
+            }
+            for (let iu = 0; iu < NU; iu++) {   // 마진 테두리 — 두 시트를 잇는 스트립(옆구리는 다른 짝·움보에 가려 생략)
+                const o = iu * (NV + 1) + NV, o2 = (iu + 1) * (NV + 1) + NV;
+                idx.push(o, NPT + o, o2, o2, NPT + o, NPT + o2);
+            }
+            const g = new THREE.BufferGeometry();
+            g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
             g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+            g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+            g.setIndex(idx);
             g.computeVertexNormals();
             return g;
         };
-        const clamAt = (yc, head, mode) => {   // mode: closed / full / empty — 경첩이 꼬치 옆(z -0.004), 부채가 +z로
+        // 부채면을 카메라 쪽으로 기울인다(TILT) — 수평으로 누이면 월드의 내려보는 시점에서 얇은 웨이퍼로 읽힌다(실측).
+        // 전 파트를 "부채 +z · 위 +y" 로컬 프레임에서 만들고 orient() 하나로 옮겨 어긋남을 막는다(레몬 교훈).
+        const TILT = 0.44;
+        const clamAt = (yc, head, mode) => {   // mode: closed / full / empty
             const R = 0.0165, charK = raw ? 0 : 1;
-            const bot = valve2(R, charK); bot.rotateX(Math.PI / 2); bot.rotateY(head); bot.translate(0, yc, 0); parts.push(bot);
-            const top = valve2(R, charK); top.rotateX(-Math.PI / 2); top.rotateY(Math.PI);   // 부채 +z·돔 +y(뚜껑)
-            if (mode === 'closed') { top.translate(0, 0.0012, 0); }
-            else { top.rotateX(-1.92); top.translate(0, 0.001, -0.001); }   // 경첩에서 활짝 — 자개 안이 위·정면
-            top.rotateY(head); top.translate(0, yc, 0); parts.push(top);
-            const um = new THREE.SphereGeometry(R * 0.16, 8, 6); um.scale(1.3, 0.75, 0.9); um.rotateY(head); um.translate(-Math.sin(head) * 0.004, yc + 0.0006, -Math.cos(head) * 0.004); add(um, 0xa87c4e, 0x7a562e, { curve: 1 });
-            if (mode === 'full') {   // 탱글 조갯살(광택) + 육즙 방울(반투명) + 육즙 글리스닝
-                const mx = Math.sin(head) * 0.006, mz = Math.cos(head) * 0.006;
-                const mt = new THREE.SphereGeometry(R * 0.5, 14, 10); mt.scale(1.2, 0.7, 1); mt.rotateY(head); mt.translate(mx, yc + 0.0038, mz);
-                glossParts.push(bakeGrad(mt, 0xffb066, 0xd67028, { curve: 1.35 }));
-                const hl = new THREE.SphereGeometry(R * 0.13, 7, 5); hl.scale(1.4, 0.5, 1); hl.rotateY(head); hl.translate(mx - 0.002, yc + 0.0075, mz + 0.002); add(hl, 0xffe4c8, 0xffc890, { curve: 1 });
-                const jc = new THREE.SphereGeometry(0.0022, 7, 5); jc.scale(0.7, 1.4, 0.7); jc.rotateY(head); jc.translate(Math.sin(head) * 0.0135, yc - 0.0035, Math.cos(head) * 0.0135);
-                clearParts.push(bakeGrad(jc, 0xffd9a8, 0xe8a860, { curve: 1 }));
-                const gls = new THREE.CircleGeometry(R * 0.62, 14); gls.rotateX(-Math.PI / 2); gls.rotateY(head); gls.translate(mx * 0.7, yc + 0.0016, mz * 0.7);
-                glossParts.push(bakeGrad(gls, 0xe8b070, 0xc08840, { curve: 1 }));
+            const orient = (g, hinge) => { if (hinge) g.rotateX(hinge); g.rotateX(-TILT); g.rotateY(head); g.translate(0, yc, 0); return g; };
+            const HI = mode === 'closed';
+            const bot = valve2(R, charK, HI); bot.rotateX(Math.PI / 2); parts.push(orient(bot));
+            const top = valve2(R, charK, HI);
+            // 닫힘에 위짝을 들어올리면 틈으로 자개 속이 보여 "벌어진 조개"가 된다(실측) — 두 짝은 림끼리 맞물리고, 두께는 돔(0.42R×2)이 만든다
+            top.rotateX(-Math.PI / 2); top.rotateY(Math.PI);   // 부채 +z·돔 +y(뚜껑)
+            parts.push(orient(top, mode === 'closed' ? 0 : -0.72));   // 익어서 살짝 벌어짐 ~41° (110°는 뚜껑이 눕다시피 해 어색했다 — 실측)
+            // 이음선용 토러스는 금지 — 꼬치를 감는 철사 고리로 읽혔다(실측). 닫힘은 두 짝의 실루엣 단차가 전담.
+            // 경첩 — 구슬(움보 혹)은 정체 모를 갈색 원으로 읽혔다(사용자 리포트). 실제 가리비 문법인
+            // 직선 인대선 + 좌우 귀(auricle)로 교체: 꼬치와 만나는 지점을 자연스럽게 덮는다.
+            const hingeAt = (hingeRot) => {
+                const lig = new RoundedBoxGeometry(R * 0.86, R * 0.14, 0.0022, 2, 0.0007); lig.rotateX(Math.PI / 2); lig.translate(0, 0, R * 0.10);
+                add(orient(lig, hingeRot), 0xd8bd90, 0x9c7746, { curve: 1 });
+                for (const xf of [1, -1]) {
+                    const esh = new THREE.Shape();
+                    esh.moveTo(xf * R * 0.26, R * 0.05); esh.lineTo(xf * R * 0.54, R * 0.05); esh.lineTo(xf * R * 0.30, R * 0.26); esh.closePath();
+                    const ear = new THREE.ExtrudeGeometry(esh, { depth: 0.0016, bevelEnabled: false, curveSegments: 2 });
+                    ear.rotateX(Math.PI / 2);
+                    add(orient(ear, hingeRot), 0xe0c69a, 0x8f6636, { curve: 1 });
+                }
+            };
+            hingeAt(0);                                                                        // 아래짝 귀
+            if (mode !== 'closed') hingeAt(-0.72);                                              // 벌어진 위짝 귀는 함께 열린다
+            if (mode === 'full') {   // 조갯살 = 초승달(콩팥) + 주름 프릴 + 윤기 + 육즙 방울
+                const msh = new THREE.Shape();
+                msh.moveTo(-0.0084, -0.0014);
+                msh.bezierCurveTo(-0.0072, 0.0066, 0.0072, 0.0066, 0.0084, -0.0014);
+                msh.bezierCurveTo(0.0052, 0.0028, -0.0052, 0.0028, -0.0084, -0.0014);
+                const meat = new THREE.ExtrudeGeometry(msh, { depth: 0.0044, bevelEnabled: true, bevelThickness: 0.0017, bevelSize: 0.0019, bevelSegments: 2, curveSegments: 8 });
+                meat.rotateX(-Math.PI / 2); meat.translate(0, 0.0024, R * 0.34);
+                glossParts.push(bakeGrad(orient(meat), 0xffb066, 0xd9752c, { curve: 1.3 }));
+                for (let i = 0; i < 7; i++) {   // 프릴 — 살 테두리의 주름진 띠(조갯살 시그니처)
+                    const a2 = -0.95 + (i / 6) * 1.9;
+                    const fr = new THREE.SphereGeometry(0.0012, 6, 5); fr.scale(1, 0.5, 1.5); fr.rotateY(-a2);
+                    fr.translate(Math.sin(a2) * 0.0074, 0.0034, R * 0.34 + Math.cos(a2) * 0.0042);
+                    add(orient(fr), 0xc98a52, 0x925c2c, { curve: 1 });
+                }
+                const hl = new THREE.SphereGeometry(R * 0.12, 7, 5); hl.scale(1.5, 0.5, 1); hl.translate(-0.002, 0.0056, R * 0.34 + 0.001);
+                add(orient(hl), 0xffe9d2, 0xffcb9c, { curve: 1 });
+                const jc = new THREE.SphereGeometry(0.0025, 7, 5); jc.scale(0.72, 1.5, 0.72); jc.translate(0.0022, -0.0030, R * 0.72);
+                clearParts.push(bakeGrad(orient(jc), 0xffd9a8, 0xe8a860, { curve: 1 }));         // 흘러내리는 육즙 방울(반투명)
+                const gls = new THREE.CircleGeometry(R * 0.54, 14); gls.rotateX(-Math.PI / 2); gls.translate(0, 0.0013, R * 0.28);
+                glossParts.push(bakeGrad(orient(gls), 0xe8b070, 0xc08840, { curve: 1 }));        // 껍데기에 고인 국물
             } else if (mode === 'empty') {   // 발라먹은 자리 — 잔여 살점 + 마른 육즙 자국
-                const rs = new THREE.SphereGeometry(0.0022, 7, 5); rs.scale(1.3, 0.5, 1); rs.rotateY(head); rs.translate(Math.sin(head) * 0.009, yc + 0.0022, Math.cos(head) * 0.009); add(rs, 0xdf9a5c, 0xb0703a, { curve: 1 });
-                const dj = new THREE.CircleGeometry(0.005, 10); dj.rotateX(-Math.PI / 2); dj.rotateY(head); dj.translate(Math.sin(head) * 0.005, yc + 0.0014, Math.cos(head) * 0.005); add(dj, 0xc9a06a, 0xa8824e, { curve: 1 });
+                const rs = new THREE.SphereGeometry(0.0023, 7, 5); rs.scale(1.3, 0.5, 1); rs.translate(0.0022, 0.0024, R * 0.46);
+                add(orient(rs), 0xdf9a5c, 0xb0703a, { curve: 1 });
+                const dj = new THREE.CircleGeometry(0.0052, 10); dj.rotateX(-Math.PI / 2); dj.translate(0, 0.0015, R * 0.30);
+                add(orient(dj), 0xc9a06a, 0xa8824e, { curve: 1 });
             }
         };
         if (raw) { clamAt(0.082, 0.4, 'closed'); clamAt(0.132, 3.5, 'closed'); }
