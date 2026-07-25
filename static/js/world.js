@@ -12778,7 +12778,7 @@ function makeFoodGeo(f, bites = 0) {
             dors.translate(0, 0, -0.00065);
             add(put(dors), FIN[0], FIN[1], { curve: 1 });
             const ash = new THREE.Shape();   // 뒷지느러미 — 배(+x) 아래쪽 작은 삼각
-            ash.moveTo(0.0092, 0.030); ash.lineTo(0.0178, 0.0225); ash.lineTo(0.0088, 0.0225); ash.closePath();
+            ash.moveTo(0.0034, 0.0305); ash.lineTo(0.0172, 0.0210); ash.lineTo(0.0030, 0.0215); ash.closePath();   // 밑변을 몸통 속(rAt≈0.0073)까지 물려야 붙어 보인다 — 바깥이면 삼각형만 떠 있다(실측)
             const anal = new THREE.ExtrudeGeometry(ash, { depth: 0.0012, bevelEnabled: false, curveSegments: 2 });
             anal.translate(0, 0, -0.0006);
             add(put(anal), FIN[0], FIN[1], { curve: 1 });
@@ -12810,18 +12810,15 @@ function makeFoodGeo(f, bites = 0) {
             tail.translate(0, 0, -0.0007);
             add(put(tail), FIN[0], FIN[1], { curve: 1 });
         }
-        {   // 😊 얼굴 — raw=반짝이는 큰 눈, cooked=감은 웃는 눈(죽은 눈이 불쾌감의 절반이었다) + 입꼬리 미소
+        {   // 😊 얼굴 — 눈은 raw·cooked 모두 유지(감은 눈은 "눈이 없다"로 읽혀 오히려 징그럽다 — 사용자 확정).
+            // 구운 뒤에는 흰자가 익어 뽀얘지는 실제 구이 생선 문법 + 반짝이 하이라이트로 귀엽게.
             const eyY = 0.0925, eyZ = rAt(eyY) * ZK * 0.78;
             for (const zf of [1, -1]) {
-                if (raw) {
-                    const eye = new THREE.SphereGeometry(0.0027, 10, 8); eye.scale(1, 1, 0.72); eye.translate(-0.0016, eyY, zf * eyZ);
-                    add(put(eye), 0x2b2118, 0x120d07, { curve: 1 });
-                    const gl = new THREE.SphereGeometry(0.0011, 6, 5); gl.translate(-0.0028, eyY + 0.0013, zf * (eyZ + 0.0012));
-                    add(put(gl), 0xffffff, 0xe4eaee, { curve: 1 });
-                } else {
-                    const lid = new THREE.TorusGeometry(0.0027, 0.00065, 5, 12, Math.PI); lid.rotateY(zf > 0 ? 0 : Math.PI); lid.translate(-0.0016, eyY - 0.0004, zf * (eyZ + 0.0004));
-                    add(put(lid), 0x6b3a16, 0x3e1f08, { curve: 1 });
-                }
+                if (!raw) { const sc2 = new THREE.SphereGeometry(0.0033, 10, 8); sc2.scale(1, 1, 0.6); sc2.translate(-0.0016, eyY, zf * (eyZ - 0.0004)); add(put(sc2), 0xfdf6e4, 0xe4d2b0, { curve: 1 }); }   // 익은 흰자
+                const eye = new THREE.SphereGeometry(0.0027, 10, 8); eye.scale(1, 1, 0.72); eye.translate(-0.0016, eyY, zf * eyZ);
+                add(put(eye), raw ? 0x2b2118 : 0x3a2a18, raw ? 0x120d07 : 0x1a1108, { curve: 1 });
+                const gl = new THREE.SphereGeometry(0.0011, 6, 5); gl.translate(-0.0028, eyY + 0.0013, zf * (eyZ + 0.0012));
+                add(put(gl), 0xffffff, 0xe4eaee, { curve: 1 });
                 // 입꼬리 호는 금지 — 옆면에서 사선 흠집(찡그림)으로 읽혔다(실측). 입은 주둥이의 lip 링이 전담.
             }
             const lip = new THREE.TorusGeometry(0.0032, 0.0009, 5, 12); lip.scale(1, 1, ZK + 0.25); lip.rotateX(Math.PI / 2); lip.translate(0, 0.1038, 0);   // 꼬치가 지나는 입
@@ -12895,54 +12892,78 @@ function makeFoodGeo(f, bites = 0) {
         else if (b >= 1) { clamAt(0.082, 0.4, 'full'); clamAt(0.132, 3.5, 'empty'); }
         else { clamAt(0.082, 0.4, 'full'); clamAt(0.132, 3.5, 'full'); }
         topH = 0.107 * 2;   // 조개 2개의 중심(0.082·0.132) — 입은 껍데기 사이로 온다
-    } else if (f.id === 'marshmallow') {   // 🍡🍢 마시멜로 — 동일 원통 3개: cooked=위치별 토스팅 그라데이션+처짐, 3→2→1 + 스틱 끈적 잔여
+    } else if (f.id === 'marshmallow') {   // 🍡🍢 마시멜로 — 통통한 원통 3개(틈 3mm): raw=분 묻은 무광, cooked=방향성 토스팅+물집+캐러멜 광택+처짐, 3→2→1
         const raw = !!f.raw;
         const hsh2 = (x, y) => { const t = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return t - Math.floor(t); };
         skStick(0.175, !raw);
-        const slots = [0.062, 0.089, 0.116];
+        const MR = 0.0135, MH = 0.0195;                 // 통통하게(사용자 확정) — 작으면 꼬치가 빈약해 보인다
+        const slots = [0.068, 0.0905, 0.113];           // 틈 3mm — 붙지 않을 만큼만 띄운다
         const present = (raw || !b) ? [0, 1, 2] : b === 1 ? [0, 1] : [0];
         const toastK = raw ? [0, 0, 0] : b >= 2 ? [1.15] : b >= 1 ? [0.55, 0.95] : [0.45, 0.75, 1.05];   // 불(끝)에 가까울수록·먹을수록 진하게
+        const PROF_M = [[0.0027, 0], [0.0102, 0], [0.0126, 0.0022], [MR, 0.0072], [MR, 0.0125], [0.0126, 0.0173], [0.0102, MH], [0.0027, MH]];   // 프로파일은 스틱 반지름까지 닫는다 — 안 닫으면 위아래가 뚫려 C자 커프로 보인다(실측)
         present.forEach((si, idx) => {
             const yc = slots[si], tk = toastK[idx] || 0;
-            const mm = new THREE.LatheGeometry([[0.0027, 0], [0.0075, 0], [0.0098, 0.0018], [0.0104, 0.006], [0.0104, 0.010], [0.0098, 0.0142], [0.0075, 0.016], [0.0027, 0.016]].map(([r2, y2]) => new THREE.Vector2(r2, y2)), 22);   // 프로파일은 스틱 반지름까지 닫는다 — 안 닫으면 위아래가 뚫려 C자 커프로 보인다(실측)
+            const BLIS = [[0.8 + si, 0.70], [2.9 + si * 0.7, 0.44], [4.9 + si * 1.3, 0.64]];   // 물집 3개 — 슬롯마다 위치를 흩어 같은 무늬가 반복되지 않게
+            const mm = new THREE.LatheGeometry(PROF_M.map(([r2, y2]) => new THREE.Vector2(r2, y2)), 26);
             const pos = mm.attributes.position;
-            for (let i = 0; i < pos.count; i++) {   // 처짐 — y 스쿼시 + 아랫배 불룩 + 표면 우둘
+            const sag = tk * 0.5;
+            for (let i = 0; i < pos.count; i++) {   // 녹아 처짐 — y 스쿼시 + 아랫배 불룩
                 let x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-                const sag = tk * 0.5;
-                y *= 1 - 0.16 * sag;
-                const k2 = 1 + Math.max(0, 0.008 - y) / 0.008 * 0.22 * sag;
-                x *= k2; z *= k2;
-                pos.setXYZ(i, x + (hsh2(y * 400, z * 400) - 0.5) * 0.0004 * (0.4 + tk), y, z);
+                y *= 1 - 0.22 * sag;
+                const k2 = 1 + Math.max(0, 0.010 - y) / 0.010 * 0.30 * sag;
+                pos.setXYZ(i, x * k2, y, z * k2);
             }
-            mm.computeVertexNormals(); mm.translate(0, yc, 0);
-            const g2 = bakeGrad(mm, 0xfdfcf8, 0xefece2, { curve: 1 });
+            mm.computeVertexNormals();
+            const g2 = bakeGrad(mm, 0xfdfcf8, 0xf4f1e8, { curve: 1 });
             const col = g2.attributes.color, pos2 = g2.attributes.position, cc = new THREE.Color();
-            const TO = new THREE.Color(0xd99a4e), CB = new THREE.Color(0x8a5424), CK = new THREE.Color(0x5e3416);
+            const TO = new THREE.Color(0xd9973f), CB = new THREE.Color(0x8a5019), CK = new THREE.Color(0x532c0e), PW = new THREE.Color(0xffffff);
             for (let i = 0; i < col.count; i++) {
-                const x = pos2.getX(i), y = pos2.getY(i) - yc, z = pos2.getZ(i);
+                const x = pos2.getX(i), y = pos2.getY(i), z = pos2.getZ(i);
+                const rr = Math.hypot(x, z), rim = Math.min(1, rr / MR), yf = THREE.MathUtils.clamp(y / MH, 0, 1);
                 cc.setRGB(col.getX(i), col.getY(i), col.getZ(i));
-                cc.offsetHSL(0, 0, (hsh2(x * 600, z * 600 + y * 90) - 0.5) * 0.02);   // 파우더 스펙클
+                cc.offsetHSL(0, 0, (hsh2(x * 620, z * 620 + y * 90) - 0.5) * 0.022);            // 분 묻은 무광 스펙클 — 저대비 흰색-on-흰색
+                if (raw && rr < MR * 0.82 && (yf < 0.06 || yf > 0.94)) cc.lerp(PW, 0.5);        // 위아래 절단면 = 설탕 분 묻은 면 (구운 뒤엔 캐러멜이 덮으므로 raw만)
+                let h = 0;
                 if (tk > 0) {
-                    const rim = Math.min(1, Math.hypot(x, z) / 0.0104);
-                    const heat = tk * (0.52 + 0.28 * (1 - THREE.MathUtils.clamp(y / 0.016, 0, 1))) * (0.42 + 0.58 * rim);   // 윗면도 노릇 — 월드 카메라는 위에서 본다(실측)
+                    const heat = tk * (0.60 + 0.42 * yf) * (0.52 + 0.48 * rim);                // 불에 가까운 끝(위)·바깥 테부터 노릇 — 얼룩이 아니라 매끈한 그라데이션
                     cc.lerp(TO, Math.min(1, heat));
-                    if (heat > 0.58) cc.lerp(CB, Math.min(1, (heat - 0.58) * 2.2));   // 카라멜 브라운
-                    if (heat > 0.48 && hsh2(y * 800, x * 500 + z * 300) > 0.92) cc.lerp(CK, 0.8);   // 캐러멜 균열
+                    if (heat > 0.62) cc.lerp(CB, Math.min(1, (heat - 0.62) * 1.9));            // 카라멜 브라운
+                    if (tk > 0.35) {   // 부풀어 터진 물집 — 구운 마시멜로의 진짜 시각 신호(노이즈 반점 금지)
+                        const ang = Math.atan2(z, x);
+                        let bmax = 0;
+                        for (const [ba, byf] of BLIS) {
+                            let da = ang - ba; while (da > Math.PI) da -= Math.PI * 2; while (da < -Math.PI) da += Math.PI * 2;
+                            const d2 = Math.hypot(da * MR, y - byf * MH);
+                            bmax = Math.max(bmax, Math.max(0, 1 - d2 / 0.0042));
+                        }
+                        if (bmax > 0) { const bk = Math.pow(bmax, 0.7) * Math.min(1, (tk - 0.35) / 0.4); h += 0.0019 * bk; cc.lerp(CK, 0.42 * bk); }
+                    }
+                    // 해시 균열은 금지 — 흰 바탕에 검은 점이 흩뿌려져 "흙·곰팡이 얼룩"으로 읽힌다(실측). 무늬는 그라데이션+물집이 전담.
                 }
+                if (h) { const dl = rr || 1; pos2.setX(i, x + x / dl * h); pos2.setZ(i, z + z / dl * h); }
                 col.setXYZ(i, cc.r, cc.g, cc.b);
             }
-            parts.push(g2);
+            g2.computeVertexNormals(); g2.translate(0, yc, 0); parts.push(g2);
+            if (tk >= 0.55) {   // 불에 닿은 윗면에 고인 캐러멜 — 무광 몸통 + 광택 면의 대비가 "구워졌다"를 만든다.
+                // ⚠️둘레 토러스 밴드는 옆에서 보면 플라스틱 링으로 읽혔다(실측) → 월드 카메라가 내려다보는 윗면 디스크로.
+                const topY = yc + MH * (1 - 0.22 * sag);
+                const gd = new THREE.CylinderGeometry(MR * 0.80, MR * 0.92, 0.0009, 20); gd.translate(0, topY - 0.0004, 0);
+                glossParts.push(bakeGrad(gd, 0xd68f38, 0x9d5715, { curve: 1 }));
+            }
+            if (tk >= 0.95) {   // 제일 오래 구워진 것은 아래로 늘어진 카라멜 방울
+                const dr = new THREE.SphereGeometry(0.0027, 8, 6); dr.scale(0.72, 1.6, 0.72); dr.translate(MR * 0.55, yc - 0.0028, 0.0018);
+                glossParts.push(bakeGrad(dr, 0xe8a850, 0xb06e22, { curve: 1 }));
+            }
         });
         if (!raw && b >= 1) {   // 먹은 자리 — 스틱의 끈적 잔여 링 + 늘어난 실
             for (const si of (b >= 2 ? [1, 2] : [2])) {
-                const ring = new THREE.TorusGeometry(0.0036, 0.0011, 6, 12); ring.rotateX(Math.PI / 2); ring.translate(0, slots[si] + 0.004, 0);
+                const ring = new THREE.TorusGeometry(0.0042, 0.0012, 6, 12); ring.rotateX(Math.PI / 2); ring.translate(0, slots[si] + MH * 0.5, 0);
                 glossParts.push(bakeGrad(ring, 0xf7ead2, 0xdfc9a4, { curve: 1 }));
-                const wisp = new THREE.CylinderGeometry(0.0004, 0.0013, 0.007, 5); wisp.translate(0.0008, slots[si] + 0.0095, 0.0008);
+                const wisp = new THREE.CylinderGeometry(0.0004, 0.0014, 0.008, 5); wisp.translate(0.001, slots[si] + MH * 0.5 + 0.006, 0.001);
                 glossParts.push(bakeGrad(wisp, 0xfaf0dc, 0xe8d5b4, { curve: 1 }));
             }
-            if (b >= 2) { const dr = new THREE.SphereGeometry(0.0026, 7, 5); dr.scale(0.7, 1.5, 0.7); dr.translate(0.0078, slots[0] + 0.001, 0.003); glossParts.push(bakeGrad(dr, 0xe8b86a, 0xc08a3a, { curve: 1 })); }   // 마지막 하나는 카라멜 드립
         }
-        topH = (present.reduce((s2, si) => s2 + slots[si], 0) / present.length + 0.008) * 2;   // 남은 마시멜로 중심 × 2 — 먹을수록 아래로 내려온다
+        topH = (present.reduce((s2, si) => s2 + slots[si], 0) / present.length + MH * 0.5) * 2;   // 남은 마시멜로 중심 × 2 — 먹을수록 아래로 내려온다
     } else if (f.id === 'cloche') {   // 🍽️ 클로슈 — 요리 완성품 임시 그릇 (요리별 조형은 디자인 확정 후 dish 분기로). burnt = 실험 실패작(그을림)
         const burnt = !!f.burnt;
         const tray = new THREE.CylinderGeometry(0.075, 0.082, 0.014, 18);
