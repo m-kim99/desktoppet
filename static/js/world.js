@@ -16986,13 +16986,71 @@ function stationCrateTop(lx, lz) {   // geometry.rotateY(ry)의 역변환으로 
 function poiSurfaceY(poi, x, z) {   // 산책 표면 — 달은 구면 캡(언덕처럼 걷는다), 정거장은 평갑판 + 화물 위
     if (poi.R) {
         const dx = x - poi.x, dz = z - poi.z;
-        return poi.y + Math.sqrt(Math.max(1, poi.R * poi.R - dx * dx - dz * dz));
+        const yy = Math.sqrt(Math.max(1, poi.R * poi.R - dx * dx - dz * dz)), inv = 1 / poi.R;
+        return poi.y + yy + moonSurfOffset(dx * inv, yy * inv, dz * inv) * (yy * inv);   // 지형 변위 — 조형과 같은 함수
     }
     return poi.y + stationCrateTop(x - poi.x, z - poi.z);
 }
-if (statsOn && window.__worldDev) window.__worldDev.poiSurf = (x, z) => +(poiSurfaceY(SPACE_POIS[1], SPACE_POIS[1].x + x, SPACE_POIS[1].z + z) - SPACE_POIS[1].y).toFixed(3);   // 검수 훅: 정거장 로컬 좌표의 보행 표면 높이
+if (statsOn && window.__worldDev) window.__worldDev.poiSurf = (x, z, i = 1) => +(poiSurfaceY(SPACE_POIS[i], SPACE_POIS[i].x + x, SPACE_POIS[i].z + z) - SPACE_POIS[i].y).toFixed(3);   // 검수 훅: POI 로컬 좌표의 보행 표면 높이
 const MOON_PAD_N = new THREE.Vector3(1.4, Math.sqrt(49 - 1.96), 0).normalize();   // 정상에서 살짝 비낀 착륙 명당 — 어린왕자 기울기
 const MOON_FLAG_N = new THREE.Vector3(-1.9, 6.55, 1.3).normalize();               // 빨간 깃발 법선 — 조형·산책 어포던스 공유
+// 🌑 달 지형 — 크레이터는 표면에 붙이는 원반이 아니라 **정점 변위로 판 그릇**(대형 3·중형 8·
+// 소형 20)이고 저지대 마레 2곳은 넓고 얕은 분지. 조형과 보행 표면이 **같은 함수**를 공유해야
+// 펫이 크레이터 위를 떠서 지나가지 않는다(정거장 화물 상자 교훈). 착륙 패드·깃발 발밑은 비운다.
+const MOON_CRATERS = [], MOON_MARE = [];
+{
+    let cs_ = 77;
+    const cr01 = () => { cs_ = (cs_ * 1664525 + 1013904223) >>> 0; return cs_ / 4294967296; };
+    const pick = (avoidPad, avoidFlag) => {
+        for (let t = 0; t < 40; t++) {
+            const u = cr01() * 2 - 1, a = cr01() * Math.PI * 2, r = Math.sqrt(Math.max(0, 1 - u * u));
+            const n = new THREE.Vector3(r * Math.cos(a), u, r * Math.sin(a));
+            if (n.dot(MOON_PAD_N) < avoidPad && n.dot(MOON_FLAG_N) < avoidFlag) return n;
+        }
+        return new THREE.Vector3(0, -1, 0);
+    };
+    const CLASSES = [[3, 1.7, 2.5, 0.8, 0.9, true], [9, 0.8, 1.4, 0.9, 0.94, false], [18, 0.36, 0.7, 0.955, 0.975, false]];
+    for (const [count, rMin, rMax, aPad, aFlag, big] of CLASSES) {
+        for (let i = 0; i < count; i++) {
+            const n = pick(aPad, aFlag), R = rMin + cr01() * (rMax - rMin);
+            const tA = new THREE.Vector3(0, 1, 0).cross(n);
+            if (tA.lengthSq() < 1e-6) tA.set(1, 0, 0);
+            tA.normalize();
+            MOON_CRATERS.push({ n, R, depth: R * 0.2, rim: R * 0.095, big, phase: cr01() * 6.283,
+                tA, tB: new THREE.Vector3().crossVectors(n, tA).normalize(),
+                cosOut: Math.cos(Math.min(Math.PI, (R * 1.5) / 7)) });
+        }
+    }
+    // 첫 마레는 시드에 맡기지 않고 로켓 접근·산책 캡에서 보이는 면에 고정 — 랜덤이면 셋 다
+    // 뒷면에 몰려 앞에서는 민무늬 회색 공으로 보인다(실측).
+    for (const n0 of [new THREE.Vector3(0.62, 0.3, 0.72).normalize(), null, null]) {
+        const n = n0 || pick(0.82, 0.88), R = 2.6 + cr01() * 1.1;
+        MOON_MARE.push({ n, R, depth: 0.18, cosOut: Math.cos(Math.min(Math.PI, R / 7)) });
+    }
+}
+const moonRipple = (x, y, z) =>   // 미세 기복 2옥타브 — 크레이터만 있으면 반죽처럼 매끈하다
+    Math.sin(x * 5.3 + Math.sin(y * 3.1)) * Math.sin(y * 4.7 + Math.sin(z * 2.9)) * Math.sin(z * 6.1 + Math.sin(x * 3.7)) * 0.05
+    + Math.sin(x * 13.7) * Math.sin(y * 11.3) * Math.sin(z * 12.9) * 0.018;
+function moonSurfOffset(nx, ny, nz) {   // 단위법선 → 반경 오프셋(그릇 −, 림 +). 조형·보행 공용
+    // 패드 발밑(dot≥0.955)은 기복을 0으로 — 데크는 평면이라 지형이 울렁이면 펫이 뚫고 들어간다
+    const padK = Math.min(1, Math.max(0, (nx * MOON_PAD_N.x + ny * MOON_PAD_N.y + nz * MOON_PAD_N.z - 0.955) / 0.045));
+    let off = moonRipple(nx * 7, ny * 7, nz * 7) * (1 - padK);
+    for (const c of MOON_CRATERS) {
+        const dp = nx * c.n.x + ny * c.n.y + nz * c.n.z;
+        if (dp < c.cosOut) continue;
+        const d = Math.acos(Math.min(1, dp)) * 7;
+        if (d < c.R) off -= c.depth * (1 - (d / c.R) * (d / c.R));
+        const e = (d - c.R) / (c.R * 0.17);
+        if (e > -3 && e < 3) off += c.rim * Math.exp(-e * e);
+    }
+    for (const m of MOON_MARE) {
+        const dp = nx * m.n.x + ny * m.n.y + nz * m.n.z;
+        if (dp < m.cosOut) continue;
+        const k = 1 - Math.acos(Math.min(1, dp)) * 7 / m.R;
+        off -= m.depth * k * k;
+    }
+    return off;
+}
 // 🌑 달 크레이터 보물: 48h 주기 재보급, 발굴 지점은 주기 시드로 온 구체 어디든(패드 발밑 제외 —
 // 남반구·뒷면에도 떠서 구체 탐험의 이유가 된다). 첫 발굴 = 🧑‍🚀 우주 헬멧 해금, 이후 = 문스톤/운석.
 const MOON_DIG_CYCLE_MS = 48 * 3600 * 1000;
@@ -17085,49 +17143,173 @@ const navGrnMat = new THREE.MeshBasicMaterial({ color: 0x7df0a4, fog: false });
     // 좁고 밝은 하이라이트(clearcoatRoughness .025)로 번쩍임을 만든다. 색은 정점색으로 진하게.
     const poiGloss = gradMatGloss.clone(); poiGloss.fog = false;
     const addMerged = (parent, arr, mat) => { const g = mergeGeometries(arr, false); if (g) parent.add(new THREE.Mesh(g, mat)); };
-    // 🌕 꼬마 달 (R7 — 펫이 정상 캡 r4.2를 걸어다니는 체급): 회백 구 + 크레이터 14 + 빨간 깃발
+    // 🌕 꼬마 달 (R7 — 펫이 정상 캡 r4.2를 걸어다니는 체급)
+    // P0 정점 변위 지형(크레이터 31 = 그릇 + 림, 마레 2) — 원반 스티커 아웃
+    // P1 착륙 패드 일습(데크·타깃·클램프·유도등 8×4위상·관제 스탠드·보급 컨테이너) — 조형 0이던 자리
+    // P2 지질 정점색(고지대/마레/바닥·림 명암 + 대형 크레이터 광조) P3 레골리스·깃발·발자국
+    // P4 지구조(emissive)로 그림자면이 새까맣게 죽지 않게
     const mp = SPACE_POIS[0];
     const moonG = new THREE.Group();
     moonG.position.set(mp.x, mp.y, mp.z);
-    addMerged(moonG, [bakeGrad(new THREE.SphereGeometry(mp.R, 30, 22), 0xe4e0d8, 0xa6a09a, { curve: 1.1 })], poiGrad);
-    const craterGeos = [];
-    let cseed = 77;
-    const crand = () => { cseed = (cseed * 1664525 + 1013904223) >>> 0; return cseed / 4294967296; };
-    const _cq = new THREE.Quaternion(), _cz = new THREE.Vector3(0, 0, 1);
-    for (let i = 0; i < 14; i++) {
-        const u = crand() * 2 - 1, a = crand() * Math.PI * 2;
-        const n = new THREE.Vector3(Math.sqrt(1 - u * u) * Math.cos(a), u * 0.94, Math.sqrt(1 - u * u) * Math.sin(a)).normalize();
-        if (n.dot(MOON_PAD_N) > 0.965) continue;   // 착륙 패드 발밑만 비운다 — 산책 캡의 크레이터는 무드
-        const cr = 0.45 + crand() * 0.65;
-        _cq.setFromUnitVectors(_cz, n);
-        const disc = new THREE.CircleGeometry(cr, 16);
-        disc.applyQuaternion(_cq);
-        disc.translate(n.x * (mp.R + 0.01), n.y * (mp.R + 0.01), n.z * (mp.R + 0.01));
-        craterGeos.push(disc);
-        const rim = new THREE.TorusGeometry(cr, 0.07, 6, 18);
-        rim.applyQuaternion(_cq);
-        rim.translate(n.x * mp.R, n.y * mp.R, n.z * mp.R);
-        craterGeos.push(rim);
+    const poiMoon = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, emissive: 0x11151f, fog: false });
+    const _mv = new THREE.Vector3(), _mt = new THREE.Vector3(), _mq = new THREE.Quaternion(), _mUp = new THREE.Vector3(0, 1, 0);
+    {   // 구 = 정점 변위 + 지질 정점색
+        const g = new THREE.SphereGeometry(mp.R, 96, 64);
+        const pos = g.attributes.position, cols = new Float32Array(pos.count * 3);
+        const HI = new THREE.Color(0xe8e4da), LO = new THREE.Color(0x8e8c88), MARE = new THREE.Color(0x6b6f7c), RAY = new THREE.Color(0xfbf8f1), c = new THREE.Color();
+        const hsh = (x, y, z) => { const t = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453; return t - Math.floor(t); };
+        for (let i = 0; i < pos.count; i++) {
+            _mv.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
+            const off = moonSurfOffset(_mv.x, _mv.y, _mv.z);
+            pos.setXYZ(i, _mv.x * (mp.R + off), _mv.y * (mp.R + off), _mv.z * (mp.R + off));
+            let mareW = 0;
+            for (const m of MOON_MARE) {
+                const dp = _mv.dot(m.n);
+                if (dp < m.cosOut) continue;
+                const k = 1 - Math.acos(Math.min(1, dp)) * mp.R / m.R;
+                if (k > 0) mareW = Math.max(mareW, k * k);
+            }
+            let rayW = 0;   // 광조 — 대형 크레이터에서 뻗는 밝은 줄(달의 시그니처)
+            for (const cr of MOON_CRATERS) {
+                if (!cr.big) continue;
+                const dp = _mv.dot(cr.n);
+                const d = Math.acos(Math.max(-1, Math.min(1, dp))) * mp.R;
+                if (d < cr.R * 1.15 || d > cr.R * 4.4) continue;
+                _mt.copy(_mv).addScaledVector(cr.n, -dp).normalize();
+                const ang = Math.atan2(_mt.dot(cr.tB), _mt.dot(cr.tA));
+                const spoke = Math.pow(Math.max(0, Math.cos(ang * 5 + cr.phase)), 6);
+                rayW = Math.max(rayW, spoke * (1 - (d - cr.R * 1.15) / (cr.R * 3.25)) * 0.62);
+            }
+            const t = THREE.MathUtils.clamp(0.52 + off * 2.6 + (hsh(_mv.x * 9, _mv.y * 9, _mv.z * 9) - 0.5) * 0.22, 0, 1);
+            c.copy(LO).lerp(HI, t);
+            if (mareW > 0) c.lerp(MARE, Math.min(0.95, mareW * 1.35));
+            if (rayW > 0) c.lerp(RAY, rayW);
+            cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b;
+        }
+        g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+        g.computeVertexNormals();
+        moonG.add(new THREE.Mesh(g, poiMoon));
     }
-    addMerged(moonG, craterGeos, poiCrater);
-    const flagN = MOON_FLAG_N;   // 깃발 — 조형·산책 어포던스가 같은 법선 공유
-    _cq.setFromUnitVectors(new THREE.Vector3(0, 1, 0), flagN);
-    const pole = new THREE.CylinderGeometry(0.035, 0.045, 1.15, 6);
-    pole.translate(0, 0.56, 0);
-    pole.applyQuaternion(_cq);
-    pole.translate(flagN.x * mp.R, flagN.y * mp.R, flagN.z * mp.R);
-    addMerged(moonG, [pole], poiMetal);
-    const flag = new THREE.BoxGeometry(0.48, 0.28, 0.025);
-    flag.translate(0.27, 0.94, 0);
-    flag.applyQuaternion(_cq);
-    flag.translate(flagN.x * mp.R, flagN.y * mp.R, flagN.z * mp.R);
-    addMerged(moonG, [flag], poiRed);
-    {   // ⛏️ 크레이터 보물 마커: ✕ + 봉분 — 병합 안 함(발굴 뒤 단독 숨김), 위치는 주기 시드
+    {   // 🪨 레골리스 — 발치에 뭔가 있어야 "걷는 땅"이 된다(1드로우 병합)
+        let rs_ = 4242;
+        const r01 = () => { rs_ = (rs_ * 1664525 + 1013904223) >>> 0; return rs_ / 4294967296; };
+        const rocks = [];
+        for (let i = 0; i < 30; i++) {
+            const u = r01() * 2 - 1, a = r01() * Math.PI * 2, rr = Math.sqrt(Math.max(0, 1 - u * u));
+            const n = new THREE.Vector3(rr * Math.cos(a), u, rr * Math.sin(a));
+            if (n.dot(MOON_PAD_N) > 0.96) continue;
+            const sz = 0.045 + r01() * 0.085, off = moonSurfOffset(n.x, n.y, n.z);
+            const g = new THREE.IcosahedronGeometry(sz, 0);
+            g.scale(1 + r01() * 0.5, 0.3 + r01() * 0.22, 1);
+            _mq.setFromUnitVectors(_mUp, n);
+            g.applyQuaternion(_mq);
+            g.translate(n.x * (mp.R + off - sz * 0.1), n.y * (mp.R + off - sz * 0.1), n.z * (mp.R + off - sz * 0.1));
+            rocks.push(bakeGrad(g, 0xa8a49c, 0x5e5b57, { curve: 1 }));   // 밝으면 진주알로 읽힌다
+        }
+        addMerged(moonG, rocks, poiGrad);
+    }
+    {   // 🛬 착륙 패드 — 정거장과 같은 시각 언어(그레이팅·빗금·클램프·4위상 유도등)
+        const padG = new THREE.Group();
+        padG.position.copy(MOON_PAD_N).multiplyScalar(mp.R);
+        padG.quaternion.setFromUnitVectors(_mUp, MOON_PAD_N);
+        const pGrad = [], pMetal = [], pRed = [], pCool = [];
+        const pbox = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+        const pcyl = (rt, rb, h, seg, x, y, z) => new THREE.CylinderGeometry(rt, rb, h, seg).translate(x, y, z);
+        const PDECK = (g) => bakeGrad(g, 0xd8d4ca, 0x8d8a84, { curve: 1 });
+        const PYEL = (g) => bakeGrad(g, 0xf4d264, 0xc39a24, { curve: 1 });
+        // ⚠️ 데크(r≤1.45)는 평면이지만 그 바깥은 구면이 내려간다 — 이 보정을 빼면 소품이 0.2~0.3 뜬다
+        const pDrop = (r) => -(mp.R - Math.sqrt(Math.max(0, mp.R * mp.R - r * r)));
+        pGrad.push(PDECK(pcyl(1.45, 1.5, 0.34, 8, 0, -0.17, 0)));        // 데크 — 윗면이 정확히 R(로켓 좌표 padPos 불변)
+        pMetal.push(new THREE.TorusGeometry(1.47, 0.05, 6, 8).rotateX(Math.PI / 2).translate(0, -0.01, 0));
+        for (let i = -3; i <= 3; i++) {   // 그레이팅 (원형 클립)
+            const L = 2 * Math.sqrt(Math.max(0.04, 1.32 * 1.32 - (i * 0.38) * (i * 0.38)));
+            pGrad.push(bakeGrad(pbox(L, 0.02, 0.05, 0, 0.002, i * 0.38), 0x9b9791, 0x6e6b66, { curve: 1 }));
+            pGrad.push(bakeGrad(pbox(0.05, 0.02, L, i * 0.38, 0.002, 0), 0x9b9791, 0x6e6b66, { curve: 1 }));
+        }
+        pRed.push(pbox(2.5, 0.022, 0.1, 0, 0.012, 0));                    // ⊕ 타깃
+        pRed.push(pbox(0.1, 0.022, 2.5, 0, 0.012, 0));
+        pRed.push(new THREE.TorusGeometry(0.62, 0.045, 6, 20).rotateX(Math.PI / 2).translate(0, 0.012, 0));
+        for (let i = 0; i < 14; i++) pGrad.push(PYEL(pbox(0.11, 0.02, 0.26, 0, 0.016, 1.28).rotateY((i / 14) * Math.PI * 2)));   // 데크 위 마킹(밖에 두면 흩뿌린 색종이로 읽힌다)
+        for (let i = 0; i < 4; i++) {   // 앵커 다리 + 클램프
+            const a = Math.PI / 4 + (i / 4) * Math.PI * 2, cx = Math.cos(a) * 1.3, cz = Math.sin(a) * 1.3;
+            pMetal.push(pbox(0.14, 0.5, 0.14, 0, -0.25, 0).rotateX(-Math.sin(a) * 0.32).rotateZ(Math.cos(a) * 0.32).translate(cx, -0.12, cz));
+            pMetal.push(pbox(0.22, 0.12, 0.22, cx * 0.78, 0.06, cz * 0.78));
+            pMetal.push(pbox(0.09, 0.34, 0.09, 0, 0.17, 0).rotateX(-Math.sin(a) * 0.55).rotateZ(Math.cos(a) * 0.55).translate(cx * 0.78, 0.06, cz * 0.78));
+            pGrad.push(PYEL(pbox(0.16, 0.05, 0.11, cx * 0.62, 0.34, cz * 0.62)));
+        }
+        pGrad.push(bakeGrad(pbox(0.62, 0.02, 0.16, 0, 0.014, -1.05), 0xf2f5f8, 0xb9c2cb, { curve: 1 }));   // MOON-1 명판
+        pCool.push(pbox(0.46, 0.01, 0.06, 0, 0.026, -1.05));
+        {   // 관제 스탠드 + 보급 컨테이너 2 (정거장 화물과 같은 조형 문법)
+            const cD = pDrop(Math.hypot(2.0, 0.35));
+            pMetal.push(pcyl(0.06, 0.08, 0.62, 8, 2.0, 0.27 + cD, 0.35));
+            pGrad.push(bakeGrad(pbox(0.42, 0.3, 0.16, 0, 0, 0).rotateX(-0.42).translate(2.0, 0.66 + cD, 0.35), 0xf2f5f8, 0xa8b0b8, { curve: 1 }));
+            pCool.push(pbox(0.3, 0.19, 0.02, 0, 0, 0).rotateX(-0.42).translate(2.0, 0.68 + cD, 0.42));
+            for (const [cx, cz, cw, ry] of [[-2.0, 0.55, 0.6, 0.4], [-1.85, -0.5, 0.46, -0.25]]) {
+                const kD = pDrop(Math.hypot(cx, cz));
+                pGrad.push(bakeGrad(pbox(cw, 0.42, cw * 0.8, 0, 0.21 + kD, 0).rotateY(ry).translate(cx, 0, cz), 0xf2f5f8, 0xb9c2cb, { curve: 1 }));
+                for (let i = -1; i <= 1; i++) pMetal.push(pbox(cw * 1.02, 0.04, 0.04, 0, 0.21 + kD + i * 0.13, cw * 0.41).rotateY(ry).translate(cx, 0, cz));
+                pGrad.push(PYEL(pbox(cw * 1.05, 0.028, 0.045, 0, 0.33 + kD, 0).rotateY(ry).translate(cx, 0, cz)));
+            }
+        }
+        addMerged(padG, pGrad, poiGrad);
+        addMerged(padG, pMetal, poiMetal);
+        addMerged(padG, pRed, poiRed);
+        addMerged(padG, pCool, vendCoolMat);
+        for (let i = 0; i < 4; i++) {   // 유도등 8 = 4위상 × 대칭쌍 (정거장과 같은 재질 → 같은 러닝)
+            const geos = [];
+            for (const k of [i, i + 4]) {
+                const a = (k / 8) * Math.PI * 2;
+                geos.push(pcyl(0.095, 0.095, 0.035, 10, Math.cos(a) * 1.58, 0.018 + pDrop(1.58), Math.sin(a) * 1.58));
+            }
+            padG.add(new THREE.Mesh(mergeGeometries(geos, false), padLightMats[i]));
+        }
+        moonG.add(padG);
+    }
+    {   // 👣 발자국 — 패드에서 깃발까지 걸어간 흔적(대원호 보간)
+        const steps = [];
+        for (let i = 0; i < 13; i++) {
+            const t = 0.14 + (i / 12) * 0.78;
+            _mv.copy(MOON_PAD_N).lerp(MOON_FLAG_N, t).normalize();
+            _mt.crossVectors(_mv, MOON_FLAG_N).normalize().multiplyScalar((i % 2 ? 0.11 : -0.11));
+            const n = _mv.clone().add(_mt).normalize(), off = moonSurfOffset(n.x, n.y, n.z);
+            const g = new THREE.CylinderGeometry(0.075, 0.075, 0.014, 8);
+            g.scale(1, 1, 1.5);
+            _mq.setFromUnitVectors(_mUp, n);
+            g.applyQuaternion(_mq);
+            g.translate(n.x * (mp.R + off + 0.004), n.y * (mp.R + off + 0.004), n.z * (mp.R + off + 0.004));
+            steps.push(bakeGrad(g, 0x8a8781, 0x6a6762, { curve: 1 }));
+        }
+        addMerged(moonG, steps, poiGrad);
+    }
+    {   // 🚩 깃발 — 달엔 바람이 없어 가로 지지대로 편다(아폴로 문법) + 주름 + 베이스 플레이트
+        const fG = new THREE.Group();
+        const fOff = moonSurfOffset(MOON_FLAG_N.x, MOON_FLAG_N.y, MOON_FLAG_N.z);
+        fG.position.copy(MOON_FLAG_N).multiplyScalar(mp.R + fOff);
+        fG.quaternion.setFromUnitVectors(_mUp, MOON_FLAG_N);
+        const fMetal = [new THREE.CylinderGeometry(0.035, 0.045, 1.5, 8).translate(0, 0.75, 0),
+            new THREE.BoxGeometry(0.62, 0.028, 0.028).translate(0.31, 1.44, 0),
+            new THREE.CylinderGeometry(0.24, 0.28, 0.035, 12).translate(0, 0.017, 0)];
+        addMerged(fG, fMetal, poiMetal);
+        const flag = new THREE.PlaneGeometry(0.6, 0.4, 8, 3);
+        const fp = flag.attributes.position;
+        for (let i = 0; i < fp.count; i++) {   // 주름 — 깃대에서 멀수록 크게
+            const u = (fp.getX(i) + 0.3) / 0.6;
+            fp.setZ(i, Math.sin(u * 7.5) * 0.045 * u + Math.sin(fp.getY(i) * 9) * 0.012 * u);
+        }
+        flag.computeVertexNormals();
+        flag.rotateY(Math.PI / 2);
+        flag.translate(0.31, 1.24, 0);
+        fG.add(new THREE.Mesh(flag, new THREE.MeshStandardMaterial({ color: 0xd05a4a, roughness: 0.85, side: THREE.DoubleSide, fog: false })));
+        moonG.add(fG);
+    }
+    {   // ⛏️ 크레이터 보물 마커: ✕ + 봉분 + 삽 — 병합 안 함(발굴 뒤 단독 숨김), 위치는 주기 시드.
+        // 지형 변위 위에 얹는다(구 반경 고정이면 크레이터 안에서 뜨거나 파묻힌다).
         moonDigSpotN(moonDigN);
-        moonDigWorld.set(mp.x + moonDigN.x * mp.R, mp.y + moonDigN.y * mp.R, mp.z + moonDigN.z * mp.R);
+        const dOff = mp.R + moonSurfOffset(moonDigN.x, moonDigN.y, moonDigN.z);
+        moonDigWorld.set(mp.x + moonDigN.x * dOff, mp.y + moonDigN.y * dOff, mp.z + moonDigN.z * dOff);
         const dg = new THREE.Group();
-        dg.position.set(moonDigN.x * mp.R, moonDigN.y * mp.R, moonDigN.z * mp.R);
-        dg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), moonDigN);
+        dg.position.set(moonDigN.x * dOff, moonDigN.y * dOff, moonDigN.z * dOff);
+        dg.quaternion.setFromUnitVectors(_mUp, moonDigN);
         const mound = new THREE.Mesh(new THREE.SphereGeometry(0.36, 12, 8), poiCrater);
         mound.scale.y = 0.32;
         dg.add(mound);
@@ -17137,6 +17319,14 @@ const navGrnMat = new THREE.MeshBasicMaterial({ color: 0x7df0a4, fog: false });
             bar.position.y = 0.12;
             dg.add(bar);
         }
+        const spade = mergeGeometries([
+            new THREE.CylinderGeometry(0.018, 0.018, 0.44, 6).translate(0, 0.22, 0),
+            new THREE.BoxGeometry(0.13, 0.16, 0.02).translate(0, 0.03, 0),
+        ], false);
+        const sp2 = new THREE.Mesh(spade, poiMetal);
+        sp2.rotation.z = 0.42;
+        sp2.position.set(0.34, 0.02, -0.14);
+        dg.add(sp2);
         moonG.add(dg);
         moonDigGroup = dg;
         moonDigGroup.visible = moonDug.cycle !== moonDigCycle();
