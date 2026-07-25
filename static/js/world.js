@@ -26248,10 +26248,10 @@ function buildFrogCartoon() {
 // 규율: 리브·돌기·융기는 **붙이지 말고 아웃라인/높이 필드를 변조**한다 → 삼각형만 늘고 드로우는 1.
 // 조개는 상시 표시물(해변 3 + 무인도 1~3)이라 드로우·재질이 예산이고, 삼각형은 여유가 크다.
 const FC_SHELL = {
-    scallop: { ko: '가리비', cell: 16, R: 0.062, arc: 1.16, ribs: 8,  open: 0.16 },
+    scallop: { ko: '가리비', cell: 16, R: 0.062, arc: 1.16, ribs: 8,  open: 0.34 },
     conch:   { ko: '소라',   cell: 17, R: 0.058 },
-    clam:    { ko: '분홍조개', cell: 18, R: 0.056, arc: 1.34, ribs: 10, open: 0.10 },
-    pearl:   { ko: '진주조개', cell: 19, R: 0.058, arc: 1.28, ribs: 6,  open: 0.62 },
+    clam:    { ko: '분홍조개', cell: 18, R: 0.056, arc: 1.34, ribs: 10, open: 0.26 },
+    pearl:   { ko: '진주조개', cell: 19, R: 0.058, arc: 1.28, ribs: 6,  open: 0.88 },
 };
 // ---- 부채꼴 판 (가리비·분홍조개·진주조개) --------------------------------------------------
 // 극좌표 (r=힌지→자유변, q=−1~1 부채 횡단). rib(q)를 **반지름과 높이에 같은 주기로** 넣는 게 핵심 —
@@ -26267,9 +26267,10 @@ function fcValveGeo(o) {
         for (let j = 0; j <= NA; j++) {
             const q = (j / NA) * 2 - 1, ph = q * o.arc * 0.5;
             const rib = Math.sin(((q + 1) * 0.5) * o.ribs * Math.PI * 2);
-            const shrink = rw.in ? 1 - TH * 0.9 / Math.max(0.2, o.R) * 0.10 : 1;
+            const thk = TH * Math.min(1, rw.r / 0.22);   // 힌지에서 두께 0 — 두 짝 안쪽면 교차 방지
+            const shrink = rw.in ? 1 - thk * 0.9 / Math.max(0.2, o.R) * 0.10 : 1;
             const rad = o.R * r * o.edge(q, rib) * shrink;
-            const h = o.h(r, q, rib) - (rw.in ? Math.sign(o.h(0.6, 0, 0) || 1) * TH : 0);
+            const h = o.h(r, q, rib) - (rw.in ? Math.sign(o.h(0.6, 0, 0) || 1) * thk : 0);
             pos.push(rad * Math.sin(ph), h, rad * Math.cos(ph) - o.R * 0.30);
             uv.push((q + 1) * 0.5, 1 - r);
         }
@@ -26294,16 +26295,23 @@ function fcShellValves(id) {
         : null;   // 굴처럼 거친 비대칭 변 — 해시 스텝을 쓰면 불연속이라 찢긴 천이 된다
     for (const up of [false, true]) {
         const sg = up ? 1 : -1;
-        const depth = id === 'scallop' ? 0.30 : id === 'clam' ? 0.46 : 0.36;   // 가리비는 얕고 새조개는 볼록
+        const depth = id === 'scallop' ? 0.42 : id === 'clam' ? 0.62 : 0.50;   // 가리비는 얕고 새조개는 볼록
+        // ⚠️ 리브를 순수 사인으로 두면 골이 V자로 패여 **아코디언 주름**이 된다(사용자 리포트).
+        // 양(능선)은 넓게·음(골)은 좁고 얕게 → 둥근 리브 + 가는 골 = 실제 조개 결.
+        const ridge = (v) => (v > 0 ? Math.pow(v, 0.50) : -Math.pow(-v, 1.75) * 0.55);
         const g = fcValveGeo({
-            R: S.R, arc: S.arc, ribs: S.ribs, flip: !up, nr: 13, na: 52, thick: S.R * 0.030,   // 리브당 각도 샘플 6개 이상 — 적으면 리브가 패싯이 된다
-            edge: (q, rib) => (1 - 0.16 * Math.pow(Math.abs(q), 3.4)) * (1 + (id === 'scallop' ? 0.013 : 0.006) * rib) * (rough ? rough(q) : 1),   // 파상 변은 아주 얕게 — 크면 톱니가 된다
+            R: S.R, arc: S.arc, ribs: S.ribs, flip: !up, nr: 14, na: 52, thick: S.R * 0.030,
+            edge: (q, rib) => (1 - 0.16 * Math.pow(Math.abs(q), 3.4)) * (1 + (id === 'scallop' ? 0.016 : 0.008) * rib) * (rough ? rough(q) : 1),
+            // ⚠️ h가 r=0(힌지)에서 0이어야 두 짝이 **뒤에서 붙는다**. 안 그러면 힌지부터 벌어진다(실측).
+            // sin(πr)^0.72 → 힌지·자유변 모두 0인 렌즈. 벌리는 건 힌지축 회전으로만 한다.
             h: (r, q, rib) => sg * (
-                S.R * depth * Math.pow(Math.sin(Math.PI * Math.pow(r, 0.72)), 0.62) * (1 - 0.30 * q * q) * grow(r)
-                + S.R * (id === 'scallop' ? 0.070 : 0.038) * rib * Math.sin(Math.PI * r)   // 성기게 갈수록 골은 깊어야 카툰식으로 읽힌다   // ⚠️ 리브를 변까지 살리면 리브 끝마다 뾰족한 삼각(톱니)이 된다 — 양끝에서 죽인다
-                + S.R * 0.018 * Math.pow(r, 2.2)),                         // 자유변 쪽이 두꺼워진다
+                S.R * depth * Math.pow(Math.sin(Math.PI * r), 0.72) * (1 - 0.24 * q * q) * grow(r)
+                + S.R * (id === 'scallop' ? 0.046 : 0.026) * ridge(rib) * Math.pow(r, 1.15)),   // 리브는 힌지에서 모이고 자유변에서 강하다
         });
-        if (up) { g.rotateX(-S.open); g.translate(0, S.R * 0.045, -S.R * 0.10); }   // 위짝을 젖혀 자개 속이 보인다
+        if (up) {   // 위짝은 **힌지축(x축, z=−0.245R)** 기준으로만 젖힌다 — 평행이동하면 뒤가 뜬다
+            const zH = -S.R * 0.245;
+            g.translate(0, 0, -zH); g.rotateX(-S.open); g.translate(0, 0, zH);
+        }
         out.push({ geo: g, up });
     }
     if (id === 'scallop') for (const sx of [1, -1]) {   // 힌지 귀(auricle) — 가리비 식별의 핵심
@@ -26379,7 +26387,7 @@ function fcPaintShell(g) {
             g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
             for (let k = 0; k < S.ribs; k++) {   // 리브 — 밝은 능선 + 그늘진 골
                 const u = (k + 0.5) / S.ribs;
-                for (const [off, col, w] of [[-0.018, 'rgba(255,246,224,0.58)', 11], [0.020, 'rgba(118,82,48,0.40)', 9]]) {
+                for (const [off, col, w] of [[-0.016, 'rgba(255,246,224,0.30)', 9], [0.018, 'rgba(118,82,48,0.20)', 7]]) {
                     g.beginPath(); g.moveTo(X(u + off), Y(0.06)); g.lineTo(X(u + off), Y(1));
                     g.strokeStyle = col; g.lineWidth = w; g.stroke();
                 }
@@ -26416,7 +26424,7 @@ function fcPaintShell(g) {
             for (let k = 0; k < S.ribs; k++) {
                 const u = (k + 0.5) / S.ribs;
                 g.beginPath(); g.moveTo(X(u), Y(0.08)); g.lineTo(X(u), Y(1));
-                g.strokeStyle = 'rgba(176,110,124,0.28)'; g.lineWidth = 8; g.stroke();
+                g.strokeStyle = 'rgba(176,110,124,0.15)'; g.lineWidth = 7; g.stroke();
             }
             for (let k = 0; k < 6; k++) {   // 성장띠 — 새조개의 정체성
                 const v = 0.16 + k * 0.145;
@@ -26458,7 +26466,8 @@ function buildShellCartoon(id) {
             // ⚠️ 한 지오에 겉면·안쪽면·림이 다 들어 있다 → **면 방향으로** 판정해야 한다.
             // 지오 단위로 하면 위짝 전체가 자개 밝기가 되고 림이 흰 개스킷 띠로 보인다(실측).
             const dn = (nr ? nr.getY(i) : 0) * oY;
-            const t = dn < -0.25 ? 1.06 : 0.84 + 0.18 * Math.max(0, dn);   // 안쪽=자개 · 림=어둡게 · 겉면=위를 본 쪽이 밝다
+            const t = dn < -0.55 ? 0.99 : 0.84 + 0.18 * Math.max(0, dn);   // 안쪽=자개 · 림=어둡게 · 겉면=위를 본 쪽이 밝다
+            // ⚠️ 림의 정점 법선은 겉·안 사이로 스무딩된다 — 임계가 느슨하면 림이 밝은 파이핑으로 보인다(실측)
             col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = t;
             uv.setXY(i, R.u0 + uv.getX(i) * k, R.v1 - (1 - uv.getY(i)) * kv);
         }
