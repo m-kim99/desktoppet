@@ -12719,6 +12719,7 @@ function makeFoodGeo(f, bites = 0) {
             const RB = new THREE.Color(0x3d6c85), RF = new THREE.Color(0xc6d6df), RL = new THREE.Color(0xf8fbfc);   // raw 등·측·배
             const CB = new THREE.Color(0x7c3f12), CF = new THREE.Color(0xd28c34), CL = new THREE.Color(0xf0c98c);   // cooked 등·측·배
             const CHAR = new THREE.Color(0x3e1f08), FLESH = new THREE.Color(0xf9eeda), SILV = new THREE.Color(0xffffff);
+            const MK_R = new THREE.Color(0x255b7a), MK_C = new THREE.Color(0x6d3107);   // 물결 무늬 — raw 심해 청록 / cooked 진한 호박갈색
             const tmp = new THREE.Color();
             for (let i = 0; i < pos.count; i++) {
                 const x0 = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
@@ -12733,22 +12734,28 @@ function makeFoodGeo(f, bites = 0) {
                     const rowH = 0.0050, rw = y / rowH, ri = Math.floor(rw), rf = rw - ri;
                     const cw = (th / (Math.PI * 2)) * 17 + (ri % 2 ? 0.5 : 0), cf = cw - Math.floor(cw);
                     const cell = Math.max(0, 1 - Math.hypot((cf - 0.5) * 1.15, rf - 0.5) * 2.1);   // 1=비늘 중앙 → 0=경계
-                    cc.offsetHSL(Math.sin(y * 90 + th * 3) * 0.012, 0.02, 0.055 * cell - 0.085 * (1 - cell));
+                    cc.offsetHSL(Math.sin(y * 90 + th * 3) * 0.012, 0.02, 0.032 * cell - 0.048 * (1 - cell));   // 비늘 격자는 바탕 결로만 (강하면 골프공처럼 보인다 — 무늬는 아래 물결 밴드가 전담)
                     if (side < -0.25 && hsh2(Math.round(y * 260), Math.round(th * 34)) > 0.74) cc.lerp(RB, 0.4);          // 등 얼룩
                     if (Math.abs(side) < 0.07) cc.lerp(SILV, 0.24);                                                      // 측선 은빛
                     if (Math.abs(y - 0.0862) < 0.0018 && side > -0.75) cc.lerp(RB, 0.45);                                // 아가미뚜껑 선 — 토러스로 세우면 눈 옆 사선 흠집(찡그림)이 된다(실측)
-                    h = 0.00042 * cell - 0.00028 * (1 - cell);                                                           // 낱장 볼록 + 경계 골
+                    h = 0.0003 * cell - 0.0002 * (1 - cell);                                                             // 낱장 볼록 + 경계 골
                 } else {
                     const bl = hsh2(Math.round(y * 420), Math.round(th * 26));    // 부풀어 터진 물집 — 바삭함의 정체
-                    if (bl > 0.62) { const k2 = (bl - 0.62) / 0.38; h += 0.0012 * k2; cc.lerp(CHAR, 0.5 * k2); }
+                    if (bl > 0.62) { const k2 = (bl - 0.62) / 0.38; h += 0.0012 * k2; cc.lerp(CHAR, 0.34 * k2); }   // 그을림이 세면 물결 무늬가 묻힌다 — 릴리프는 유지, 색만 낮춤
                     const band = Math.sin(y * 128 + th * 0.45);                   // 시어링 띠 — th 계수가 크면 사탕처럼 몸을 감는다(실측): 거의 몸축 직각으로
                     if (band > 0.80) cc.lerp(CHAR, Math.min(0.62, (band - 0.80) * 3.1));
                     if (side > 0.1 && Math.abs(Math.sin(y * 88 + th * 2.6)) > 0.989) { cc.lerp(FLESH, 0.7); h -= 0.0005; }   // 껍질이 터져 드러난 흰 속살 — 배쪽에만 조금
                     if (Math.abs(y - 0.0862) < 0.0018 && side > -0.75) cc.lerp(CHAR, 0.4);                               // 아가미뚜껑 선(구운 뒤엔 더 진하게 그을린다)
                     cc.offsetHSL(0, 0, (hsh2(y * 700, th * 60) - 0.5) * 0.03);
                 }
-                if (h) { const nx = x0, nz = z / (ZK * ZK), nl = Math.hypot(nx, nz) || 1; pos.setX(i, x0 + nx / nl * h); pos.setZ(i, z + nz / nl * h); }
+                // 🌊 물결 무늬 — 등을 가로지르는 굽이치는 밴드 5줄(고등어 무늬 문법). 비늘 격자보다 "생선"이 즉시 읽히고,
+                // 상태별 색을 그대로 짙게 쓴다: raw=심해 청록 / cooked=진한 호박갈색.
+                const wy = y - Math.sin(th * 2.6 + 0.6) * 0.0092 - Math.sin(th * 5.1 + 1.9) * 0.0028;   // 굽이 폭이 작으면 얼룩으로 보인다(실측)
+                const wv = Math.sin(wy * 255);
+                const bandK = THREE.MathUtils.smoothstep(wv, 0.08, 0.60) * THREE.MathUtils.clamp((0.55 - side) / 0.6, 0, 1);   // 등~중측면만, 배는 말끔히
+                if (bandK > 0.01) cc.lerp(raw ? MK_R : MK_C, bandK * (raw ? 0.88 : 0.82));
                 cols[i * 3] = cc.r; cols[i * 3 + 1] = cc.g; cols[i * 3 + 2] = cc.b;
+                if (h) { const nx = x0, nz = z / (ZK * ZK), nl = Math.hypot(nx, nz) || 1; pos.setX(i, x0 + nx / nl * h); pos.setZ(i, z + nz / nl * h); }
             }
             body.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
             put(body);
