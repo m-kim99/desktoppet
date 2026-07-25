@@ -16705,7 +16705,7 @@ function jetPoints(count, tex, size, len, spread, upDir, speedLo, speedHi, { rin
 function makeRocket() {
     const g = new THREE.Group();
     g.rotation.order = 'YXZ';   // heading(Y) 먼저, pitch(X)는 기수 방향으로
-    const grad = [], red = [], metal = [], dark = [];
+    const grad = [], red = [], metal = [], dark = [], gloss = [];   // gloss=클리어코트(노즈콘·단열 밴드) — +1 draw
     // Extrude(핀)는 논인덱스·Lathe/Torus는 인덱스 — 혼합 병합은 null을 뱉는다 (버킷 3계명)
     const mergeSafe = (arr) => mergeGeometries(arr.map((q) => (q.index ? q.toNonIndexed() : q)), false);
     // 스웹 핀 3장 + 착륙 발 (핀이 다리를 겸하는 틴틴 문법 — 스포츠카 실루엣 압출 문법)
@@ -16716,13 +16716,32 @@ function makeRocket() {
     finShape.quadraticCurveTo(0.53, 0.12, 0.50, 0.06);
     finShape.quadraticCurveTo(0.38, 0.02, 0.22, 0.06);
     for (const a of [Math.PI / 2, Math.PI / 2 + 2.0944, Math.PI / 2 + 4.1888]) {
-        const fin = new THREE.ExtrudeGeometry(finShape, { depth: 0.045, bevelEnabled: false });
-        fin.translate(0, 0, -0.0225);
+        // 베벨 = 에어포일 단면(가운데 두껍고 앞뒤 얇게). 베벨 없는 압출은 골판지로 읽힌다
+        const fin = new THREE.ExtrudeGeometry(finShape, { depth: 0.03, bevelEnabled: true, bevelThickness: 0.013, bevelSize: 0.011, bevelSegments: 2, curveSegments: 10 });
+        fin.translate(0, 0, -0.015);
         fin.rotateY(-a);
         grad.push(bakeGrad(fin, 0xe06a58, 0xa8443a, { curve: 0.9 }));
-        const foot = new THREE.CylinderGeometry(0.062, 0.075, 0.05, 10);
-        foot.translate(Math.cos(a) * 0.47, 0.025, Math.sin(a) * 0.47);
+        const cs = Math.cos(a), sn = Math.sin(a);
+        for (const ry of [0.2, 0.42]) {   // 보강 리브 2줄
+            const rib = new THREE.BoxGeometry(0.2, 0.022, 0.075);
+            rib.rotateY(-a);
+            rib.translate(cs * 0.33, ry, sn * 0.33);
+            grad.push(bakeGrad(rib, 0xc85a48, 0x93382e, { curve: 1 }));
+        }
+        const fil = new THREE.BoxGeometry(0.055, 0.3, 0.1);   // 뿌리 필렛 — 동체에 녹아드는 살
+        fil.rotateY(-a);
+        fil.translate(cs * 0.235, 0.28, sn * 0.235);
+        grad.push(bakeGrad(fil, 0xd8604e, 0x9d3e33, { curve: 1 }));
+        const tip = new THREE.BoxGeometry(0.055, 0.05, 0.07);
+        tip.rotateY(-a);
+        tip.translate(cs * 0.5, 0.3, sn * 0.5);
+        metal.push(tip);
+        metal.push(new THREE.CylinderGeometry(0.026, 0.026, 0.075, 8).translate(cs * 0.47, 0.075, sn * 0.47));   // 쇼크 업소버 2단
+        metal.push(new THREE.CylinderGeometry(0.038, 0.042, 0.05, 8).translate(cs * 0.47, 0.045, sn * 0.47));
+        const foot = new THREE.CylinderGeometry(0.075, 0.088, 0.032, 12);
+        foot.translate(cs * 0.47, 0.016, sn * 0.47);
         metal.push(foot);
+        dark.push(new THREE.CylinderGeometry(0.09, 0.09, 0.008, 12).translate(cs * 0.47, 0.004, sn * 0.47));   // 접지판
     }
     // 노즐 벨 + 내부 어둠
     const bell = new THREE.CylinderGeometry(0.10, 0.17, 0.20, 16, 1, true);
@@ -16731,6 +16750,22 @@ function makeRocket() {
     const bellIn = new THREE.CircleGeometry(0.155, 16).rotateX(Math.PI / 2);
     bellIn.translate(0, 0.035, 0);
     dark.push(bellIn);
+    for (let i = 0; i < 16; i++) {   // 냉각 채널 — 벨 바깥 세로 줄. 로켓에서 가장 기계다워야 할 곳
+        const a2 = (i / 16) * Math.PI * 2, rM = 0.137;
+        const ch = new THREE.BoxGeometry(0.016, 0.205, 0.016);
+        ch.rotateX(0.175);
+        ch.rotateY(-a2);
+        ch.translate(Math.cos(a2) * rM, 0.12, Math.sin(a2) * rM);
+        metal.push(ch);
+    }
+    metal.push(new THREE.TorusGeometry(0.172, 0.014, 6, 20).rotateX(Math.PI / 2).translate(0, 0.03, 0));   // 벨 립
+    metal.push(new THREE.TorusGeometry(0.105, 0.012, 6, 16).rotateX(Math.PI / 2).translate(0, 0.215, 0));
+    dark.push(new THREE.CylinderGeometry(0.062, 0.062, 0.07, 12).translate(0, 0.25, 0));                   // 목(throat)
+    metal.push(new THREE.SphereGeometry(0.058, 10, 8).translate(0, 0.3, 0));                               // 짐벌 조인트
+    for (const [tx, tz] of [[0.115, 0.055], [-0.1, -0.08]]) {                                              // 터보펌프 2
+        metal.push(new THREE.CylinderGeometry(0.045, 0.045, 0.085, 8).translate(tx, 0.28, tz));
+        metal.push(new THREE.CylinderGeometry(0.014, 0.014, 0.12, 6).rotateZ(0.5).translate(tx * 0.6, 0.33, tz * 0.6));
+    }
     // 동체: 통통한 크림 Lathe (전망 로켓 프로포션 — 캐빈 내경이 "펫 둘 등맞대기" 기준)
     const bodyPts = [
         new THREE.Vector2(0.10, 0.14), new THREE.Vector2(0.20, 0.18), new THREE.Vector2(0.26, 0.30),
@@ -16738,6 +16773,31 @@ function makeRocket() {
         new THREE.Vector2(0.27, 0.95), new THREE.Vector2(0.245, 0.985),
     ];
     grad.push(bakeGrad(new THREE.LatheGeometry(bodyPts, 20), 0xf4e6c8, 0xcfa87a, { curve: 1.2 }));
+    // A. 패널 이음매 — 민무늬 Lathe는 "크림색 병"으로 읽힌다. 실제 단차 링 + 리벳 점열로 위계를 준다
+    for (const [sy, sr] of [[0.30, 0.262], [0.72, 0.292], [0.90, 0.276]]) {
+        grad.push(bakeGrad(new THREE.TorusGeometry(sr, 0.009, 6, 26).rotateX(Math.PI / 2).translate(0, sy, 0), 0xe8d6b4, 0xbe9a70, { curve: 1 }));
+        for (let i = 0; i < 18; i++) {
+            const a2 = (i / 18) * Math.PI * 2;
+            metal.push(new THREE.CylinderGeometry(0.007, 0.007, 0.012, 5).rotateX(Math.PI / 2).rotateY(-a2)
+                .translate(Math.cos(a2) * (sr + 0.006), sy - 0.035, Math.sin(a2) * (sr + 0.006)));
+        }
+    }
+    for (let i = 0; i < 6; i++) {   // 세로 패널 분할
+        const a2 = (i / 6) * Math.PI * 2 + 0.5;
+        grad.push(bakeGrad(new THREE.BoxGeometry(0.012, 0.4, 0.02).rotateY(-a2).translate(Math.cos(a2) * 0.293, 0.51, Math.sin(a2) * 0.293), 0xe2cfab, 0xb28f66, { curve: 1 }));
+    }
+    grad.push(bakeGrad(new THREE.CylinderGeometry(0.24, 0.268, 0.055, 20).translate(0, 0.175, 0), 0xd8cdb8, 0x8e8578, { curve: 1 }));   // 엔진 슈라우드
+    // E. 그리드 핀 3 — 동체에 접혀 붙은 채. 프레임 + 격자 살
+    for (let k = 0; k < 3; k++) {
+        const a2 = Math.PI / 2 + k * 2.0944 + 1.047;
+        const cs2 = Math.cos(a2), sn2 = Math.sin(a2);
+        const fr = 0.30;
+        metal.push(new THREE.BoxGeometry(0.018, 0.2, 0.017).rotateY(-a2).translate(cs2 * (fr + 0.02), 0.8, sn2 * (fr + 0.02) + 0.057));
+        metal.push(new THREE.BoxGeometry(0.018, 0.2, 0.017).rotateY(-a2).translate(cs2 * (fr + 0.02) + 0.057 * sn2, 0.8, sn2 * (fr + 0.02) - 0.057 * cs2));
+        for (const gy of [0.73, 0.8, 0.87]) metal.push(new THREE.BoxGeometry(0.022, 0.014, 0.125).rotateY(-a2).translate(cs2 * (fr + 0.03), gy, sn2 * (fr + 0.03)));
+        for (const go of [-0.045, 0, 0.045]) metal.push(new THREE.BoxGeometry(0.022, 0.19, 0.014).rotateY(-a2).translate(cs2 * (fr + 0.03) - sn2 * go, 0.8, sn2 * (fr + 0.03) + cs2 * go));
+        metal.push(new THREE.CylinderGeometry(0.02, 0.02, 0.06, 6).rotateZ(Math.PI / 2).rotateY(-a2).translate(cs2 * fr, 0.7, sn2 * fr));   // 힌지
+    }
     // 전망 캐빈: 두 좌석 사이 콘솔 + 유리 위아래 금속 림 (유리 돔 0.98~1.24 — 앉으면 어깨까지, 유영하면 온몸)
     const consolePost = new THREE.CylinderGeometry(0.028, 0.036, 0.10, 8);
     consolePost.translate(0, 1.015, 0);
@@ -16747,12 +16807,34 @@ function makeRocket() {
         rimT.translate(0, ry, 0);
         metal.push(rimT);
     }
+    for (let i = 0; i < 6; i++) {   // G. 창틀 멀리언 — 통유리는 스케일이 안 읽힌다
+        const a2 = (i / 6) * Math.PI * 2 + 0.26;
+        metal.push(new THREE.BoxGeometry(0.016, 0.25, 0.022).rotateY(-a2).translate(Math.cos(a2) * 0.238, 1.11, Math.sin(a2) * 0.238));
+    }
+    for (const [ha, hy] of [[0.9, 0.93], [3.9, 0.93]]) {   // 외부 핸드레일 — 사람 크기 단서
+        const cs2 = Math.cos(ha), sn2 = Math.sin(ha);
+        metal.push(new THREE.BoxGeometry(0.014, 0.014, 0.11).rotateY(-ha).translate(cs2 * 0.3, hy, sn2 * 0.3));
+        for (const so of [-0.045, 0.045]) metal.push(new THREE.BoxGeometry(0.03, 0.014, 0.014).rotateY(-ha).translate(cs2 * 0.285 - sn2 * so, hy, sn2 * 0.285 + cs2 * so));
+    }
     // 노즈콘: 코랄 레드 그라디언트 (gradMat 병합 — 크림 동체·핀과 한 드로우) + 안테나 마스트
     const nosePts = [
         new THREE.Vector2(0.245, 1.235), new THREE.Vector2(0.22, 1.30),
         new THREE.Vector2(0.155, 1.42), new THREE.Vector2(0.075, 1.52), new THREE.Vector2(0.0, 1.585),
     ];
-    grad.push(bakeGrad(new THREE.LatheGeometry(nosePts, 20), 0xe06a58, 0xb04a3c, { curve: 1 }));
+    gloss.push(bakeGrad(new THREE.LatheGeometry(nosePts, 20), 0xe8735f, 0xa8443a, { curve: 1 }));   // D. 노즈콘 = 클리어코트 광택(전부 매트면 평평하다)
+    // ⚠️ 단열 밴드에 gradMatFoil(metalness 0.92)을 쓰면 어두운 RoomEnvironment만 반사해 **검은 띠**가
+    // 된다(실측). 간식 파우치처럼 작고 구겨진 면엔 맞지만 로켓의 넓은 원통엔 못 쓴다 → 광택 버킷(metalness 0).
+    gloss.push(bakeGrad(new THREE.CylinderGeometry(0.286, 0.298, 0.15, 20).translate(0, 0.845, 0), 0xfdfefe, 0xccd4dc, { curve: 1.1 }));
+    gloss.push(bakeGrad(new THREE.CylinderGeometry(0.253, 0.253, 0.05, 20).translate(0, 1.29, 0), 0xfbfdfe, 0xc8d0d8, { curve: 1.1 }));
+    for (let i = 0; i < 24; i++) {   // 단열재 주름 — 밋밋한 원통이 플라스틱 링으로 읽히는 걸 끊는다
+        const a3 = (i / 24) * Math.PI * 2;
+        gloss.push(bakeGrad(new THREE.BoxGeometry(0.014, 0.15, 0.016).rotateY(-a3).translate(Math.cos(a3) * 0.297, 0.845, Math.sin(a3) * 0.297), 0xe6ecf2, 0xb4bec8, { curve: 1 }));
+    }
+    for (let i = 0; i < 4; i++) {   // E. RCS 스러스터 4 (십자) — 자세 제어가 있다는 신호
+        const a2 = i * Math.PI / 2 + 0.79, cs2 = Math.cos(a2), sn2 = Math.sin(a2);
+        metal.push(new THREE.BoxGeometry(0.05, 0.05, 0.045).rotateY(-a2).translate(cs2 * 0.226, 1.325, sn2 * 0.226));
+        dark.push(new THREE.CylinderGeometry(0.012, 0.02, 0.035, 8).rotateZ(Math.PI / 2).rotateY(-a2).translate(cs2 * 0.257, 1.325, sn2 * 0.257));
+    }
     const mast = new THREE.CylinderGeometry(0.009, 0.012, 0.10, 6);
     mast.translate(0, 1.62, 0);
     metal.push(mast);
@@ -16770,7 +16852,7 @@ function makeRocket() {
         glass.translate(0, py, pz + (pz > 0 ? 0.004 : -0.004));
         dark.push(glass);
     }
-    for (const [arr, mat] of [[grad, gradMat], [red, M(0xd05a4a)], [metal, M(0x5a5f66)], [dark, M(0x2c241d)]]) {
+    for (const [arr, mat] of [[grad, gradMat], [red, M(0xd05a4a)], [metal, M(0x5a5f66)], [dark, M(0x2c241d)], [gloss, gradMatGloss]]) {
         const merged = mergeSafe(arr);
         if (merged) g.add(new THREE.Mesh(merged, mat));
     }
@@ -16790,7 +16872,7 @@ function makeRocket() {
     g.add(cabinWarm);
     const glassBand = new THREE.Mesh(
         new THREE.CylinderGeometry(0.235, 0.235, 0.26, 20, 1, true),
-        new THREE.MeshStandardMaterial({ color: 0xd8ecf4, transparent: true, opacity: 0.26, roughness: 0.15, metalness: 0.1, side: THREE.DoubleSide })
+        new THREE.MeshPhysicalMaterial({ color: 0xd8ecf4, transparent: true, opacity: 0.24, roughness: 0.05, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.03, envMap: scene.userData.envTex, envMapIntensity: 1.1, side: THREE.DoubleSide })
     );
     glassBand.position.y = 1.11;
     g.add(glassBand);
