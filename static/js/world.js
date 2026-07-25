@@ -16969,13 +16969,28 @@ const SPACE_POIS = [
     { id: 'moon', ko: '꼬마 달', emoji: '🌕', x: -24, y: 33, z: 16, R: 7, walkR: 4.2, near: 10, avoid: 8 },      // y=구 중심 (정상 y40)
     { id: 'station', ko: '별빛 정거장', emoji: '🛰️', x: 22, y: 34, z: -13, walkR: 3.9, near: 7.5, avoid: 4.9 },  // y=갑판 상판
 ];
-function poiSurfaceY(poi, x, z) {   // 산책 표면 — 달은 구면 캡(언덕처럼 걷는다), 정거장은 평갑판
+// 🛰️ 갑판 화물 = 유일하게 올라설 수 있는 입체. 좌표는 조형과 1:1(정거장 로컬, 원점 = 갑판 상판)
+// — 조형을 옮기면 여기도 같이 옮겨야 한다. 스텝 크레이트(0.24)가 큰 상자(0.56)로 오르는 계단.
+const STATION_CRATES = [
+    { x: 2.85, z: -1.35, hw: 0.36, hd: 0.288, ry: 0.35, top: 0.56 },
+    { x: 2.2, z: -2.25, hw: 0.28, hd: 0.224, ry: -0.2, top: 0.56 },
+    { x: 1.72, z: -1.98, hw: 0.21, hd: 0.21, ry: 0.18, top: 0.26 },
+];
+function stationCrateTop(lx, lz) {   // geometry.rotateY(ry)의 역변환으로 상자 로컬 좌표에서 판정
+    for (const c of STATION_CRATES) {
+        const dx = lx - c.x, dz = lz - c.z, co = Math.cos(c.ry), si = Math.sin(c.ry);
+        if (Math.abs(dx * co - dz * si) <= c.hw + 0.05 && Math.abs(dx * si + dz * co) <= c.hd + 0.05) return c.top;
+    }
+    return 0;
+}
+function poiSurfaceY(poi, x, z) {   // 산책 표면 — 달은 구면 캡(언덕처럼 걷는다), 정거장은 평갑판 + 화물 위
     if (poi.R) {
         const dx = x - poi.x, dz = z - poi.z;
         return poi.y + Math.sqrt(Math.max(1, poi.R * poi.R - dx * dx - dz * dz));
     }
-    return poi.y;
+    return poi.y + stationCrateTop(x - poi.x, z - poi.z);
 }
+if (statsOn && window.__worldDev) window.__worldDev.poiSurf = (x, z) => +(poiSurfaceY(SPACE_POIS[1], SPACE_POIS[1].x + x, SPACE_POIS[1].z + z) - SPACE_POIS[1].y).toFixed(3);   // 검수 훅: 정거장 로컬 좌표의 보행 표면 높이
 const MOON_PAD_N = new THREE.Vector3(1.4, Math.sqrt(49 - 1.96), 0).normalize();   // 정상에서 살짝 비낀 착륙 명당 — 어린왕자 기울기
 const MOON_FLAG_N = new THREE.Vector3(-1.9, 6.55, 1.3).normalize();               // 빨간 깃발 법선 — 조형·산책 어포던스 공유
 // 🌑 달 크레이터 보물: 48h 주기 재보급, 발굴 지점은 주기 시드로 온 구체 어디든(패드 발밑 제외 —
@@ -17063,6 +17078,9 @@ const navGrnMat = new THREE.MeshBasicMaterial({ color: 0x7df0a4, fog: false });
     const vendGlassMat = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.15, roughness: 0.1, metalness: 0, side: THREE.DoubleSide, depthWrite: false, fog: false });
     const vendSnackMat = gradMat.clone(); vendSnackMat.fog = false;
     const poiFoil = gradMatFoil.clone(); poiFoil.fog = false;
+    // ☀️ 태양전지 셀 — 각도에 따라 번쩍이는 유리면(클리어코트 + envMap 반사). 정점색은 남색 램프만
+    // 맡고 광택은 재질이 전담 — 매트 재질(roughness .85)로는 "남색 종이판"으로 읽힌다(사용자 리포트).
+    const poiCell = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.07, metalness: 0.1, ior: 1.7, clearcoat: 1, clearcoatRoughness: 0.03, envMap: scene.userData.envTex, envMapIntensity: 1.8, fog: false });
     const poiGloss = gradMatGloss.clone(); poiGloss.fog = false;
     const addMerged = (parent, arr, mat) => { const g = mergeGeometries(arr, false); if (g) parent.add(new THREE.Mesh(g, mat)); };
     // 🌕 꼬마 달 (R7 — 펫이 정상 캡 r4.2를 걸어다니는 체급): 회백 구 + 크레이터 14 + 빨간 깃발
@@ -17149,6 +17167,7 @@ const navGrnMat = new THREE.MeshBasicMaterial({ color: 0x7df0a4, fog: false });
     const YEL = (g) => bakeGrad(g, 0xf4d264, 0xc39a24, { curve: 1 });
     const WHT = (g) => bakeGrad(g, 0xf2f5f8, 0xb9c2cb, { curve: 1 });
     const FOILC = (g) => bakeGrad(g, 0xf8fbff, 0xb9c4d2, { curve: 1.1 });
+    const BUS = (g) => bakeGrad(g, 0xe6ecf2, 0x9aa5b0, { curve: 1 });   // 셀 버스바 — 갈색 이음매 색이면 녹슨 선으로 읽힌다
     // ── 갑판(지름 고정) 표면: 방사 이음매 16 · 동심 링 2 · 패드 그레이팅 · 위험 빗금 · 통행 셰브론 · 해치 2
     sGrad.push(DECK(scyl(4.2, 3.85, 0.5, 30, 0, -0.25, 0)));
     for (let i = 0; i < 16; i++) sGrad.push(SEAM(sbox(0.035, 0.012, 2.55, 0, 0.006, 2.78).rotateY((i / 16) * Math.PI * 2)));
@@ -17276,11 +17295,19 @@ const navGrnMat = new THREE.MeshBasicMaterial({ color: 0x7df0a4, fog: false });
     }
     {   // ── 화물 존: 컨테이너 2 + 팔레트 + 고박 스트랩 (텅 비어 있던 갑판을 채운다)
         const cGrad = [], cMetal = [];
-        for (const [cx, cz, cw, ry] of [[2.85, -1.35, 0.72, 0.35], [2.2, -2.25, 0.56, -0.2]]) {   // ⚠️ 좌현은 망원경(-3.05,1.8)·자판기(-2.35,-2.05) 자리 — 화물은 우현 후방에만
+        // ⚠️ 좌현은 망원경(-3.05,1.8)·자판기(-2.35,-2.05) 자리 — 화물은 우현 후방에만.
+        // 좌표·높이는 STATION_CRATES(보행 표면)와 1:1 — 한쪽만 옮기면 펫이 허공을 딛는다.
+        for (const [cx, cz, cw, ry] of [[2.85, -1.35, 0.72, 0.35], [2.2, -2.25, 0.56, -0.2]]) {
             cGrad.push(WHT(sbox(cw, 0.5, cw * 0.8, 0, 0.31, 0).rotateY(ry).translate(cx, 0, cz)));
             for (let i = -1; i <= 1; i++) cMetal.push(sbox(cw * 1.02, 0.045, 0.042, 0, 0.31 + i * 0.15, cw * 0.41).rotateY(ry).translate(cx, 0, cz));
             cMetal.push(sbox(cw * 1.15, 0.06, cw * 0.95, 0, 0.03, 0).rotateY(ry).translate(cx, 0, cz));
             cGrad.push(YEL(sbox(cw * 1.05, 0.03, 0.05, 0, 0.45, 0).rotateY(ry).translate(cx, 0, cz)));
+        }
+        {   // 스텝 크레이트 — 0.56 상자를 한 번에 오르지 않게 하는 계단참
+            const sc = STATION_CRATES[2];
+            cGrad.push(WHT(sbox(sc.hw * 2, 0.26, sc.hd * 2, 0, 0.13, 0).rotateY(sc.ry).translate(sc.x, 0, sc.z)));
+            cMetal.push(sbox(sc.hw * 2.04, 0.035, 0.04, 0, 0.2, sc.hd).rotateY(sc.ry).translate(sc.x, 0, sc.z));
+            cMetal.push(sbox(sc.hw * 2.04, 0.035, 0.04, 0, 0.07, sc.hd).rotateY(sc.ry).translate(sc.x, 0, sc.z));
         }
         addMerged(stG, cGrad, poiGrad);
         addMerged(stG, cMetal, poiMetal);
@@ -17315,16 +17342,18 @@ const navGrnMat = new THREE.MeshBasicMaterial({ color: 0x7df0a4, fog: false });
         stG.add(new THREE.Mesh(yGeo, poiMetal));
         const wing = new THREE.Group();
         wing.position.set(s_ * 4.15, 3.8, -2.9);
-        const wGrad = [];
+        const wGrad = [], wCell = [];
         wGrad.push(WHT(sbox(0.14, 0.09, 3.7, 0, 0, 0)));                          // 스파
         for (const pz of [-1.75, 1.75]) {
-            wGrad.push(bakeGrad(sbox(2.2, 0.05, 3.2, 0, 0, pz), 0x2f4f9c, 0xc8a13c, { curve: 1 }));   // 위=셀 블루 / 아래=캡톤 금색
-            for (let c = -2; c <= 2; c++) wGrad.push(SEAM(sbox(2.2, 0.012, 0.035, 0, 0.028, pz + c * 0.62)));
-            for (const cx of [-0.73, 0.73]) wGrad.push(SEAM(sbox(0.035, 0.012, 3.2, cx, 0.028, pz)));
+            wGrad.push(bakeGrad(sbox(2.2, 0.05, 3.2, 0, 0, pz), 0x6e6244, 0xc8a13c, { curve: 1 }));   // 판 본체 — 아래=캡톤 금색
+            wCell.push(bakeGrad(sbox(2.14, 0.016, 3.14, 0, 0.033, pz), 0x4a72d8, 0x0e1a38, { curve: 1.6 }));   // 셀 유리(반사 재질)
+            for (let c = -2; c <= 2; c++) wGrad.push(BUS(sbox(2.16, 0.01, 0.03, 0, 0.044, pz + c * 0.62)));   // 버스바 — 유리 위 은색 리본
+            for (const cx of [-0.73, 0.73]) wGrad.push(BUS(sbox(0.03, 0.01, 3.14, cx, 0.044, pz)));
             for (const [fw, fd, fx, fz] of [[2.26, 0.06, 0, pz - 1.6], [2.26, 0.06, 0, pz + 1.6], [0.06, 3.3, -1.11, pz], [0.06, 3.3, 1.11, pz]])
                 wGrad.push(WHT(sbox(fw, 0.075, fd, fx, 0, fz)));
         }
         addMerged(wing, wGrad, poiGrad);
+        addMerged(wing, wCell, poiCell);
         wing.add(new THREE.Mesh(scyl(0.075, 0.075, 0.06, 8, 0, 0.06, s_ * 3.45), s_ < 0 ? navRedMat : navGrnMat));
         stG.add(wing);
         if (s_ < 0) stationWingL = wing; else stationWingR = wing;

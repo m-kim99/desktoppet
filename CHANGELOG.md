@@ -28,6 +28,19 @@ Patch notes go here — newest on top.
   중앙 포트홀(x=0)은 **십자 모듈 속에 파묻혀** 보이지 않아 제외.
 - 검증: 격리 렌더 3컷(정면·3/4·top-down, `scripts/_vend-shot.mjs stn`) 전후 대조 · world-smoke
   15/15 · 섬 draws 232(정거장은 우주 전용이라 지상 예산 무영향) · 정거장 조형 ~11k tris.
+- **후속 2건(사용자 리포트)**:
+  - ☀️ **태양전지 셀에 각도 반사** — 판을 통짜 박스에서 **본체 + 셀 유리(별도 메시)**로 쪼개고
+    유리에 전용 재질 `poiCell`(MeshPhysical · roughness .07 · clearcoat 1/.03 · ior 1.7 ·
+    envMap = `scene.userData.envTex` · intensity 1.8). 매트 `poiGrad`(roughness .85)로는 남색
+    종이판으로 읽혔다. 요크가 기울면 하이라이트가 흐르고 각도가 벗어나면 짙은 남색으로 죽는다
+    (`scripts/_panel-probe.mjs`로 −0.62/−0.1/+0.45rad 3컷 실측). 버스바는 갈색 이음매색 →
+    은색 리본(`BUS`)으로 — 갈색이면 녹슨 선으로 읽힌다.
+  - 📦 **화물 상자 위에 올라설 수 있게** — 조형만 있고 보행 표면 훅에 없어 점프하면 그대로
+    통과했다. `STATION_CRATES`(로컬 좌표·반치수·회전·윗면) + `stationCrateTop()`을 만들어
+    **`poiSurfaceY` 한 곳**에 물렸다(EVA 보행·점프 착지·AI 배치가 전부 이 함수를 지난다 —
+    지상의 groundHeightAt/playerSupportY 2훅 문법과 다르다). 0.56 상자를 한 번에 오르지 않게
+    **스텝 크레이트(0.26)** 추가. 실측 훅 `__worldDev.poiSurf(x,z)`: 상자 중심/모서리 0.56 ·
+    바로 밖 0 · 스텝 0.26 · 패드·망원경·자판기 자리 0.
 
 ### Changed (🔥🍢 구이 3종 완성도 라운드 — 사용자 반복 검수)
 - **🐟생선**: 원통 몸통(애벌레·불쾌한 골짜기 리포트) → **좌우 납작(ZK 0.42) 방추형** + 최대 굵기를
