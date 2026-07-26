@@ -5,6 +5,17 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Added (🌏 월드 펫 성격·시스템 지시 편집 UI — 펫 설정 탭 접이식 섹션)
+- 데스크톱 펫 설정 탭에 **"🌏 월드 펫 성격·시스템 지시" 접이식 섹션**(기본 접힘 — 거의 안 바뀌는
+  값이라). 편집 텍스트박스 6종: 병아리/강아지 성격 · 세계관 · 대답 규칙 · 행동 태그 스펙 · 우편 답장 성격.
+- **단일 소스 유지**: server.py 상수가 기본값 정본. UI는 `settings.worldConfig` 오버라이드에만
+  저장하고, 칸을 비우면 상수로 폴백(= 기본값 리셋). world_chat/그림일기/우편이 `_world_persona_*`
+  헬퍼로 "오버라이드 or 기본값"을 읽는다.
+- 프리필: 섹션을 펼치면 `GET /api/world_persona`가 현재 유효 텍스트를 반환해 빈 박스만 채운다
+  (시작 비용 0, 저장된 오버라이드는 안 건드림). autoSaveSettings에 worldConfig 편입, i18n 3개 로케일.
+- 검증: 페르소나 로직 유닛 테스트(오버라이드·빈칸리셋·puppy 분기), `GET /api/world_persona`
+  read 경로(SENTINEL), Bedrock world_chat end-to-end 실응답 — 전부 통과. 문법 6파일 OK.
+
 ### Added (☁️ Amazon Bedrock 연동 — customAnthropic 공급자로 Claude 사용)
 - `ClaudeAsOpenAI` 어댑터가 litellm 프로바이더 프리픽스를 존중: 모델명이
   `bedrock/apac.anthropic.claude-…` 형식이면 Bedrock으로 라우팅 (bare 모델명만 Anthropic 기본).

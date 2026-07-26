@@ -959,6 +959,11 @@ let vue_data = {
       wanderInterval: 90,       // Base wander interval in seconds (jittered at runtime)
       wanderRange: 250,         // Max wander distance in pixels per move
     },
+    // 🌏 월드 펫 페르소나/시스템 지시 — settings.worldConfig 오버라이드. 비어 있으면 서버 상수(기본값)가
+    // 쓰인다. loadSettings가 /api/world_persona로 현재 유효 텍스트를 받아 편집 박스를 채운다.
+    worldConfig: {
+      chickPersona: '', puppyPersona: '', lore: '', replyRules: '', actionSpec: '', mailPersona: '',
+    },
     newAppearanceConfig: {
       name: '',
       windowWidth: 540,

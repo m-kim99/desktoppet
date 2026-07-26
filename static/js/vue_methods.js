@@ -1879,6 +1879,7 @@ let vue_methods = {
           this.ttsSettings = data.data.ttsSettings || this.ttsSettings;
           this.behaviorSettings = data.data.behaviorSettings || this.behaviorSettings;
           this.VRMConfig = data.data.VRMConfig || this.VRMConfig;
+          this.worldConfig = { ...this.worldConfig, ...(data.data.worldConfig || {}) };
           this.comfyuiServers = data.data.comfyuiServers || this.comfyuiServers;
           this.comfyuiAPIkey = data.data.comfyuiAPIkey || this.comfyuiAPIkey;
           this.workflows = data.data.workflows || this.workflows;
@@ -1985,6 +1986,7 @@ let vue_methods = {
           this.ttsSettings = data.data.ttsSettings || this.ttsSettings;
           this.behaviorSettings = data.data.behaviorSettings || this.behaviorSettings;
           this.VRMConfig = data.data.VRMConfig || this.VRMConfig;
+          this.worldConfig = { ...this.worldConfig, ...(data.data.worldConfig || {}) };
           this.comfyuiServers = data.data.comfyuiServers || this.comfyuiServers;
           this.comfyuiAPIkey = data.data.comfyuiAPIkey || this.comfyuiAPIkey;
           this.workflows = data.data.workflows || this.workflows;
@@ -3840,6 +3842,7 @@ let vue_methods = {
           ttsSettings: this.ttsSettings,
           behaviorSettings: this.behaviorSettings,
           VRMConfig: this.VRMConfig,
+          worldConfig: this.worldConfig,
           comfyuiServers: this.comfyuiServers,
           comfyuiAPIkey: this.comfyuiAPIkey,
           workflows: this.workflows,
@@ -5152,6 +5155,18 @@ let vue_methods = {
     // Add inside methods
     t(key) {
       return this.translations[this.currentLanguage][key] || this.translations[this.currentLanguage]['en-US'] || key;
+    },
+    // 🌏 월드 펫 설정 패널을 펼칠 때: 서버에서 현재 유효 텍스트(오버라이드 or 기본값)를 받아
+    // 비어 있는 편집 박스만 채운다 (저장해 둔 오버라이드는 건드리지 않음). 접힘 기본이라 시작 비용 0.
+    async loadWorldPersona() {
+      try {
+        const r = await fetch('/api/world_persona');
+        if (!r.ok) return;
+        const eff = await r.json();
+        for (const k of Object.keys(eff)) {
+          if (!this.worldConfig[k]) this.worldConfig[k] = eff[k];
+        }
+      } catch (e) { /* 백엔드 없으면 기본값 그대로 */ }
     },
     // VRM 데스크톱 펫 소환/숨김 전역 단축키를 (재)등록. 설정 변경 시에도 호출.
     async applyVrmVisibilityShortcuts() {

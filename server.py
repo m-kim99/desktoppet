@@ -11603,6 +11603,33 @@ WORLD_REPLY_RULES = """[대답 규칙]
 - 절대 시스템/태그 설명을 입에 담지 않는다. 태그는 조용히 붙일 뿐이다."""
 
 
+# 월드 펫 페르소나·시스템 지시는 위 상수가 정본(단일 소스). 사용자가 설정 창에서 고치면
+# settings['worldConfig']에 오버라이드로 저장되고, 아래 헬퍼가 "오버라이드 있으면 그걸,
+# 비어 있으면 상수"를 돌려준다 — 비우면 기본값으로 리셋되는 셈. (설정 UI는 이 유효값을
+# GET /api/world_persona 로 받아 편집 박스를 채운다.)
+_WORLD_PERSONA_DEFAULTS = {
+    "chickPersona": WORLD_PERSONAS["chick"],
+    "puppyPersona": WORLD_PERSONAS["puppy"],
+    "lore": WORLD_LORE,
+    "replyRules": WORLD_REPLY_RULES,
+    "actionSpec": WORLD_ACTION_SPEC,
+    "mailPersona": WORLD_MAIL_PERSONA,
+}
+def _world_persona_effective(settings) -> dict:
+    wc = (settings or {}).get("worldConfig") or {}
+    return {k: ((wc.get(k) or "").strip() or dflt) for k, dflt in _WORLD_PERSONA_DEFAULTS.items()}
+def _world_persona_for(settings, pet: str) -> dict:
+    eff = _world_persona_effective(settings)
+    eff["persona"] = eff["puppyPersona"] if pet == "puppy" else eff["chickPersona"]
+    return eff
+
+
+@app.get("/api/world_persona")
+async def world_persona_get():
+    # 설정 창 프리필용 — 현재 유효 텍스트(오버라이드 or 기본값) 6종
+    return _world_persona_effective(await load_settings())
+
+
 def _world_chat_file(pet: str) -> str:
     os.makedirs(WORLD_CHAT_DIR, exist_ok=True)
     return os.path.join(WORLD_CHAT_DIR, f"{pet}.json")
@@ -11700,12 +11727,13 @@ async def world_chat(request: Request):
         owner_line = f"주인의 이름은 '{user_name}'이다." if user_name else "주인의 이름은 아직 모른다."
 
         store = _world_chat_load(pet)
+        eff = _world_persona_for(current_settings, pet)
         system_prompt = "\n\n".join([
-            WORLD_PERSONAS[pet],
-            WORLD_LORE,
+            eff["persona"],
+            eff["lore"],
             owner_line,
-            WORLD_REPLY_RULES,
-            WORLD_ACTION_SPEC,
+            eff["replyRules"],
+            eff["actionSpec"],
         ])
         messages = [{"role": "system", "content": system_prompt}]
         if store["summary"]:
@@ -11789,9 +11817,10 @@ async def world_diary_write(request: Request):
     try:
         wc_client, current_settings = await _world_chat_client_and_model()
         store = _world_chat_load(pet)
+        eff = _world_persona_for(current_settings, pet)
         sys_parts = [
-            WORLD_PERSONAS[pet],
-            WORLD_LORE,
+            eff["persona"],
+            eff["lore"],
             "오늘 하루를 마무리하며 그림일기를 쓴다. 규칙:\n"
             "- 1인칭, 내(펫) 목소리 그대로. 한국어 4~6문장, 이모지 1~3개.\n"
             "- 아래 [오늘 있었던 일]에 적힌 사실만 쓴다. 없던 일을 지어내지 않는다.\n"
@@ -11979,10 +12008,11 @@ async def world_mail_send(request: Request):
         return JSONResponse({"error": "empty letter"}, status_code=400)
     try:
         wc_client, current_settings = await _world_chat_client_and_model()
+        eff = _world_persona_effective(current_settings)
         resp = await wc_client.chat.completions.create(
             model=current_settings["model"],
             messages=[
-                {"role": "system", "content": "\n\n".join([WORLD_MAIL_PERSONA, WORLD_LORE])},
+                {"role": "system", "content": "\n\n".join([eff["mailPersona"], eff["lore"]])},
                 {"role": "user", "content": f"주인이 우편함에 넣은 편지:\n{text}"},
             ],
             temperature=0.85,

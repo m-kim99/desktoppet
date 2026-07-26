@@ -14101,9 +14101,41 @@ function updateElement(el, rawMarkdown, formatFn) {
                               </div>
                             </el-form-item>
 
+                            <!-- 🌏 월드 펫 페르소나·시스템 지시 (거의 안 바뀌므로 접이식, 기본 접힘) -->
+                            <el-form-item class="form-item-align">
+                              <el-collapse class="full-width-input" @change="(v) => { if (v && v.length) loadWorldPersona(); }">
+                                <el-collapse-item :title="t('worldPetSettings')" name="world">
+                                  <div style="color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; margin-bottom: 10px;">
+                                    {{ t('worldPetSettingsHint') }}
+                                  </div>
+                                  <el-form-item :label="t('worldChickPersona')">
+                                    <el-input v-model="worldConfig.chickPersona" type="textarea" :rows="5" :autosize="{ minRows: 4, maxRows: 14 }" @input="autoSaveSettings" class="full-width-input" />
+                                  </el-form-item>
+                                  <el-form-item :label="t('worldPuppyPersona')">
+                                    <el-input v-model="worldConfig.puppyPersona" type="textarea" :rows="5" :autosize="{ minRows: 4, maxRows: 14 }" @input="autoSaveSettings" class="full-width-input" />
+                                  </el-form-item>
+                                  <el-form-item :label="t('worldLore')">
+                                    <el-input v-model="worldConfig.lore" type="textarea" :rows="5" :autosize="{ minRows: 4, maxRows: 16 }" @input="autoSaveSettings" class="full-width-input" />
+                                  </el-form-item>
+                                  <el-form-item :label="t('worldReplyRules')">
+                                    <el-input v-model="worldConfig.replyRules" type="textarea" :rows="4" :autosize="{ minRows: 3, maxRows: 12 }" @input="autoSaveSettings" class="full-width-input" />
+                                  </el-form-item>
+                                  <el-form-item :label="t('worldActionSpec')">
+                                    <el-input v-model="worldConfig.actionSpec" type="textarea" :rows="5" :autosize="{ minRows: 4, maxRows: 18 }" @input="autoSaveSettings" class="full-width-input" />
+                                    <div style="color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; margin-top: 4px;">
+                                      {{ t('worldActionSpecHint') }}
+                                    </div>
+                                  </el-form-item>
+                                  <el-form-item :label="t('worldMailPersona')">
+                                    <el-input v-model="worldConfig.mailPersona" type="textarea" :rows="4" :autosize="{ minRows: 3, maxRows: 12 }" @input="autoSaveSettings" class="full-width-input" />
+                                  </el-form-item>
+                                </el-collapse-item>
+                              </el-collapse>
+                            </el-form-item>
+
                             <el-form-item :label="t('asyncTools')" class="form-item-align" label-position="left">
-                              <el-switch 
-                                v-model="toolsSettings.asyncTools.enabled" 
+                              <el-switch
+                                v-model="toolsSettings.asyncTools.enabled"
                                 @change="autoSaveSettings"
                               ></el-switch>
                             </el-form-item>
