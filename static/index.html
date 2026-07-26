@@ -351,7 +351,7 @@ function updateElement(el, rawMarkdown, formatFn) {
             <i :class="!sidebarVisible ? 'fa-solid fa-bars' : 'fa-solid fa-bars-staggered'"></i>
           </el-icon>
       </el-button>
-        <el-button 
+        <el-button
           v-if="!isAssistantMode&&!isMobile"
           @click="openLogDialog"
           class="top-bar-btn"
@@ -359,6 +359,17 @@ function updateElement(el, rawMarkdown, formatFn) {
           :title="t('serverLogs') || 'Server Logs'">
           <el-icon>
             <i class="fa-solid fa-terminal"></i>
+          </el-icon>
+        </el-button>
+        <!-- 🐾 월드 펫 성격·시스템 지시 바로가기 -->
+        <el-button
+          v-if="!isAssistantMode"
+          @click="openWorldPersonaDialog"
+          class="top-bar-btn"
+          text
+          :title="t('worldPetSettings')">
+          <el-icon>
+            <i class="fa-solid fa-paw"></i>
           </el-icon>
         </el-button>
         <!-- 新增展开/收起按钮 -->
@@ -506,6 +517,42 @@ function updateElement(el, rawMarkdown, formatFn) {
         class="sidebar-mask"
         v-show="isMobile && sidebarVisible"
         @click="sidebarVisible = false"></div>
+
+    <!-- 🌏 월드 펫 성격·시스템 지시 다이얼로그 (툴바 🐾 버튼으로 열림) -->
+    <el-dialog append-to-body
+      v-model="showWorldPersonaDialog"
+      :title="t('worldPetSettings')"
+      :width="isMobile ? '94%' : 'min(720px, 92vw)'"
+      top="6vh"
+    >
+      <div style="color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; margin-bottom: 12px;">
+        {{ t('worldPetSettingsHint') }}
+      </div>
+      <el-form label-position="top">
+        <el-form-item :label="t('worldChickPersona')">
+          <el-input v-model="worldConfig.chickPersona" type="textarea" :autosize="{ minRows: 4, maxRows: 12 }" @input="autoSaveSettings" />
+        </el-form-item>
+        <el-form-item :label="t('worldPuppyPersona')">
+          <el-input v-model="worldConfig.puppyPersona" type="textarea" :autosize="{ minRows: 4, maxRows: 12 }" @input="autoSaveSettings" />
+        </el-form-item>
+        <el-form-item :label="t('worldLore')">
+          <el-input v-model="worldConfig.lore" type="textarea" :autosize="{ minRows: 4, maxRows: 14 }" @input="autoSaveSettings" />
+        </el-form-item>
+        <el-form-item :label="t('worldReplyRules')">
+          <el-input v-model="worldConfig.replyRules" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" @input="autoSaveSettings" />
+        </el-form-item>
+        <el-form-item :label="t('worldActionSpec')">
+          <el-input v-model="worldConfig.actionSpec" type="textarea" :autosize="{ minRows: 4, maxRows: 16 }" @input="autoSaveSettings" />
+          <div style="color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; margin-top: 4px;">{{ t('worldActionSpecHint') }}</div>
+        </el-form-item>
+        <el-form-item :label="t('worldMailPersona')">
+          <el-input v-model="worldConfig.mailPersona" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" @input="autoSaveSettings" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button type="primary" @click="showWorldPersonaDialog = false">{{ t('confirm') || 'OK' }}</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 后端日志弹窗 -->
     <el-dialog append-to-body

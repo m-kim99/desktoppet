@@ -5156,6 +5156,11 @@ let vue_methods = {
     t(key) {
       return this.translations[this.currentLanguage][key] || this.translations[this.currentLanguage]['en-US'] || key;
     },
+    // 🐾 툴바 바로가기: 월드 펫 성격 다이얼로그를 열고 현재 유효 텍스트를 프리필.
+    openWorldPersonaDialog() {
+      this.showWorldPersonaDialog = true;
+      this.loadWorldPersona();
+    },
     // 🌏 월드 펫 설정 패널을 펼칠 때: 서버에서 현재 유효 텍스트(오버라이드 or 기본값)를 받아
     // 비어 있는 편집 박스만 채운다 (저장해 둔 오버라이드는 건드리지 않음). 접힘 기본이라 시작 비용 0.
     async loadWorldPersona() {

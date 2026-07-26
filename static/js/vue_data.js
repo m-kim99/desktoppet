@@ -2016,6 +2016,7 @@ main();`,
     isReadPaused: false, 
     currentReadAudio: null,
     showLogDialog: false,
+    showWorldPersonaDialog: false,   // 🐾 월드 펫 성격·시스템 지시 다이얼로그
     logContent: '', // Log content
     systemVoices: [],        // Stores the voice list fetched from the backend
     isLoadingSystemVoices: false, // Loading state
