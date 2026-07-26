@@ -14075,7 +14075,7 @@ scene.add(selectRing);
 
 const controlHint = document.createElement('div');
 // 📱 터치에선 좌하단이 조이스틱 자리라 힌트를 좌상단으로 올린다.
-controlHint.style.cssText = `position:fixed; left:14px; ${IS_TOUCH ? 'top:calc(68px + env(safe-area-inset-top, 0px));' : 'bottom:14px;'} display:none; z-index:90; background:rgba(30,32,40,0.85); color:#fff; font-size:12px; font-family:sans-serif; padding:8px 12px; border-radius:10px; box-shadow:0 3px 10px rgba(0,0,0,0.3); pointer-events:none;`;   // 터치는 🗺️ 버튼(top 12 + 48px) 아래로 — 14px이면 지도 버튼이 힌트를 가린다 (스샷 실측)
+controlHint.style.cssText = `position:fixed; left:14px; ${IS_TOUCH ? 'top:calc(68px + env(safe-area-inset-top, 0px));' : 'top:16px; left:62px;'} display:none; z-index:90; background:rgba(30,32,40,0.85); color:#fff; font-size:12px; font-family:sans-serif; padding:8px 12px; border-radius:10px; box-shadow:0 3px 10px rgba(0,0,0,0.3); pointer-events:none;`;   // 데스크톱: 🗺️ 지도 버튼(left14 top12 40px) 바로 오른쪽 옆으로 — 하단이면 채팅창을 가린다 (스샷 실측). 터치는 지도 버튼 아래(top 68).
 document.body.appendChild(controlHint);
 
 // 📱 마인크래프트 모바일식 조종 UI: 좌하단 가상 조이스틱(민 방향으로 이동, 70% 넘게 밀면
