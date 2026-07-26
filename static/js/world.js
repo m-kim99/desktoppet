@@ -25530,6 +25530,7 @@ function fcAtlas() {
     fcPaintSeaTex(g); // 🥒🍊 셀 24·25
     fcPaintShrimp(g); // 🦐 셀 26
     fcPaintOcto(g);   // 🐙 셀 27
+    fcPaintWakame(g); // 🌿 셀 28
     fcPaintFrog(g);   // 🐸 셀 9 — 등(위 절반) / 배(아래 절반)
     fcPaintBoot(g);   // 🥾 셀 12 — 통·발·밑창 3밴드
     {   // 흰 셀(15) 좌상 사분면에 개구리 눈 — 금색 홍채 + **가로 동공**. 중앙은 순백 유지(부속 파트가 샘플)
@@ -26930,10 +26931,10 @@ function fcRemapV(geo, lo, hi) {
 const fcAngGap = (a, b) => { let d = (a - b) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
 // 굴에서 정한 정점색 문법을 공용화: 월드 기준 톱라이트 + 아래를 향할수록 따뜻하게(hemiLight
 // groundColor 0x8fca62가 아래 향한 면만 초록으로 물들이는 걸 올리브로 끌어온다). 아틀라스 셀로 uv 이전.
-function fcSeaShade(geo, rect, warm = true) {
+function fcSeaShade(geo, rect, warm = true, lo = 0.62, span = 0.40) {
     const uv = geo.attributes.uv, nr = geo.attributes.normal, n = uv.count, col = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
-        const ny = nr.getY(i), t = 0.62 + 0.40 * (0.5 + 0.5 * ny), dw = warm ? Math.max(0, -ny) : 0;
+        const ny = nr.getY(i), t = lo + span * (0.5 + 0.5 * ny), dw = warm ? Math.max(0, -ny) : 0;
         col[i * 3] = t * (1 + 0.26 * dw);
         col[i * 3 + 1] = t * (1 - 0.10 * dw);
         col[i * 3 + 2] = t * (1 - 0.24 * dw);
@@ -26943,6 +26944,21 @@ function fcSeaShade(geo, rect, warm = true) {
     return geo;
 }
 
+// 잎사귀용 음영 — 법선이 아니라 **높이**로. 얇은 한 장짜리 면(미역 잎)은 DoubleSide에서 앞뒤
+// 법선이 반대라 법선 기반 규칙을 쓰면 잎마다 밝기가 튄다.
+function fcLeafShade(geo, rect) {
+    geo.computeBoundingBox();
+    const y0 = geo.boundingBox.min.y, y1 = geo.boundingBox.max.y;
+    const uv = geo.attributes.uv, pos = geo.attributes.position, n = uv.count, col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+        const t = (pos.getY(i) - y0) / Math.max(1e-6, y1 - y0);
+        const v = 0.84 + 0.34 * Math.pow(t, 0.65);
+        col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = v;
+        uv.setXY(i, rect.u0 + uv.getX(i) * FA_KU, rect.v1 - (1 - uv.getY(i)) * FA_KV);
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    return geo;
+}
 // ---- 🥒 해삼 ------------------------------------------------------------------------------
 // 구 조형: 지름이 일정한 캡슐 + 붙인 구체 9개 = **초콜릿 롤에 조약돌**. 양끝 테이퍼도, 바닥에
 // 붙는 평평한 발바닥도, 등쪽 돌기 종렬도 없었다.
@@ -27379,6 +27395,163 @@ function fcPaintOcto(g) {
     g.restore();
 }
 // ==== /🐙 문어 =============================================================================
+
+// ==== 🌿 미역 — 켈프(배경)와 다른 물건이지만, 해조류 언어는 켈프 쪽이 맞았다 =================
+// 구 조형: TubeGeometry를 **만든 뒤 월드 공간에서 눌렀다**(scale 1.6,1,0.42). 납작해지는 방향이
+// 잎을 따라가지 않아 비틀리고, 경로가 코르크스크류라 세 가닥이 서로 꼬여 **매듭**이 됐다.
+// 게다가 미역 해부학이 하나도 없었다 — 실물은 [줄기 → 중륵 → 깃꼴로 갈라진 잎 → 밑동 미역귀]다.
+// 규율: 잎은 튜브가 아니라 **띠 메시**로 직접 짠다(중륵 곡선 + 좌우 폭). 그래야 잎면이 항상 평평하다.
+const FC_WAKAME = { cell: 28, H: 0.215, W: 0.052, lobes: 5 };
+// 켈프와 같은 스웨이 문법(aBend/aPh + wxTime). 다만 진폭은 **아주 약하게** — 수집물이 배경 켈프처럼
+// 크게 나부끼면 손에 든 순간 어색하다. 켈프 0.16/0.10 → 0.030/0.018.
+let fcWakameMat = null;
+function wakameMat() {
+    if (fcWakameMat) return fcWakameMat;
+    // fcMat(아틀라스)을 복제해 **광택만** 바꾼다 — roughness를 낮추면 scene.environment가 은은한
+    // 반사광을 준다. 스웨이를 fcMat 본체에 넣으면 조개·물고기까지 흔들리므로 반드시 클론.
+    fcWakameMat = fcMat.clone();
+    fcWakameMat.roughness = 0.32;
+    fcWakameMat.metalness = 0.06;
+    fcWakameMat.onBeforeCompile = (sh) => {
+        sh.uniforms.uWxT = wxTime;
+        sh.vertexShader = 'uniform float uWxT;\nattribute float aBend;\nattribute float aPh;\n' + sh.vertexShader.replace(
+            '#include <begin_vertex>',
+            '#include <begin_vertex>\n'
+            + 'transformed.x += sin(uWxT * 0.85 + aPh) * 0.030 * aBend;\n'
+            + 'transformed.z += cos(uWxT * 0.62 + aPh * 1.7) * 0.018 * aBend;'
+        );
+    };
+    return fcWakameMat;
+}
+// 잎 한 장 — (t 중륵 방향 0~1, w 좌우 −1~1) 띠. 폭을 주기로 조이면 **깃꼴 결각**이 생기고,
+// 중륵은 w≈0에서 두께로 솟고, 가장자리는 |w|가 커질수록 물결친다(미역의 식별 포인트).
+function fcWakameBlade(o) {
+    const NT = 26, NW = 12, pos = [], uv = [], bend = [], ph = [], idx = [];
+    for (let i = 0; i <= NT; i++) {
+        const t = i / NT;
+        const lob = 0.58 + 0.42 * Math.pow(Math.abs(Math.cos(t * Math.PI * o.lobes + 0.4)), 0.42);   // 깃꼴 결각
+        const hw = o.W * Math.pow(Math.sin(Math.PI * Math.pow(t, 0.80)), 0.62) * lob;
+        const cy = o.y0 + o.H * t;
+        // ⚠️ lean을 월드 z로만 주면 잎 3장이 같은 쪽으로 누워 **옥수수 껍질**처럼 뭉친다 →
+        // 각 잎의 **바깥 방향(ca, sa)**으로 밀어야 실물처럼 사방으로 벌어지며 늘어진다.
+        const out = o.lean * o.H * t * t;
+        const cx = o.x0 + out * o.ca + o.sway * Math.sin(t * 2.1) * o.H * 0.16;
+        const cz = o.z0 + out * o.sa + o.sway * Math.cos(t * 1.7) * o.H * 0.12;
+        for (let j = 0; j <= NW; j++) {
+            const w = (j / NW) * 2 - 1;
+            const mid = o.W * 0.30 * Math.exp(-Math.pow(w / 0.20, 2)) * Math.sin(Math.PI * t);   // 중륵 융기
+            const ruf = o.W * 0.34 * Math.pow(Math.abs(w), 2.2) * Math.sin(t * 11 + w * 3.1);    // 가장자리 물결
+            pos.push(cx + w * hw * o.ca, cy + mid * 0.45 + ruf * 0.35, cz + w * hw * o.sa + mid + ruf);
+            uv.push((w + 1) * 0.5, 0.30 + t * 0.70);
+            bend.push(Math.pow(t, 1.25)); ph.push(o.ph);
+        }
+    }
+    for (let i = 0; i < NT; i++) for (let j = 0; j < NW; j++) {
+        const a = i * (NW + 1) + j, b = a + NW + 1;
+        idx.push(a, a + 1, b, b, a + 1, b + 1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setAttribute('aBend', new THREE.Float32BufferAttribute(bend, 1));
+    g.setAttribute('aPh', new THREE.Float32BufferAttribute(ph, 1));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+}
+function buildWakameCartoon() {
+    const A = fcAtlas(), C = FC_WAKAME, R = faRect(C.cell);
+    if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
+    const parts = [];
+    // 잎 3장 — 각도·기울기·위상을 흔들어 도장 찍은 티를 없앤다
+    const B = [[0.0, 0.62, 1.00, 0.9], [2.2, 0.50, 0.86, 2.4], [4.3, 0.72, 0.72, 4.1]];   // lean = 바깥으로 벌어지는 양
+    for (const [ang, lean, sc, phv] of B) {
+        parts.push(fcWakameBlade({
+            W: C.W * sc, H: C.H * sc, lobes: C.lobes, ph: phv, sway: (phv % 2) - 0.5, lean,
+            x0: Math.cos(ang) * C.W * 0.34, z0: Math.sin(ang) * C.W * 0.34, y0: C.H * 0.16,
+            ca: Math.cos(ang), sa: Math.sin(ang),
+        }));
+    }
+    // 줄기(stipe) — 납작한 짧은 자루. 잎이 허공에서 시작하지 않게 잡아 준다.
+    const stipe = fcTubeGeo({
+        R: C.W * 0.30, L: C.H * 0.34, ns: 10, np: 10,
+        rad: (t) => 0.55 + 0.45 * Math.pow(Math.sin(Math.PI * t), 0.5),
+        sec: (p2) => ({ x: Math.cos(p2), y: Math.sin(p2) * 0.45 }),
+    });
+    stipe.rotateX(-Math.PI / 2); stipe.translate(0, C.H * 0.17, 0);
+    { const n = stipe.attributes.uv.count, bd = new Float32Array(n), pv = new Float32Array(n);
+      for (let i = 0; i < n; i++) { bd[i] = stipe.attributes.uv.getY(i) * 0.35; pv[i] = 0.4; stipe.attributes.uv.setY(i, 0.04 + stipe.attributes.uv.getY(i) * 0.10); }
+      stipe.setAttribute('aBend', new THREE.Float32BufferAttribute(bd, 1));
+      stipe.setAttribute('aPh', new THREE.Float32BufferAttribute(pv, 1)); }
+    parts.push(stipe);
+    // 미역귀(sporophyll) — 줄기 밑동을 감는 **주름진 포자엽**. 미역을 미역으로 만드는 부위다.
+    {
+        const NR2 = 7, NA2 = 40, pos = [], uv = [], bend = [], ph = [], idx = [];
+        for (let i = 0; i <= NR2; i++) {
+            const t = i / NR2;
+            for (let j = 0; j <= NA2; j++) {
+                const a = (j / NA2) * Math.PI * 2;
+                const fr = 1 + 0.30 * Math.sin(a * 7) * t;                 // 주름 — 반지름이 물결친다
+                const rr = C.W * (0.34 + 0.92 * t) * fr;
+                const y = C.H * 0.10 + C.H * 0.16 * t + C.W * 0.30 * Math.sin(a * 7) * t * t;
+                pos.push(Math.cos(a) * rr, y, Math.sin(a) * rr);
+                uv.push(j / NA2, 0.16 + t * 0.12);
+                bend.push(t * 0.30); ph.push(1.7);
+            }
+        }
+        for (let i = 0; i < NR2; i++) for (let j = 0; j < NA2; j++) {
+            const a = i * (NA2 + 1) + j, b = a + NA2 + 1;
+            idx.push(a, a + 1, b, b, a + 1, b + 1);
+        }
+        const sg = new THREE.BufferGeometry();
+        sg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        sg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        sg.setAttribute('aBend', new THREE.Float32BufferAttribute(bend, 1));
+        sg.setAttribute('aPh', new THREE.Float32BufferAttribute(ph, 1));
+        sg.setIndex(idx); sg.computeVertexNormals();
+        parts.push(sg);
+    }
+    const geo = mergeGeometries(parts, false);
+    // ⚠️ **얇은 잎에 법선 기반 음영은 못 쓴다.** 한 장짜리 면은 DoubleSide로 뒷면 법선이 뒤집혀서,
+    // 같은 다발 안에서도 어떤 잎은 새까맣고 어떤 잎은 거의 흰색으로 나왔다(해저 실측).
+    // 이 월드가 잎사귀에 원래 쓰는 문법 = **높이 그라디언트**(bakeGrad). 밑동 어둡고 끝 밝게, 면
+    // 방향과 무관하게 양면이 같은 값을 받는다.
+    fcLeafShade(geo, R);
+    geo.computeBoundingBox();
+    geo.translate(0, -geo.boundingBox.min.y, 0);
+    const grp = new THREE.Group();
+    const m = new THREE.Mesh(geo, wakameMat());
+    m.castShadow = true; m.receiveShadow = true;
+    grp.add(m);
+    return grp;
+}
+// 🌿 셀 28 — v 0.30~1.0 잎(밑동→끝) · 0.16~0.28 미역귀 · 0.04~0.14 줄기
+function fcPaintWakame(g) {
+    const S = FC_WAKAME, R = faRect(S.cell), C = FA_CELL;
+    const X = (u) => R.x + u * C, Y = (v) => R.y + (1 - v) * C;
+    g.save(); g.beginPath(); g.rect(R.x, R.y, C, C); g.clip();
+    const gr = g.createLinearGradient(0, Y(1), 0, Y(0.30));   // 끝은 조금 밝고 밑동은 짙다
+    gr.addColorStop(0, '#63b071'); gr.addColorStop(0.55, '#428c52'); gr.addColorStop(1, '#2f7040');
+    g.fillStyle = gr; g.fillRect(R.x, Y(1), C, Y(0.30) - Y(1));
+    const mid = g.createLinearGradient(X(0.40), 0, X(0.60), 0);   // 중륵 — u 0.5가 잎 한가운데
+    mid.addColorStop(0, 'rgba(126,186,120,0)'); mid.addColorStop(0.5, 'rgba(140,198,132,0.30)'); mid.addColorStop(1, 'rgba(126,186,120,0)');
+    g.fillStyle = mid; g.fillRect(X(0.40), Y(1), C * 0.20, Y(0.30) - Y(1));
+    for (let k = 0; k < 14; k++) {   // 잎맥 — 중륵에서 가장자리로 비스듬히
+        const u = 0.5 + (k % 2 ? 1 : -1) * (0.08 + (k >> 1) * 0.055);
+        g.beginPath(); g.moveTo(X(u), Y(0.34)); g.lineTo(X(u + (u > 0.5 ? 0.05 : -0.05)), Y(0.98));
+        g.strokeStyle = 'rgba(112,168,110,0.16)'; g.lineWidth = 4; g.stroke();
+    }
+    const spo = g.createLinearGradient(0, Y(0.28), 0, Y(0.16));   // 미역귀 — 더 짙고 갈색이 돈다
+    spo.addColorStop(0, '#357a44'); spo.addColorStop(1, '#4e5426');
+    g.fillStyle = spo; g.fillRect(R.x, Y(0.28), C, Y(0.16) - Y(0.28));
+    for (let k = 0; k < 20; k++) {   // 포자엽 주름 결
+        const u = fcHash(k + 1900), v = 0.17 + fcHash(k + 1917) * 0.10;
+        g.beginPath(); g.ellipse(X(u), Y(v), C * 0.030, C * 0.008, 0, 0, Math.PI * 2);
+        g.fillStyle = `rgba(96,110,52,${0.20 + fcHash(k + 1931) * 0.18})`; g.fill();
+    }
+    g.fillStyle = '#3d6b36'; g.fillRect(R.x, Y(0.15), C, Y(0.02) - Y(0.15));   // 줄기
+    g.restore();
+}
+// ==== /🌿 미역 =============================================================================
 // ==== /🥒🍊 =================================================================================
 // 카툰 조형으로 옮긴 해산물 디스패치. 새 종을 옮길 때 여기 한 줄만 추가한다.
 // 🦐 셀 26 — v 0.30~1.0 몸통(머리→꼬리) · 0.06~0.26 꼬리 부채 · 0.02~0.05 더듬이 · 0.015 눈
@@ -27424,6 +27597,7 @@ function fcSeaBuild(id) {
     if (id === 'seasquirt') return buildSquirtCartoon();
     if (id === 'shrimp') return buildShrimpCartoon();
     if (id === 'octopus') return buildOctoCartoon();
+    if (id === 'wakame') return buildWakameCartoon();
     return null;
 }
 // ==== /⭐ 불가사리 =========================================================================
