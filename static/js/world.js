@@ -2785,7 +2785,7 @@ function makeMonument() {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#6b5335';
     ctx.font = '44px sans-serif';
-    ctx.fillText('🐕🐣', 128, 64);
+    ctx.fillText('🐕🐥', 128, 64);
     ctx.font = 'bold 30px sans-serif';
     ctx.fillText('베프 포에버', 128, 107);
     ctx.font = '26px sans-serif';
@@ -3287,7 +3287,7 @@ function renderMail() {
         row.style.cssText = 'line-height:1.55; white-space:pre-wrap;';
         const d = new Date(m.ts);
         let txt = `📤 ${d.getMonth() + 1}.${d.getDate()} 나: ${m.text}`;
-        if (m.reply) txt += m.deliverAt <= now ? `\n📥 🐤🐶: ${m.reply}` : '\n🕊️ 답장이 오는 중…';
+        if (m.reply) txt += m.deliverAt <= now ? `\n📥 🐥🐕: ${m.reply}` : '\n🕊️ 답장이 오는 중…';
         row.textContent = txt;
         mailListEl.appendChild(row);
     }
@@ -4531,7 +4531,7 @@ const RECIPES = [
     { id: 'donkatsu',   ko: '돈까스 정식',   emoji: '🍱', tier: 'special', needs: [{ src: 'market', id: 'meat', n: 1 }, { src: 'staple', id: 'flour', n: 1 }, { src: 'pantry', id: 'carrot', n: 1 }] },
     { id: 'takoyaki',   ko: '타코야끼',      emoji: '🐙', tier: 'special', needs: [{ src: 'seafood', id: 'octopus', n: 1 }, { src: 'staple', id: 'flour', n: 1 }] },
     { id: 'bonebiscuit', ko: '뼈다귀 비스킷', emoji: '🦴', tier: 'heart', needs: [{ src: 'staple', id: 'flour', n: 1 }, { src: 'staple', id: 'milk', n: 1 }] },
-    { id: 'chickbiscuit',ko: '병아리 비스킷', emoji: '🐤', tier: 'heart', needs: [{ src: 'staple', id: 'flour', n: 1 }, { src: 'staple', id: 'sugar', n: 1 }] },
+    { id: 'chickbiscuit',ko: '병아리 비스킷', emoji: '🐥', tier: 'heart', needs: [{ src: 'staple', id: 'flour', n: 1 }, { src: 'staple', id: 'sugar', n: 1 }] },
     { id: 'bfwaffle',   ko: '베프 와플',     emoji: '🧇', tier: 'heart', needs: [{ src: 'staple', id: 'flour', n: 1 }, { src: 'staple', id: 'milk', n: 1 }, { src: 'fruit', id: '*', n: 1 }] },
     { id: 'bfsteak',    ko: '베프 스테이크', emoji: '🥩', tier: 'heart', needs: [{ src: 'market', id: 'meat', n: 2 }] },
     { id: 'eterncake',  ko: '영원 케이크',   emoji: '🎂', tier: 'heart', needs: [{ src: 'staple', id: 'flour', n: 1 }, { src: 'staple', id: 'sugar', n: 1 }, { src: 'staple', id: 'milk', n: 1 }, { src: 'fruit', id: '*', n: 1 }, { src: 'market', id: '*', n: 1 }] },
@@ -10130,7 +10130,7 @@ logBtn.addEventListener('click', () => {
 });
 // 📔 그림일기: 하루의 이벤트 로그를 펫이 1인칭 일기로 접어 서버(config/world_diary.json)에
 // 보관한다. 밤 10시가 넘으면 그날의 일기를 스스로 쓰고, ✍️ 버튼으로 먼저 쓰게 할 수도 있다.
-// 종이 노트 스타일 패널: ◀ 날짜 ▶ 넘기기 + 🐤/🐶 탭.
+// 종이 노트 스타일 패널: ◀ 날짜 ▶ 넘기기 + 🐥/🐕 탭.
 const diaryBtn = dockBtn('📔', '그림일기 — 펫이 쓴 오늘 하루');
 const diaryPanel = document.createElement('div');
 diaryPanel.style.cssText = 'position:fixed; right:calc(70px + env(safe-area-inset-right, 0px)); bottom:calc(70px + env(safe-area-inset-bottom, 0px)); display:none; z-index:95; width:min(330px, calc(100vw - 100px)); max-height:62vh; background:#fbf3e2; color:#4a3f30; border-radius:14px; box-shadow:0 8px 28px rgba(0,0,0,0.4); font-family:sans-serif; flex-direction:column; overflow:hidden;';
@@ -10152,7 +10152,7 @@ const mkDiaryBtn = (label) => {
 const diaryPrev = mkDiaryBtn('◀'), diaryNext = mkDiaryBtn('▶');
 const diaryDateEl = document.createElement('div');
 diaryDateEl.style.cssText = 'flex:1; text-align:center;';
-const diaryTabChick = mkDiaryBtn('🐤'), diaryTabPuppy = mkDiaryBtn('🐶');
+const diaryTabChick = mkDiaryBtn('🐥'), diaryTabPuppy = mkDiaryBtn('🐕');
 diaryHead.append('📔', diaryPrev, diaryDateEl, diaryNext, diaryTabChick, diaryTabPuppy);
 const diaryWriteBtn = document.createElement('button');
 diaryWriteBtn.style.cssText = 'flex:1; border:none; border-radius:8px; background:#e8b04b; color:#3d2f18; font-weight:700; font-size:12.5px; padding:7px 0; cursor:pointer;';
@@ -10280,7 +10280,7 @@ const buildBtn = dockBtn('🔨', '공사 모드 — 사물 옮기기');
 const syncBuildBtn = () => { buildBtn.style.background = buildMode ? 'rgba(214,150,52,0.92)' : 'rgba(30,32,40,0.88)'; };
 buildBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
 buildBtn.addEventListener('click', () => setBuildMode(!buildMode));
-// 🐤🐶 펫 바로가기: 누르면 카메라가 그 펫에게 날아가며(팔로우 캠) 즉시 조종 시작 — 같은 버튼을
+// 🐥🐕 펫 바로가기: 누르면 카메라가 그 펫에게 날아가며(팔로우 캠) 즉시 조종 시작 — 같은 버튼을
 // 다시 누르면 해제. 다른 펫 조종 중에 누르면 그 펫으로 갈아탄다.
 function possessByName(name) {
     const p = pets.find((q) => q.name === name);
@@ -10907,7 +10907,7 @@ document.addEventListener('pointerdown', () => {
     if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
 }, { once: true });
 
-// 🐤/🐶 울음소리 — 다른 효과음처럼 파일 없이 합성한다. 병아리는 높은 사인 두 음의 짹짹,
+// 🐥/🐕 울음소리 — 다른 효과음처럼 파일 없이 합성한다. 병아리는 높은 사인 두 음의 짹짹,
 // 강아지는 톱니파 피치 하강 두 번의 멍멍. 채팅 대답과 인사(Wave) 모션에서 운다.
 // 실제 녹음이 있으면 그걸 최우선으로 쓴다: static/sounds/voice/{chick|puppy}_{0..2}.(ogg|mp3)
 // 파일을 넣어두면 자동 감지해 재생(발소리와 같은 방식, 재생마다 피치를 살짝 흔들어 반복 티 제거).
