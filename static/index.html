@@ -361,17 +361,6 @@ function updateElement(el, rawMarkdown, formatFn) {
             <i class="fa-solid fa-terminal"></i>
           </el-icon>
         </el-button>
-        <!-- 🐾 월드 펫 성격·시스템 지시 바로가기 -->
-        <el-button
-          v-if="!isAssistantMode"
-          @click="openWorldPersonaDialog"
-          class="top-bar-btn"
-          text
-          :title="t('worldPetSettings')">
-          <el-icon>
-            <i class="fa-solid fa-paw"></i>
-          </el-icon>
-        </el-button>
         <!-- 新增展开/收起按钮 -->
         <el-button 
           v-if="!isAssistantMode&&!isMobile"
@@ -935,6 +924,14 @@ function updateElement(el, rawMarkdown, formatFn) {
               <div class="card-icon red"><i class="fa-solid fa-tower-broadcast"></i></div>
               <div class="card-info">
                 <h3>{{ t('startLiveStream') || '방송 시작' }}</h3>
+              </div>
+            </div>
+
+            <!-- 🐾 월드 펫 성격·시스템 지시 -->
+            <div class="guide-card" @click="openWorldPersonaDialog">
+              <div class="card-icon gold"><i class="fa-solid fa-paw"></i></div>
+              <div class="card-info">
+                <h3>{{ t('worldPetSettings') }}</h3>
               </div>
             </div>
 
