@@ -174,4 +174,5 @@ export const PROPS = [
     { type: 'palm', x: -1.4,  z: 10.92, rotY: 0.46,  r: 0.4 },
     { type: 'palm', x: -4.08, z: 13.6,  rotY: -2.03, r: 0.4 },
     { type: 'sandcastle', x: -2.75, z: 11.95, rotY: 0.9, r: 0.38 },   // 모닥불 자리를 위해 동쪽으로 이동
+    { type: 'pierboard', x: 1.4, z: 5.2, rotY: -2.88, r: 0.22 },   // 🛒 페리 주문 게시판 — 본섬 북 잔교 동쪽, 마을 쪽을 본다
 ];

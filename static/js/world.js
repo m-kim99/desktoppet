@@ -31,7 +31,7 @@ const savedLayout = await (async () => {
 // 기기 유지: world-eco(성능)·world-layout(전용 API)·world-fruit-*(전용 API)·world-last-seen(기기별 리캡).
 const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked', 'world-pantry', 'world-icebox', 'world-market-used', 'world-recipes-unlocked', 'world-dishes-found', 'world-kitchen-leftover',
     'world-sea-found', 'world-seabed-dug', 'world-islet-dug', 'world-discover', 'world-houselight', 'world-pets',
-    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-space-poi', 'world-moon-dug', 'world-last-seen'];   // last-seen 공유 = 기기 간 이중 정산 방지
+    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-space-poi', 'world-moon-dug', 'world-last-seen', 'world-pier-order', 'world-pier-stock'];   // last-seen 공유 = 기기 간 이중 정산 방지
 try {   // 부트 1회 — 서버 값이 로컬을 덮는다 (아래 모든 리더보다 먼저 실행되는 게 핵심)
     const r = await fetch('/api/world_kv', { signal: AbortSignal.timeout(1500) });
     if (r.ok) {
@@ -57,7 +57,7 @@ function worldSync(key) {   // 변경 키만 900ms 디바운스 POST — 원시 
     }, 900);
 }
 // 이동 가능한 타입 (연못=지형 함몰이라 고정, furniture=집 내부 파생이라 집을 따라감)
-const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'scarecrow', 'compost', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'vine', 'fruitbasket', 'library', 'flowerbasket', 'pond', 'portal', 'icebox', 'kitchen', 'bonfire']);
+const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'scarecrow', 'compost', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'vine', 'fruitbasket', 'library', 'flowerbasket', 'pond', 'portal', 'icebox', 'kitchen', 'bonfire', 'pierboard']);
 // 섬 정의 지문 — 섬을 옮기거나 크기를 바꾸면 값이 달라진다(재발 방지: 저장 배치의 "섬 이사" 자동 감지).
 // 'v2|' 접두 = 배치 리뉴얼 세대: 섬 기하가 그대로여도 접두를 올리면 위성섬 소품이 전부 새 기본값으로
 // 리셋된다. 좌표 테이블(MOVED_DEFAULTS)은 클라이언트별 사본(서버 파일/localStorage 오리진들)의
@@ -4379,6 +4379,134 @@ function marketConsume(id, n = 1) {
     try { localStorage.setItem('world-market-used', JSON.stringify(marketUsed)); worldSync('world-market-used'); } catch (e) {}
     return true;
 }
+// ---- 🛒 잔교 주문 게시판 — 장터 로테이션에 없는 날을 위한 보완: 오늘 적어두면 내일 아침
+// 페리가 사다 놓는다 (하루 1주문 · 품목당 3개). 배달 알림은 토스트가 아니라 잔교에 놓인
+// 상자(오브젝트 상태) — 게시판을 열면 원터치 수령. 배달분(pierStock)은 장터 일일 재고와
+// 달리 상하지 않으며, 요리 차감은 "오늘이 지나면 사라지는" 장터 재고부터 쓴다. ----
+let pierOrder = null;   // { date, deliverDay, items: {id:n}, collected }
+try { pierOrder = JSON.parse(localStorage.getItem('world-pier-order') || 'null'); } catch (e) { pierOrder = null; }
+const savePierOrder = () => { try { localStorage.setItem('world-pier-order', JSON.stringify(pierOrder)); worldSync('world-pier-order'); } catch (e) {} };
+let pierStock = {};
+try { pierStock = JSON.parse(localStorage.getItem('world-pier-stock') || '{}') || {}; } catch (e) { pierStock = {}; }
+const savePierStock = () => { try { localStorage.setItem('world-pier-stock', JSON.stringify(pierStock)); worldSync('world-pier-stock'); } catch (e) {} };
+const pierDeliveryReady = () => !!(pierOrder && !pierOrder.collected && localDateStr() >= pierOrder.deliverDay);
+function collectPierDelivery() {
+    if (!pierDeliveryReady()) return false;
+    for (const [id, n] of Object.entries(pierOrder.items)) pierStock[id] = (pierStock[id] || 0) + n;
+    savePierStock();
+    pierOrder.collected = true;
+    savePierOrder();
+    const txt = Object.entries(pierOrder.items).map(([id, n]) => `${(MARKET_GOODS.find((g) => g.id === id) || { emoji: '📦' }).emoji}×${n}`).join(' ');
+    showToast(`📦 주문한 재료가 도착해 있었어요 — ${txt}`);
+    logWorldEvent('잔교에서 페리가 놓고 간 주문 상자를 찾아왔다 📦');
+    refreshKitchenPanel();
+    return true;
+}
+let pierPanel = null;
+let pierSel = {};
+function renderPierPanel() {
+    pierPanel.innerHTML = '';
+    const title = document.createElement('div');
+    title.style.cssText = 'font-size:13.5px; font-weight:700; margin-bottom:8px; color:#fff;';
+    title.textContent = '🛒 페리 주문 게시판';
+    pierPanel.appendChild(title);
+    const sub = document.createElement('div');
+    sub.style.cssText = 'font-size:11px; opacity:0.75; line-height:1.5; margin-top:8px; color:#fff;';
+    if (pierOrder && !pierOrder.collected) {   // 배달 대기 — 주문서는 이미 붙어 있다
+        const list = document.createElement('div');
+        list.style.cssText = 'font-size:12.5px; line-height:1.8; color:#fff;';
+        for (const [id, n] of Object.entries(pierOrder.items)) {
+            const g = MARKET_GOODS.find((q) => q.id === id);
+            if (g) list.append(`${g.emoji} ${g.ko} ×${n}`, document.createElement('br'));
+        }
+        pierPanel.appendChild(list);
+        sub.textContent = '내일 아침 페리가 잔교에 사다 놓아요 📦';
+        pierPanel.appendChild(sub);
+        return;
+    }
+    if (pierOrder && pierOrder.date === localDateStr()) {   // 하루 1주문
+        sub.textContent = '오늘 주문서는 이미 보냈어요 — 내일 또 부탁해요!';
+        pierPanel.appendChild(sub);
+        return;
+    }
+    for (const g of MARKET_GOODS) {
+        if (pierSel[g.id] === undefined) pierSel[g.id] = 0;
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:4px 0; font-size:13px; color:#fff;';
+        const name = document.createElement('span');
+        name.style.cssText = 'flex:1;';
+        name.textContent = `${g.emoji} ${g.ko}`;
+        const cnt = document.createElement('span');
+        cnt.style.cssText = 'width:18px; text-align:center; font-weight:700;';
+        cnt.textContent = pierSel[g.id];
+        const mkBtn = (txt, d) => {
+            const b = document.createElement('button');
+            b.textContent = txt;
+            b.style.cssText = 'width:26px; height:26px; border:none; border-radius:8px; background:rgba(255,255,255,0.12); color:#fff; font-size:15px; cursor:pointer; font-family:sans-serif;';
+            b.onclick = () => { pierSel[g.id] = Math.max(0, Math.min(3, pierSel[g.id] + d)); renderPierPanel(); };
+            return b;
+        };
+        row.append(name, mkBtn('−', -1), cnt, mkBtn('＋', 1));
+        pierPanel.appendChild(row);
+    }
+    const total = Object.values(pierSel).reduce((a, b) => a + b, 0);
+    const btn = document.createElement('button');
+    btn.textContent = total ? `📮 주문하기 (${total}개)` : '📮 주문하기';
+    btn.disabled = !total;
+    btn.style.cssText = `display:block; width:100%; margin-top:8px; padding:9px 0; border:none; border-radius:10px; font-size:13px; font-weight:700; font-family:sans-serif; cursor:${total ? 'pointer' : 'default'}; background:${total ? '#ffd54f' : 'rgba(255,255,255,0.08)'}; color:${total ? '#3d2f18' : '#889'};`;
+    btn.onclick = () => {
+        if (!total) return;
+        const items = {};
+        for (const [id, n] of Object.entries(pierSel)) if (n > 0) items[id] = n;
+        pierOrder = { date: localDateStr(), deliverDay: localDateStr(new Date(Date.now() + 86400000)), items, collected: false };
+        savePierOrder();
+        pierSel = {};
+        renderPierPanel();
+        showToast('📮 주문서를 붙였어요 — 내일 아침 페리가 사 와요');
+        logWorldEvent('주인이 잔교 게시판에 장터 주문서를 적어 붙였다 🛒');
+        maybeProactive(null, '주인이 방금 잔교 게시판에 주문서를 붙였다! 내일 페리가 뭘 사 올지 기대된다.');
+    };
+    pierPanel.appendChild(btn);
+    sub.textContent = '품목당 3개까지 · 하루 1주문 — 내일 아침 도착';
+    pierPanel.appendChild(sub);
+}
+function togglePierPanel() {
+    if (pierPanel && pierPanel.style.display === 'block') { pierPanel.style.display = 'none'; return; }
+    if (!pierPanel) {
+        pierPanel = document.createElement('div');
+        pierPanel.style.cssText = 'position:fixed; left:50%; transform:translateX(-50%); bottom:calc(96px + env(safe-area-inset-bottom, 0px)); display:none; width:min(238px, calc(100vw - 60px)); background:rgba(30,32,40,0.94); border-radius:12px; padding:12px; z-index:120; box-shadow:0 6px 24px rgba(0,0,0,0.4); font-family:sans-serif;';
+        document.body.appendChild(pierPanel);
+    }
+    collectPierDelivery();   // 상자가 와 있으면 게시판을 여는 것 = 수령
+    renderPierPanel();
+    pierPanel.style.display = 'block';
+}
+// 📦 배달 상자 — 도착 후 수령 전까지 게시판 곁에 놓이는 오브젝트 상태 알림 (5초 스로틀)
+let pierBoxMesh = null, pierBoxT = 9;
+function updatePierBoard(delta) {
+    pierBoxT += delta;
+    if (pierBoxT < 5) return;
+    pierBoxT = 0;
+    const pr = PROPS.find((q) => q.type === 'pierboard');
+    const ready = pr && pierDeliveryReady();
+    if (ready && !pierBoxMesh) {
+        pierBoxMesh = GM(new RoundedBoxGeometry(0.32, 0.24, 0.26, 3, 0.03), 0xc9a06b, 0x8a6a42);
+        const band = GM(new THREE.BoxGeometry(0.34, 0.05, 0.28), 0xece0c4, 0xcbb890);
+        band.position.y = 0.09;
+        pierBoxMesh.add(band);
+        scene.add(pierBoxMesh);
+        logWorldEvent('페리가 주문 상자를 잔교 곁에 놓고 갔다 📦');
+    } else if (!ready && pierBoxMesh) {
+        pierBoxMesh.traverse((o) => { if (o.isMesh) o.geometry.dispose(); });
+        scene.remove(pierBoxMesh);
+        pierBoxMesh = null;
+    }
+    if (pierBoxMesh && pr) {   // 공사모드로 게시판이 이사해도 상자가 따라간다
+        const sy = Math.sin(pr.rotY || 0), cy = Math.cos(pr.rotY || 0);
+        pierBoxMesh.position.set(pr.x + sy * 0.45 + cy * 0.3, terrainHeight(pr.x, pr.z) + 0.12, pr.z + cy * 0.45 - sy * 0.3);
+        pierBoxMesh.rotation.y = (pr.rotY || 0) + 0.5;
+    }
+}
 // ---- 🍳 레시피 — 재료는 {src, id, n}: src = fruit(바구니)|pantry(텃밭)|fish(아이스박스)|
 // seafood(잠수채집)|shell(조개)|market(장터)|staple(찬장, 무한). id '*' = 그 계보 아무거나.
 // tier: harvest(수확)·special(특별식)·heart(마음 요리 — 해금制, 7단계에서 트리거 연결). ----
@@ -4453,7 +4581,7 @@ function ingredientCountOne(src, id) {
     if (src === 'fish') return id === '*' ? sumVals(iceboxCounts) : (iceboxCounts[id] || 0);
     if (src === 'seafood') { const c = seafoodCounts(); return id === '*' ? sumVals(c) : (c[id] || 0); }
     if (src === 'shell') { const c = shellCounts(); return id === '*' ? sumVals(c) : (c[id] || 0); }
-    if (src === 'market') { const st = marketStock(); return id === '*' ? st.reduce((a, g) => a + g.left, 0) : ((st.find((q) => q.id === id) || {}).left || 0); }
+    if (src === 'market') { const st = marketStock(); const pier = id === '*' ? sumVals(pierStock) : (pierStock[id] || 0); return pier + (id === '*' ? st.reduce((a, g) => a + g.left, 0) : ((st.find((q) => q.id === id) || {}).left || 0)); }
     return 0;
 }
 const recipeMissing = (r) => r.needs.filter((nd) => ingredientCount(nd.src, nd.id) < nd.n);
@@ -4634,7 +4762,8 @@ function refreshKitchenPanel() {
         ['🐟', sumVals(iceboxCounts)], ['🐚', sumVals(shellCounts())], ['🐙', seafoodCounts().octopus || 0],
     ];
     const mk = marketStock().map((q) => `${q.emoji}${q.left}`).join(' ');
-    strip.textContent = `${inv.map(([e, n]) => `${e}${n}`).join(' ')}  ·  🛒 ${mk || '오늘 장은 쉬는 날'}`;
+    const pk = Object.entries(pierStock).filter(([, n]) => n > 0).map(([id, n]) => `${(MARKET_GOODS.find((g) => g.id === id) || { emoji: '📦' }).emoji}${n}`).join(' ');
+    strip.textContent = `${inv.map(([e, n]) => `${e}${n}`).join(' ')}  ·  🛒 ${mk || '오늘 장은 쉬는 날'}${pk ? `  ·  📦 ${pk}` : ''}`;
     const body = kitchenPanel.querySelector('.kc-body');
     body.innerHTML = '';
     // 타일 그리드 — 요리는 흰 바탕 정사각 이미지(지금은 이모지 대체, 조형 확정 후 아이콘 스냅샷).
@@ -4711,7 +4840,7 @@ function consumeUnitOne(src, id) {
     if (src === 'fish') return lineConsume('fish', iceboxCounts, id, () => { saveIcebox(); refreshIceboxPanel(); });
     if (src === 'seafood') { const c = seafoodCounts(); return lineConsume('seafood', c, id, () => { try { localStorage.setItem('world-seafood', JSON.stringify(c)); worldSync('world-seafood'); } catch (e) {} }); }
     if (src === 'shell') { const c = shellCounts(); return lineConsume('shell', c, id, () => { try { localStorage.setItem('world-shells', JSON.stringify(c)); worldSync('world-shells'); } catch (e) {} }); }
-    if (src === 'market') return marketConsume(id, 1);
+    if (src === 'market') return marketConsume(id, 1) || lineConsume('pier', pierStock, id, () => savePierStock());   // 사라지는 장터 재고부터, 배달분은 아껴 쓴다
     return false;
 }
 function consumeIngredients(r) {
@@ -6048,6 +6177,7 @@ const PROP_CLICKS = {
     library: () => petRead(),
     flowerbasket: () => onBasketClick(),
     sandcastle: () => petSandPlay(),
+    pierboard: () => togglePierPanel(),
     trampoline: () => petTramp(),
     house: (pr, hit) => { if (hit && pendantHit([hit])) toggleHouseLight(); },
     fruitbasket: () => openFruitBasket(),
@@ -6082,6 +6212,7 @@ const HOVER_PROMPTS = {
     piano: () => '🎹 피아노 — 건반 클릭 = 음, 몸통 클릭 = 펫 연주',
     photoboard: () => '📌 사진 게시판 — 클릭해서 추억 넘겨보기',
     mailbox: () => (mailFlag && mailFlag.rotation.z > -0.5 ? '📮 우편함 — 답장이 와 있어요!' : '📮 우편함 — 클릭해서 편지 쓰기'),
+    pierboard: () => (pierDeliveryReady() ? '📦 주문 상자가 도착해 있어요! — 클릭해서 수령' : '🛒 페리 주문 게시판 — 내일 아침 배달'),
     gym: () => '🧘 운동 공간 — 매트 클릭 또는 조종 중 ⌘로 스트레칭',
     library: () => '📚 도서관 코너 — 클릭하면 펫이 와서 책을 읽어요',
     fountain: () => '⛲ 분수',
@@ -6093,7 +6224,7 @@ const HOVER_PROMPTS = {
     sandcastle: () => '🏰 모래성 — 클릭하면 펫이 모래놀이 · 조종 중 ⌘ = 직접 앉기',
     palm: () => '🌴 야자수',
 };
-const HOVER_H = { icebox: 0.62, kitchen: 1.5, bonfire: 0.95, pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, scarecrow: 1.5, compost: 0.75, piano: 1.05, photoboard: 1.55, mailbox: 0.75, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, balloon: 2.1, ferry: 1.3, sandcastle: 0.65, palm: 1.2 };
+const HOVER_H = { icebox: 0.62, kitchen: 1.5, bonfire: 0.95, pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, scarecrow: 1.5, compost: 0.75, piano: 1.05, photoboard: 1.55, mailbox: 0.75, pierboard: 0.9, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, balloon: 2.1, ferry: 1.3, sandcastle: 0.65, palm: 1.2 };
 const hoverEl = document.createElement('div');
 hoverEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); z-index:88; pointer-events:none; background:rgba(30,32,40,0.88); color:#fff; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
 document.body.appendChild(hoverEl);
@@ -6209,7 +6340,32 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 renderer.domElement.addEventListener('pointerleave', () => { hoverActive = false; });
 fetchCapsules();   // 부팅 시 한 번 — 개봉 알림용
 
-const PROP_BUILDERS = { icebox: makeIcebox, kitchen: makeKitchen, bonfire: makeBonfire, tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, scarecrow: makeScarecrow, compost: makeCompost, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, trampoline: makeTrampoline, vine: makeVine, fruitbasket: makeFruitBasket, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket, palm: makePalm, sandcastle: makeSandcastle };
+// 🛒 잔교 주문 게시판 — 나무 기둥 2 + 판 + 차양 + 핀 종이 (전부 병합 문법, MERGE_TYPES행)
+function makePierBoard() {
+    const g = new THREE.Group();
+    for (const sx of [-0.16, 0.16]) {
+        const post = new THREE.Mesh(bakeGrad(new THREE.CylinderGeometry(0.025, 0.03, 0.62, 8), 0xc79a6b, 0x84603e), gradMatWood);
+        post.position.set(sx, 0.31, 0);
+        g.add(post);
+    }
+    const board = new THREE.Mesh(bakeGrad(new RoundedBoxGeometry(0.5, 0.34, 0.045, 3, 0.015), 0xd3a878, 0x9a7449), gradMatWood);
+    board.position.set(0, 0.52, 0);
+    g.add(board);
+    const roof = new THREE.Mesh(bakeGrad(new THREE.BoxGeometry(0.56, 0.035, 0.13), 0xa8845e, 0x7a5b3d), gradMatWood);
+    roof.position.set(0, 0.72, 0.015);
+    roof.rotation.x = 0.16;
+    g.add(roof);
+    const p1 = GM(new THREE.BoxGeometry(0.16, 0.2, 0.012), 0xfdf7e4, 0xe3d8bc);
+    p1.position.set(-0.1, 0.53, 0.03);
+    p1.rotation.z = 0.06;
+    g.add(p1);
+    const p2 = GM(new THREE.BoxGeometry(0.14, 0.16, 0.012), 0xfaf2da, 0xdccfae);
+    p2.position.set(0.11, 0.5, 0.03);
+    p2.rotation.z = -0.09;
+    g.add(p2);
+    return g;
+}
+const PROP_BUILDERS = { icebox: makeIcebox, kitchen: makeKitchen, bonfire: makeBonfire, tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, scarecrow: makeScarecrow, compost: makeCompost, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, trampoline: makeTrampoline, vine: makeVine, fruitbasket: makeFruitBasket, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket, palm: makePalm, sandcastle: makeSandcastle, pierboard: makePierBoard };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -6227,7 +6383,7 @@ const blobTex = (() => {
 })();
 const blobGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-const BLOB_SIZE = { icebox: 0.48, kitchen: 1.25, bonfire: 0.85, tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62, pecktree: 0.55, well: 0.75, capsule: 0.5, boulder: 0.75, garden: 1.5, piano: 0.8, photoboard: 0.8, mailbox: 0.35, gym: 1.5, library: 1.35 };
+const BLOB_SIZE = { icebox: 0.48, kitchen: 1.25, bonfire: 0.85, tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62, pecktree: 0.55, well: 0.75, capsule: 0.5, boulder: 0.75, garden: 1.5, piano: 0.8, photoboard: 0.8, mailbox: 0.35, pierboard: 0.4, gym: 1.5, library: 1.35 };
 // Beds register a lying spot (on the furniture, with a lean-back tilt + heading) and an
 // approach point just outside their collider that the pet walks to before climbing on.
 // 🔨 함수로 분리: 로드 시 프롭 루프가 굽고, 공사모드에서 프롭이 이사하면 unbake→bake로 다시
@@ -6321,7 +6477,7 @@ function unbakePropBeds(p) {
 //  · Mesh가 아닌 것(라이트·스프라이트·Points)과 visible=false(숨김 토글류)는 그냥 둔다
 const MERGE_TYPES = new Set(['house', 'bowl', 'fence', 'pond', 'sunbed', 'hammock', 'lamp', 'radio',
     'coffee', 'food', 'monument', 'pecktree', 'well', 'capsule', 'boulder', 'cave', 'lookout',
-    'garden', 'scarecrow', 'compost', 'piano', 'mailbox', 'gym', 'library', 'fountain', 'flowerbasket', 'swing', 'seesaw', 'palm', 'sandcastle', 'icebox', 'kitchen']);
+    'garden', 'scarecrow', 'compost', 'piano', 'mailbox', 'gym', 'library', 'fountain', 'flowerbasket', 'swing', 'seesaw', 'palm', 'sandcastle', 'icebox', 'kitchen', 'pierboard']);
 function mergePropGroup(root) {
     const skip = new Set(seasonSnowCaps);
     if (mailFlag) mailFlag.traverse((o) => skip.add(o));
@@ -9074,7 +9230,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', scarecrow: '허수아비', compost: '퇴비함', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호' };
+const PROP_KO = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', scarecrow: '허수아비', compost: '퇴비함', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', pierboard: '주문 게시판', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -10276,7 +10432,7 @@ document.body.appendChild(dockUI);
 // 배치는 서버(/api/world_layout)+localStorage에 저장되고 다음 접속 때 씬을 짓기 전에 적용된다
 // (파일 상단 savedLayout). 지형 평탄화 패드는 섬 메시에 구워져 있어 리로드 후에야 새 위치를
 // 따라간다 — 그때까지 잔디가 살짝 울퉁불퉁할 수 있는 게 유일한 시각적 타협점.
-const PROP_LABELS = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', bowl: '밥그릇', fence: '울타리', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', house: '집', car: '자동차' };
+const PROP_LABELS = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', bowl: '밥그릇', fence: '울타리', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', house: '집', car: '자동차', pierboard: '주문 게시판' };
 const buildRingMat = new THREE.MeshBasicMaterial({ color: 0x66d9ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
 const buildRing = new THREE.Mesh(new THREE.RingGeometry(0.82, 1.0, 40), buildRingMat);
 buildRing.rotation.x = -Math.PI / 2;
@@ -24951,6 +25107,7 @@ function animate() {
     updateHideSeek(delta);
     updatePollActs();                        // 🎹⛏️🙈 전역 폴링 활동 추첨 (레지스트리)
     tickOfflineSettle();                     // 🕰️ 시간갭 감지 — 부팅·창 가림 복귀 시 부재 정산
+    updatePierBoard(delta);                  // 📦 잔교 주문 배달 상자 (5초 스로틀)
     if (kitchenLeftover && !leftoverGrp) syncLeftoverMesh();   // 지난 세션의 접시 복원
     updateHugSpot(delta);
     updateMemorialIsland(delta);
