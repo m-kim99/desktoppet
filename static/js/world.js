@@ -25528,6 +25528,8 @@ function fcAtlas() {
     fcPaintSea(g);    // 🦪 셀 20~22 (해산물 예약분)
     fcPaintStar(g);   // ⭐ 셀 23
     fcPaintSeaTex(g); // 🥒🍊 셀 24·25
+    fcPaintShrimp(g); // 🦐 셀 26
+    fcPaintOcto(g);   // 🐙 셀 27
     fcPaintFrog(g);   // 🐸 셀 9 — 등(위 절반) / 배(아래 절반)
     fcPaintBoot(g);   // 🥾 셀 12 — 통·발·밑창 3밴드
     {   // 흰 셀(15) 좌상 사분면에 개구리 눈 — 금색 홍채 + **가로 동공**. 중앙은 순백 유지(부속 파트가 샘플)
@@ -26877,13 +26879,33 @@ function buildStarCartoon() {
 //   axis(s) : 축 좌표 {x, y} — 아치·S곡선
 function fcTubeGeo(o) {
     const NS = o.ns || 26, NP = o.np || 24, pos = [], uv = [], idx = [];
+    // o.path(s) → {x,y,z}: 중심선이 크게 휘는 경우(새우의 C컬·문어 다리). 이땐 단면을 **접선에 수직인
+    // 프레임**으로 세운다 — 고정 (x,y) 평면으로 훑으면 많이 휜 구간에서 튜브가 납작하게 찌그러진다.
+    // path가 없으면 기존 동작 그대로(축 = +z, axis(s)는 x·y 오프셋) — 해삼·멍게는 무변경.
+    const P = o.path, EP = 1e-3;
+    const at = (t) => P(Math.min(1, Math.max(0, t)));
     for (let i = 0; i <= NS; i++) {
-        const s = i / NS, ax = o.axis ? o.axis(s) : { x: 0, y: 0 }, rr = o.rad(s);
+        const s = i / NS, rr = o.rad(s);
+        let cx, cy, cz, nx = 1, ny = 0, nz = 0, bx = 0, by = 1, bz = 0;
+        if (P) {
+            const c = at(s), a = at(s - EP), b = at(s + EP);
+            cx = c.x; cy = c.y; cz = c.z;
+            let tx = b.x - a.x, ty = b.y - a.y, tz = b.z - a.z;
+            const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+            const up = Math.abs(ty) > 0.94 ? [0, 0, 1] : [0, 1, 0];   // 접선과 거의 나란한 up은 프레임을 무너뜨린다
+            nx = up[1] * tz - up[2] * ty; ny = up[2] * tx - up[0] * tz; nz = up[0] * ty - up[1] * tx;
+            const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+            bx = ty * nz - tz * ny; by = tz * nx - tx * nz; bz = tx * ny - ty * nx;
+        } else {
+            const ax = o.axis ? o.axis(s) : { x: 0, y: 0 };
+            cx = ax.x; cy = ax.y; cz = (s - 0.5) * o.L;
+        }
         for (let j = 0; j <= NP; j++) {
             const ph = (j / NP) * Math.PI * 2;
             const r = o.R * (rr + (o.disp ? o.disp(ph, s) : 0));
             const sc = o.sec ? o.sec(ph, s) : { x: Math.cos(ph), y: Math.sin(ph) };
-            pos.push(ax.x + r * sc.x, ax.y + r * sc.y, (s - 0.5) * o.L);
+            if (P) pos.push(cx + r * (sc.x * nx + sc.y * bx), cy + r * (sc.x * ny + sc.y * by), cz + r * (sc.x * nz + sc.y * bz));
+            else pos.push(cx + r * sc.x, cy + r * sc.y, cz);
             uv.push(j / NP, s);
         }
     }
@@ -26897,6 +26919,13 @@ function fcTubeGeo(o) {
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     g.setIndex(idx); g.computeVertexNormals();
     return g;
+}
+// 부속(다리·더듬이)을 몸통과 **다른 v 대역**으로 옮긴다. 같은 대역을 쓰면 한쪽 색을 바꿀 때
+// 다른 쪽이 딸려 변한다(멍게 사이펀에서 실측한 함정).
+function fcRemapV(geo, lo, hi) {
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setY(i, lo + uv.getY(i) * (hi - lo));
+    return geo;
 }
 const fcAngGap = (a, b) => { let d = (a - b) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
 // 굴에서 정한 정점색 문법을 공용화: 월드 기준 톱라이트 + 아래를 향할수록 따뜻하게(hemiLight
@@ -27111,13 +27140,241 @@ function fcPaintSeaTex(g) {
         g.restore();
     }
 }
+
+// ==== 🦐 새우 — 구슬 목걸이가 아니라 마디가 겹친 한 몸 ======================================
+// 구 조형: 구체 5개를 호로 늘어놓고(서로 안 섞여 애벌레로 읽혔다) z로 0.3 눌린 원뿔을 꼬리라고
+// 붙였으며(종이 삼각형), 더듬이는 붙을 머리도 없이 공중에 떠 있었다.
+// 규율: 몸은 **한 개의 스윕 튜브**. 마디는 붙이지 말고 반지름 리플(disp)로 — 겹친 판처럼 뒤로
+// 갈수록 부풀다 뚝 떨어지는 톱니가 갑각 마디의 정체성이다.
+const FC_SHRIMP = { cell: 26, R: 0.030, L: 0.20 };
+const FC_SH_RC = 0.088;   // C컬 반지름
+function fcShrimpPath(t) {
+    const th = -1.72 + t * 3.66;                       // 머리(좌하) → 등(위) → 꼬리(우하)
+    return { x: Math.sin(th) * FC_SH_RC, y: Math.cos(th) * FC_SH_RC * 0.86 + FC_SH_RC * 0.30, z: 0 };
+}
+function fcShrimpRad(t) {
+    // 로스트럼(뾰족한 주둥이) → 갑각(가장 굵음) → 복부 테이퍼 → 꼬리 자루
+    const head = 0.16 + 0.84 * Math.min(1, Math.pow(t / 0.20, 0.8));
+    const body = t < 0.20 ? 1 : 1 - 0.70 * Math.pow((t - 0.20) / 0.80, 1.25);
+    const cap = Math.min(1, t / 0.045) * Math.min(1, (1 - t) / 0.05);   // 양끝을 0으로 닫는다
+    return head * body * cap;
+}
+function fcShrimpDisp(ph, t) {
+    if (t < 0.30 || t > 0.90) return 0;
+    const f = ((t - 0.30) / 0.60) * 6;                 // 복부 6마디
+    const lip = Math.pow(f - Math.floor(f), 2.6);      // 뒤로 갈수록 부풀다 뚝 — 겹친 판
+    return 0.16 * lip * (0.55 + 0.45 * Math.max(0, -Math.sin(ph)));   // 등쪽이 더 두껍다
+}
+function buildShrimpCartoon() {
+    const A = fcAtlas(), C = FC_SHRIMP, R = faRect(C.cell);
+    if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
+    const parts = [];
+    parts.push(fcRemapV(fcTubeGeo({ R: C.R, L: C.L, ns: 46, np: 20, path: fcShrimpPath, rad: fcShrimpRad, disp: fcShrimpDisp }), 0.30, 1.0));
+    const tailP = fcShrimpPath(1), tailT = fcShrimpPath(0.98);
+    const tx = tailP.x - tailT.x, ty = tailP.y - tailT.y, tl = Math.hypot(tx, ty) || 1;
+    // 꼬리 부채(uropod) 4장 — 눌린 원뿔이 아니라 **얇은 판**을 부챗살로. 끝이 뾰족해야 부채로 읽힌다.
+    for (const sp of [-0.62, -0.21, 0.21, 0.62]) {
+        const len = C.R * (2.35 - Math.abs(sp) * 0.85), wid = C.R * 0.30;
+        const ca = Math.cos(sp), sa = Math.sin(sp);
+        const dx = (tx / tl) * ca - (ty / tl) * sa, dy = (ty / tl) * ca + (tx / tl) * sa;
+        const pos = [], uv = [], idx = [], N = 6;
+        for (let i = 0; i <= N; i++) {
+            const u = i / N, w = wid * Math.sin(Math.PI * Math.pow(u, 0.75)) * (1 - 0.55 * u);
+            for (const zs of [-1, 1]) {
+                pos.push(tailP.x + dx * len * u, tailP.y + dy * len * u, zs * w);
+                uv.push((zs + 1) / 2, 0.06 + u * 0.20);
+            }
+        }
+        for (let i = 0; i < N; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+        const fg = new THREE.BufferGeometry();
+        fg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        fg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        fg.setIndex(idx); fg.computeVertexNormals();
+        parts.push(fg);
+    }
+    // 더듬이 2가닥 — 머리에서 **실제로 뻗어 나오게**(구 조형은 공중에 떠 있었다). 가늘어지는 튜브.
+    const hd = fcShrimpPath(0.06);
+    for (const [sz, curl] of [[1, 0.55], [-1, -0.42]]) {
+        parts.push(fcRemapV(fcTubeGeo({
+            R: C.R * 0.085, L: 1, ns: 16, np: 6,   // 굵으면 붉은 막대 두 개로 튄다
+            // ⚠️ 실물 더듬이는 몸보다 길지만, 그대로 두면 새우 폭(0.49)이 문어(0.47)를 넘어 크기 서열이
+            // 뒤집힌다(실측) → 0.115 → 0.072로 줄인다.
+            path: (t) => ({ x: hd.x - 0.072 * t - 0.014 * t * t, y: hd.y + 0.024 * t - 0.052 * t * t, z: sz * (0.006 + curl * 0.026 * t) }),
+            rad: (t) => (1 - 0.85 * t) * Math.min(1, (1 - t) / 0.06),
+        }), 0.02, 0.05));
+    }
+    for (const sz of [1, -1]) {   // 눈 — 갑각 옆 작은 검은 구슬
+        const e = fcShrimpPath(0.15);
+        const eg = new THREE.SphereGeometry(C.R * 0.30, 8, 6).translate(e.x - 0.006, e.y + C.R * 0.34, sz * C.R * 0.62);
+        const eu = eg.attributes.uv;
+        for (let i = 0; i < eu.count; i++) eu.setXY(i, 0.5, 0.015);   // 셀의 검은 점 한 곳
+        parts.push(eg);
+    }
+    const geo = mergeGeometries(parts, false);
+    fcSeaShade(geo, R);
+    geo.computeBoundingBox();
+    geo.translate(0, -geo.boundingBox.min.y, 0);
+    const grp = new THREE.Group();
+    const m = new THREE.Mesh(geo, fcMat);
+    m.castShadow = true; m.receiveShadow = true;
+    grp.add(m);
+    return grp;
+}
+// ==== /🦐 새우 =============================================================================
+
+// ==== 🐙 문어 — 구체 + 마카로니 링이 아니라 자루 + 뻗어 말린 다리 8 ==========================
+// 구 조형: 머리가 그냥 구체, 다리는 **부분 토러스 8개를 바닥에 눕힌 것**(핑크 크루아상 링)이라
+// 머리에 붙지도 않고 끝이 뭉툭하게 잘려 있었다. 눈은 흰자·동공이 별개 구체라 각도에 따라 어긋났다.
+// 규율: 외투막은 자루 로프트, 다리는 **각각 스윕 튜브**(끝에서 반지름 0 = 뾰족), 빨판은 붙이지
+// 말고 disp 융기 줄로, 눈은 외투막 disp 융기 + 텍스처 동공(별개 구체를 없애 어긋남을 원천 제거).
+// 크기: 해삼·멍게와 비슷하면 어색하다는 지적에 따라 **가장 크게** 잡았다(다리 끝까지 ≈ 2.6R).
+const FC_OCTO = { cell: 27, R: 0.062, L: 0.118, arms: 8, armLen: 2.1, armR: 0.255 };
+// s=0 목(아래) → s=1 외투막 꼭대기. 목은 다리가 가리므로 0.46R에서 시작해 빠르게 닫는다.
+function fcOctoRad(s) {
+    if (s < 0.14) return 0.46 * Math.pow(s / 0.14, 0.55);
+    if (s < 0.50) return 0.46 + 0.54 * Math.pow((s - 0.14) / 0.36, 1.2);
+    return Math.pow(Math.sin(Math.PI * 0.5 * (1 - (s - 0.50) / 0.50)), 0.55);
+}
+// ⚠️ 눈 φ는 두 번 틀렸다: ±0.95는 정면에서 하나만 크게 보여 가로 슬릿이 **'입'**으로 읽혔고,
+// 반대로 ±1.55(178° 벌림)는 정확히 반대편이라 어느 각도에서도 **한쪽만** 보였다(둘 다 실측).
+// 만화적으로는 두 눈이 같이 보여야 한다 → ±0.62(≈71° 벌림)로 앞옆에 나란히.
+const FC_OC_EYE = [0.62, -0.62];   // 눈 융기의 φ — 텍스처 동공도 이 값에서 u를 뽑는다(좌표 단일 소스)
+const FC_OC_EYE_S = 0.60;
+function fcOctoDisp(ph, s) {
+    let d = 0;
+    for (const e of FC_OC_EYE) {
+        const dp = fcAngGap(ph, e) / 0.40, ds = (s - FC_OC_EYE_S) / 0.115;
+        const q = Math.sqrt(dp * dp + ds * ds);
+        if (q < 1) { const f = 1 - q; d += 0.26 * f * f * (0.40 + 0.60 * f); }
+    }
+    return d;
+}
+function buildOctoCartoon() {
+    const A = fcAtlas(), C = FC_OCTO, R = faRect(C.cell);
+    if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
+    const parts = [];
+    const mantle = fcTubeGeo({ R: C.R, L: C.L, ns: 30, np: 28, rad: fcOctoRad, disp: fcOctoDisp });
+    mantle.rotateX(-Math.PI / 2);   // 로프트 축 +z → 문어는 서 있다
+    parts.push(fcRemapV(mantle, 0.34, 1.0));
+    // ⚠️ 다리 뿌리 좌표는 **외투막 프로파일에서 파생**시킨다. 두 군데 하드코딩하면 목이 벌어진다
+    // (굴 힌지에서 배운 것). rotateX(-π/2)로 z→y가 되므로 뿌리 y = (s−0.5)·L 그대로다.
+    const rs = 0.16, rootR = fcOctoRad(rs) * C.R, rootY = (rs - 0.5) * C.L;
+    const hg = -0.5 * C.L - C.R * 0.10;   // 다리가 깔리는 바닥
+    for (let i = 0; i < C.arms; i++) {
+        const a = (i / C.arms) * Math.PI * 2 + 0.22;
+        const ca = Math.cos(a), sa = Math.sin(a);
+        const wob = 0.85 + 0.30 * fcHash(i + 40);        // 다리마다 길이를 흔들어 도장 찍은 티를 없앤다
+        const arm = fcTubeGeo({
+            R: C.R * C.armR, L: 1, ns: 22, np: 10,
+            path: (t) => {
+                const out = rootR * 0.80 + C.R * C.armLen * wob * Math.pow(t, 0.86);
+                const y = rootY + (hg - rootY) * Math.min(1, Math.pow(t / 0.33, 0.8))
+                    + C.R * 0.26 * Math.pow(Math.max(0, (t - 0.55) / 0.45), 2.2);   // 끝만 살짝 말려 올라간다
+                const sw = Math.sin(t * 3.1 + i) * 0.16 * t;                        // 좌우로 완만하게 휜다
+                return { x: (out * ca) - sw * sa * C.R, y, z: (out * sa) + sw * ca * C.R };
+            },
+            rad: (t) => (1 - 0.94 * Math.pow(t, 0.9)) * Math.min(1, (1 - t) / 0.05) * Math.min(1, t / 0.03 + 0.35),
+            // 빨판 — 다리 **안쪽(아래)** 두 줄. 스윕 프레임에서 −B(φ≈1.5π)가 아래쪽이다.
+            disp: (ph, t) => {
+                const along = Math.pow(Math.abs(Math.sin(t * Math.PI * 9)), 6);
+                const g1 = Math.exp(-Math.pow(fcAngGap(ph, 4.712 - 0.52) / 0.30, 2));
+                const g2 = Math.exp(-Math.pow(fcAngGap(ph, 4.712 + 0.52) / 0.30, 2));
+                return 0.46 * along * (g1 + g2) * Math.min(1, (1 - t) / 0.18);   // 얕으면 매끈한 소시지가 된다
+            },
+        });
+        parts.push(fcRemapV(arm, 0.02, 0.30));
+    }
+    const geo = mergeGeometries(parts, false);
+    fcSeaShade(geo, R);
+    geo.computeBoundingBox();
+    geo.translate(0, -geo.boundingBox.min.y, 0);
+    const grp = new THREE.Group();
+    const m = new THREE.Mesh(geo, fcMat);
+    m.castShadow = true; m.receiveShadow = true;
+    grp.add(m);
+    return grp;
+}
+// 🐙 셀 27 — v 0.34~1.0 외투막(목→꼭대기) · 0.02~0.30 다리
+function fcPaintOcto(g) {
+    const S = FC_OCTO, R = faRect(S.cell), C = FA_CELL;
+    const X = (u) => R.x + u * C, Y = (v) => R.y + (1 - v) * C;
+    g.save(); g.beginPath(); g.rect(R.x, R.y, C, C); g.clip();
+    const gr = g.createLinearGradient(0, Y(1), 0, Y(0.34));       // 꼭대기 진한 자주 → 목은 옅게
+    gr.addColorStop(0, '#8e2340'); gr.addColorStop(0.5, '#bb4060'); gr.addColorStop(1, '#cd6484');   // 목 색을 다리 뿌리와 맞춘다 — 안 맞추면 두 토막으로 보인다
+    g.fillStyle = gr; g.fillRect(R.x, Y(1), C, Y(0.34) - Y(1));
+    for (let k = 0; k < 26; k++) {   // 자주-붉은 얼룩 (성기게 — 96px 아이콘)
+        const u = fcHash(k + 1500), v = 0.38 + fcHash(k + 1523) * 0.58;
+        g.save(); g.translate(X(u), Y(v)); g.rotate((fcHash(k + 1541) - 0.5) * 2);
+        g.beginPath(); g.ellipse(0, 0, C * (0.020 + fcHash(k + 1559) * 0.026), C * (0.012 + fcHash(k + 1571) * 0.016), 0, 0, Math.PI * 2);
+        g.fillStyle = k % 3 ? `rgba(120,26,52,${0.20 + fcHash(k + 1583) * 0.16})` : `rgba(255,168,180,${0.16 + fcHash(k + 1597) * 0.14})`;
+        g.fill(); g.restore();
+    }
+    // 눈 — 융기 위치(FC_OC_EYE)에서 u를 뽑는다. 좌표를 두 군데 쓰면 동공이 융기에서 미끄러진다.
+    for (const e of FC_OC_EYE) {
+        const u = ((e / (Math.PI * 2)) % 1 + 1) % 1, v = 0.34 + FC_OC_EYE_S * 0.66;
+        for (const du of [-1, 0, 1]) {
+            const cu = u + du;
+            if (cu < -0.1 || cu > 1.1) continue;
+            g.beginPath(); g.ellipse(X(cu), Y(v), C * 0.032, C * 0.024, 0, 0, Math.PI * 2);
+            g.fillStyle = 'rgba(252,226,200,0.86)'; g.fill();                     // 눈두덩 — 크면 붙인 스티커로 읽힌다
+            g.beginPath(); g.ellipse(X(cu), Y(v), C * 0.020, C * 0.008, 0, 0, Math.PI * 2);
+            g.fillStyle = '#1a1216'; g.fill();                                    // 가로 슬릿 동공 — 문어의 표식
+        }
+    }
+    const arm = g.createLinearGradient(0, Y(0.30), 0, Y(0.02));   // 다리 — 뿌리는 몸통 색, 끝은 옅게
+    arm.addColorStop(0, '#c8607e'); arm.addColorStop(1, '#f0a8ba');
+    g.fillStyle = arm; g.fillRect(R.x, Y(0.30), C, Y(0.02) - Y(0.30));
+    const suck = g.createLinearGradient(X(0.62), 0, X(0.88), 0);   // 빨판 줄(φ≈1.5π → u 0.75) 주변만 옅게
+    suck.addColorStop(0, 'rgba(255,214,206,0)'); suck.addColorStop(0.5, 'rgba(255,220,212,0.60)'); suck.addColorStop(1, 'rgba(255,214,206,0)');
+    g.fillStyle = suck; g.fillRect(X(0.62), Y(0.30), C * 0.26, Y(0.02) - Y(0.30));
+    g.restore();
+}
+// ==== /🐙 문어 =============================================================================
 // ==== /🥒🍊 =================================================================================
 // 카툰 조형으로 옮긴 해산물 디스패치. 새 종을 옮길 때 여기 한 줄만 추가한다.
+// 🦐 셀 26 — v 0.30~1.0 몸통(머리→꼬리) · 0.06~0.26 꼬리 부채 · 0.02~0.05 더듬이 · 0.015 눈
+function fcPaintShrimp(g) {
+    const S = FC_SHRIMP, R = faRect(S.cell), C = FA_CELL;
+    const X = (u) => R.x + u * C, Y = (v) => R.y + (1 - v) * C;
+    g.save(); g.beginPath(); g.rect(R.x, R.y, C, C); g.clip();
+    g.fillStyle = '#f08258'; g.fillRect(R.x, R.y, C, C);
+    // 몸통(v 0.30~1.0): v1 = 머리, v0.30 = 꼬리. 등(u 0.75 = φ 1.5π 위쪽)은 진하고 배는 희다.
+    const belly = g.createLinearGradient(X(0), 0, X(1), 0);
+    belly.addColorStop(0.00, 'rgba(255,236,220,0.20)'); belly.addColorStop(0.24, 'rgba(255,242,230,0.72)');
+    belly.addColorStop(0.50, 'rgba(255,236,220,0.10)'); belly.addColorStop(0.74, 'rgba(176,52,24,0.52)');
+    belly.addColorStop(1.00, 'rgba(255,236,220,0.20)');
+    g.fillStyle = belly; g.fillRect(R.x, Y(1), C, Y(0.30) - Y(1));
+    for (let k = 0; k < 6; k++) {   // 마디 경계 — 조형 리플과 같은 6마디에 맞춘다
+        const v = 1.0 - 0.70 * (0.30 + k * 0.10);
+        g.beginPath(); g.moveTo(X(0), Y(v)); g.lineTo(X(1), Y(v));
+        g.strokeStyle = 'rgba(154,40,16,0.44)'; g.lineWidth = 7; g.stroke();
+        g.beginPath(); g.moveTo(X(0), Y(v + 0.012)); g.lineTo(X(1), Y(v + 0.012));
+        g.strokeStyle = 'rgba(255,220,190,0.34)'; g.lineWidth = 4; g.stroke();
+    }
+    for (let k = 0; k < 9; k++) {   // 붉은 얼룩 줄무늬 — 성기게(96px 아이콘)
+        const v = 0.34 + k * 0.072, u0 = fcHash(k + 1300);
+        g.save(); g.translate(X(u0), Y(v)); g.rotate((fcHash(k + 1311) - 0.5) * 0.6);
+        g.beginPath(); g.ellipse(0, 0, C * 0.055, C * 0.011, 0, 0, Math.PI * 2);
+        g.fillStyle = `rgba(190,48,18,${0.20 + fcHash(k + 1327) * 0.18})`; g.fill(); g.restore();
+    }
+    const fan = g.createLinearGradient(0, Y(0.26), 0, Y(0.06));   // 꼬리 부채 — 뿌리 진하고 끝은 반투명하게 옅다
+    fan.addColorStop(0, '#e6683a'); fan.addColorStop(1, '#ffd0b0');
+    g.fillStyle = fan; g.fillRect(R.x, Y(0.26), C, Y(0.06) - Y(0.26));
+    for (let k = 1; k < 6; k++) {   // 부채살
+        g.beginPath(); g.moveTo(X(k / 6), Y(0.26)); g.lineTo(X(k / 6), Y(0.06));
+        g.strokeStyle = 'rgba(180,60,30,0.28)'; g.lineWidth = 5; g.stroke();
+    }
+    g.fillStyle = '#cd6a4a'; g.fillRect(R.x, Y(0.055), C, Y(0.008) - Y(0.055));   // 더듬이 — 채도를 낮춰 몸통에서 안 튀게
+    g.fillStyle = '#26181c'; g.fillRect(R.x, Y(0.030), C, Y(0) - Y(0.030));       // 눈(검은 점)
+    g.restore();
+}
 function fcSeaBuild(id) {
     if (id === 'oyster') return buildOysterCartoon();
     if (id === 'starfish') return buildStarCartoon();
     if (id === 'seacuke') return buildCukeCartoon();
     if (id === 'seasquirt') return buildSquirtCartoon();
+    if (id === 'shrimp') return buildShrimpCartoon();
+    if (id === 'octopus') return buildOctoCartoon();
     return null;
 }
 // ==== /⭐ 불가사리 =========================================================================
