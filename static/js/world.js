@@ -4407,8 +4407,15 @@ let pierSel = {};
 function renderPierPanel() {
     pierPanel.innerHTML = '';
     const title = document.createElement('div');
-    title.style.cssText = 'font-size:13.5px; font-weight:700; margin-bottom:8px; color:#fff;';
-    title.textContent = '🛒 페리 주문 게시판';
+    title.style.cssText = 'display:flex; align-items:center; margin-bottom:8px;';
+    const tName = document.createElement('span');
+    tName.style.cssText = 'flex:1; font-size:13.5px; font-weight:700; color:#fff;';
+    tName.textContent = '🛒 페리 주문 게시판';
+    const tClose = document.createElement('button');
+    tClose.textContent = '✕';
+    tClose.style.cssText = 'width:24px; height:24px; border:none; border-radius:8px; background:rgba(255,255,255,0.1); color:#fff; font-size:13px; cursor:pointer; font-family:sans-serif;';
+    tClose.onclick = () => { pierPanel.style.display = 'none'; };
+    title.append(tName, tClose);
     pierPanel.appendChild(title);
     const sub = document.createElement('div');
     sub.style.cssText = 'font-size:11px; opacity:0.75; line-height:1.5; margin-top:8px; color:#fff;';
@@ -4443,7 +4450,7 @@ function renderPierPanel() {
             const b = document.createElement('button');
             b.textContent = txt;
             b.style.cssText = 'width:26px; height:26px; border:none; border-radius:8px; background:rgba(255,255,255,0.12); color:#fff; font-size:15px; cursor:pointer; font-family:sans-serif;';
-            b.onclick = () => { pierSel[g.id] = Math.max(0, Math.min(3, pierSel[g.id] + d)); renderPierPanel(); };
+            b.onclick = () => { pierSel[g.id] = Math.max(0, Math.min(10, pierSel[g.id] + d)); renderPierPanel(); };
             return b;
         };
         row.append(name, mkBtn('−', -1), cnt, mkBtn('＋', 1));
@@ -4467,7 +4474,7 @@ function renderPierPanel() {
         maybeProactive(null, '주인이 방금 잔교 게시판에 주문서를 붙였다! 내일 페리가 뭘 사 올지 기대된다.');
     };
     pierPanel.appendChild(btn);
-    sub.textContent = '품목당 3개까지 · 하루 1주문 — 내일 아침 도착';
+    sub.textContent = '품목당 10개까지 · 하루 1주문 — 내일 아침 도착';
     pierPanel.appendChild(sub);
 }
 function togglePierPanel() {
