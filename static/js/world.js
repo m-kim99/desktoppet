@@ -11475,15 +11475,19 @@ function makeFruitMesh(type, scale = 1) {
 }
 // ---- 🤿 해산물 8종 (잠수 채집 — 동숲 다이빙 문법): 과일과 같은 규율 — 실루엣 우선,
 // 시그니처 1디테일, 전 파트 bakeGrad 정점색 병합 = 1종 1드로우. zone: 근해(섬 5m 이내)/외해.
+// zone은 배타 풀(near = 아무 섬이나 반경+5m, far = 그 밖 심해) — 심해 산책 동선에선 near 4종이
+// 구조적으로 0%였다 (실플레이 리포트 "성게랑 해삼만 보여"). 해법은 확률 튜닝이 아니라 서식지:
+// 켈프 숲 = 미역·멍게, 난파선 = 굴이 심해에도 모여 산다 (열수구=새우 문법 재사용, 스폰 블록 참조).
+// habitat은 도감 미발견 칸의 힌트 — 잠금은 콘텐츠지만 비밀 잠금은 버그로 체감된다.
 const SEAFOOD = [
-    { id: 'wakame',   ko: '미역',     zone: 'near', w: 30, rarity: 1 },
-    { id: 'starfish', ko: '불가사리', zone: 'near', w: 26, rarity: 1 },
-    { id: 'oyster',   ko: '굴',       zone: 'near', w: 18, rarity: 2 },
-    { id: 'seasquirt', ko: '멍게',    zone: 'near', w: 14, rarity: 2 },
-    { id: 'urchin',   ko: '성게',     zone: 'far',  w: 30, rarity: 1 },
-    { id: 'seacuke',  ko: '해삼',     zone: 'far',  w: 26, rarity: 1 },
-    { id: 'shrimp',   ko: '새우',     zone: 'far',  w: 18, rarity: 2 },
-    { id: 'octopus',  ko: '문어',     zone: 'far',  w: 7,  rarity: 3 },
+    { id: 'wakame',   ko: '미역',     zone: 'near', w: 30, rarity: 1, habitat: '근해 얕은 물 · 심해 켈프 숲' },
+    { id: 'starfish', ko: '불가사리', zone: 'near', w: 26, rarity: 1, habitat: '섬 근처 얕은 바다' },
+    { id: 'oyster',   ko: '굴',       zone: 'near', w: 18, rarity: 2, habitat: '근해 얕은 물 · 난파선' },
+    { id: 'seasquirt', ko: '멍게',    zone: 'near', w: 14, rarity: 2, habitat: '근해 얕은 물 · 심해 켈프 숲' },
+    { id: 'urchin',   ko: '성게',     zone: 'far',  w: 30, rarity: 1, habitat: '먼바다 심해 바닥' },
+    { id: 'seacuke',  ko: '해삼',     zone: 'far',  w: 26, rarity: 1, habitat: '먼바다 심해 바닥' },
+    { id: 'shrimp',   ko: '새우',     zone: 'far',  w: 18, rarity: 2, habitat: '먼바다 · 열수구 온천 곁' },
+    { id: 'octopus',  ko: '문어',     zone: 'far',  w: 7,  rarity: 3, habitat: '먼바다 심해 · 희귀' },
 ];
 function makeSeafoodGeo(id) {
     const g = [];
@@ -21674,9 +21678,11 @@ function diveZoneAt(x, z) {
 function rollSeafood(zone) {
     if (Math.random() < 0.2) return null;   // 빈손 — "물풀만 스쳤다"
     const pool = SEAFOOD.filter((t) => t.zone === zone);
-    const total = pool.reduce((a, t) => a + t.w, 0);
+    const counts = seafoodCounts();
+    const wOf = (t) => t.w * (counts[t.id] ? 1 : 2.5);   // 도감 미등록 종 우대 — 같은 잠수 시간에 더 다양한 첫 만남 (중복 보호)
+    const total = pool.reduce((a, t) => a + wOf(t), 0);
     let r = Math.random() * total;
-    for (const t of pool) { r -= t.w; if (r <= 0) return t; }
+    for (const t of pool) { r -= wOf(t); if (r <= 0) return t; }
     return pool[0];
 }
 function startDive(p, force, isAI) {
@@ -22440,21 +22446,39 @@ function updateSeaFloor(delta) {
             const a = Math.random() * Math.PI * 2, dd = 2.5 + Math.random() * 4.5;
             const x = p.mover.position.x + Math.cos(a) * dd, z = p.mover.position.z + Math.sin(a) * dd;
             if (islandOf(x, z) < 0 && Math.hypot(x, z) < EXPLORE_R - 3) {
-                let nearVent = false;   // 🫧 열수구 곁은 새우가 모인다 (온천 맛집)
+                // 서식지 스폰: 열수구 곁 새우(온천 맛집)에 더해 켈프 숲 = 미역·멍게, 난파선 = 굴 —
+                // 존 배타 풀만으론 심해 산책에서 8종 중 4종이 0%였다. 탐험이 곧 도감이 되게 서식지로 푼다.
+                let nearVent = false, nearKelp = false;
                 for (const e of seaChunks.values()) {
                     if (e.vents) for (const v of e.vents) if (Math.hypot(v.x - x, v.z - z) < 6) { nearVent = true; break; }
-                    if (nearVent) break;
+                    if (e.forest && Math.hypot(e.forest.x - x, e.forest.z - z) < 7) nearKelp = true;
+                    if (nearVent && nearKelp) break;
                 }
+                const nearWreck = Math.hypot(WRECK_AT.x - x, WRECK_AT.z - z) < 6;
                 const pool = SEAFOOD.filter((t) => t.zone === diveZoneAt(x, z));
-                const wOf = (t) => (nearVent && t.id === 'shrimp' ? 70 : t.w);
-                const total = pool.reduce((q, t) => q + wOf(t), 0);
-                let r = Math.random() * total, type = pool[0];
-                for (const t of pool) { r -= wOf(t); if (r <= 0) { type = t; break; } }
-                const mesh = makeSeafoodMesh(type.id, 1.5);
-                mesh.position.set(x, seabedHeight(x, z) + 0.1, z);
-                mesh.rotation.y = Math.random() * Math.PI * 2;
-                fruitLayer.add(mesh);
-                seaSpawns.push({ t: type, x, z, mesh });
+                if (nearKelp) for (const id of ['wakame', 'seasquirt']) if (!pool.some((t) => t.id === id)) pool.push(SEAFOOD.find((t) => t.id === id));
+                if (nearWreck && !pool.some((t) => t.id === 'oyster')) pool.push(SEAFOOD.find((t) => t.id === 'oyster'));
+                const counts = seafoodCounts();
+                const liveN = (id) => seaSpawns.reduce((q, sp) => q + (sp.t.id === id ? 1 : 0), 0);
+                const cands = pool.filter((t) => liveN(t.id) < 2);   // 화면 내 같은 종 ≤2 — "성게만 깔림" 뭉침 방지
+                if (cands.length) {
+                    const wOf = (t) => {
+                        let w = t.w;
+                        if (nearVent && t.id === 'shrimp') w = 70;                                    // 🫧 온천 맛집
+                        if (nearKelp && t.id === 'wakame') w = 50;                                    // 🌿 켈프 숲
+                        if (nearKelp && t.id === 'seasquirt') w = 25;
+                        if (nearWreck && t.id === 'oyster') w = 45;                                   // 🦪 난파선에 붙어 산다
+                        return w * (counts[t.id] ? 1 : 2.5);                                          // 도감 미등록 종 우대 (중복 보호)
+                    };
+                    const total = cands.reduce((q, t) => q + wOf(t), 0);
+                    let r = Math.random() * total, type = cands[0];
+                    for (const t of cands) { r -= wOf(t); if (r <= 0) { type = t; break; } }
+                    const mesh = makeSeafoodMesh(type.id, 1.5);
+                    mesh.position.set(x, seabedHeight(x, z) + 0.1, z);
+                    mesh.rotation.y = Math.random() * Math.PI * 2;
+                    fruitLayer.add(mesh);
+                    seaSpawns.push({ t: type, x, z, mesh });
+                }
             }
         }
     }
@@ -23907,7 +23931,7 @@ function renderFishdex() {
         cell.appendChild(nm);
         const sub = document.createElement('div');
         sub.style.cssText = 'font-size:9px; opacity:0.72; line-height:1.25; min-height:12px;';
-        sub.textContent = n ? `${'★'.repeat(t.rarity)} ${n}개` : (t.zone === 'near' ? '근해에서 잠수' : '먼바다에서 잠수');
+        sub.textContent = n ? `${'★'.repeat(t.rarity)} ${n}개` : `서식지: ${t.habitat || (t.zone === 'near' ? '근해' : '먼바다')}`;
         cell.appendChild(sub);
         sfGrid.appendChild(cell);
     }
