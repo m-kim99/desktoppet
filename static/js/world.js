@@ -4601,8 +4601,28 @@ function refreshKitchenLab() {
     foot.textContent = `${hidden ? `아직 ${hidden}가지 맛이 숨어 있어요` : '숨은 맛을 전부 찾았어요! 🎉'} · 💨 정체불명 요리 ${dishesFound.burnt || 0}회`;
     lab.appendChild(foot);
 }
+// 🍳 레시피 팁 — 호버(데탑)/길게누름(터치)에 필요한 재료 전부: 있는 건 ✓ 초록, 없는 건 ✗ 붉게.
+// 요리 창이 복잡해지지 않게 카드 UI 대신 팁 한 장이 전부를 말한다 (menuTip은 한 줄 전용이라 별도).
+let kcTip = null, kcTipT = 0;
+function showRecipeTip(tile, html, autoHideMs) {
+    if (!kcTip) {
+        kcTip = document.createElement('div');
+        kcTip.style.cssText = 'position:fixed; display:none; z-index:140; background:rgba(24,26,34,0.96); color:#fff; font:11.5px/1.6 sans-serif; padding:7px 10px; border-radius:9px; box-shadow:0 4px 14px rgba(0,0,0,0.4); pointer-events:none; white-space:nowrap;';
+        document.body.appendChild(kcTip);
+    }
+    kcTip.innerHTML = html;
+    kcTip.style.display = 'block';
+    const r = tile.getBoundingClientRect();
+    const tw = kcTip.offsetWidth, th = kcTip.offsetHeight;
+    kcTip.style.left = `${Math.max(6, Math.min(r.left + r.width / 2 - tw / 2, window.innerWidth - tw - 6))}px`;
+    kcTip.style.top = `${r.top - th - 8 < 6 ? r.bottom + 8 : r.top - th - 8}px`;   // 위가 좁으면 아래로
+    clearTimeout(kcTipT);
+    if (autoHideMs) kcTipT = setTimeout(hideRecipeTip, autoHideMs);
+}
+function hideRecipeTip() { clearTimeout(kcTipT); if (kcTip) kcTip.style.display = 'none'; }
 function refreshKitchenPanel() {
     if (!kitchenPanel || kitchenPanel.style.display === 'none') return;
+    hideRecipeTip();
     kitchenPanel.querySelector('.kc-body').style.display = kitchenView === 'recipes' ? 'grid' : 'none';
     kitchenPanel.querySelector('.kc-lab').style.display = kitchenView === 'lab' ? 'block' : 'none';
     const labBtn = kitchenPanel.querySelector('.kc-labbtn');
@@ -4624,23 +4644,37 @@ function refreshKitchenPanel() {
         const locked = recipeLocked(r);
         const missing = recipeMissing(r);
         const ok = !locked && !missing.length;
-        const label = locked ? '??? — 우정이 깊어지면 떠오를 레시피'
+        // 💗 마음 요리 잠금: ❓ 회색 대신 분홍 하트 + "몇 종 더" 힌트 — 재료부족 회색과 혼동 제거
+        const heartAt = locked ? (HEART_UNLOCKS.find((h) => h.id === r.id) || {}).at : null;
+        const heartLeft = heartAt ? Math.max(0, heartAt - Object.keys(dishesFound).length) : null;
+        const lockHint = heartLeft > 0 ? `서로 다른 요리 ${heartLeft}종 더 만들면 떠올라요` : '곧 떠오를 것 같은 레시피예요';
+        const label = locked ? `💗 마음 요리 — ${lockHint}`
             : missing.length ? `${r.ko} — ${missing.map((nd) => `${ingKo(nd)}×${nd.n}`).join('·')} 부족`
             : `${r.ko} 만들기`;
+        // 팁: 필요한 재료 전부 + 있는 것/없는 것 구분 (데탑 = 호버, 터치 = 길게누름)
+        const tipHTML = () => {
+            if (locked) return `<b>💗 마음 요리</b><br><span style="opacity:0.85;">${lockHint}</span>`;
+            const rows = r.needs.map((nd) => {
+                const have = ingredientCount(nd.src, nd.id);
+                const got = have >= nd.n;
+                const state = nd.src === 'staple' ? '찬장' : (have <= 0 ? '없음' : `${Math.min(have, 99)}개`);
+                return `<span style="color:${got ? '#9fe8a8' : '#ff9aa0'};">${got ? '✓' : '✗'} ${ingKo(nd)}${nd.n > 1 ? ` ×${nd.n}` : ''} · ${state}</span>`;
+            }).join('<br>');
+            return `<b>${r.emoji} ${r.ko}</b><br>${rows}`;
+        };
         const tile = document.createElement('div');
-        tile.title = label;
         tile.style.cssText = `position:relative; aspect-ratio:1; background:${locked ? 'rgba(255,255,255,0.55)' : '#fff'}; border-radius:11px; display:flex; align-items:center; justify-content:center; font-size:26px; cursor:pointer; user-select:none; -webkit-user-select:none; box-shadow:0 2px 6px rgba(0,0,0,0.25);`;
-        const dimF = locked ? 'grayscale(1) opacity(0.5)' : missing.length ? 'grayscale(0.75) opacity(0.45)' : 'none';
+        const dimF = locked ? 'opacity(0.6)' : missing.length ? 'grayscale(0.75) opacity(0.45)' : 'none';
         const face = (!locked && MODELED_DISHES.has(r.id))
             ? `<img src="${dishIcons()[r.id]}" draggable="false" style="width:88%; height:88%; object-fit:contain; filter:${dimF}; pointer-events:none;">`   // 조형 스냅샷 (흰 타일 배경 유지)
-            : `<span style="filter:${dimF};">${locked ? '❓' : r.emoji}</span>`;
+            : `<span style="filter:${dimF};">${locked ? '💗' : r.emoji}</span>`;
         tile.innerHTML = `${face}${dishesFound[r.id] ? '<span style="position:absolute; top:3px; right:5px; font-size:10px; color:#3d9950;">✓</span>' : ''}`;
-        tile.onmouseenter = () => { tile.style.boxShadow = '0 0 0 2px #ffd54f, 0 2px 6px rgba(0,0,0,0.25)'; };
-        tile.onmouseleave = () => { tile.style.boxShadow = '0 2px 6px rgba(0,0,0,0.25)'; };
+        tile.onmouseenter = () => { tile.style.boxShadow = '0 0 0 2px #ffd54f, 0 2px 6px rgba(0,0,0,0.25)'; if (!IS_TOUCH) showRecipeTip(tile, tipHTML()); };
+        tile.onmouseleave = () => { tile.style.boxShadow = '0 2px 6px rgba(0,0,0,0.25)'; hideRecipeTip(); };
         let lpT = null, lpFired = false;
         tile.addEventListener('pointerdown', () => {
             lpFired = false;
-            if (IS_TOUCH) lpT = setTimeout(() => { lpFired = true; showMenuTip(tile, label); }, 480);   // 📱 길게 = 요리명
+            if (IS_TOUCH) lpT = setTimeout(() => { lpFired = true; showRecipeTip(tile, tipHTML(), 2600); }, 480);   // 📱 길게 = 재료 팁
         });
         const lpClear = () => clearTimeout(lpT);
         tile.addEventListener('pointerup', lpClear);
@@ -4649,7 +4683,7 @@ function refreshKitchenPanel() {
         tile.onclick = () => {
             if (lpFired) { lpFired = false; return; }   // 길게 누른 손가락은 실행 안 함
             if (ok) cookRecipe(r);
-            else showToast(locked ? '💗 우정이 깊어지면 떠오를 레시피예요' : `🍳 ${label}`);
+            else showToast(locked ? label : `🍳 ${label}`);
         };
         body.appendChild(tile);
     }
