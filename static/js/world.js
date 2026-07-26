@@ -27229,23 +27229,32 @@ function buildShrimpCartoon() {
 // 말고 disp 융기 줄로, 눈은 외투막 disp 융기 + 텍스처 동공(별개 구체를 없애 어긋남을 원천 제거).
 // 크기: 해삼·멍게와 비슷하면 어색하다는 지적에 따라 **가장 크게** 잡았다(다리 끝까지 ≈ 2.6R).
 const FC_OCTO = { cell: 27, R: 0.062, L: 0.118, arms: 8, armLen: 2.1, armR: 0.255 };
-// s=0 목(아래) → s=1 외투막 꼭대기. 목은 다리가 가리므로 0.46R에서 시작해 빠르게 닫는다.
+// ⚠️ 단조 증가하다 닫히는 프로파일은 **그냥 공**이다. 실물 문어의 실루엣은 아래에서 위로
+// [다리 관(crown) → **머리 불룩**(눈이 여기 붙는다) → **목 잘록** → 외투막 자루 → 꼭대기]다.
+// 이 잘록함이 없으면 문어로 안 읽힌다(사용자 리포트). 키프레임 + smoothstep으로 굽힌다.
+// ⚠️ 키프레임 간격이 크고 낙차가 심하면 smoothstep이 각 구간을 **접시**로 만든다 — 처음 값
+// (0.88→0.80→0.60→0.80→1.00)은 비행접시 두 장을 쌓은 **탑**이 됐다(실측). 낙차를 줄이고
+// 꼭대기는 두 점(0.82→0.56→0)으로 둥글린다. 비율: 외투막이 가장 크고 머리는 그보다 작다.
+const FC_OC_PROF = [[0.00, 0.46], [0.14, 0.62], [0.28, 0.74], [0.40, 0.68], [0.56, 0.88], [0.70, 0.99], [0.82, 0.94], [0.91, 0.72], [0.97, 0.40], [1.00, 0.00]];   // 위쪽을 3점으로 굴려 통(barrel)이 아니라 **알 모양 자루**로
 function fcOctoRad(s) {
-    if (s < 0.14) return 0.46 * Math.pow(s / 0.14, 0.55);
-    if (s < 0.50) return 0.46 + 0.54 * Math.pow((s - 0.14) / 0.36, 1.2);
-    return Math.pow(Math.sin(Math.PI * 0.5 * (1 - (s - 0.50) / 0.50)), 0.55);
+    for (let i = 1; i < FC_OC_PROF.length; i++) {
+        if (s <= FC_OC_PROF[i][0]) {
+            const [s0, r0] = FC_OC_PROF[i - 1], [s1, r1] = FC_OC_PROF[i];
+            const t = (s - s0) / (s1 - s0);
+            return r0 + (r1 - r0) * (t * t * (3 - 2 * t));
+        }
+    }
+    return 0;
 }
-// ⚠️ 눈 φ는 두 번 틀렸다: ±0.95는 정면에서 하나만 크게 보여 가로 슬릿이 **'입'**으로 읽혔고,
-// 반대로 ±1.55(178° 벌림)는 정확히 반대편이라 어느 각도에서도 **한쪽만** 보였다(둘 다 실측).
-// 만화적으로는 두 눈이 같이 보여야 한다 → ±0.62(≈71° 벌림)로 앞옆에 나란히.
-const FC_OC_EYE = [0.62, -0.62];   // 눈 융기의 φ — 텍스처 동공도 이 값에서 u를 뽑는다(좌표 단일 소스)
-const FC_OC_EYE_S = 0.60;
+// 눈은 **머리 불룩(s≈0.31)**에 붙는다 — 외투막(s 0.6+)에 붙이면 정수리에 눈이 달린 꼴이 된다.
+const FC_OC_EYE = [0.62, -0.62];   // 텍스처 동공도 이 값에서 u를 뽑는다(좌표 단일 소스)
+const FC_OC_EYE_S = 0.28;
 function fcOctoDisp(ph, s) {
     let d = 0;
     for (const e of FC_OC_EYE) {
-        const dp = fcAngGap(ph, e) / 0.40, ds = (s - FC_OC_EYE_S) / 0.115;
+        const dp = fcAngGap(ph, e) / 0.46, ds = (s - FC_OC_EYE_S) / 0.105;
         const q = Math.sqrt(dp * dp + ds * ds);
-        if (q < 1) { const f = 1 - q; d += 0.26 * f * f * (0.40 + 0.60 * f); }
+        if (q < 1) { const f = 1 - q; d += 0.34 * f * f * (0.40 + 0.60 * f); }
     }
     return d;
 }
@@ -27253,12 +27262,12 @@ function buildOctoCartoon() {
     const A = fcAtlas(), C = FC_OCTO, R = faRect(C.cell);
     if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
     const parts = [];
-    const mantle = fcTubeGeo({ R: C.R, L: C.L, ns: 30, np: 28, rad: fcOctoRad, disp: fcOctoDisp });
+    const mantle = fcTubeGeo({ R: C.R, L: C.L, ns: 42, np: 30, rad: fcOctoRad, disp: fcOctoDisp });   // 분할이 낮으면 프로파일 굴곡이 각진 턱으로 보인다
     mantle.rotateX(-Math.PI / 2);   // 로프트 축 +z → 문어는 서 있다
     parts.push(fcRemapV(mantle, 0.34, 1.0));
     // ⚠️ 다리 뿌리 좌표는 **외투막 프로파일에서 파생**시킨다. 두 군데 하드코딩하면 목이 벌어진다
     // (굴 힌지에서 배운 것). rotateX(-π/2)로 z→y가 되므로 뿌리 y = (s−0.5)·L 그대로다.
-    const rs = 0.16, rootR = fcOctoRad(rs) * C.R, rootY = (rs - 0.5) * C.L;
+    const rs = 0.07, rootR = fcOctoRad(rs) * C.R, rootY = (rs - 0.5) * C.L;
     const hg = -0.5 * C.L - C.R * 0.10;   // 다리가 깔리는 바닥
     for (let i = 0; i < C.arms; i++) {
         const a = (i / C.arms) * Math.PI * 2 + 0.22;
@@ -27284,6 +27293,30 @@ function buildOctoCartoon() {
         });
         parts.push(fcRemapV(arm, 0.02, 0.30));
     }
+    // 물갈퀴(interbrachial web) — 다리 밑동을 잇는 막. 이게 없으면 소시지 8개가 따로 논다.
+    // 자유변은 다리 방위에서 멀리 나가고 다리 사이에서 안으로 처진다 → |cos(4φ)|가 8봉우리를 만든다.
+    {
+        const NW = 64, NR2 = 6, pos = [], uv = [], idx = [];
+        for (let i = 0; i <= NR2; i++) {
+            const t = i / NR2;
+            for (let j = 0; j <= NW; j++) {
+                const ph = (j / NW) * Math.PI * 2;
+                const reach = rootR * 0.9 + C.R * C.armLen * (0.16 + 0.30 * Math.pow(Math.abs(Math.cos(4 * (ph - 0.22))), 0.7)) * t;
+                const y = rootY + (hg - rootY) * Math.min(1, Math.pow(t / 0.5, 0.8)) + C.R * 0.05 * t;
+                pos.push(Math.cos(ph) * reach, y, Math.sin(ph) * reach);
+                uv.push(j / NW, 0.30 + t * 0.06);   // 다리 뿌리 색과 이어지게
+            }
+        }
+        for (let i = 0; i < NR2; i++) for (let j = 0; j < NW; j++) {
+            const a = i * (NW + 1) + j, b = a + NW + 1;
+            idx.push(a, b, a + 1, b, b + 1, a + 1);
+        }
+        const wg = new THREE.BufferGeometry();
+        wg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        wg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        wg.setIndex(idx); wg.computeVertexNormals();
+        parts.push(wg);
+    }
     const geo = mergeGeometries(parts, false);
     fcSeaShade(geo, R);
     geo.computeBoundingBox();
@@ -27298,16 +27331,38 @@ function buildOctoCartoon() {
 function fcPaintOcto(g) {
     const S = FC_OCTO, R = faRect(S.cell), C = FA_CELL;
     const X = (u) => R.x + u * C, Y = (v) => R.y + (1 - v) * C;
-    g.save(); g.beginPath(); g.rect(R.x, R.y, C, C); g.clip();
-    const gr = g.createLinearGradient(0, Y(1), 0, Y(0.34));       // 꼭대기 진한 자주 → 목은 옅게
-    gr.addColorStop(0, '#8e2340'); gr.addColorStop(0.5, '#bb4060'); gr.addColorStop(1, '#cd6484');   // 목 색을 다리 뿌리와 맞춘다 — 안 맞추면 두 토막으로 보인다
-    g.fillStyle = gr; g.fillRect(R.x, Y(1), C, Y(0.34) - Y(1));
-    for (let k = 0; k < 26; k++) {   // 자주-붉은 얼룩 (성기게 — 96px 아이콘)
-        const u = fcHash(k + 1500), v = 0.38 + fcHash(k + 1523) * 0.58;
+    g.save();
+    g.beginPath(); g.rect(R.x, R.y, C, C); g.clip();
+    // ⚠️ 외투막을 진한 자주로, 다리를 밝은 분홍으로 칠했더니 **머리와 다리가 딴 동물처럼 갈렸다**
+    // (사용자 리포트). 실물 문어는 온몸이 **같은 적갈색 계열**이고, 옅은 건 **다리 안쪽(빨판 면)뿐**이다.
+    // 그래서 몸통 대역(v 0.34~1)과 다리 대역(v 0.02~0.30)을 **같은 팔레트**로 칠하고, 대역 경계인
+    // v 0.30~0.36을 겹쳐 이어 붙인다.
+    const SKIN_HI = '#c4674a', SKIN_MID = '#a94e35', SKIN_LO = '#8a3826';
+    g.fillStyle = SKIN_MID; g.fillRect(R.x, R.y, C, C);
+    const body = g.createLinearGradient(0, Y(1), 0, Y(0.30));   // 꼭대기 진하고 머리·목으로 밝아진다
+    body.addColorStop(0, SKIN_LO); body.addColorStop(0.42, SKIN_MID); body.addColorStop(1, SKIN_HI);
+    g.fillStyle = body; g.fillRect(R.x, Y(1), C, Y(0.30) - Y(1));
+    const arm = g.createLinearGradient(0, Y(0.36), 0, Y(0.02));  // 다리 뿌리 = 목 색 그대로 → 끝만 살짝 밝게
+    arm.addColorStop(0, SKIN_HI); arm.addColorStop(1, '#d68a6c');
+    g.fillStyle = arm; g.fillRect(R.x, Y(0.36), C, Y(0.02) - Y(0.36));
+    // 얼룩 — 몸통·다리 **양쪽에 같은 밀도로**. 한쪽만 얼룩지면 거기서 또 경계가 보인다.
+    for (let k = 0; k < 46; k++) {
+        const u = fcHash(k + 1500), v = 0.03 + fcHash(k + 1523) * 0.94;
         g.save(); g.translate(X(u), Y(v)); g.rotate((fcHash(k + 1541) - 0.5) * 2);
-        g.beginPath(); g.ellipse(0, 0, C * (0.020 + fcHash(k + 1559) * 0.026), C * (0.012 + fcHash(k + 1571) * 0.016), 0, 0, Math.PI * 2);
-        g.fillStyle = k % 3 ? `rgba(120,26,52,${0.20 + fcHash(k + 1583) * 0.16})` : `rgba(255,168,180,${0.16 + fcHash(k + 1597) * 0.14})`;
+        g.beginPath(); g.ellipse(0, 0, C * (0.018 + fcHash(k + 1559) * 0.024), C * (0.010 + fcHash(k + 1571) * 0.014), 0, 0, Math.PI * 2);
+        g.fillStyle = k % 3 ? `rgba(112,40,24,${0.20 + fcHash(k + 1583) * 0.16})` : `rgba(232,164,126,${0.16 + fcHash(k + 1597) * 0.14})`;
         g.fill(); g.restore();
+    }
+    // 다리 안쪽(φ≈1.5π → u 0.75) — 빨판 면만 옅다. 실물에서 밝은 건 여기뿐이다.
+    const suck = g.createLinearGradient(X(0.60), 0, X(0.90), 0);
+    suck.addColorStop(0, 'rgba(248,214,190,0)'); suck.addColorStop(0.5, 'rgba(250,220,196,0.66)'); suck.addColorStop(1, 'rgba(248,214,190,0)');
+    g.fillStyle = suck; g.fillRect(X(0.60), Y(0.36), C * 0.30, Y(0.02) - Y(0.36));
+    for (let k = 0; k < 9; k++) {   // 빨판 점 두 줄 — 조형 융기(φ 1.5π±0.52)와 같은 u에 찍는다
+        const v = 0.05 + k * 0.028;
+        for (const uu of [(4.712 - 0.52) / (Math.PI * 2), (4.712 + 0.52) / (Math.PI * 2)]) {
+            g.beginPath(); g.ellipse(X(uu), Y(v), C * 0.014, C * 0.008, 0, 0, Math.PI * 2);
+            g.fillStyle = 'rgba(255,242,228,0.72)'; g.fill();
+        }
     }
     // 눈 — 융기 위치(FC_OC_EYE)에서 u를 뽑는다. 좌표를 두 군데 쓰면 동공이 융기에서 미끄러진다.
     for (const e of FC_OC_EYE) {
@@ -27315,18 +27370,12 @@ function fcPaintOcto(g) {
         for (const du of [-1, 0, 1]) {
             const cu = u + du;
             if (cu < -0.1 || cu > 1.1) continue;
-            g.beginPath(); g.ellipse(X(cu), Y(v), C * 0.032, C * 0.024, 0, 0, Math.PI * 2);
-            g.fillStyle = 'rgba(252,226,200,0.86)'; g.fill();                     // 눈두덩 — 크면 붙인 스티커로 읽힌다
-            g.beginPath(); g.ellipse(X(cu), Y(v), C * 0.020, C * 0.008, 0, 0, Math.PI * 2);
-            g.fillStyle = '#1a1216'; g.fill();                                    // 가로 슬릿 동공 — 문어의 표식
+            g.beginPath(); g.ellipse(X(cu), Y(v), C * 0.044, C * 0.034, 0, 0, Math.PI * 2);
+            g.fillStyle = 'rgba(240,206,168,0.90)'; g.fill();                      // 눈두덩 — 피부색 계열로(흰자면 붙인 스티커가 된다)
+            g.beginPath(); g.ellipse(X(cu), Y(v), C * 0.026, C * 0.009, 0, 0, Math.PI * 2);
+            g.fillStyle = '#1d1418'; g.fill();                                     // 가로 슬릿 동공 — 문어의 표식
         }
     }
-    const arm = g.createLinearGradient(0, Y(0.30), 0, Y(0.02));   // 다리 — 뿌리는 몸통 색, 끝은 옅게
-    arm.addColorStop(0, '#c8607e'); arm.addColorStop(1, '#f0a8ba');
-    g.fillStyle = arm; g.fillRect(R.x, Y(0.30), C, Y(0.02) - Y(0.30));
-    const suck = g.createLinearGradient(X(0.62), 0, X(0.88), 0);   // 빨판 줄(φ≈1.5π → u 0.75) 주변만 옅게
-    suck.addColorStop(0, 'rgba(255,214,206,0)'); suck.addColorStop(0.5, 'rgba(255,220,212,0.60)'); suck.addColorStop(1, 'rgba(255,214,206,0)');
-    g.fillStyle = suck; g.fillRect(X(0.62), Y(0.30), C * 0.26, Y(0.02) - Y(0.30));
     g.restore();
 }
 // ==== /🐙 문어 =============================================================================
