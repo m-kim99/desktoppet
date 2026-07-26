@@ -5,6 +5,16 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Added (☁️ Amazon Bedrock 연동 — customAnthropic 공급자로 Claude 사용)
+- `ClaudeAsOpenAI` 어댑터가 litellm 프로바이더 프리픽스를 존중: 모델명이
+  `bedrock/apac.anthropic.claude-…` 형식이면 Bedrock으로 라우팅 (bare 모델명만 Anthropic 기본).
+- **키 입력은 기존 UI 그대로**: 모델 공급자(customAnthropic)의 API Key 칸 = Bedrock API 키
+  (bearer — litellm이 직접 사용 + AWS_BEARER_TOKEN_BEDROCK env 폴백, IAM 액세스 키 사용자는
+  안 건드림), **URL 칸 = AWS 리전**(`ap-northeast-2` 또는 bedrock-runtime 전체 URL 인식).
+- Bedrock 모델엔 base_url을 절대 전달하지 않음(SigV4 라우팅 보호 — world_chat의
+  api.anthropic.com 기본값이 새지 않게).
+- 검증: 리전 파싱(문자열/URL/오탐 없음)·litellm 라우팅 오프라인 테스트 통과.
+
 ### Added (🛒 잔교 주문 게시판 — 장터에 없는 날, 내일 아침 페리가 사다 놓는다)
 - (피드백 반영) 품목당 상한 3 → **10개** · 패널 제목 줄에 **✕ 닫기 버튼**(주문 후 상태
   화면에서도 닫힌다 — 종전엔 게시판 재클릭만 가능했음).
