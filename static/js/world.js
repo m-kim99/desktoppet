@@ -31,7 +31,7 @@ const savedLayout = await (async () => {
 // 기기 유지: world-eco(성능)·world-layout(전용 API)·world-fruit-*(전용 API)·world-last-seen(기기별 리캡).
 const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked', 'world-pantry', 'world-icebox', 'world-market-used', 'world-recipes-unlocked', 'world-dishes-found', 'world-kitchen-leftover',
     'world-sea-found', 'world-seabed-dug', 'world-islet-dug', 'world-discover', 'world-houselight', 'world-pets',
-    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-dex-seen-n', 'world-space-poi', 'world-moon-dug', 'world-last-seen'];   // last-seen 공유 = 기기 간 이중 정산 방지
+    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-space-poi', 'world-moon-dug', 'world-last-seen'];   // last-seen 공유 = 기기 간 이중 정산 방지
 try {   // 부트 1회 — 서버 값이 로컬을 덮는다 (아래 모든 리더보다 먼저 실행되는 게 핵심)
     const r = await fetch('/api/world_kv', { signal: AbortSignal.timeout(1500) });
     if (r.ok) {
@@ -9255,7 +9255,7 @@ weatherBtn.addEventListener('click', () => {
     weatherPanel.style.display = open ? 'flex' : 'none';
 });
 const ecoBtn = dockBtn('⚡', '절전 모드 — 30fps·1.5x 해상도 (배터리에선 자동)');
-const syncEcoBtn = () => { ecoBtn.style.opacity = ecoMode ? '0.5' : '1'; if (window.__syncDockBadges) window.__syncDockBadges(); };
+const syncEcoBtn = () => { ecoBtn.style.opacity = ecoMode ? '0.5' : '1'; };
 syncEcoBtn();
 ecoBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
 ecoBtn.addEventListener('click', () => {
@@ -9492,7 +9492,6 @@ if (statsOn) window.__worldDev = {
     marketAt: (dstr) => marketToday(dstr),
     marketUse: (id) => marketConsume(id),
     staples: () => PANTRY_STAPLES.map((g) => g.id),
-    iceboxOffer: (id) => { const sp = FISH_SPECIES.find((q) => q.id === id); if (!sp) return false; offerIceboxKeep(sp, 20); return true; },
     iceboxOpen: () => { openIcebox(); return !!(iceboxPanel && iceboxPanel.style.display !== 'none'); },
     gardenPick: (idx) => {   // E2E: 밭 칸 클릭 경로 그대로 수확
         const pr = PROPS.find((q) => q.type === 'garden');
@@ -10081,7 +10080,7 @@ function bindZoomBtn(b, dir) {
     b.addEventListener('lostpointercapture', stop);
 }
 const buildBtn = dockBtn('🔨', '공사 모드 — 사물 옮기기');
-const syncBuildBtn = () => { buildBtn.style.background = buildMode ? 'rgba(214,150,52,0.92)' : 'rgba(30,32,40,0.88)'; if (window.__syncDockBadges) window.__syncDockBadges(); };
+const syncBuildBtn = () => { buildBtn.style.background = buildMode ? 'rgba(214,150,52,0.92)' : 'rgba(30,32,40,0.88)'; };
 buildBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
 buildBtn.addEventListener('click', () => setBuildMode(!buildMode));
 // 🐤🐶 펫 바로가기: 누르면 카메라가 그 펫에게 날아가며(팔로우 캠) 즉시 조종 시작 — 같은 버튼을
@@ -10205,13 +10204,9 @@ function dockDrawer(emoji, title, children) {
     panel.style.cssText = 'display:flex; flex-direction:row; gap:6px; overflow:hidden; max-width:0; opacity:0; transition:max-width 0.26s ease, opacity 0.2s ease;';
     for (const c of children) panel.appendChild(c);   // dockUI 직속에서 서랍 안으로 이사
     const launcher = dockBtn(emoji, title);
-    launcher.style.position = 'relative';
-    const badge = document.createElement('div');
-    badge.style.cssText = 'position:absolute; top:5px; right:5px; width:8px; height:8px; border-radius:50%; display:none; pointer-events:none; box-shadow:0 0 4px rgba(0,0,0,0.4);';
-    launcher.appendChild(badge);
     row.appendChild(panel);
     row.appendChild(launcher);
-    const d = { row, launcher, panel, badge, open: false, timer: 0 };
+    const d = { row, launcher, panel, open: false, timer: 0 };
     const setOpen = (v) => {
         d.open = v;
         panel.style.maxWidth = v ? `${children.length * (IS_TOUCH ? 54 : 46) + 8}px` : '0';
@@ -10229,30 +10224,16 @@ function dockDrawer(emoji, title, children) {
     panel.addEventListener('click', () => setTimeout(() => setOpen(false), 120));   // 자식 실행 후 접기
     return d;
 }
+// 배지(빨간점/초록점)는 전면 제거 — 알림 점은 게임이 숙제를 조르는 문법이라 힐링 톤과 충돌
+// (모드 상태는 버튼 자체의 색/투명도가 이미 말한다: 🔨 주황 배경 · 🌙 반투명).
 const collDrawer = dockDrawer('📖', '컬렉션 — 도감·그림일기·대화 기록', [dexBtn, diaryBtn, logBtn]);
-collDrawer.badge.style.background = '#ff5f6b';
 const toolDrawer = dockDrawer('⚙️', '도구 — 날씨·공사·절전', [weatherBtn, buildBtn, ecoBtn]);
-toolDrawer.badge.style.background = '#5ede8a';
 const zoomBtns = [...dockUI.children].filter((b) => b.textContent === '＋' || b.textContent === '－');
 for (const el of [shotBtn, chickBtn, puppyBtn, fishBtn, diveBtn, invBtn, collDrawer.row, toolDrawer.row, ...zoomBtns]) dockUI.appendChild(el);   // 상주 순서 재배열 (appendChild = 이동)
-const dexSeenN = () => { try { return Object.keys(JSON.parse(localStorage.getItem('world-fishdex') || '{}')).length; } catch (e) { return 0; } };
-function syncDockBadges() {
-    toolDrawer.badge.style.display = (buildMode || ecoMode) ? 'block' : 'none';
-    let seen = 0;
-    try { seen = +localStorage.getItem('world-dex-seen-n') || 0; } catch (e) {}
-    collDrawer.badge.style.display = dexSeenN() > seen ? 'block' : 'none';
-}
-dexBtn.addEventListener('click', () => {   // 도감을 열면 "새 어종" 배지 해소
-    try { localStorage.setItem('world-dex-seen-n', String(dexSeenN())); worldSync('world-dex-seen-n'); } catch (e) {}
-    syncDockBadges();
-});
 const syncFishBtn = () => { fishBtn.style.display = possessed ? 'flex' : 'none'; };   // 🎣 = 빙의 중만 (문맥 버튼)
 fishBtn.style.display = 'none';
 diveBtn.style.display = 'none';
 invBtn.style.display = 'none';   // 🧳 조종 중에만 (syncDiveBtn이 관리)
-let dockBadgeAt = 0;
-window.__syncDockBadges = syncDockBadges;   // eco/build 토글의 즉시 배지 갱신 (eval 순서 안전한 간접 참조)
-syncDockBadges();
 document.body.appendChild(dockUI);
 
 // ---- 🔨 공사 모드 (동물의 숲식 사물 옮기기): 사물을 누르면 집어 들고(살짝 떠오름), 끌어서
@@ -23732,38 +23713,7 @@ function openIcebox() {
     iceboxPanel.style.display = iceboxPanel.style.display === 'none' ? 'block' : (iceboxPanel.style.display ? 'none' : 'block');
     if (iceboxPanel.style.display !== 'none') refreshIceboxPanel();
 }
-// 조과 보관 제안 — 팡파레 곁에 작은 2버튼. 기본(6초 방치·새 조과에 밀림)=보관: "낚았는데 없다"
-// 리포트 수리 — 잡은 건 내 것이 기대값(스타듀 문법), 놓아주기만 명시적 선택.
-let iceOffer = null;
 let fishForceBig = false;   // E2E — 다음 입질을 월척으로 (자축 폴짝 경로 강제)
-function offerIceboxKeep(sp, len) {
-    if (iceOffer) iceOffer.close(true);   // 새 조과가 밀어내도 이전 것은 보관
-    const el = document.createElement('div');
-    el.style.cssText = 'position:fixed; left:50%; transform:translateX(-50%); bottom:calc(118px + env(safe-area-inset-bottom, 0px)); display:flex; gap:8px; z-index:120; background:rgba(30,32,40,0.94); border-radius:12px; padding:8px 10px; box-shadow:0 6px 18px rgba(0,0,0,0.35); font-family:sans-serif; align-items:center;';
-    const label = document.createElement('span');
-    label.textContent = `🐟 ${sp.ko} ${len}cm —`;
-    label.style.cssText = 'color:#fff; font-size:13px;';
-    el.appendChild(label);
-    const keep = () => {
-        iceboxCounts[sp.id] = (iceboxCounts[sp.id] || 0) + 1;
-        saveIcebox();
-        refreshIceboxPanel();
-        showToast(`🧊 ${sp.ko}를 아이스박스에 보관했어요 — 요리 재료!`);
-        logWorldEvent(`낚은 ${sp.ko}를 아이스박스에 보관했다 🧊`);
-    };
-    const close = (andKeep) => { if (!iceOffer) return; clearTimeout(iceOffer.timer); iceOffer.el.remove(); iceOffer = null; if (andKeep) keep(); };
-    const mk = (txt, fn) => {
-        const b = document.createElement('button');
-        b.textContent = txt;
-        b.style.cssText = 'background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:13px; padding:7px 11px; border-radius:8px; cursor:pointer; font-family:sans-serif;';
-        b.onclick = () => { close(); if (fn) fn(); };
-        el.appendChild(b);
-    };
-    mk('🧊 보관 (기본)', keep);
-    mk('🌊 놓아주기', null);
-    document.body.appendChild(el);
-    iceOffer = { el, close, timer: setTimeout(() => close(true), 6000) };
-}
 // 도감 — { speciesId: { n, max } }
 function fishdexRecord(sp, len) {
     let dex = {};
@@ -23776,21 +23726,23 @@ function fishdexRecord(sp, len) {
     try { localStorage.setItem('world-fishdex', JSON.stringify(dex)); worldSync('world-fishdex'); } catch (e) {}
     return first;
 }
-// 🕰️ 오프라인 정산 훅 (낚시) — 로그만: AI 어획은 라이브에서도 도감에 안 오른다 (19644와 동일
-// 규칙 — 도감은 주인이 직접 낚은 것만). 조건 어종(밤/비/계절)은 부재 중 날씨를 모르니 제외.
+// 🕰️ 오프라인 정산 훅 (낚시) — 라이브 규칙과 동일: 조과는 아이스박스로, 도감은 주인이 직접
+// 낚은 것만(미등록). 조건 어종(밤/비/계절)은 부재 중 날씨를 모르니 제외.
 function offlineFishHook(n, win) {
     const pool = FISH_SPECIES.filter((s) => s.rarity > 0 && !s.when);
-    if (!pool.length) return null;
+    if (!pool.length || !PROPS.some((q) => q.type === 'icebox')) return null;
     const events = [];
     for (let i = 0; i < n; i++) {
         const w = pool.map((s) => (s.rarity === 1 ? 0.6 : s.rarity === 2 ? 0.3 : 0.1));
         let x = Math.random() * w.reduce((a, b) => a + b, 0);
         let sp = pool[0];
         for (let k = 0; k < pool.length; k++) { x -= w[k]; if (x <= 0) { sp = pool[k]; break; } }
-        events.push({ t: randAwakeTime(win), text: `${OFFLINE_WHO()}가 혼자 낚시로 ${sp.ko}를 낚아 올렸다 🎣` });
+        iceboxCounts[sp.id] = (iceboxCounts[sp.id] || 0) + 1;
+        events.push({ t: randAwakeTime(win), text: `${OFFLINE_WHO()}가 혼자 낚시로 ${sp.ko}를 낚아 아이스박스에 넣어뒀다 🎣🧊` });
     }
     if (!events.length) return null;
-    return { events, summary: `물고기 ${events.length}마리 낚음` };
+    saveIcebox();
+    return { events, summary: `물고기 ${events.length}마리 아이스박스에` };
 }
 function fishFanfare() {   // 잡았다! 차임 — 5도 상승 두 음
     if (audioCtx.state !== 'running') return;
@@ -24408,15 +24360,18 @@ function updateFishingInstance(f, delta) {
             if (!f.shown) {   // 자랑 시작 프레임: 도감·토스트·차임·반짝 링 (도감은 주인 조과만)
                 f.shown = true;
                 const first = !f.isAI && f.species.rarity > 0 && fishdexRecord(f.species, f.len);
+                // 진짜 물고기는 전부 아이스박스로 — 절친 조과 포함, 방생 없음 (보관/놓아주기 프롬프트는
+                // 사실상 의미 없는 결정 요구였다). 도감은 종전대로 주인 조과만.
+                const kept = f.species.rarity > 0 && PROPS.some((q) => q.type === 'icebox');
+                if (kept) { iceboxCounts[f.species.id] = (iceboxCounts[f.species.id] || 0) + 1; saveIcebox(); refreshIceboxPanel(); }
                 const label = f.isAI
-                    ? (f.species.rarity === 0 ? `😅 절친이 ${f.species.ko}...를 건져 올렸다` : `🐟 절친이 ${f.species.ko}를 낚았다! (${f.len}cm)`)
-                    : (f.species.rarity === 0 ? `😅 ${f.species.ko}...가 낚였다` : `🐟 ${f.species.ko}를 낚았다! (${f.len}cm)${f.big ? ' — 월척!!' : ''}${first ? ' · 처음 잡았다!' : ''}`);
+                    ? (f.species.rarity === 0 ? `😅 절친이 ${f.species.ko}...를 건져 올렸다` : `🐟 절친이 ${f.species.ko}를 낚았다! (${f.len}cm)${kept ? ' · 🧊' : ''}`)
+                    : (f.species.rarity === 0 ? `😅 ${f.species.ko}...가 낚였다` : `🐟 ${f.species.ko}를 낚았다! (${f.len}cm)${f.big ? ' — 월척!!' : ''}${first ? ' · 처음 잡았다!' : ''}${kept ? ' · 🧊' : ''}`);
                 showToast(label);
                 logWorldEvent(`${petKo(p)}가 낚시로 ${f.species.ko}${f.species.rarity === 0 ? '를 건져 올렸다' : `를 낚았다 (${f.len}cm)`}`);
                 if (f.species.rarity > 0) {
                     fishFanfare();
                     if (!f.isAI) maybeProactive(null, `주인이 방금 낚시로 ${f.species.ko}(${f.len}cm)를 낚았다!${f.big ? ' 월척이다!' : ''}`);
-                    if (!f.isAI && PROPS.some((q) => q.type === 'icebox')) offerIceboxKeep(f.species, f.len);   // 🧊 보관/놓아주기 — 방치·밀어내기=보관(기본)
                     for (let i = 0; i < 8; i++) {   // 반짝 링
                         const a = (i / 8) * Math.PI * 2;
                         const spr = glowSprite(0xfff1cf, 0.08, 0.9);
@@ -24962,7 +24917,6 @@ function animate() {
     updateFountain(delta);
     updateFireflies(delta);
     if (Date.now() > mailPollAt) { mailPollAt = Date.now() + 20000; updateMailFlag(); }
-    if (Date.now() > dockBadgeAt) { dockBadgeAt = Date.now() + 10000; syncDockBadges(); }
     if (Date.now() > houseLightPollAt) { houseLightPollAt = Date.now() + 30000; applyHouseLight(); }   // 💡 밤 자동 전환 감시
     // 텃밭 성장 티커: gardenStageHash는 만들어졌는데 비교하는 코드가 없었다 — 씨앗이 자라도
     // (다시 클릭하기 전엔) 화면에 안 나타나던 원인. 10초마다 단계 변화를 감지해 다시 그린다.
