@@ -23945,11 +23945,13 @@ function equipFishing() {
 }
 function unequipFishing() {
     if (!fishing) return;
+    if (fishing.p && fishing.p.pet && fishing.p.pet.setExclaim) fishing.p.pet.setExclaim(false);
     hideGear(fishing);   // 리그는 캐시 — 씬에서 빼지 않고 숨긴다 (재장비 시 재생성 없음)
     if (fishing.fishMesh) { scene.remove(fishing.fishMesh); disposeTempMesh(fishing.fishMesh); }
     fishing = null;   // 팔다리는 엔티티가 매 프레임 원위치 — 복원 코드 불필요 (앉기와 동일 원리)
 }
 function resetFishingInstance(f, quiet) {
+    if (f.p && f.p.pet && f.p.pet.setExclaim) f.p.pet.setExclaim(false);   // 입질 ❗ 잔상 정리
     f.bobber.visible = false;
     f.line.visible = false;
     f.shadow.visible = false;
@@ -24056,7 +24058,8 @@ function startCast(f, target) {
     f.shadow.visible = false;
     f.p.mover.rotation.y = Math.atan2(target.x - f.p.mover.position.x, target.z - f.p.mover.position.z);
     f.nibblesLeft = 1 + Math.floor(Math.random() * 3);
-    f.nextEventT = 1.6 + Math.random() * 2.6;   // 그림자 등장까지
+    f.nextEventT = f.quickNext ? 0.7 + Math.random() * 0.8 : 1.6 + Math.random() * 2.6;   // 실수 직후엔 그림자가 빨리 돌아온다 (동숲식 싼 재시도)
+    f.quickNext = false;
     f.shadowPhase = 'approach';
     // 어종 미리 결정 (물별 풀 + 밤/비/계절 조건 + 희귀도 가중 + 꽝 10%). 조건 어종은 자기 조건이
     // 켜져 있을 때 가중 1.6배 — "밤에 낚시하러 나온 보람"이 확률로 느껴지게.
@@ -24129,12 +24132,15 @@ function fishingIntercept() {
     if (st === 'bite') {   // 성공! → 훅셋
         fishing.state = 'hook';
         fishing.t = 0;
+        fishing.p.pet.setExclaim(false);
         playSplashSound(fishing.target.x, fishing.target.z);
         return true;
     }
-    if (st === 'wait') {   // 성급한 챔질 — 빈 찌만 걷힌다
+    if (st === 'wait') {   // 성급한 챔질 — 동숲식: 물고기가 놀라 도망가고, 다음 그림자는 빨리 돌아온다
+        if (fishing.shadow.visible) spawnSplash(fishing.shadow.position.x, waterYFor(fishing) + 0.02, fishing.shadow.position.z);
+        fishing.quickNext = true;
         cancelFishing(false);
-        showToast('🎣 앗, 아직인데! — 찌가 푹 잠길 때 챔질이에요');
+        showToast('🎣 앗, 성급했다! 물고기가 놀라 도망갔어요 — 다시 던져봐요');
         return true;
     }
     return st !== 'idle';   // 시전·파이팅·연출 중엔 다른 상호작용 잠금
@@ -24254,19 +24260,19 @@ function updateFishingInstance(f, delta) {
             const dx = f.target.x - f.shadow.position.x, dz = f.target.z - f.shadow.position.z;
             const d = Math.hypot(dx, dz);
             if (d < 0.16) {
-                if (f.nibblesLeft > 0) {   // ④ 니블
-                    f.nibblesLeft -= 1;
+                if (f.nibblesLeft > 0) {   // ④ 니블 — 까딱+퐁만. 알럿 포즈는 진짜 입질 전용 (동숲식:
+                    f.nibblesLeft -= 1;      //    가짜와 진짜는 "정도"가 아니라 "종류"로 달라야 판별이 된다)
                     f.dip = -0.035;
-                    f.alert = 1;
                     playBuffer(swishBuf, { vol: 0.16, rate: 2.3, filterFreq: 2000 });
                     f.nextEventT = 0.7 + Math.random() * 1.1;
-                } else {   // 진짜 바이트!
+                } else {   // 진짜 바이트! — 3채널 신호: 찌 완전 잠수 + ❗ + 꼬록 (귀로만도 낚시 가능하게)
                     f.state = 'bite';
                     f.t = 0;
-                    f.dip = -0.1;
-                    f.alert = 1;
+                    f.alert = 1;                                     // 몸 숙임+눈 커짐 — 이제 입질 전용
+                    f.p.pet.setExclaim(true);                        // ❗ — 숨바꼭질 문법 재사용
                     spawnSplash(f.target.x, wy + 0.02, f.target.z);
-                    playBuffer(splashBuf, { vol: 0.5 * attAtPoint(f.target.x, f.target.z), rate: 1.1, filterFreq: 1400 });
+                    if (f.isAI) playBuffer(splashBuf, { vol: 0.5 * attAtPoint(f.target.x, f.target.z), rate: 1.1, filterFreq: 1400 });
+                    else playBuffer(splashBuf, { vol: 0.85, rate: 0.7, filterFreq: 900 });   // 꼬록! — 거리 감쇠 없이 낮고 또렷하게
                 }
             } else {
                 f.shadow.position.x += dx / d * Math.min(d * 0.55, 0.35);
@@ -24281,9 +24287,10 @@ function updateFishingInstance(f, delta) {
             f.alert = Math.max(0, f.alert - delta * 2.2);
         }
     } else if (f.state === 'bite') {
-        // ⑤ 챔질 윈도우 0.65초 — 놓치면 miss. 절친(AI)은 반사신경 랜덤 + 85% 성공(가끔 놓쳐야 귀엽다)
+        // ⑤ 챔질 윈도우 1초 — 동숲식: 신호가 명확해진 만큼(잠수+❗+꼬록) 반응은 관대하게.
+        //    절친(AI)은 반사신경 랜덤 + 85% 성공(가끔 놓쳐야 귀엽다)
         const wy = waterYFor(f);
-        f.bobber.position.set(f.target.x, wy - 0.09 + Math.sin(f.t * 30) * 0.012, f.target.z);
+        f.bobber.position.set(f.target.x, wy - 0.26 + Math.sin(f.t * 30) * 0.01, f.target.z);   // 찌가 물속으로 사라진다
         leanX = 0.22;
         for (const ey of p.pet.eyes) ey.scale.y = (ey.userData._restScaleY || 1) * 1.22;
         if (f.isAI && !f.aiActed && f.t >= (f.aiHookAt || 0.25)) {
@@ -24291,13 +24298,16 @@ function updateFishingInstance(f, delta) {
             if (Math.random() < 0.85) {
                 f.state = 'hook';
                 f.t = 0;
+                f.p.pet.setExclaim(false);
                 playSplashSound(f.target.x, f.target.z);
             }
         }
-        if (f.state === 'bite' && f.t > 0.65) {
+        if (f.state === 'bite' && f.t > 1.0) {
             f.state = 'miss';
             f.t = 0;
+            f.p.pet.setExclaim(false);
             f.shadow.visible = false;
+            f.quickNext = true;   // 재시도는 싸게 — 다음 캐스트의 그림자가 빨리 온다
         }
     } else if (f.state === 'hook') {
         // ⑤ 훅셋 저크 0.15초 — 몸 홱 젖힘 + 스쿼시
