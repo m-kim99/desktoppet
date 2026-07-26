@@ -27002,15 +27002,19 @@ function buildSquirtCartoon() {
     // 오목한 구멍이 된다. 이래야 파이프가 아니라 '입'으로 읽힌다(소라 개구부와 같은 원리).
     for (const [tilt, yaw] of [[0.26, 0.6], [-0.22, -0.8]]) {
         const rr = C.R * 0.34, h = C.R * 0.46, NP = 14, pos = [], uv = [], idx = [];
-        const RING = [[0, 1.18, 0.30], [0.34, 1.00, 0.22], [0.68, 0.86, 0.14], [1.00, 0.70, 0.10]];   // [y비, 반지름비, uv v]
-        for (const [hy, rk, vv] of RING) for (let j = 0; j <= NP; j++) {
+        // ⚠️ 사이펀 uv를 몸통과 같은 v 대역(0.02~0.30)에 두면 **몸통 밑동 색을 훔쳐 간다**: 밑동을
+        // 연하게 바꾸자 사이펀이 살구빛으로 떴고, 반대로 사이펀을 어둡게 칠한 오버레이가 몸통
+        // 밑동까지 어둡게 만들었다(실측). 사이펀은 uv를 **꼭대기 색 한 점**으로 고정해 대역을 비운다 —
+        // 분화구의 깊이는 텍스처가 아니라 정점색 톱라이트(아래 향한 면 = 그늘)가 만든다.
+        const RING = [[0, 1.18], [0.34, 1.00], [0.68, 0.86], [1.00, 0.70]];   // [y비, 반지름비]
+        for (const [hy, rk] of RING) for (let j = 0; j <= NP; j++) {
             const ph = (j / NP) * Math.PI * 2;
             const pk = 1 + 0.10 * Math.cos(ph * 4) * hy;     // 입구만 4갈래로 살짝 오므린다
             pos.push(Math.cos(ph) * rr * rk * pk, hy * h, Math.sin(ph) * rr * rk * pk);
-            uv.push(j / NP, vv);
+            uv.push(0.5, 0.96);
         }
         const base = pos.length / 3;
-        pos.push(0, h * 0.62, 0); uv.push(0.5, 0.02);        // 분화구 바닥 — 테두리보다 낮게(오목)
+        pos.push(0, h * 0.62, 0); uv.push(0.5, 0.96);        // 분화구 바닥 — 테두리보다 낮게(오목)
         for (let i = 0; i < RING.length - 1; i++) for (let j = 0; j < NP; j++) {
             const p0 = i * (NP + 1) + j, p1 = p0 + NP + 1;
             idx.push(p0, p1, p0 + 1, p1, p1 + 1, p0 + 1);
@@ -27073,8 +27077,12 @@ function fcPaintSeaTex(g) {
         const S = FC_SQUIRT, R = faRect(S.cell);
         const X = (u) => R.x + u * C, Y = (v) => R.y + (1 - v) * C;
         g.save(); g.beginPath(); g.rect(R.x, R.y, C, C); g.clip();
+        // ⚠️ 세로 그라디언트 방향이 실물과 반대였다: 위 #c0341a → 가운데 밝음 → **밑동도 #a8280f로 어두웠다**.
+        // 실물 멍게는 **위가 진하고 밑동으로 갈수록 연해진다**(부착부가 옅은 살구빛). 위→아래 단조 감소로.
+        // Y(1)=v1=s1=꼭대기, Y(0)=v0=s0=밑동 — stop 0이 꼭대기다.
         const gr = g.createLinearGradient(0, Y(1), 0, Y(0));
-        gr.addColorStop(0, '#c0341a'); gr.addColorStop(0.45, '#e0552c'); gr.addColorStop(1, '#a8280f');
+        gr.addColorStop(0, '#8a2210'); gr.addColorStop(0.30, '#b03418'); gr.addColorStop(0.58, '#d05828');
+        gr.addColorStop(0.82, '#ef9a6c'); gr.addColorStop(1, '#f8c8a8');   // 정점색이 아래 향한 면을 0.62로 누르므로 텍스처는 한 단계 더 연하게
         g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
         // ⚠️ 무늬를 따로 그리면 조형의 혹과 **엇갈린다**(스티커로 읽힌다) → 조형과 **같은 함수**를
         // 샘플링해 골은 어둡게·정수리는 밝게 칠한다. 이러면 텍스처가 실루엣과 저절로 맞는다.
@@ -27091,22 +27099,15 @@ function fcPaintSeaTex(g) {
                 const cx = X(cu), cy = Y(q.s), rx = ru * C, ry = rv * C;
                 g.save(); g.translate(cx, cy); g.scale(rx / ry, 1);
                 const rg = g.createRadialGradient(0, 0, 0, 0, 0, ry);
-                rg.addColorStop(0, `rgba(255,206,118,${0.30 + 0.26 * q.a})`);      // 정수리 = 황토
-                rg.addColorStop(0.52, 'rgba(226,96,44,0.12)');
-                rg.addColorStop(0.86, `rgba(86,20,8,${0.26 + 0.16 * q.a})`);       // 돌기 밑동 = 그늘 링
+                const lo = 0.35 + 0.65 * q.s;   // 밑동은 이미 연하니 하이라이트·그늘을 함께 눌러야 얼룩이 안 진다
+                rg.addColorStop(0, `rgba(255,206,118,${(0.30 + 0.26 * q.a) * lo})`);   // 정수리 = 황토
+                rg.addColorStop(0.52, `rgba(226,96,44,${0.12 * lo})`);
+                rg.addColorStop(0.86, `rgba(86,20,8,${(0.26 + 0.16 * q.a) * lo})`);    // 돌기 밑동 = 그늘 링
                 rg.addColorStop(1, 'rgba(86,20,8,0)');
                 g.fillStyle = rg; g.beginPath(); g.arc(0, 0, ry, 0, Math.PI * 2); g.fill();
                 g.restore();
             }
         }
-        const foot = g.createLinearGradient(0, Y(0.30), 0, Y(0.02));   // 밑동은 매끈하고 옅다(부착부)
-        foot.addColorStop(0, 'rgba(228,150,110,0)'); foot.addColorStop(1, 'rgba(232,164,124,0.55)');
-        g.fillStyle = foot; g.fillRect(R.x, Y(0.30), C, Y(0.02) - Y(0.30));
-        // 사이펀 uv는 v 0.02~0.30. ⚠️ 그 범위를 통째로 어둡게 하니 사이펀이 **새까만 판지**가 됐다 →
-        // 분화구 안쪽(v < 0.12)만 어둡게, 바깥 목은 몸통 색에 가깝게 둔다.
-        const sip = g.createLinearGradient(0, Y(0.13), 0, Y(0));
-        sip.addColorStop(0, 'rgba(96,20,6,0)'); sip.addColorStop(1, 'rgba(78,16,4,0.80)');
-        g.fillStyle = sip; g.fillRect(R.x, Y(0.13), C, Y(0) - Y(0.13));
         g.restore();
     }
 }
