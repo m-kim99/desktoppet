@@ -675,7 +675,7 @@ window.lang_enUS = {
         'idleTalkEnabled': 'Idle Remarks',
         'idleTalkInterval': 'Remark Interval (sec)',
         'worldPetSettings': '🌏 World Pet Persona & System Instructions',
-        'worldPetSettingsHint': "Persona and system prompt for the 3D world pets (chick & puppy). Rarely changed, so it's folded. Edits apply from the next message. Leave a field blank to use the default.",
+        'worldPetSettingsHint': "Persona and system prompt for the 3D world pets (chick & puppy). Rarely changed, so it's folded. Edits apply from the next message. Leave a field blank to use the default. {{user}} is replaced by [Settings > User Name] (falls back to '주인' if unset).",
         'worldChickPersona': 'Chick Persona',
         'worldPuppyPersona': 'Puppy Persona',
         'worldLore': 'World Lore / Setting',

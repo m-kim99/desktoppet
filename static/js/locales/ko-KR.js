@@ -675,7 +675,7 @@ window.lang_koKR = {
         'idleTalkEnabled': '능동 멘트(혼잣말)',
         'idleTalkInterval': '멘트 간격(초)',
         'worldPetSettings': '🌏 월드 펫 성격·시스템 지시',
-        'worldPetSettingsHint': '3D 월드 펫(병아리·강아지)의 성격과 시스템 프롬프트입니다. 거의 바꿀 일이 없어 접어뒀어요. 고치면 다음 대화부터 반영됩니다. 칸을 비우면 기본값이 쓰입니다.',
+        'worldPetSettingsHint': '3D 월드 펫(병아리·강아지)의 성격과 시스템 프롬프트입니다. 거의 바꿀 일이 없어 접어뒀어요. 고치면 다음 대화부터 반영됩니다. 칸을 비우면 기본값이 쓰입니다. {{user}}는 [설정 → 사용자 이름]으로 자동 치환됩니다 (미설정 시 "주인").',
         'worldChickPersona': '병아리 성격',
         'worldPuppyPersona': '강아지 성격',
         'worldLore': '세계관 / 배경',

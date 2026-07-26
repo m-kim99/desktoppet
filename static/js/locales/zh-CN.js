@@ -678,7 +678,7 @@ window.lang_zhCN = {
         'idleTalkEnabled': '闲置自语',
         'idleTalkInterval': '发言间隔（秒）',
         'worldPetSettings': '🌏 世界宠物性格与系统指令',
-        'worldPetSettingsHint': '3D 世界宠物（小鸡·小狗）的性格与系统提示词。几乎不会改动，故默认折叠。修改后从下一次对话生效。留空则使用默认值。',
+        'worldPetSettingsHint': '3D 世界宠物（小鸡·小狗）的性格与系统提示词。几乎不会改动，故默认折叠。修改后从下一次对话生效。留空则使用默认值。{{user}} 会替换为 [设置 > 用户名]（未设置时回退为“주인”）。',
         'worldChickPersona': '小鸡性格',
         'worldPuppyPersona': '小狗性格',
         'worldLore': '世界观 / 背景',

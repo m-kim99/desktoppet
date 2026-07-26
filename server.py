@@ -11561,7 +11561,7 @@ WORLD_LORE = """[세계]
 [하루]
 6시 해가 뜨고 18시에 진다. 8시·12시·18시는 밥때라 밥그릇으로 가서 먹는다. 22시가 되면 잠자리에 들고 6시에 일어난다. 가끔 비나 눈이 오고, 비가 그친 낮에는 무지개가 뜬다.
 [관계]
-'주인'은 화면 밖에서 너희를 지켜보고, 가끔 펫을 직접 조종해 함께 놀아준다. 너와 다른 펫 한 마리는 둘도 없는 절친이다."""
+{{user}}는 화면 밖에서 너희를 지켜보고, 가끔 펫을 직접 조종해 함께 놀아준다. 너와 다른 펫 한 마리는 둘도 없는 절친이다."""
 
 WORLD_PERSONAS = {
     "chick": """[너 = 병아리 🐤]
@@ -11576,7 +11576,7 @@ WORLD_PERSONAS = {
 절친: 병아리 — 텐션 높은 병아리를 흐뭇하게 지켜본다.""",
 }
 
-WORLD_MAIL_PERSONA = """너는 병아리 🐤와 강아지 🐶 둘을 함께 대변해서, 주인이 우편함에 넣은 편지에
+WORLD_MAIL_PERSONA = """너는 병아리 🐤와 강아지 🐶 둘을 함께 대변해서, {{user}}가 우편함에 넣은 편지에
 같이 쓰는 답장을 작성한다. 병아리는 밝고 통통 튀는 반말(가끔 "삐약!"), 강아지는 느긋하고
 다정한 반말(가끔 "멍!") — 둘의 말투가 번갈아 섞인 짧은 대화체 편지로 3~5문장, 이모지 1~3개.
 편지 형식(인사말/날짜/서명 같은 격식)은 필요 없다 — 그냥 둘이 재잘대며 쓰는 편지 내용만."""
@@ -11591,7 +11591,7 @@ WORLD_ACTION_SPEC = """[행동 태그]
 <hat=santa-hat> 산타모자를 쓴다 / <hat=off> 벗는다
 <swim=ID> 물놀이하러 간다. ID: pond(연못에서 첨벙첨벙)·sea(절벽에서 바다로 다이빙)
 <drive=car> 스포츠카에 올라타 신나게 한 바퀴 드라이브하고 스스로 내린다 (차는 한 대 — 누가 타고 있으면 안 된다)
-<game=hideseek> 절친과 숨바꼭질 한 판 — 내가 술래가 되어 광장에서 세고 절친이 숨는다 (주인이 조종 중이면 주인이 숨는 쪽)
+<game=hideseek> 절친과 숨바꼭질 한 판 — 내가 술래가 되어 광장에서 세고 절친이 숨는다 ({{user}}가 조종 중이면 {{user}}가 숨는 쪽)
 <game=treasure> 모험의 섬 보물 모래밭으로 달려가 오늘의 보물을 파낸다 (하루 한 번, 이미 팠으면 못 한다)
 예시: "좋아, 그네 타러 가자! 삐약! <goto=swing> <mount=swing>"
 규칙: 요청받은 행동이나 지금 기분에 어울리는 행동만 골라라. 태그는 반드시 위 목록의 표기 그대로. 움직일 수 없는 상황(잠자는 중 등)이면 태그 없이 말로만 답해도 된다."""
@@ -11622,6 +11622,11 @@ def _world_persona_for(settings, pet: str) -> dict:
     eff = _world_persona_effective(settings)
     eff["persona"] = eff["puppyPersona"] if pet == "puppy" else eff["chickPersona"]
     return eff
+# 월드 펫이 사용자를 부르는 이름 — 메인 채팅과 같은 {{user}} 규약. 설정의 userName을 쓰되,
+# 미설정(기본 'user'/'User'/공란)이면 '주인'으로 폴백해 월드가 자연스럽게 읽히게 한다.
+def _world_user_name(settings) -> str:
+    n = ((settings or {}).get("memorySettings", {}) or {}).get("userName", "").strip()
+    return "주인" if (not n or n.lower() == "user") else n
 
 
 @app.get("/api/world_persona")
@@ -11675,17 +11680,18 @@ async def _world_chat_summarize(pet: str):
             return
         old = store["history"][:-WORLD_CHAT_SEND]
         keep = store["history"][-WORLD_CHAT_SEND:]
+        wc_client, current_settings = await _world_chat_client_and_model()
+        uname = _world_user_name(current_settings)
         lines = []
         if store["summary"]:
             lines.append(f"(기존 요약) {store['summary']}")
         for m in old:
-            who = "주인" if m.get("role") == "user" else "나"
+            who = uname if m.get("role") == "user" else "나"
             lines.append(f"{who}: {m.get('content', '')}")
-        wc_client, current_settings = await _world_chat_client_and_model()
         resp = await wc_client.chat.completions.create(
             model=current_settings["model"],
             messages=[
-                {"role": "system", "content": "다음은 펫과 주인의 대화 기록이다. 펫이 나중에 기억해야 할 내용(주인에 대해 알게 된 것, 약속, 별명, 자주 하는 놀이, 감정의 흐름)을 한국어 350자 이내로 요약하라. 요약문만 출력한다."},
+                {"role": "system", "content": f"다음은 펫과 {uname}의 대화 기록이다. 펫이 나중에 기억해야 할 내용({uname}에 대해 알게 된 것, 약속, 별명, 자주 하는 놀이, 감정의 흐름)을 한국어 350자 이내로 요약하라. 요약문만 출력한다."},
                 {"role": "user", "content": "\n".join(lines)},
             ],
             temperature=0.3,
@@ -11723,18 +11729,21 @@ async def world_chat(request: Request):
 
     try:
         wc_client, current_settings = await _world_chat_client_and_model()
-        user_name = (current_settings.get("memorySettings", {}) or {}).get("userName", "").strip()
-        owner_line = f"주인의 이름은 '{user_name}'이다." if user_name else "주인의 이름은 아직 모른다."
+        uname = _world_user_name(current_settings)
+        # 이름이 설정된 경우에만 "이름으로 불러라" 지시를 얹는다 (미설정이면 {{user}}가 '주인'으로
+        # 치환되어 기존 톤 유지). 마지막에 system_prompt 전체에서 {{user}} → 이름 치환.
+        owner_line = (f"너와 함께 노는 사람의 이름은 '{uname}'이다. '주인'이라고 부르지 말고 '{uname}'(이)라고 이름으로 부른다."
+                      if uname != "주인" else "")
 
         store = _world_chat_load(pet)
         eff = _world_persona_for(current_settings, pet)
-        system_prompt = "\n\n".join([
+        system_prompt = "\n\n".join([p for p in [
             eff["persona"],
             eff["lore"],
             owner_line,
             eff["replyRules"],
             eff["actionSpec"],
-        ])
+        ] if p]).replace("{{user}}", uname)
         messages = [{"role": "system", "content": system_prompt}]
         if store["summary"]:
             messages.append({"role": "system", "content": f"[지난 대화에서 기억하는 것]\n{store['summary']}"})
@@ -11824,16 +11833,17 @@ async def world_diary_write(request: Request):
             "오늘 하루를 마무리하며 그림일기를 쓴다. 규칙:\n"
             "- 1인칭, 내(펫) 목소리 그대로. 한국어 4~6문장, 이모지 1~3개.\n"
             "- 아래 [오늘 있었던 일]에 적힌 사실만 쓴다. 없던 일을 지어내지 않는다.\n"
-            "- 절친이나 주인이 등장했다면 꼭 언급한다.\n"
+            "- 절친이나 {{user}}가 등장했다면 꼭 언급한다.\n"
             "- 마지막 줄은 반드시 '기분: <이모지 하나> <한 단어>' 형식으로 끝낸다.",
         ]
         if store["summary"]:
-            sys_parts.append(f"[주인과의 기억]\n{store['summary']}")
+            sys_parts.append(f"[{{{{user}}}}와의 기억]\n{store['summary']}")
+        uname = _world_user_name(current_settings)
         user_text = f"[오늘 날짜] {date}\n\n[오늘의 월드]\n{snapshot}\n\n[오늘 있었던 일]\n{events}\n\n이제 오늘의 일기를 쓰자."
         resp = await wc_client.chat.completions.create(
             model=current_settings["model"],
             messages=[
-                {"role": "system", "content": "\n\n".join(sys_parts)},
+                {"role": "system", "content": "\n\n".join(sys_parts).replace("{{user}}", uname)},
                 {"role": "user", "content": user_text},
             ],
             temperature=0.8,
@@ -12009,11 +12019,12 @@ async def world_mail_send(request: Request):
     try:
         wc_client, current_settings = await _world_chat_client_and_model()
         eff = _world_persona_effective(current_settings)
+        uname = _world_user_name(current_settings)
         resp = await wc_client.chat.completions.create(
             model=current_settings["model"],
             messages=[
-                {"role": "system", "content": "\n\n".join([eff["mailPersona"], eff["lore"]])},
-                {"role": "user", "content": f"주인이 우편함에 넣은 편지:\n{text}"},
+                {"role": "system", "content": "\n\n".join([eff["mailPersona"], eff["lore"]]).replace("{{user}}", uname)},
+                {"role": "user", "content": f"{uname}가 우편함에 넣은 편지:\n{text}"},
             ],
             temperature=0.85,
             max_tokens=350,
