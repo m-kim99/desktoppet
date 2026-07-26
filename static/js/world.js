@@ -23655,7 +23655,8 @@ function fishConditionActive(sp) {
     if (!sp.when) return true;
     const h = currentHour();
     if (sp.when.night && !(h >= 19 || h < 6)) return false;
-    if (sp.when.rain && wxF < 0.3) return false;
+    // 비 = 진짜 비/뇌우만 — 강도(wxF)만 보면 겨울 눈에도 개구리가 잡혀 "비 오는 연못" 힌트와 어긋난다
+    if (sp.when.rain && !(wxF >= 0.3 && (wx.type === 'rain' || wx.type === 'storm'))) return false;
     if (sp.when.season && season !== sp.when.season) return false;
     return true;
 }
@@ -24107,12 +24108,16 @@ function startCast(f, target) {
     f.shadowPhase = 'approach';
     // 어종 미리 결정 (물별 풀 + 밤/비/계절 조건 + 희귀도 가중 + 꽝 10%). 조건 어종은 자기 조건이
     // 켜져 있을 때 가중 1.6배 — "밤에 낚시하러 나온 보람"이 확률로 느껴지게.
+    // 도감 미등록 종은 ×1.5 (해산물 중복 보호와 같은 문법, 풀이 작아 배수는 온건하게) — 첫 만남을
+    // 앞당길 뿐 등록 순간 꺼져서 장기 분포는 그대로다.
     const roll = Math.random();
     if (roll < 0.1) {
         f.species = FISH_SPECIES.find((s) => s.id === (Math.random() < 0.5 ? 'boot' : 'bottle'));
     } else {
         const pool = speciesPool(target.water);
-        const w = pool.map((s) => (s.rarity === 1 ? 0.6 : s.rarity === 2 ? 0.3 : 0.1) * (s.when ? 1.6 : 1));
+        let dex = {};
+        try { dex = JSON.parse(localStorage.getItem('world-fishdex') || '{}'); } catch (e) {}
+        const w = pool.map((s) => (s.rarity === 1 ? 0.6 : s.rarity === 2 ? 0.3 : 0.1) * (s.when ? 1.6 : 1) * (dex[s.id] ? 1 : 1.5));
         let r2 = Math.random() * w.reduce((a, b) => a + b, 0);
         f.species = pool[0];
         for (let i = 0; i < pool.length; i++) { r2 -= w[i]; if (r2 <= 0) { f.species = pool[i]; break; } }
