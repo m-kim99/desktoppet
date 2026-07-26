@@ -26955,21 +26955,41 @@ function buildCukeCartoon() {
 // 구 조형: 면수 낮은 구체 + 납작한 원통 굴뚝 2개 + 붙인 여드름 7개. **멍게의 정체성인 파인애플
 // 같은 울퉁불퉁함이 아예 없었다** — 그게 가장 큰 문제였다.
 const FC_SQUIRT = { cell: 25, R: 0.046, L: 0.125 };
-// 혹(파인애플) — φ 계수는 **정수**여야 φ=0/2π에서 이어진다. 정수 3개를 겹쳐 준랜덤 덩이를 만든다.
+// ⚠️ 정수 계수 사인 3개를 합쳤더니 **물결치는 양파**가 됐다(사용자 리포트 "실제 멍게랑 다르다").
+// 실물 멍게(바다의 파인애플)는 매끈한 굴곡이 아니라 **뾰족한 원뿔 돌기가 개별로 박혀** 있고,
+// 위로 갈수록 **크고 촘촘**하며 밑동은 매끈하다 — 그게 "윗부분이 오돌토돌한" 정체성이다.
+// 그래서 저주파 필드 대신 **개별 돌기 테이블**을 쓴다. φ는 황금각으로 고르게, s는 위 편중.
+const FC_SQ_KNOBS = (() => {
+    const out = [], N = 64, GA = Math.PI * (3 - Math.sqrt(5));
+    for (let i = 0; i < N; i++) {
+        const t = (i + 0.5) / N;
+        const s = 0.20 + Math.pow(t, 0.58) * 0.74;          // pow<1 → 위쪽에 몰린다
+        out.push({ ph: (i * GA) % (Math.PI * 2), s, a: 0.30 + 0.66 * Math.pow(s, 1.8) });   // 위로 갈수록 크다
+    }
+    return out;
+})();
+const FC_SQ_RAD = (s) => Math.pow(Math.sin(Math.PI * Math.pow(s, 1.35)), 0.52);   // 서양배 프로파일 — 조형·텍스처가 같이 쓴다
+// 원뿔 돌기의 합. 가우시안은 봉우리가 둥글어 물결로 읽힌다 → 거리 1차 감쇠로 **뾰족하게**.
+// σφ를 rad로 나눠야 좁은 곳(위·아래)에서 돌기가 옆으로 늘어나지 않는다.
 function fcSquirtKnob(ph, s) {
-    const win = Math.pow(Math.sin(Math.PI * s), 0.5);
-    const k = Math.pow(Math.max(0, Math.sin(ph * 5 + s * 9.0)), 2) * 0.62
-        + Math.pow(Math.max(0, Math.sin(ph * 7 - s * 13.0 + 1.2)), 2) * 0.50
-        + Math.pow(Math.max(0, Math.sin(ph * 3 + s * 6.0 + 2.4)), 2) * 0.52;
-    return { k, d: 0.30 * k * win };   // ⚠️ 0.15는 실루엣이 매끈해 텍스처가 무늬를 다 짊어졌다(칠한 위장색처럼) → 조형이 짊어지게
+    let k = 0;
+    const sp = Math.max(0.34, FC_SQ_RAD(s));
+    for (const q of FC_SQ_KNOBS) {
+        const dp = fcAngGap(ph, q.ph) * sp / 0.255, ds = (s - q.s) / 0.072;
+        const d = Math.sqrt(dp * dp + ds * ds);
+        if (d < 1) { const f = 1 - d; k += q.a * f * f * (0.34 + 0.66 * f); }   // 지수를 올려 봉우리를 뾰족하게
+    }
+    return { k, d: 0.30 * k * Math.pow(Math.sin(Math.PI * s), 0.35) };
 }
 function buildSquirtCartoon() {
     const A = fcAtlas(), C = FC_SQUIRT, R = faRect(C.cell);
     if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
     const body = fcTubeGeo({
-        R: C.R, L: C.L, ns: 30, np: 30,
+        // ⚠️ ns/np 30이면 돌기 하나가 세그먼트 1.4개에 걸쳐 법선 보간이 **둥근 돔**으로 뭉갠다
+        // (실물 멍게 돌기는 뾰족하다) → 분할을 올려야 원뿔이 원뿔로 보인다.
+        R: C.R, L: C.L, ns: 40, np: 46,
         // 서양배: pow(s, 1.35)로 봉우리를 s≈0.60까지 밀어올린다(밑동 좁고 중간 위가 가장 넓다)
-        rad: (s) => Math.pow(Math.sin(Math.PI * Math.pow(s, 1.35)), 0.52),
+        rad: FC_SQ_RAD,
         disp: (ph, s) => fcSquirtKnob(ph, s).d,
     });
     body.rotateX(-Math.PI / 2);   // 로프트 축은 +z — 멍게는 서 있다
@@ -27058,20 +27078,30 @@ function fcPaintSeaTex(g) {
         g.fillStyle = gr; g.fillRect(R.x, R.y, C, C);
         // ⚠️ 무늬를 따로 그리면 조형의 혹과 **엇갈린다**(스티커로 읽힌다) → 조형과 **같은 함수**를
         // 샘플링해 골은 어둡게·정수리는 밝게 칠한다. 이러면 텍스처가 실루엣과 저절로 맞는다.
-        // ⚠️ fillRect 격자(64×64 = 4px 셀)로 칠했더니 **모아레 그물**이 됐다 → 픽셀을 직접 쓴다
-        // (256² 루프는 putImageData 한 번이라 fillRect 65,536번보다 훨씬 싸다).
-        const img = g.getImageData(R.x, R.y, C, C), px = img.data;
-        const mix = (i4, r2, g2, b2, a2) => {
-            px[i4] += (r2 - px[i4]) * a2; px[i4 + 1] += (g2 - px[i4 + 1]) * a2; px[i4 + 2] += (b2 - px[i4 + 2]) * a2;
-        };
-        for (let b = 0; b < C; b++) for (let a = 0; a < C; a++) {
-            const u = (a + 0.5) / C, v = 1 - (b + 0.5) / C;
-            const t = Math.min(1, fcSquirtKnob(u * Math.PI * 2, v).k / 1.25);
-            const i4 = (b * C + a) * 4;
-            if (t > 0.5) mix(i4, 255, 196, 96, (t - 0.5) * 0.36);       // 정수리 = 황토 하이라이트
-            else mix(i4, 84, 20, 8, (0.5 - t) * 0.44);                  // 골 = 진한 그늘
+        // ⚠️ 무늬를 따로 그리면 조형의 돌기와 **엇갈려** 스티커로 읽힌다 → **같은 테이블**을 그린다.
+        // 픽셀 직접 쓰기도 해 봤지만(모아레 회피) 돌기 52개 × 256²는 300만 회라 굽기가 느려진다 →
+        // 돌기마다 방사 그라디언트 타원 하나면 매끄럽고 싸다.
+        // 등방 보정: Δu·2πR·rad = Δv·L → Δu = Δv·L/(2πR·rad) = Δv·0.432/rad (R 0.046 · L 0.125).
+        for (const q of FC_SQ_KNOBS) {
+            const rv = 0.072 * (0.55 + 0.45 * q.a);
+            const ru = rv * 0.432 / Math.max(0.34, FC_SQ_RAD(q.s));
+            for (const du of [-1, 0, 1]) {   // u 0/1 이음선에 걸친 돌기는 반대쪽에도 찍는다
+                const cu = q.ph / (Math.PI * 2) + du;
+                if (cu < -ru * 2 || cu > 1 + ru * 2) continue;
+                const cx = X(cu), cy = Y(q.s), rx = ru * C, ry = rv * C;
+                g.save(); g.translate(cx, cy); g.scale(rx / ry, 1);
+                const rg = g.createRadialGradient(0, 0, 0, 0, 0, ry);
+                rg.addColorStop(0, `rgba(255,206,118,${0.30 + 0.26 * q.a})`);      // 정수리 = 황토
+                rg.addColorStop(0.52, 'rgba(226,96,44,0.12)');
+                rg.addColorStop(0.86, `rgba(86,20,8,${0.26 + 0.16 * q.a})`);       // 돌기 밑동 = 그늘 링
+                rg.addColorStop(1, 'rgba(86,20,8,0)');
+                g.fillStyle = rg; g.beginPath(); g.arc(0, 0, ry, 0, Math.PI * 2); g.fill();
+                g.restore();
+            }
         }
-        g.putImageData(img, R.x, R.y);
+        const foot = g.createLinearGradient(0, Y(0.30), 0, Y(0.02));   // 밑동은 매끈하고 옅다(부착부)
+        foot.addColorStop(0, 'rgba(228,150,110,0)'); foot.addColorStop(1, 'rgba(232,164,124,0.55)');
+        g.fillStyle = foot; g.fillRect(R.x, Y(0.30), C, Y(0.02) - Y(0.30));
         // 사이펀 uv는 v 0.02~0.30. ⚠️ 그 범위를 통째로 어둡게 하니 사이펀이 **새까만 판지**가 됐다 →
         // 분화구 안쪽(v < 0.12)만 어둡게, 바깥 목은 몸통 색에 가깝게 둔다.
         const sip = g.createLinearGradient(0, Y(0.13), 0, Y(0));
