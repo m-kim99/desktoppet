@@ -959,11 +959,17 @@ let vue_data = {
       wanderInterval: 90,       // Base wander interval in seconds (jittered at runtime)
       wanderRange: 250,         // Max wander distance in pixels per move
     },
-    // 🌏 월드 펫 페르소나/시스템 지시 — settings.worldConfig 오버라이드. 비어 있으면 서버 상수(기본값)가
-    // 쓰인다. loadSettings가 /api/world_persona로 현재 유효 텍스트를 받아 편집 박스를 채운다.
+    // 🌏 월드 펫 페르소나/시스템 지시.
+    // worldConfig = 실제 저장되는 "오버라이드"만 (빈 문자열 = 서버 기본값 사용).
+    // worldEdit   = 편집 박스에 보이는 값(오버라이드 or 기본값 프리필). 저장 시 기본값과 같으면
+    //               worldConfig에 ''로 넣어(오버라이드 없음) 서버 상수 변경을 계속 따라가게 한다.
     worldConfig: {
       chickPersona: '', puppyPersona: '', lore: '', replyRules: '', actionSpec: '', mailPersona: '',
     },
+    worldEdit: {
+      chickPersona: '', puppyPersona: '', lore: '', replyRules: '', actionSpec: '', mailPersona: '',
+    },
+    worldPersonaDefaults: {},   // 서버 순수 기본값 (정규화 비교용)
     newAppearanceConfig: {
       name: '',
       windowWidth: 540,

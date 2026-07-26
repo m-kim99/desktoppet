@@ -519,23 +519,23 @@ function updateElement(el, rawMarkdown, formatFn) {
       </div>
       <el-form label-position="top">
         <el-form-item :label="t('worldChickPersona')">
-          <el-input v-model="worldConfig.chickPersona" type="textarea" :autosize="{ minRows: 4, maxRows: 12 }" @input="autoSaveSettings" />
+          <el-input v-model="worldEdit.chickPersona" type="textarea" :autosize="{ minRows: 4, maxRows: 12 }" @input="saveWorldPersona" />
         </el-form-item>
         <el-form-item :label="t('worldPuppyPersona')">
-          <el-input v-model="worldConfig.puppyPersona" type="textarea" :autosize="{ minRows: 4, maxRows: 12 }" @input="autoSaveSettings" />
+          <el-input v-model="worldEdit.puppyPersona" type="textarea" :autosize="{ minRows: 4, maxRows: 12 }" @input="saveWorldPersona" />
         </el-form-item>
         <el-form-item :label="t('worldLore')">
-          <el-input v-model="worldConfig.lore" type="textarea" :autosize="{ minRows: 4, maxRows: 14 }" @input="autoSaveSettings" />
+          <el-input v-model="worldEdit.lore" type="textarea" :autosize="{ minRows: 4, maxRows: 14 }" @input="saveWorldPersona" />
         </el-form-item>
         <el-form-item :label="t('worldReplyRules')">
-          <el-input v-model="worldConfig.replyRules" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" @input="autoSaveSettings" />
+          <el-input v-model="worldEdit.replyRules" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" @input="saveWorldPersona" />
         </el-form-item>
         <el-form-item :label="t('worldActionSpec')">
-          <el-input v-model="worldConfig.actionSpec" type="textarea" :autosize="{ minRows: 4, maxRows: 16 }" @input="autoSaveSettings" />
+          <el-input v-model="worldEdit.actionSpec" type="textarea" :autosize="{ minRows: 4, maxRows: 16 }" @input="saveWorldPersona" />
           <div style="color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; margin-top: 4px;">{{ t('worldActionSpecHint') }}</div>
         </el-form-item>
         <el-form-item :label="t('worldMailPersona')">
-          <el-input v-model="worldConfig.mailPersona" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" @input="autoSaveSettings" />
+          <el-input v-model="worldEdit.mailPersona" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" @input="saveWorldPersona" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -14153,25 +14153,25 @@ function updateElement(el, rawMarkdown, formatFn) {
                                     {{ t('worldPetSettingsHint') }}
                                   </div>
                                   <el-form-item :label="t('worldChickPersona')">
-                                    <el-input v-model="worldConfig.chickPersona" type="textarea" :rows="5" :autosize="{ minRows: 4, maxRows: 14 }" @input="autoSaveSettings" class="full-width-input" />
+                                    <el-input v-model="worldEdit.chickPersona" type="textarea" :rows="5" :autosize="{ minRows: 4, maxRows: 14 }" @input="saveWorldPersona" class="full-width-input" />
                                   </el-form-item>
                                   <el-form-item :label="t('worldPuppyPersona')">
-                                    <el-input v-model="worldConfig.puppyPersona" type="textarea" :rows="5" :autosize="{ minRows: 4, maxRows: 14 }" @input="autoSaveSettings" class="full-width-input" />
+                                    <el-input v-model="worldEdit.puppyPersona" type="textarea" :rows="5" :autosize="{ minRows: 4, maxRows: 14 }" @input="saveWorldPersona" class="full-width-input" />
                                   </el-form-item>
                                   <el-form-item :label="t('worldLore')">
-                                    <el-input v-model="worldConfig.lore" type="textarea" :rows="5" :autosize="{ minRows: 4, maxRows: 16 }" @input="autoSaveSettings" class="full-width-input" />
+                                    <el-input v-model="worldEdit.lore" type="textarea" :rows="5" :autosize="{ minRows: 4, maxRows: 16 }" @input="saveWorldPersona" class="full-width-input" />
                                   </el-form-item>
                                   <el-form-item :label="t('worldReplyRules')">
-                                    <el-input v-model="worldConfig.replyRules" type="textarea" :rows="4" :autosize="{ minRows: 3, maxRows: 12 }" @input="autoSaveSettings" class="full-width-input" />
+                                    <el-input v-model="worldEdit.replyRules" type="textarea" :rows="4" :autosize="{ minRows: 3, maxRows: 12 }" @input="saveWorldPersona" class="full-width-input" />
                                   </el-form-item>
                                   <el-form-item :label="t('worldActionSpec')">
-                                    <el-input v-model="worldConfig.actionSpec" type="textarea" :rows="5" :autosize="{ minRows: 4, maxRows: 18 }" @input="autoSaveSettings" class="full-width-input" />
+                                    <el-input v-model="worldEdit.actionSpec" type="textarea" :rows="5" :autosize="{ minRows: 4, maxRows: 18 }" @input="saveWorldPersona" class="full-width-input" />
                                     <div style="color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; margin-top: 4px;">
                                       {{ t('worldActionSpecHint') }}
                                     </div>
                                   </el-form-item>
                                   <el-form-item :label="t('worldMailPersona')">
-                                    <el-input v-model="worldConfig.mailPersona" type="textarea" :rows="4" :autosize="{ minRows: 3, maxRows: 12 }" @input="autoSaveSettings" class="full-width-input" />
+                                    <el-input v-model="worldEdit.mailPersona" type="textarea" :rows="4" :autosize="{ minRows: 3, maxRows: 12 }" @input="saveWorldPersona" class="full-width-input" />
                                   </el-form-item>
                                 </el-collapse-item>
                               </el-collapse>

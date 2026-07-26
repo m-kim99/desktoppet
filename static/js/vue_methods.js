@@ -5156,22 +5156,31 @@ let vue_methods = {
     t(key) {
       return this.translations[this.currentLanguage][key] || this.translations[this.currentLanguage]['en-US'] || key;
     },
-    // 🐾 툴바 바로가기: 월드 펫 성격 다이얼로그를 열고 현재 유효 텍스트를 프리필.
+    // 🐾 바로가기: 월드 펫 성격 다이얼로그를 열고 편집 버퍼를 프리필.
     openWorldPersonaDialog() {
       this.showWorldPersonaDialog = true;
       this.loadWorldPersona();
     },
-    // 🌏 월드 펫 설정 패널을 펼칠 때: 서버에서 현재 유효 텍스트(오버라이드 or 기본값)를 받아
-    // 비어 있는 편집 박스만 채운다 (저장해 둔 오버라이드는 건드리지 않음). 접힘 기본이라 시작 비용 0.
+    // 🌏 편집 버퍼(worldEdit)에 현재 유효 텍스트를 채우고 기본값(정규화 비교용)을 받아둔다.
+    // worldConfig(저장되는 오버라이드)는 여기서 건드리지 않음 — 열기만 해도 굳던 문제 방지.
     async loadWorldPersona() {
       try {
         const r = await fetch('/api/world_persona');
         if (!r.ok) return;
-        const eff = await r.json();
-        for (const k of Object.keys(eff)) {
-          if (!this.worldConfig[k]) this.worldConfig[k] = eff[k];
-        }
-      } catch (e) { /* 백엔드 없으면 기본값 그대로 */ }
+        const data = await r.json();
+        this.worldPersonaDefaults = data.defaults || {};
+        const eff = data.effective || {};
+        for (const k of Object.keys(eff)) this.worldEdit[k] = eff[k];
+      } catch (e) { /* 백엔드 없으면 편집 버퍼 비어있음 */ }
+    },
+    // 편집 박스가 바뀔 때: 기본값과 같으면 오버라이드를 비우고(=서버 상수 사용), 다르면 오버라이드로 저장.
+    saveWorldPersona() {
+      for (const k of Object.keys(this.worldEdit)) {
+        const v = (this.worldEdit[k] || '');
+        const d = (this.worldPersonaDefaults[k] || '');
+        this.worldConfig[k] = (v.trim() === d.trim()) ? '' : v;
+      }
+      this.autoSaveSettings();
     },
     // VRM 데스크톱 펫 소환/숨김 전역 단축키를 (재)등록. 설정 변경 시에도 호출.
     async applyVrmVisibilityShortcuts() {

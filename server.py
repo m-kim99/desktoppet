@@ -11631,8 +11631,11 @@ def _world_user_name(settings) -> str:
 
 @app.get("/api/world_persona")
 async def world_persona_get():
-    # 설정 창 프리필용 — 현재 유효 텍스트(오버라이드 or 기본값) 6종
-    return _world_persona_effective(await load_settings())
+    # 설정 창용 — effective(오버라이드 or 기본값)로 편집 박스를 채우고, defaults(순수 기본값)로
+    # 저장 시 "기본값과 같으면 오버라이드 비움" 정규화를 한다 (다이얼로그 열기만 해도 기본값이
+    # 오버라이드로 굳던 문제 방지).
+    return {"effective": _world_persona_effective(await load_settings()),
+            "defaults": dict(_WORLD_PERSONA_DEFAULTS)}
 
 
 def _world_chat_file(pet: str) -> str:
