@@ -518,6 +518,10 @@ function updateElement(el, rawMarkdown, formatFn) {
         {{ t('worldPetSettingsHint') }}
       </div>
       <el-form label-position="top">
+        <!-- 🙋 사용자 이름 — {{user}}에 들어가는 값. 맨 위에 배치. -->
+        <el-form-item :label="t('userNameConfig')">
+          <el-input v-model="memorySettings.userName" :placeholder="t('userNamePlaceholder')" @input="autoSaveSettings" clearable />
+        </el-form-item>
         <el-form-item :label="t('worldChickPersona')">
           <el-input v-model="worldEdit.chickPersona" type="textarea" :autosize="{ minRows: 4, maxRows: 12 }" @input="saveWorldPersona" />
         </el-form-item>
