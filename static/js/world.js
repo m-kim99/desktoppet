@@ -21918,48 +21918,150 @@ function jellySwayMat(base) {
     };
     return m;
 }
+// 벨 재질 — **맥동을 정점 셰이더로** 옮겼다. CPU가 bell.scale을 만지던 방식은 ① 벨 전체가 균일
+// 스케일이라 '풍선 부풀리기'로 보였고 ② 심지가 같이 못 움직여 벨과 별개 메시로 갈라져 있었다
+// (개체당 3드로우). aBend(꼭대기 0 → 립 1)로 가중하면 **립이 먼저 오므라드는** 진짜 메두사 수축이
+// 되고, 심지도 같은 지오에 합쳐 약하게 맥동시킬 수 있다 → 개체당 2드로우.
+function jellyPulseMat(base) {
+    const m = base.clone();
+    m.onBeforeCompile = (sh) => {
+        sh.uniforms.uWxT = wxTime;
+        sh.vertexShader = 'uniform float uWxT;\nattribute float aBend;\nattribute float aPh;\n' + sh.vertexShader.replace(
+            '#include <begin_vertex>',
+            '#include <begin_vertex>\n'
+            + 'float jp = pow(max(0.0, sin(uWxT * 0.85 + aPh)), 1.7);\n'
+            + 'transformed.xz *= 1.0 - jp * 0.26 * aBend;\n'
+            + 'transformed.y  += jp * 0.055 * aBend;'      // 립이 안으로 말려 올라간다
+        );
+    };
+    return m;
+}
 const jellyBellMats = [
-    new THREE.MeshStandardMaterial({ color: 0xf3bede, emissive: 0xff9ed2, emissiveIntensity: 0.5, transparent: true, opacity: 0.5, roughness: 0.4, depthWrite: false, side: THREE.DoubleSide }),
-    new THREE.MeshStandardMaterial({ color: 0xb8e6ea, emissive: 0x8fdce6, emissiveIntensity: 0.5, transparent: true, opacity: 0.5, roughness: 0.4, depthWrite: false, side: THREE.DoubleSide }),
+    jellyPulseMat(new THREE.MeshStandardMaterial({ color: 0xf3bede, emissive: 0xff9ed2, emissiveIntensity: 0.5, transparent: true, opacity: 0.62, roughness: 0.4, depthWrite: false, side: THREE.DoubleSide, vertexColors: true })),
+    jellyPulseMat(new THREE.MeshStandardMaterial({ color: 0xb8e6ea, emissive: 0x8fdce6, emissiveIntensity: 0.5, transparent: true, opacity: 0.62, roughness: 0.4, depthWrite: false, side: THREE.DoubleSide, vertexColors: true })),
 ];
 const jellyTentMats = [
-    jellySwayMat(new THREE.MeshStandardMaterial({ color: 0xf6cfe6, emissive: 0xff9ed2, emissiveIntensity: 0.35, transparent: true, opacity: 0.42, roughness: 0.5, depthWrite: false })),
-    jellySwayMat(new THREE.MeshStandardMaterial({ color: 0xcdeef2, emissive: 0x8fdce6, emissiveIntensity: 0.35, transparent: true, opacity: 0.42, roughness: 0.5, depthWrite: false })),
+    jellySwayMat(new THREE.MeshStandardMaterial({ color: 0xf6cfe6, emissive: 0xff9ed2, emissiveIntensity: 0.35, transparent: true, opacity: 0.42, roughness: 0.5, depthWrite: false, side: THREE.DoubleSide })),
+    jellySwayMat(new THREE.MeshStandardMaterial({ color: 0xcdeef2, emissive: 0x8fdce6, emissiveIntensity: 0.35, transparent: true, opacity: 0.42, roughness: 0.5, depthWrite: false, side: THREE.DoubleSide })),
 ];
-function makeJelly(color) {   // 벨(랩 프로파일 — 립 살짝 말림) + 심지 + 구슬 촉수 세트
-    const grp = new THREE.Group();
-    const prof = [new THREE.Vector2(0.001, 0.105)];
-    for (let i = 1; i <= 8; i++) {
-        const t = i / 8;   // 납작 버섯 돔 — 고깔(sin 0.52 линей)은 파티모자처럼 보인다 (스샷 실측)
-        prof.push(new THREE.Vector2(Math.pow(Math.sin(t * Math.PI * 0.5), 0.72) * 0.15, 0.105 - Math.pow(t, 1.15) * 0.115));
-    }
-    prof.push(new THREE.Vector2(0.128, -0.014));   // 립 안쪽 말림
-    const bell = new THREE.Mesh(new THREE.LatheGeometry(prof, 18), jellyBellMats[color]);
-    grp.add(bell);
-    const core = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), jellyBellMats[color]);   // 속 심지 — 겹침이 빛을 응축
-    core.scale.y = 0.6;
-    core.position.y = 0.03;
-    grp.add(core);
-    const tents = [];
-    const addStrand = (r0, len, ang, dist) => {
-        const t2 = new THREE.CylinderGeometry(r0 * 0.4, r0, len, 5);
-        t2.translate(0, -len / 2, 0);   // 원점=부착점
-        const pos = t2.attributes.position;
-        const bend = new Float32Array(pos.count), ph = new Float32Array(pos.count);
-        for (let i = 0; i < pos.count; i++) {
-            bend[i] = THREE.MathUtils.clamp(-pos.getY(i) / len, 0, 1);   // 끝일수록 살랑
-            ph[i] = ang * 2.7;
+// 벨 — ⚠️ LatheGeometry로는 **물결치는 가장자리**를 못 만든다(φ가 균일하다). 극좌표 격자로 짜야
+// 립을 8갈래로 물결지게 할 수 있고, 그 물결이 해파리를 해파리로 읽히게 하는 실루엣이다.
+// 알파는 정점색 4성분으로 — 균일 opacity는 **판유리**처럼 보인다(꼭대기 진하고 립으로 갈수록 투명).
+function jellyBellGeo(ph) {
+    const NT = 15, NP = 40, pos = [], col = [], bend = [], phA = [], idx = [];   // NP는 물결(sin 8a) 한 갈래에 5세그먼트 이상 — 낮으면 물결이 각진다
+    for (let i = 0; i <= NT; i++) {
+        const t = i / NT;
+        const rr = Math.pow(Math.sin(t * Math.PI * 0.5), 0.78) * 0.145;
+        const yy = 0.122 - Math.pow(t, 1.20) * 0.136;   // 납작한 접시보다 살짝 높은 종
+        for (let j = 0; j <= NP; j++) {
+            const a = (j / NP) * Math.PI * 2;
+            const scal = 1 + 0.075 * Math.sin(a * 8) * Math.pow(t, 2.2);      // 물결 가장자리 — 립에서만
+            const lift = 0.012 * Math.cos(a * 8) * Math.pow(t, 3.0);
+            pos.push(Math.cos(a) * rr * scal, yy + lift, Math.sin(a) * rr * scal);
+            const al = 0.95 - 0.62 * Math.pow(t, 1.6);                        // 립으로 갈수록 투명
+            const lm = 1.0 - 0.18 * Math.pow(t, 1.4);
+            col.push(lm, lm, lm, al);
+            bend.push(Math.pow(t, 1.3)); phA.push(ph);
         }
-        t2.setAttribute('aBend', new THREE.Float32BufferAttribute(bend, 1));
-        t2.setAttribute('aPh', new THREE.Float32BufferAttribute(ph, 1));
-        t2.translate(Math.cos(ang) * dist, 0.005, Math.sin(ang) * dist);
-        tents.push(t2);
+    }
+    for (let i = 0; i < NT; i++) for (let j = 0; j < NP; j++) {
+        const q = i * (NP + 1) + j, w = q + NP + 1;
+        idx.push(q, q + 1, w, w, q + 1, w + 1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+    g.setAttribute('aBend', new THREE.Float32BufferAttribute(bend, 1));
+    g.setAttribute('aPh', new THREE.Float32BufferAttribute(phA, 1));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+}
+// 생식소 — 눌린 구 하나는 '그릇에 든 공'이었다. 실물 해파리는 **4엽 생식소**가 우산 너머로 비치는
+// 게 시그니처다. 벨과 같은 지오에 합쳐 약하게(aBend 0.34) 같이 맥동시킨다(사용자 지정).
+function jellyGonadGeo(ph) {
+    const NT = 10, NP = 24, pos = [], col = [], bend = [], phA = [], idx = [];
+    for (let i = 0; i <= NT; i++) {
+        const t = i / NT;
+        for (let j = 0; j <= NP; j++) {
+            const a = (j / NP) * Math.PI * 2;
+            const lobe = 0.62 + 0.38 * Math.pow(Math.abs(Math.cos(a * 2)), 0.6);   // 4엽
+            const rr = 0.050 * Math.sin(Math.PI * t) * lobe;
+            pos.push(Math.cos(a) * rr, 0.062 - t * 0.058, Math.sin(a) * rr);
+            col.push(1, 1, 1, 0.88);
+            bend.push(0.34); phA.push(ph);
+        }
+    }
+    for (let i = 0; i < NT; i++) for (let j = 0; j < NP; j++) {
+        const q = i * (NP + 1) + j, w = q + NP + 1;
+        idx.push(q, q + 1, w, w, q + 1, w + 1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+    g.setAttribute('aBend', new THREE.Float32BufferAttribute(bend, 1));
+    g.setAttribute('aPh', new THREE.Float32BufferAttribute(phA, 1));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+}
+function makeJelly(color, ph = 0) {
+    const grp = new THREE.Group();
+    grp.userData.jelly = true;   // 검수 스크립트가 씬에서 해파리를 찾는 표식
+    const bell = new THREE.Mesh(mergeGeometries([jellyBellGeo(ph), jellyGonadGeo(ph)], false), jellyBellMats[color]);
+    grp.add(bell);
+    // 촉수 — ⚠️ 곧은 원통은 **빨대 다발**로 읽힌다(실측). 끝에서 반지름 0까지 가늘어지며 굽는
+    // 스윕 튜브로(문어 다리와 같은 골격). 길이·굽는 방향·위상을 개체마다 흔든다.
+    const tents = [];
+    const swayAttr = (g2, amt, p2) => {
+        const n = g2.attributes.position.count, bd = new Float32Array(n), pa = new Float32Array(n);
+        const yMin = -0.42;
+        for (let i = 0; i < n; i++) { bd[i] = THREE.MathUtils.clamp(-g2.attributes.position.getY(i) / -yMin, 0, 1) * amt; pa[i] = p2; }
+        g2.setAttribute('aBend', new THREE.Float32BufferAttribute(bd, 1));
+        g2.setAttribute('aPh', new THREE.Float32BufferAttribute(pa, 1));
+        return g2;
     };
-    for (let i = 0; i < 8; i++) addStrand(0.006, 0.26 + (i % 3) * 0.05, (i / 8) * Math.PI * 2, 0.1);   // 가장자리 가는 촉수
-    for (let i = 0; i < 3; i++) addStrand(0.016, 0.19, (i / 3) * Math.PI * 2 + 0.5, 0.03);             // 중심 구강완 리본
-    const tm = new THREE.Mesh(mergeGeometries(tents, false), jellyTentMats[color]);
-    grp.add(tm);
-    grp.userData.bell = bell;
+    for (let i = 0; i < 10; i++) {   // 가장자리 가는 촉수
+        const a = (i / 10) * Math.PI * 2 + ph * 0.3;
+        const len = 0.22 + fcHash(i + ph * 7) * 0.26;
+        const curl = (fcHash(i + 31) - 0.5) * 1.6, wob = 2.6 + fcHash(i + 57) * 2.4;
+        // ⚠️ 뻗기만 하면 **고드름/창**이 된다(실측). 길이를 따라 좌우로 흔들리게 해야 물속의 실로 읽힌다.
+        tents.push(swayAttr(fcTubeGeo({
+            R: 0.0062, L: 1, ns: 16, np: 6,
+            path: (t) => {
+                const out = 0.112 + 0.034 * t + curl * 0.055 * t * t;
+                const wig = Math.sin(t * wob + i) * 0.022 * t;
+                return { x: Math.cos(a) * out - Math.sin(a) * wig, y: -len * t, z: Math.sin(a) * out + Math.cos(a) * wig };
+            },
+            rad: (t) => (1 - 0.95 * Math.pow(t, 0.85)) * Math.min(1, (1 - t) / 0.06),
+        }), 1.0, a * 2.7 + ph));
+    }
+    // 구강완 — ⚠️ 굵기만 다른 같은 막대라 촉수와 구분이 안 됐다. **주름진 넓은 리본**으로(미역 잎 문법).
+    for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + 0.6 + ph * 0.2;
+        const NT2 = 12, NW = 5, pos = [], uv2 = [], idx = [];
+        for (let k = 0; k <= NT2; k++) {
+            const t = k / NT2, len = 0.155;
+            const hw = 0.034 * Math.sin(Math.PI * Math.pow(t, 0.50)) * (1 - 0.60 * t);
+            const swirl = Math.sin(t * 3.4 + i) * 0.020 * t;   // 안팎으로 말린다
+            const rad2 = 0.024 + 0.030 * t;
+            const cx = Math.cos(a) * rad2 - Math.sin(a) * swirl, cz = Math.sin(a) * rad2 + Math.cos(a) * swirl;
+            for (let w2 = 0; w2 <= NW; w2++) {
+                const u = (w2 / NW) * 2 - 1;
+                const frill = 0.024 * Math.sin(t * 11 + u * 3.2) * Math.abs(u);   // 주름 — 얕으면 그냥 판이다
+                pos.push(cx - Math.sin(a) * u * hw, -len * t + frill, cz + Math.cos(a) * u * hw);
+                uv2.push((u + 1) * 0.5, t);   // ⚠️ 속성 집합을 fcTubeGeo와 맞춰야 병합된다
+            }
+        }
+        for (let k = 0; k < NT2; k++) for (let w2 = 0; w2 < NW; w2++) {
+            const q = k * (NW + 1) + w2, w3 = q + NW + 1;
+            idx.push(q, q + 1, w3, w3, q + 1, w3 + 1);
+        }
+        const og = new THREE.BufferGeometry();
+        og.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        og.setAttribute('uv', new THREE.Float32BufferAttribute(uv2, 2));
+        og.setIndex(idx); og.computeVertexNormals();
+        tents.push(swayAttr(og, 0.6, a * 2.7 + ph));
+    }
+    grp.add(new THREE.Mesh(mergeGeometries(tents, false), jellyTentMats[color]));
     return grp;
 }
 function kelpBladeGeo(bx, bz, by, h, lean, phase) {   // 잎 하나 — aBend/aPh 어트리뷰트 포함 (seaKelpMat 전용)
@@ -22162,14 +22264,15 @@ function loadSeaChunk(key, cx, cz) {
     if (info.jelly && islandOf(info.jx, info.jz) < 0 && seabedHeight(info.jx, info.jz) < -2.2) {   // 🪼 해파리 무리 — 물고기 떼보다 레어 (6%/청크·깊은 물만)
         const jr = seededRand(info.seed + 1201);
         for (let i = 0; i < info.jn; i++) {
-            const grp = makeJelly(info.jc);
+            const jph = jr() * Math.PI * 2;
+            const grp = makeJelly(info.jc, jph);
             const jx2 = info.jx + (jr() - 0.5) * 2.2, jz2 = info.jz + (jr() - 0.5) * 2.2;
             const sb = seabedHeight(jx2, jz2);
             const jy = THREE.MathUtils.clamp(sb + 1.4 + jr() * 1.2, sb + 1.0, waveYAt(jx2, jz2) - 1.0);
             grp.position.set(jx2, jy, jz2);
             grp.rotation.y = jr() * Math.PI * 2;
             group.add(grp);
-            jellies.push({ grp, x: jx2, z: jz2, y: jy, vy: 0, ph: jr() * Math.PI * 2, drift: jr() * Math.PI * 2 });
+            jellies.push({ grp, x: jx2, z: jz2, y: jy, vy: 0, ph: jph, drift: jr() * Math.PI * 2 });
         }
     }
     stage.add(group);
@@ -22217,8 +22320,7 @@ function updateSeaFloor(delta) {
         for (const j of e.jellies) {
             const cyc = (wxTime.value * 0.85 + j.ph) % (Math.PI * 2);
             const pulse = Math.pow(Math.max(0, Math.sin(cyc)), 1.7);   // 반주기 수축·반주기 휴지
-            const bell = j.grp.userData.bell;
-            bell.scale.set(1 - pulse * 0.2, 1 + pulse * 0.28, 1 - pulse * 0.2);
+            // 벨 변형은 정점 셰이더 몫(jellyPulseMat) — CPU는 부력만 같은 공식으로 잇는다
             j.vy += pulse * 0.55 * delta;                 // 수축 = 위로 분사
             j.vy = (j.vy - 0.055 * delta) * Math.pow(0.25, delta);   // 중력 + 물 저항
             j.y += j.vy * delta;
