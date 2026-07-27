@@ -98,7 +98,7 @@ async function fetchVRMConfig() {
             name: 'default',
             enabledExpressions: false,
             enabledMotions: false,
-            selectedModelId: 'alice', // Select the Alice model by default
+            selectedModelId: 'chick', // 기본 펫: 병아리 (앨리스·밥 제거됨)
             defaultModels: [], // Store the default models
             userModels: [],     // Store user-uploaded models
             defaultMotions: [], // Store the default motions
@@ -180,7 +180,7 @@ async function getVRMpath() {
             return userModelURL.toString();
         }
         else {
-            return `${window.location.protocol}//${window.location.host}/vrm/Alice.vrm`;
+            return `${window.location.protocol}//${window.location.host}/vrm/Chick.glb`;
         }
     }
 }
@@ -197,7 +197,7 @@ async function getVRMname() {
             return userModel.name;
         }
         else {
-            return 'Alice';
+            return 'Chick';
         }
     }
 }
@@ -443,6 +443,7 @@ scene.add( ambientLight );
 // gltf and vrm
 let currentVrm = undefined;
 let glbPet = null;                          // Non-VRM .glb "pet" model (no humanoid rig / morphs)
+let currentGlbUrl = null;                   // 현재 로드된 .glb 펫 URL — 캐릭터 전환 시 갱신(채팅 라우팅용; vrmPath const는 초기값이라 stale)
 let currentVrmWrapper = new THREE.Group(); // New: a group used to wrap the VRM
 scene.add(currentVrmWrapper);              // New: add it to the scene from the start
 const loader = new GLTFLoader();
@@ -1777,6 +1778,7 @@ async function loadGlbPet(url) {
     // Clear any existing VRM/GLB so only one pet is active
     if (currentVrm) { try { currentVrmWrapper.remove(currentVrm.scene); } catch (e) {} currentVrm = undefined; }
     disposeGlbPet();
+    currentGlbUrl = url;   // 전환 후에도 현재 펫(병아리/강아지)을 정확히 알 수 있게
 
     // On-screen size scales with the window's pixel height (fixed camera FOV), so the same model
     // looks bigger in a taller window. Normalize against a reference height so the main pet and a
@@ -2971,10 +2973,11 @@ function setupTextInteraction() {
         // 데스크톱 GLB 펫(병아리/강아지)은 월드의 그 펫 두뇌(world_chat)로 직접 답한다 — TTS·메인앱
         // 중계 없이 자기 성격·기억으로 답하고 말풍선에 띄운다. 월드 장면이 없으니 '데스크톱 컨텍스트'를 준다.
         // (기억은 월드와 공유: pet 키가 곧 스토어 키. 나중에 분리하려면 이 키만 갈면 됨.)
-        const isGlbPet = !!glbPet && /chick|puppy/i.test(vrmPath);
+        const petUrl = currentGlbUrl || vrmPath;   // 캐릭터 전환 반영(메인이 강아지일 수도 있음)
+        const isGlbPet = !!glbPet && /chick|puppy/i.test(petUrl);
         if (isGlbPet) {
             textInputField.value = '';
-            const petName = /puppy/i.test(vrmPath) ? 'puppy' : 'chick';
+            const petName = /puppy/i.test(petUrl) ? 'puppy' : 'chick';
             const n = new Date();
             const hhmm = `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`;
             const deskCtx = `너는 지금 월드가 아니라 사용자의 데스크톱 화면 한켠에 있는 작은 동반자다. 현재 시각 ${hhmm}. 월드 활동(낚시·수영·요리 등)이나 행동 태그(<...>)는 지금 쓸 수 없다. 한두 문장으로 짧고 다정하게 답해라.`;

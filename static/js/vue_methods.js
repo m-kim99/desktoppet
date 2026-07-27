@@ -11482,7 +11482,7 @@ stopTTSActivities() {
       name: '',
       windowWidth: 540,
       windowHeight: 960,
-      selectedModelId: 'alice', // Select the Alice model by default
+      selectedModelId: 'chick', // 기본 펫: 병아리 (앨리스·밥 제거됨)
       selectedMotionIds: [],
     };
     this.showAddAppearanceDialog = true;

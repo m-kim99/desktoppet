@@ -5,6 +5,16 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Changed (🐥🐕 데스크톱 펫: 전환 대응 채팅 라우팅 + 인간형 모델 제거)
+- 캐릭터 전환(switchToModel)은 창을 리로드 안 해 초기 vrmPath(const)가 stale — 메인이 강아지여도
+  채팅이 병아리로 갈 수 있었다. loadGlbPet에서 currentGlbUrl을 추적하고 채팅 라우팅이 그걸 쓰게 수정
+  (전환 후에도 현재 펫으로 정확히 world_chat 연결).
+- 기본 인간형 VRM 모델 **Alice·Bob 제거**: vrm/Alice.vrm·vrm/Bob.vrm 파일 삭제(캐릭터 스위처는
+  디렉터리 글롭이라 자동으로 목록에서 사라짐 → 병아리·강아지만 남음). 'alice' 기본값·폴백을 'chick'으로
+  교체(vrm.js·vue_data·vue_methods·settings_template) — 삭제된 모델을 참조하는 잔재 제거.
+- 검증: get_default_vrm_models → ['chick','puppy']만, Alice/Bob 파일 삭제 확인.
+
+
 ### Added (💬 소환한 친구 펫에도 채팅 버튼)
 - '친구 소환'으로 띄운 강아지(friend 창)엔 채팅 입력 버튼이 없었다(컨트롤 패널이 메인 창 전용).
   친구 창 우상단 버튼 스택(닫기·모션)에 ⌨️ 채팅 버튼 추가 + setupTextInteraction()로 자기 입력창 배선.

@@ -935,7 +935,7 @@ let vue_data = {
       name: 'default',
       enabledExpressions: false,
       enabledMotions: false,
-      selectedModelId: 'alice', // Select the Alice model by default
+      selectedModelId: 'chick', // 기본 펫: 병아리 (앨리스·밥 제거됨)
       windowWidth: 540,
       windowHeight: 960,
       defaultModels: [], // Store the default models
@@ -943,7 +943,7 @@ let vue_data = {
       defaultMotions: [], // Store the default motions
       userMotions: [],     // Store user-uploaded motions
       selectedMotionIds: [],
-      selectedNewModelId: 'alice',
+      selectedNewModelId: 'chick',
       selectedNewMotionIds: [],
       newVRM:{},
       gaussDefaultScenes: [],   // GAUSS
@@ -974,7 +974,7 @@ let vue_data = {
       name: '',
       windowWidth: 540,
       windowHeight: 960,
-      selectedModelId: 'alice', // Select the Alice model by default
+      selectedModelId: 'chick', // 기본 펫: 병아리 (앨리스·밥 제거됨)
       selectedMotionIds: [],
     },
     showAddAppearanceDialog: false,
