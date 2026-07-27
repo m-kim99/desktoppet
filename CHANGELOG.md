@@ -5,6 +5,14 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Added (💬 소환한 친구 펫에도 채팅 버튼)
+- '친구 소환'으로 띄운 강아지(friend 창)엔 채팅 입력 버튼이 없었다(컨트롤 패널이 메인 창 전용).
+  친구 창 우상단 버튼 스택(닫기·모션)에 ⌨️ 채팅 버튼 추가 + setupTextInteraction()로 자기 입력창 배선.
+  입력은 그 창의 펫(강아지)으로 world_chat 직결 → 강아지 성격·공유 기억으로 답하고 말풍선에 표시.
+  (모션 메뉴 위치 72→104px로 비켜줌. hover 표시·마우스 통과 처리 메인 창과 동일.)
+- 검증: 친구=puppy 경로가 world_chat에 pet=puppy로 붙어 강아지 응답('Mini, 안녕!…')·공유 스토어(puppy.json) 기록 확인.
+
+
 ### Fixed (💬 데스크톱 펫 말풍선이 얼굴을 가리던 위치)
 - 자막/말풍선(subtitle-container)이 창 정중앙(top:50%)에 떠 펫 얼굴을 가렸다 → top:10%(상단, 머리 위)로 올림.
   (드래그로 이동 가능은 그대로.)

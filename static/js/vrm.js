@@ -4383,7 +4383,7 @@ if (windowName === 'default') {
     `;
     const fMenu = document.createElement('div');
     fMenu.style.cssText = `
-        position: fixed; top: 72px; right: 8px; display: none; flex-direction: column; gap: 4px;
+        position: fixed; top: 104px; right: 8px; display: none; flex-direction: column; gap: 4px;
         padding: 6px; min-width: 110px; max-height: 104px; overflow-y: auto; background: rgba(255,255,255,0.97);
         border: 1px solid rgba(0,0,0,0.1); border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,0.2);
         z-index: 1000000; user-select: none;
@@ -4432,15 +4432,50 @@ if (windowName === 'default') {
     document.body.appendChild(fMenu);
     document.addEventListener('pointerdown', (e) => { if (fMenuOpen && !fMotion.contains(e.target) && !fMenu.contains(e.target)) fCloseMenu(); });
 
-    // Reveal the motion + close buttons only while the mouse is over the friend; hide after a short
-    // idle (but keep them up while the motion menu is open).
+    // --- chat button: talk to THIS friend (its own text input; sendTextInputMessage routes to
+    // world_chat with this window's pet = 강아지). 메인 펫과 대칭이 되도록 친구도 채팅 버튼을 가진다.
+    const fChat = document.createElement('div');
+    fChat.innerHTML = '<i class="fas fa-keyboard"></i>';
+    fChat.style.cssText = `
+        position: fixed; top: 72px; right: 8px; width: 26px; height: 26px;
+        border-radius: 50%; background: rgba(255,255,255,0.92); border: 1px solid rgba(0,0,0,0.1);
+        color: #333; display: flex; align-items: center; justify-content: center; cursor: pointer;
+        font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 999999; user-select: none;
+        opacity: 0; pointer-events: none; transition: opacity 0.2s;
+    `;
+    try { t('EnableTextInput').then(v => { if (v) fChat.title = v; }).catch(() => {}); } catch (e) {}
+    setupTextInteraction();   // 친구 창 전용 입력창 생성 (+ sendTextInputMessage = world_chat 직결, pet=이 창 모델)
+    const fInput = document.getElementById('text-input-container');
+    const fField = document.getElementById('text-input-field');
+    let fChatOpen = false;
+    const setFriendChat = (open) => {
+        fChatOpen = open;
+        if (!fInput) return;
+        fInput.style.opacity = open ? '1' : '0';
+        fInput.style.pointerEvents = open ? 'auto' : 'none';
+        fInput.style.transform = open ? 'translateX(-50%) translateY(0)' : 'translateX(-50%) translateY(20px)';
+        if (open && fField) setTimeout(() => { try { fField.focus(); } catch (e) {} }, 50);
+    };
+    // 마우스 통과 잠금 상태에서도 입력창을 쓸 수 있게 (메인 창과 동일 처리)
+    if (fInput && fField) {
+        fInput.addEventListener('mouseenter', () => { if (isMouseLocked && window.electronAPI) window.electronAPI.setIgnoreMouseEvents(false); });
+        fInput.addEventListener('mouseleave', () => { if (isMouseLocked && window.electronAPI && document.activeElement !== fField) window.electronAPI.setIgnoreMouseEvents(true, { forward: true }); });
+        fField.addEventListener('focus', () => { if (isMouseLocked && window.electronAPI) window.electronAPI.setIgnoreMouseEvents(false); });
+        fField.addEventListener('blur', () => { if (isMouseLocked && window.electronAPI && !fInput.matches(':hover')) window.electronAPI.setIgnoreMouseEvents(true, { forward: true }); });
+    }
+    fChat.addEventListener('pointerdown', (e) => e.stopPropagation());
+    fChat.addEventListener('click', (e) => { e.stopPropagation(); setFriendChat(!fChatOpen); });
+    document.body.appendChild(fChat);
+
+    // Reveal the chat + motion + close buttons only while the mouse is over the friend; hide after a
+    // short idle (but keep them up while the motion menu or the chat input is open).
     let _fHideTimer = null;
     const _revealFriendUI = () => {
-        for (const el of [fClose, fMotion]) { el.style.opacity = '1'; el.style.pointerEvents = 'auto'; }
+        for (const el of [fClose, fMotion, fChat]) { el.style.opacity = '1'; el.style.pointerEvents = 'auto'; }
         if (_fHideTimer) clearTimeout(_fHideTimer);
         _fHideTimer = setTimeout(() => {
-            if (fMenuOpen) return;
-            for (const el of [fClose, fMotion]) { el.style.opacity = '0'; el.style.pointerEvents = 'none'; }
+            if (fMenuOpen || fChatOpen) return;
+            for (const el of [fClose, fMotion, fChat]) { el.style.opacity = '0'; el.style.pointerEvents = 'none'; }
         }, 2000);
     };
     window.addEventListener('mousemove', _revealFriendUI);
