@@ -290,6 +290,8 @@ const light = new THREE.DirectionalLight( 0xffffff, 1.4 );  // key light (was 2.
 light.position.set( 1, 2.5, 2 ).normalize();   // broad top-front key light; y nudged slightly down (was 3) to lift the under-eye/mouth shadow
 light.castShadow = true;                       // Key
 light.shadow.mapSize.set( 2048, 2048 );        // Precision
+light.shadow.radius = 8;                        // PCFSoft 블러 — 월드처럼 경계 흐린 은은한 그림자(얼굴 자기그림자 완화)
+light.shadow.bias  = -0.0003;                   // 소프트 섀도 섀도우 액네 방지
 
 // Make the shadow camera cover the area near the character (tune to your scene size)
 const camSize = 4;
@@ -435,7 +437,7 @@ const lookAtTarget = new THREE.Object3D();
 camera.add( lookAtTarget );
 
 // Add ambient light to soften the overall look
-const ambientLight = new THREE.AmbientLight( 0xffffff, 0.55 );  // raised from 0.1 to soften contrast (fill light)
+const ambientLight = new THREE.AmbientLight( 0xffffff, 0.7 );  // 채움광 — 그림자를 옅고 은은하게(0.55→0.7, 월드 hemi 톤에 맞춤)
 scene.add( ambientLight );
 
 // gltf and vrm
