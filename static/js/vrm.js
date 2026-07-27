@@ -2061,7 +2061,7 @@ function initSubtitleElement() {
     subtitleElement.id = 'subtitle-container';
     subtitleElement.style.cssText = `
         position: fixed;
-        top: 50%;  
+        top: 10%;
         left: 50%;
         width: auto;
         max-width: 80%;

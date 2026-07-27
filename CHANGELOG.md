@@ -5,6 +5,11 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Fixed (💬 데스크톱 펫 말풍선이 얼굴을 가리던 위치)
+- 자막/말풍선(subtitle-container)이 창 정중앙(top:50%)에 떠 펫 얼굴을 가렸다 → top:10%(상단, 머리 위)로 올림.
+  (드래그로 이동 가능은 그대로.)
+
+
 ### Fixed (💬 데스크톱 펫 채팅이 말풍선에 답을 못 띄우던 문제)
 - 원인: 데탑 펫 채팅은 입력을 /ws로 메인앱에 넘겨 답을 생성한 뒤, 그 답이 펫에 오는 경로가 오직
   TTS 자막 중계(/ws/tts→/ws/vrm, ttsSettings.enabled 게이트)뿐이었다. TTS가 꺼져 있어 답이 펫까지 안 옴.
