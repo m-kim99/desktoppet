@@ -10289,10 +10289,33 @@ function possessByName(name) {
     if (buildMode) setBuildMode(false);                // 공사 중이면 저장하고 나와서 조종
     possessPet(p);
 }
+// 👀 관전 모드: 조종과 달리 ai.state를 안 건드려 펫의 자율행동이 그대로 이어진다. 카메라만 따라감.
+// 누를 때마다: (없음)→펫1→펫2→…→해제 로 순환. possessed와 상호배타(조종 중 누르면 조종 해제).
+function startSpectate(p) {
+    if (possessed) releasePossession();   // 조종과 동시 불가 — 조종을 놓고 관전으로
+    spectating = p;
+    controlHint.textContent = `👀 ${p.name === 'chick' ? '병아리' : '강아지'} 시점 — 자율행동 그대로 (👀 다시 눌러 전환/해제)`;
+    controlHint.style.display = 'block';
+}
+function stopSpectate() {
+    spectating = null;
+    if (!possessed) controlHint.style.display = 'none';
+}
+function spectateNext() {
+    if (buildMode) setBuildMode(false);
+    const order = pets;   // [chick, puppy]
+    // 현재 위치: 조종 중이거나 관전 안 하면 -1(다음=첫 펫), 관전 중이면 그 인덱스
+    const cur = (possessed || !spectating) ? -1 : order.indexOf(spectating);
+    const next = cur + 1;
+    if (next >= order.length) stopSpectate();   // 마지막 다음 = 해제
+    else startSpectate(order[next]);
+}
 const chickBtn = dockBtn('🐥', '병아리 조종하기 — 다시 누르면 해제');
 chickBtn.onclick = () => possessByName('chick');
 const puppyBtn = dockBtn('🐕', '강아지 조종하기 — 다시 누르면 해제');
 puppyBtn.onclick = () => possessByName('puppy');
+const spectateBtn = dockBtn('👀', '펫 시점 따라가기 — 누를 때마다 다른 펫으로 전환 (조종과 달리 자율행동은 그대로)');
+spectateBtn.onclick = () => spectateNext();
 const fishBtn = dockBtn('🎣', '낚싯대 들기/정리 — 물을 클릭해 캐스팅, 찌가 푹 잠기면 ⌘/Space 챔질');
 fishBtn.onclick = () => equipFishing();
 const diveBtn = dockBtn('🤿', '잠수 — 물속 세계로 (바다에서 헤엄칠 때)');
@@ -14058,6 +14081,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 // Esc / the menu releases it. The jump lives on the mover's Y, so the shared motions' bob stacks
 // cleanly on top; ground height always comes from the world interface.
 let possessed = null;
+let spectating = null;   // 👀 관전 모드: 카메라만 이 펫을 따라가고 ai.state는 안 건드린다(자율행동 유지). possessed와 상호배타.
 const heldKeys = new Set();
 let jumpVy = 0;
 let airborne = false;
@@ -14186,6 +14210,7 @@ function possessPet(p) {
         done();
     }
     releasePossession();
+    spectating = null;                                            // 👀 관전 중이었으면 해제 — 조종이 이어받는다
     possessed = p;
     scriptGen++;                                                  // cancel any running action script
     logWorldEvent(`주인이 ${petKo(p)}를 직접 조종하기 시작했다`);
@@ -14266,6 +14291,7 @@ function doJump() {
 }
 function escapeAction() {
     if (teleView) { endTeleView(); return; }   // 🔭 보는 중 Esc = 그만보기만
+    if (spectating) stopSpectate();             // 👀 관전 중 Esc = 관전 해제
     releasePossession();
     hideMenu();
     radioPanel.style.display = 'none';
@@ -15098,8 +15124,8 @@ function updateSelectRing() {
 const _followDelta = new THREE.Vector3();
 function updateFollowCam(delta) {
     if (teleView) return;   // 🔭 카메라는 망원경 소유
-    if (!possessed) return;
-    const p = possessed;
+    const p = possessed || spectating;   // 👀 조종 중이면 그 펫, 아니면 관전 대상
+    if (!p) return;
     _followDelta.set(
         p.mover.position.x,
         p.mover.position.y + p.height * 0.55,
