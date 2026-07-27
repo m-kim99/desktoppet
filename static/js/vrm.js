@@ -2964,17 +2964,48 @@ function setupTextInteraction() {
     textInputContainer.appendChild(textSendBtn);
     document.body.appendChild(textInputContainer);
 
-    function sendTextInputMessage() {
+    let textReplyHideTimer = null;
+    async function sendTextInputMessage() {
         const text = textInputField.value.trim();
         if (!text) return;
+        // 데스크톱 GLB 펫(병아리/강아지)은 월드의 그 펫 두뇌(world_chat)로 직접 답한다 — TTS·메인앱
+        // 중계 없이 자기 성격·기억으로 답하고 말풍선에 띄운다. 월드 장면이 없으니 '데스크톱 컨텍스트'를 준다.
+        // (기억은 월드와 공유: pet 키가 곧 스토어 키. 나중에 분리하려면 이 키만 갈면 됨.)
+        const isGlbPet = !!glbPet && /chick|puppy/i.test(vrmPath);
+        if (isGlbPet) {
+            textInputField.value = '';
+            const petName = /puppy/i.test(vrmPath) ? 'puppy' : 'chick';
+            const n = new Date();
+            const hhmm = `${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`;
+            const deskCtx = `너는 지금 월드가 아니라 사용자의 데스크톱 화면 한켠에 있는 작은 동반자다. 현재 시각 ${hhmm}. 월드 활동(낚시·수영·요리 등)이나 행동 태그(<...>)는 지금 쓸 수 없다. 한두 문장으로 짧고 다정하게 답해라.`;
+            const showBubble = (msg) => {
+                if (!msg) return;
+                renderSubtitleUI(msg);
+                if (subtitleElement) subtitleElement.style.opacity = '1';
+                vrmLastSpeakTs = Date.now();   // 혼잣말(idle talk)이 바로 덮어쓰지 않게 활동으로 기록
+                clearTimeout(textReplyHideTimer);
+                textReplyHideTimer = setTimeout(() => { if (subtitleElement) subtitleElement.style.opacity = '0'; }, Math.min(14000, 4000 + msg.length * 90));
+            };
+            try {
+                const res = await fetch('/api/world_chat', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pet: petName, text, snapshot: deskCtx, events: '' }),
+                });
+                if (!res.ok) throw new Error(String(res.status));
+                const reply = String((await res.json()).reply || '').replace(/<[^>]+>/g, '').trim();   // 월드 행동 태그 제거 후 표시
+                showBubble(reply || '…');
+            } catch (e) {
+                showBubble('으엥, 대답이 안 나와… 메인 모델 설정을 확인해줘 💦');
+            }
+            return;
+        }
+        // (VRM 아바타 등) 기존 경로: 메인 앱 채팅 파이프라인에 위임
         if (pttMainWs && pttMainWs.readyState === WebSocket.OPEN) {
-            // 1. Send the user's input text
             pttMainWs.send(JSON.stringify({ type: "set_user_input", data: { text: text } }));
-            // 2. Delay slightly to ensure the main program registers it, then trigger the conversation-generation command
             setTimeout(() => {
                 pttMainWs.send(JSON.stringify({ type: "trigger_send_message", data: {} }));
             }, 300);
-            textInputField.value = ''; 
+            textInputField.value = '';
         } else {
             console.warn("WS 未连接，尝试重连...");
             initPttMainWs();
