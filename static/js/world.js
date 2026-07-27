@@ -3700,6 +3700,7 @@ function updateSandPlay(delta) {
             }
         }
         if (!p0.pet.action && Math.random() < delta / 5) p0.pet.action = { id: 'dig', t: 0 };
+        if (p0 !== possessed && !p0._sandUntil) p0._sandUntil = Date.now() + 40000 + Math.random() * 35000;   // 안전망: 조종 안 하는데 타이머 없이 앉아 있으면(수동 착석 후 조종 해제 등) 스스로 일어나게
         if (p0._sandUntil && Date.now() > p0._sandUntil) { p0._sandUntil = 0; p0.bedExit = true; }
     } else if (sandShovel) {
         sandShovel.visible = false;
@@ -3717,6 +3718,7 @@ function updateSandPlay(delta) {
         }
         // 빙글 도는 happy는 앉은 채 보면 어색하다(사용자 피드백) — 삽 없이 같이 파는 dig 모션으로
         if (!p1.pet.action && Math.random() < delta / 5) p1.pet.action = { id: 'dig', t: 0 };
+        if (p1 !== possessed && !p1._sandUntil) p1._sandUntil = Date.now() + 40000 + Math.random() * 35000;   // 안전망 (p0과 동일)
         if (p1._sandUntil && Date.now() > p1._sandUntil) { p1._sandUntil = 0; p1.bedExit = true; }
     }
 }
@@ -3727,7 +3729,7 @@ function petSandPlay(player, auto = false) {   // auto = 여가 셀렉터 경로
     const p = player || pets.find((q) => q !== possessed && !q.pet.sleeping && !q.bed && !q.dip
         && (q.ai.state === 'idle' || q.ai.state === 'walk'));
     if (!free || !p || p.bed) { if (!player) showToast('🏰 지금은 모래놀이 자리가 없어요'); return false; }
-    p._sandUntil = (player && !auto) ? 0 : Date.now() + 90000 + Math.random() * 90000;   // 자율 모래놀이만 타이머로 일어난다
+    p._sandUntil = (player && !auto) ? 0 : Date.now() + 40000 + Math.random() * 35000;   // 자율 모래놀이만 타이머로 일어난다 (40~75초 — 다른 활동과 비슷하게, 한 펫이 독차지 안 하게)
     logWorldEvent(`${petKo(p)}가 모래성 곁에 앉아 모래놀이를 시작했다 🏖️`);
     mountBed(p, free);
     return true;
@@ -8101,7 +8103,7 @@ const LEISURE_ACTS = [
       fire: (p) => startAiTreat(p) === 'ok' },
     // 🏰 모래놀이 — 해변 sandspot 두 자리(삽질/토닥토닥), 1.5~3분 놀다 스스로 일어난다.
     // 클릭=대리 지명만 있던 반자율의 승격 조 (petSandPlay에 자율 모드가 이미 있었다 — 데이터 1줄).
-    { id: 'sand', cdKey: 'nextSandAt', cd: [480000, 960000], weight: 10, dur: 135,
+    { id: 'sand', cdKey: 'nextSandAt', cd: [480000, 960000], weight: 10, dur: 57,
       gate: () => BEDS.some((b) => b.id.startsWith('sandspot') && !b.occupant),
       fire: (p) => petSandPlay(p, true) },
     // 🚣 나룻배 뱃놀이 — 열린 바다 웨이포인트 한 바퀴 (탈것 4형제 완성 조).
