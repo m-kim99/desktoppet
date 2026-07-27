@@ -10065,7 +10065,7 @@ ecoBtn.addEventListener('dblclick', () => {
     statsOn = !statsOn;
     statsEl.style.display = statsOn ? 'block' : 'none';
 });
-// 💬 대화 기록 패널: 이 세션의 월드 대화 로그 + 펫별 서버 기억 초기화. 독 왼쪽에 뜬다.
+// 💬 대화 기록 패널: 월드 대화 로그 + 데이터 백업/복원. 채팅바 ▲로 위로 펼친다.
 const chatLogPanel = document.createElement('div');
 chatLogPanel.style.cssText = 'position:fixed; left:50%; transform:translateX(-50%); bottom:calc(64px + env(safe-area-inset-bottom, 0px)); display:none; z-index:94; width:min(480px, calc(100% - 32px)); max-height:min(50vh, 420px); background:rgba(30,32,40,0.93); border-radius:14px; box-shadow:0 8px 28px rgba(0,0,0,0.4); font-family:sans-serif; color:#fff; flex-direction:column; overflow:hidden;';   // 채팅바 바로 위에서 위로 펼친다(게임식 채팅창)
 const chatLogHead = document.createElement('div');
@@ -10074,37 +10074,6 @@ const chatLogTitle = document.createElement('span');
 chatLogTitle.textContent = '💬 월드 대화';
 chatLogTitle.style.cssText = 'flex:1;';
 chatLogHead.appendChild(chatLogTitle);
-// 기억 초기화 — 파괴적 동작이라 헤더의 탭처럼 보이던 자리에서 하단 구석으로 내렸다. OS의
-// confirm()은 렌더 루프까지 멈추는 차단 다이얼로그라(월드가 통째로 얼어붙음) 인페이지 2단
-// 확인으로 교체: 한 번 누르면 버튼이 빨갛게 "정말요?"로 바뀌고, 2.5초 안에 다시 누르면 실행.
-function memResetBtn(petId, label) {
-    const b = document.createElement('button');
-    b.title = `${label}의 대화 기억(서버 세션)을 완전히 초기화`;
-    b.style.cssText = 'border:none; border-radius:8px; color:#fff; font-size:11px; padding:4px 9px; cursor:pointer; white-space:nowrap;';
-    const idle = () => { b.textContent = label; b.style.background = 'rgba(255,255,255,0.1)'; delete b.dataset.arm; };
-    idle();
-    let armTimer = null;
-    b.onclick = async () => {
-        if (!b.dataset.arm) {
-            b.dataset.arm = '1';
-            b.textContent = '정말요? 다시 탭';
-            b.style.background = '#c0504d';
-            clearTimeout(armTimer);
-            armTimer = setTimeout(idle, 2500);
-            return;
-        }
-        clearTimeout(armTimer);
-        idle();
-        try {
-            const res = await fetch('/api/world_chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pet: petId, reset: true }) });
-            if (!res.ok) throw new Error(String(res.status));
-            if (responder && responder.name === petId) responder = null;   // 이름 생략 시 이어받던 연속성도 리셋
-            pushChatLog('system', `— 🧹 ${label}의 기억이 초기화됐어요 —`);
-            showToast(`🧹 ${label}의 기억을 비웠어요`);
-        } catch (e) { showToast('초기화 실패 — 백엔드 연결을 확인해줘'); }
-    };
-    return b;
-}
 chatLogPanel.appendChild(chatLogHead);
 const chatLogBody = document.createElement('div');
 chatLogBody.style.cssText = 'overflow-y:auto; min-height:0; padding:8px 10px; display:flex; flex-direction:column; gap:6px; font-size:12px; line-height:1.45; flex:1;';   // min-height:0 = flex 컬럼 안에서 실제로 스크롤되게(작은 창에서도)
@@ -10112,11 +10081,9 @@ chatLogPanel.appendChild(chatLogBody);
 const chatLogFoot = document.createElement('div');
 chatLogFoot.style.cssText = 'display:flex; align-items:center; gap:6px; padding:7px 10px; font-size:11px; color:#99a; background:rgba(255,255,255,0.04);';
 const chatLogFootLabel = document.createElement('span');
-chatLogFootLabel.textContent = '🧹 기억 초기화:';
+chatLogFootLabel.textContent = '데이터 백업 · 복원';
 chatLogFootLabel.style.cssText = 'flex:1;';
 chatLogFoot.appendChild(chatLogFootLabel);
-chatLogFoot.appendChild(memResetBtn('chick', '병아리'));
-chatLogFoot.appendChild(memResetBtn('puppy', '강아지'));
 // 💾 백업/복원 — 배치·소원·일기·기억을 zip 하나로 (맥 교체·재설치 대비)
 const bkBtn = document.createElement('button');
 bkBtn.textContent = '💾';

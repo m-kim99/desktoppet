@@ -5,6 +5,12 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Removed (🧹 채팅창 기억 초기화 버튼 제거)
+- 대화 기록 패널 하단의 '기억 초기화'(병아리·강아지) 버튼 2개 제거 + 이제 안 쓰이는 memResetBtn 함수 삭제.
+  백업/복원(💾·📥)은 그대로 유지, 푸터 라벨은 '데이터 백업 · 복원'으로 정리.
+  (서버 /api/world_chat reset 엔드포인트는 그대로 — UI만 제거.)
+
+
 ### Changed (🧠 계층형 메모리 — 원문 전체 보존 + 비파괴 요약)
 - 프롬프트 전송 창 16 → **30개**로 확대(WORLD_CHAT_SEND).
 - **비파괴 요약 복원**: 최근 창(30개)을 벗어난 오래된 턴만 요약(summary)에 '덧쌓되', **원문(history)은
