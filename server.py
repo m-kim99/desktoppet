@@ -11553,7 +11553,8 @@ async def world_client_log(request: Request):
 # which the world parses, strips from the bubble and executes. Personas + the action spec live
 # here so the world stays a thin client; the LLM is whatever main model the app is configured for.
 WORLD_CHAT_DIR = os.path.join(USER_DATA_DIR, "world_chat")
-WORLD_CHAT_SEND = 16          # 프롬프트로 보내는 최근 메시지 수(슬라이딩 윈도우). 파일엔 전부 보존
+WORLD_CHAT_SEND = 30          # 요약을 접은 뒤 원문으로 남겨두는 최근 메시지 수(프롬프트 원문 하한)
+WORLD_CHAT_KEEP = 48          # 미요약 원문이 이만큼 쌓이면 오래된 쪽을 요약에 '덧쌓는다' — 원문은 삭제 안 함
 
 WORLD_LORE = """[세계]
 너는 하늘에 떠 있는 작은 군도 '병아리동산'에 사는 펫이다. 본섬에는 중앙 광장, 복층 주택(1층 소파·2층 침대), 연못, 밥그릇, 커피 부스, 간식 부스, 라디오, 가로등, 빨간 스포츠카가 있고, 나무다리 건너 북동섬에 그네와 시소, 남서섬에 빈 풀밭이 있다. 섬 둘레는 바다라 절벽에서 다이빙해 수영할 수 있다.
@@ -11647,10 +11648,10 @@ def _world_chat_load(pet: str) -> dict:
         with open(_world_chat_file(pet), "r", encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, dict) and isinstance(data.get("history"), list):
-            return {"history": data["history"], "summary": str(data.get("summary", ""))}
+            return {"history": data["history"], "summary": str(data.get("summary", "")), "summary_upto": int(data.get("summary_upto", 0))}
     except Exception:
         pass
-    return {"history": [], "summary": ""}
+    return {"history": [], "summary": "", "summary_upto": 0}
 
 
 def _world_chat_save(pet: str, store: dict):
@@ -11673,8 +11674,44 @@ async def _world_chat_client_and_model():
     return wc_client, current_settings
 
 
-# (예전엔 여기서 오래된 턴을 요약으로 압축하고 잘라냈다 — 사용자 요청으로 전면 제거: 대화는 전부
-# 원문 그대로 보존한다. 프롬프트에는 최근 WORLD_CHAT_SEND개만 슬라이딩 윈도우로 나간다.)
+async def _world_chat_summarize(pet: str):
+    # 계층형 메모리(비파괴): 원문(history)은 절대 지우지 않고, 최근 창(WORLD_CHAT_SEND)을 벗어난
+    # 오래된 턴만 요약(summary)에 '덧쌓는다'. summary_upto = 요약이 커버하는 history 지점(그 앞은
+    # 요약으로, 그 뒤는 원문으로 프롬프트에 나간다). 이미 요약한 구간은 다시 요약하지 않는다(비용).
+    try:
+        store = _world_chat_load(pet)
+        upto = store.get("summary_upto", 0)
+        fold_end = len(store["history"]) - WORLD_CHAT_SEND   # 최근 SEND개는 원문으로 남긴다
+        chunk = store["history"][upto:fold_end]
+        if not chunk:
+            return
+        wc_client, current_settings = await _world_chat_client_and_model()
+        uname = _world_user_name(current_settings)
+        lines = []
+        if store["summary"]:
+            lines.append(f"(기존 요약) {store['summary']}")
+        for m in chunk:
+            who = uname if m.get("role") == "user" else "나"
+            lines.append(f"{who}: {m.get('content', '')}")
+        resp = await wc_client.chat.completions.create(
+            model=current_settings["model"],
+            messages=[
+                {"role": "system", "content": f"다음은 펫과 {uname}의 대화 기록(기존 요약 + 새 대화)이다. 펫이 나중에 기억해야 할 내용({uname}에 대해 알게 된 것, 약속, 별명, 자주 하는 놀이, 감정의 흐름)을 한국어 600자 이내로 요약하라. 요약문만 출력한다."},
+                {"role": "user", "content": "\n".join(lines)},
+            ],
+            temperature=0.3,
+            max_tokens=600,
+        )
+        summary = (resp.choices[0].message.content or "").strip()
+        if summary:
+            store = _world_chat_load(pet)          # reload — 그 사이 새 턴이 append됐을 수 있다(history는 append만 → 인덱스 안정)
+            if store.get("summary_upto", 0) != upto:   # 그 사이 다른 요약이 이미 진행됨 — 내 결과는 버려 중복/역행 방지
+                return
+            store["summary"] = summary[:1000]      # 요약은 덧쌓기(원문은 그대로), 지표만 전진
+            store["summary_upto"] = fold_end
+            _world_chat_save(pet, store)
+    except Exception as e:
+        print(f"[world_chat] summarize failed: {e}")
 
 
 @app.post("/api/world_chat")
@@ -11717,7 +11754,8 @@ async def world_chat(request: Request):
         messages = [{"role": "system", "content": system_prompt}]
         if store["summary"]:
             messages.append({"role": "system", "content": f"[지난 대화에서 기억하는 것]\n{store['summary']}"})
-        messages.extend({"role": m["role"], "content": m.get("content", "")} for m in store["history"][-WORLD_CHAT_SEND:])   # t(타임스탬프) 등 부가 키는 빼고 role/content만 LLM에 보낸다
+        vstart = max(store.get("summary_upto", 0), len(store["history"]) - WORLD_CHAT_KEEP)   # 요약이 커버 못 하는 원문부터(요약 지연·실패 시 최근 KEEP개로 상한)
+        messages.extend({"role": m["role"], "content": m.get("content", "")} for m in store["history"][vstart:])   # t(타임스탬프) 등 부가 키는 빼고 role/content만 LLM에 보낸다
         situation = f"[현재 상황]\n{snapshot}" if snapshot else "[현재 상황]\n(정보 없음)"
         if events:
             situation += f"\n\n[최근 월드에서 있었던 일]\n{events}"
@@ -11738,9 +11776,11 @@ async def world_chat(request: Request):
     ts = datetime.now().isoformat(timespec="seconds")   # 날짜/시각 기록 — 사용자가 대화 기록을 날짜로 훑을 수 있게
     store["history"].append({"role": "user", "content": text, "t": ts})
     store["history"].append({"role": "assistant", "content": reply, "t": ts})
-    # 전체 보존: 예전 대화를 자르거나 요약(압축)하지 않는다. 프롬프트엔 최근 WORLD_CHAT_SEND개만
-    # 슬라이딩 윈도우로 보내고(위 messages.extend), 파일에는 모든 턴이 타임스탬프와 함께 그대로 쌓인다.
+    # 전체 보존: 원문은 절대 안 자른다. 최근 창을 벗어난 오래된 턴만 요약에 '덧쌓아'(비파괴) 장기
+    # 기억으로 쓰고, 파일엔 모든 턴이 타임스탬프와 함께 그대로 남는다.
     _world_chat_save(pet, store)
+    if len(store["history"]) - store.get("summary_upto", 0) > WORLD_CHAT_KEEP:
+        asyncio.create_task(_world_chat_summarize(pet))
     return {"reply": reply}
 
 
