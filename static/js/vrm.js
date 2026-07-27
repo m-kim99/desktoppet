@@ -1782,11 +1782,11 @@ async function loadGlbPet(url) {
     const baseTargetH = 0.455;     // look at the reference height
     const REF_WIN_H = 726;         // friend window height — match everyone to this on-screen size
     const winH = window.innerHeight || REF_WIN_H;
-    // 데탑 펫도 월드(world.js PETS)와 같은 병아리:강아지 비율(0.4:0.5)로 맞춘다. 두 높이의 평균으로
-    // 정규화해 데탑 전체 크기감은 유지하고 둘 사이 비율만 월드와 동일하게(병아리 ↓·강아지 ↑). ※ world.js PETS height와 동기 필요.
+    // 데탑 펫도 월드(world.js PETS)와 같은 병아리:강아지 비율(0.4:0.5)로 맞춘다. 강아지를 기준(원래
+    // 크기 baseTargetH)으로 두고 병아리만 그만큼 줄인다 → 강아지 ×1.0(원래대로), 병아리 ×0.8. ※ world.js PETS height와 동기 필요.
     const WORLD_H = { chick: 0.4, puppy: 0.5 };
-    const avgH = (WORLD_H.chick + WORLD_H.puppy) / 2;
-    const ratio = /chick/i.test(url) ? WORLD_H.chick / avgH : /puppy/i.test(url) ? WORLD_H.puppy / avgH : 1;
+    const refH = WORLD_H.puppy;   // 강아지 기준 정규화
+    const ratio = /chick/i.test(url) ? WORLD_H.chick / refH : /puppy/i.test(url) ? WORLD_H.puppy / refH : 1;
     const pet = await createGlbPetEntity(url, { targetHeight: baseTargetH * ratio * REF_WIN_H / winH, parent: currentVrmWrapper });
 
     // "💤" overlay shown above the head while sleeping (a floating CSS animation, hidden otherwise).
