@@ -10125,7 +10125,9 @@ chatLogFoot.appendChild(rsBtn);
 chatLogPanel.appendChild(chatLogFoot);
 document.body.appendChild(chatLogPanel);
 chatLogPanel.addEventListener('pointerdown', (e) => e.stopPropagation());
-function pushChatLog(who, text) {
+const CHAT_LOG_KEY = 'world_chat_log';   // 화면 스크롤백 저장(앱 재실행해도 이어 보이게) — 펫의 '기억'은 서버 세션이 따로 유지
+const CHAT_LOG_CAP = 60;
+function renderChatRow(who, text) {   // DOM 한 줄 그리기 (저장은 안 함 — 복원·신규 공용)
     const row = document.createElement('div');
     if (who === 'system') {   // 구분선 느낌의 시스템 안내 (기억 초기화 등)
         row.style.cssText = 'align-self:center; color:#99a; font-size:11px; padding:2px 0; text-align:center;';
@@ -10138,19 +10140,30 @@ function pushChatLog(who, text) {
     row.style.cssText = `max-width:92%; padding:6px 9px; border-radius:10px; white-space:pre-wrap; word-break:break-word; align-self:${mine ? 'flex-end' : 'flex-start'}; background:${mine ? '#5b8def' : 'rgba(255,255,255,0.1)'};`;
     row.textContent = mine ? text : `${who}: ${text}`;
     chatLogBody.appendChild(row);
-    while (chatLogBody.children.length > 60) chatLogBody.removeChild(chatLogBody.firstChild);
+    while (chatLogBody.children.length > CHAT_LOG_CAP) chatLogBody.removeChild(chatLogBody.firstChild);
     chatLogBody.scrollTop = chatLogBody.scrollHeight;
 }
-function setChatLog(open) {   // ▲ 채팅바 토글과 💬 독 버튼이 함께 쓰는 단일 진입점 — 삼각형 방향도 여기서 동기
+function pushChatLog(who, text) {
+    renderChatRow(who, text);
+    if (who === 'system') return;   // 시스템 안내는 저장 안 함(재실행 때 스테일)
+    try {
+        const arr = JSON.parse(localStorage.getItem(CHAT_LOG_KEY) || '[]');
+        arr.push({ who, text });
+        while (arr.length > CHAT_LOG_CAP) arr.shift();
+        localStorage.setItem(CHAT_LOG_KEY, JSON.stringify(arr));
+    } catch (e) {}
+}
+try {   // 재실행 후 이전 화면 로그 복원
+    const arr = JSON.parse(localStorage.getItem(CHAT_LOG_KEY) || '[]');
+    for (const m of arr) renderChatRow(m.who, m.text);
+} catch (e) {}
+function setChatLog(open) {   // ▲ 채팅바 토글의 단일 진입점 — 삼각형 방향도 여기서 동기
     chatLogPanel.style.display = open ? 'flex' : 'none';
     chatToggle.textContent = open ? '▼' : '▲';
     chatToggle.title = open ? '대화 기록 접기' : '대화 기록 펼치기';
     if (open) chatLogBody.scrollTop = chatLogBody.scrollHeight;
 }
 function toggleChatLog() { setChatLog(chatLogPanel.style.display === 'none'); }
-const logBtn = dockBtn('💬', '월드 대화 기록 · 기억 초기화');
-logBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
-logBtn.addEventListener('click', () => toggleChatLog());
 // 📔 그림일기: 하루의 이벤트 로그를 펫이 1인칭 일기로 접어 서버(config/world_diary.json)에
 // 보관한다. 밤 10시가 넘으면 그날의 일기를 스스로 쓰고, ✍️ 버튼으로 먼저 쓰게 할 수도 있다.
 // 종이 노트 스타일 패널: ◀ 날짜 ▶ 넘기기 + 🐥/🐕 탭.
@@ -10469,7 +10482,7 @@ function dockDrawer(emoji, title, children) {
 }
 // 배지(빨간점/초록점)는 전면 제거 — 알림 점은 게임이 숙제를 조르는 문법이라 힐링 톤과 충돌
 // (모드 상태는 버튼 자체의 색/투명도가 이미 말한다: 🔨 주황 배경 · 🌙 반투명).
-const collDrawer = dockDrawer('📖', '컬렉션 — 도감·그림일기·대화 기록', [dexBtn, diaryBtn, logBtn]);
+const collDrawer = dockDrawer('📖', '컬렉션 — 도감·그림일기', [dexBtn, diaryBtn]);
 const toolDrawer = dockDrawer('⚙️', '도구 — 날씨·공사·절전', [weatherBtn, buildBtn, ecoBtn]);
 const zoomBtns = [...dockUI.children].filter((b) => b.textContent === '＋' || b.textContent === '－');
 for (const el of [shotBtn, chickBtn, puppyBtn, fishBtn, diveBtn, invBtn, collDrawer.row, toolDrawer.row, ...zoomBtns]) dockUI.appendChild(el);   // 상주 순서 재배열 (appendChild = 이동)
