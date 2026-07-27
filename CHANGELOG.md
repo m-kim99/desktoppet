@@ -5,6 +5,15 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Changed (💾 백업·복원을 채팅앱 홈 대시보드로 이동)
+- 월드 데이터 백업/복원을 월드게임 채팅창 하단에서 **채팅앱 홈 대시보드**로 이동 — '🌏 월드 펫
+  성격·시스템 지시' 카드 옆에 '💾 월드 데이터 백업'·'📥 월드 데이터 복원' 카드 2개 신설.
+- world.js: 대화 기록 패널의 백업/복원 푸터 전면 제거(패널은 헤더+본문만).
+- vue_methods.js: worldBackup(다운로드)·worldRestore(zip 업로드→복원, $message 알림) 추가.
+- 로케일 ko/en/zh에 worldBackup·worldRestore 키 추가.
+- 검증: 대시보드 카드 3개 나란히, 백업 클릭→zip 다운로드 확인, 월드 채팅창 푸터 제거, world-smoke 15/15.
+
+
 ### Removed (🧹 채팅창 기억 초기화 버튼 제거)
 - 대화 기록 패널 하단의 '기억 초기화'(병아리·강아지) 버튼 2개 제거 + 이제 안 쓰이는 memResetBtn 함수 삭제.
   백업/복원(💾·📥)은 그대로 유지, 푸터 라벨은 '데이터 백업 · 복원'으로 정리.

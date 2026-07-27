@@ -5182,6 +5182,33 @@ let vue_methods = {
       }
       this.autoSaveSettings();
     },
+    // 💾 월드 데이터(배치·일기·소원·꽃·과일·펫 대화기억 등)를 zip 하나로 내려받는다 — 맥 교체·재설치 대비.
+    worldBackup() {
+      const a = document.createElement('a');
+      a.href = '/api/world_backup';   // Content-Disposition: attachment → 창 이탈 없이 다운로드
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    },
+    // 📥 백업 zip을 골라 복원한다. 파일 입력을 즉석에서 만들어 POST.
+    worldRestore() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.zip';
+      input.onchange = async () => {
+        const f = input.files && input.files[0];
+        if (!f) return;
+        try {
+          const res = await fetch('/api/world_backup', { method: 'POST', body: f });
+          const j = await res.json();
+          if (j && j.ok) { if (this.$message) this.$message.success(`${j.restored}개 파일 복원 — 월드를 새로고침하면 적용돼요`); }
+          else if (this.$message) this.$message.error(`복원 실패: ${(j && j.error) || res.status}`);
+        } catch (e) {
+          if (this.$message) this.$message.error('복원 실패 — 백엔드 연결을 확인해줘');
+        }
+      };
+      input.click();
+    },
     // VRM 데스크톱 펫 소환/숨김 전역 단축키를 (재)등록. 설정 변경 시에도 호출.
     async applyVrmVisibilityShortcuts() {
       if (!this.isElectron || !window.electronAPI?.registerVrmShowShortcut) return;

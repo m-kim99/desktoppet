@@ -939,6 +939,22 @@ function updateElement(el, rawMarkdown, formatFn) {
               </div>
             </div>
 
+            <!-- 💾 월드 데이터 백업 -->
+            <div class="guide-card" @click="worldBackup">
+              <div class="card-icon blue"><i class="fa-solid fa-download"></i></div>
+              <div class="card-info">
+                <h3>{{ t('worldBackup') }}</h3>
+              </div>
+            </div>
+
+            <!-- 📥 월드 데이터 복원 -->
+            <div class="guide-card" @click="worldRestore">
+              <div class="card-icon green"><i class="fa-solid fa-upload"></i></div>
+              <div class="card-info">
+                <h3>{{ t('worldRestore') }}</h3>
+              </div>
+            </div>
+
             <!-- 10. 添加扩展 -->
             <div class="guide-card" @click="gotoAddExtension">
               <div class="card-icon teal"><i class="fa-solid fa-plus"></i></div>

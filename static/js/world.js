@@ -10078,41 +10078,7 @@ chatLogPanel.appendChild(chatLogHead);
 const chatLogBody = document.createElement('div');
 chatLogBody.style.cssText = 'overflow-y:auto; min-height:0; padding:8px 10px; display:flex; flex-direction:column; gap:6px; font-size:12px; line-height:1.45; flex:1;';   // min-height:0 = flex 컬럼 안에서 실제로 스크롤되게(작은 창에서도)
 chatLogPanel.appendChild(chatLogBody);
-const chatLogFoot = document.createElement('div');
-chatLogFoot.style.cssText = 'display:flex; align-items:center; gap:6px; padding:7px 10px; font-size:11px; color:#99a; background:rgba(255,255,255,0.04);';
-const chatLogFootLabel = document.createElement('span');
-chatLogFootLabel.textContent = '데이터 백업 · 복원';
-chatLogFootLabel.style.cssText = 'flex:1;';
-chatLogFoot.appendChild(chatLogFootLabel);
-// 💾 백업/복원 — 배치·소원·일기·기억을 zip 하나로 (맥 교체·재설치 대비)
-const bkBtn = document.createElement('button');
-bkBtn.textContent = '💾';
-bkBtn.title = '월드 데이터 백업 (zip 다운로드)';
-bkBtn.style.cssText = 'border:none; border-radius:8px; background:rgba(255,255,255,0.1); color:#fff; font-size:11px; padding:4px 8px; cursor:pointer;';
-bkBtn.onclick = () => { location.href = '/api/world_backup'; };
-chatLogFoot.appendChild(bkBtn);
-const rsInput = document.createElement('input');
-rsInput.type = 'file';
-rsInput.accept = '.zip';
-rsInput.style.display = 'none';
-document.body.appendChild(rsInput);
-const rsBtn = document.createElement('button');
-rsBtn.textContent = '📥';
-rsBtn.title = '백업 zip에서 복원';
-rsBtn.style.cssText = bkBtn.style.cssText;
-rsBtn.onclick = () => rsInput.click();
-rsInput.onchange = async () => {
-    const f = rsInput.files && rsInput.files[0];
-    rsInput.value = '';
-    if (!f) return;
-    try {
-        const res = await fetch('/api/world_backup', { method: 'POST', body: f });
-        const j = await res.json();
-        showToast(j && j.ok ? `📥 ${j.restored}개 파일 복원 — 새로고침하면 적용돼요` : `복원 실패: ${(j && j.error) || res.status}`);
-    } catch (e) { showToast('복원 실패 — 백엔드 연결을 확인해줘'); }
-};
-chatLogFoot.appendChild(rsBtn);
-chatLogPanel.appendChild(chatLogFoot);
+// 💾 백업/복원은 채팅앱 홈 대시보드(🌏 월드 펫 성격·시스템 지시 카드 옆)로 옮겼다.
 document.body.appendChild(chatLogPanel);
 chatLogPanel.addEventListener('pointerdown', (e) => e.stopPropagation());
 const CHAT_LOG_KEY = 'world_chat_log';   // 화면 스크롤백 저장(앱 재실행해도 이어 보이게) — 펫의 '기억'은 서버 세션이 따로 유지
