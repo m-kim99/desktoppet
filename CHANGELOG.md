@@ -5,6 +5,17 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Fixed (🏊 물놀이 갈 때 안 걷고 미끄러지듯 이동하던 문제)
+- 물놀이(dip) 접근·입수 중 걷기 모션 없이 한 방향으로 끌려가듯 이동하던 버그 수리. 원인 2가지:
+  - **잔여 1회성 모션**: 도착 인사(happy/think)·소환 wave가 재생 중일 때 dip을 시작하면, 엔티티가
+    action 브랜치로 빠져 발을 rest로 고정 → 이동해도 걷기 애니가 안 나옴. `startDip`에서 잔여
+    `pet.action`을 끊어 해결(→ 물놀이 가는 순간 자연스럽게 걷기 시작).
+  - **업데이트 순서**: `updateWander`가 busy 펫의 `walking=false`를 애니메이터 직전에 리셋하는데,
+    정작 물놀이 이동(`dipSteer`)은 그 뒤 `updateDips`에서 `walking=true`로 몰아, 애니메이터가 늘
+    stale한 false를 봐 walkAmt가 0에 고정됐음. busy 분기에서 `p.dip`인 펫은 walking을 안 끄도록 수정.
+- 검증: 헤드리스로 approach·enter 전 구간 이동 프레임 글라이드 0/66, walkAmt 정상 이징 확인.
+
+
 ### Fixed (🏰 모래놀이가 안 끝나던 문제 — 타이머 단축 + 안전망)
 - 자율 모래놀이 지속시간 90~180초 → **40~75초**로 단축. 다른 활동(물놀이·과일 등 30~90초)보다
   길어 한 펫이 모래놀이만 독차지하는 것처럼 보이던 문제 해소. leisure dur·balance-sim 동기.

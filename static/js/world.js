@@ -8288,7 +8288,7 @@ function updateWander(p, delta) {
     if (p.poiWalk) return;                                           // 🧑‍🚀 달·정거장 산책 — 표면 자율은 updateRocket EVA 블록이 몬다
     if (ai.state === 'player') return;                               // the keyboard controller owns it
     if (ai.state === 'held') return;                                 // walking hand-in-hand with the player
-    if (ai.state === 'busy') { pet.walking = false; return; }        // a duo director owns the pet
+    if (ai.state === 'busy') { if (!p.dip) pet.walking = false; return; }   // a duo director owns the pet — 단, 물놀이는 dipSteer가 walking을 직접 몬다(updateDips가 이 루프 뒤에 돌아 여기서 끄면 걷기 애니가 죽는다)
     if (ai.state === 'goto') {
         // Approach walk (duo/bed/meal/dip): follows its waypoint route (bridges included) and
         // gives up gracefully (arrive-anyway) when blocked or stalled — directors never deadlock.
@@ -9550,6 +9550,17 @@ if (statsOn) window.__worldDev = {
         return ok;
     },
     sandState: (name) => { const p = pets.find((q) => q.name === name); return p ? (p.bed ? p.bed.id : null) : null; },
+    dipGo: (name, kind) => {   // 자율 물놀이 강제 (kind='pond'|'sea')
+        const p = pets.find((q) => q.name === name);
+        if (!p) return null;
+        if (p.bed) forceEndBed(p);
+        if (p.dip) endDip(p);
+        if (aiFishing && aiFishing.p === p) endAiFishing();
+        releaseAI(p);
+        p.ai.state = 'idle';
+        return startDip(p, kind);
+    },
+    dipState: (name) => { const p = pets.find((q) => q.name === name); if (!p) return null; return { phase: p.dip ? p.dip.phase : null, walking: !!p.pet.walking, walkAmt: +(p.pet.walkAmt || 0).toFixed(2), swimming: p.swimming || false, ai: p.ai.state, action: p.pet.action ? p.pet.action.id : null, x: +p.mover.position.x.toFixed(2), z: +p.mover.position.z.toFixed(2), y: +p.mover.position.y.toFixed(2) }; },
     boatGo: (name) => {
         const p = pets.find((q) => q.name === name);
         if (!p) return null;
@@ -15032,6 +15043,7 @@ function startDip(p, want) {
     }
     if (!entry) return false;   // 물가가 다 막혔다 — 시작 실패 (셀렉터가 쿨다운 대신 3초 재시도)
     logWorldEvent(`${petKo(p)}가 ${kind === 'pond' ? '연못' : '바다'}로 물놀이를 하러 갔다`);
+    p.pet.action = null;   // 도착 인사·소환 wave 등 잔여 1회성 모션을 끊는다 — 안 그러면 액션 재생 중엔 발이 rest로 고정돼 걷기 없이 미끄러진다
     p.dip = {
         kind, phase: 'approach', swimLeft: 9 + Math.random() * 9, waypoint: null,
         waterPt: kind === 'pond'
