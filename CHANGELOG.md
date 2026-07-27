@@ -5,6 +5,16 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Fixed / Added (👯 친구 소환 = 반대 펫 + 메인 전환 시 친구 자동 팔로우)
+- 버그: 강아지가 메인일 때 친구 소환하면 또 강아지가 떴다 — 소환 로직이 영속 selectedModelId(프론트
+  전환 미반영·stale)로 '다음 모델'을 골라서. 이제 currentGlbUrl(현재 로드된 펫) 기준으로 **친구 = 반대 펫**
+  (병아리↔강아지)을 소환.
+- 신규: 메인 펫 캐릭터를 바꾸면 소환된 친구가 **자동으로 반대 펫으로 전환**(둘은 항상 다른 펫).
+  vrmHug와 같은 창간 브로드캐스트 패턴 미러링 — main 전환 → vrmFriendFollow(반대 id) → main.js가
+  findDuoPartner로 친구 창에 relay → 친구가 switchToModel. 단방향(메인→친구), 루프 없음.
+  파일: static/js/vrm.js(소환·트리거·리스너)·main.js(vrm-friend-follow 핸들러)·static/js/preload.js(IPC 노출).
+
+
 ### Changed (🐥🐕 데스크톱 펫: 전환 대응 채팅 라우팅 + 인간형 모델 제거)
 - 캐릭터 전환(switchToModel)은 창을 리로드 안 해 초기 vrmPath(const)가 stale — 메인이 강아지여도
   채팅이 병아리로 갈 수 있었다. loadGlbPet에서 currentGlbUrl을 추적하고 채팅 라우팅이 그걸 쓰게 수정

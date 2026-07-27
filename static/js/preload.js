@@ -145,6 +145,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onVrmHugPlay: (cb) => ipcRenderer.on('vrm-hug-play', (_, data) => cb(data)),
   vrmHoliday: () => ipcRenderer.invoke('vrm-holiday'),
   onVrmHolidayPlay: (cb) => ipcRenderer.on('vrm-holiday-play', (_, data) => cb(data)),
+  vrmFriendFollow: (modelId) => ipcRenderer.invoke('vrm-friend-follow', modelId),
+  onVrmFriendFollow: (cb) => ipcRenderer.on('vrm-friend-follow-play', (_, data) => cb(data)),
   vrmPlay: () => ipcRenderer.invoke('vrm-play'),
   onVrmPlayStart: (cb) => ipcRenderer.on('vrm-play-start', (_, data) => cb(data)),
   onVrmPlayCue: (cb) => ipcRenderer.on('vrm-play-cue', (_, data) => cb(data)),

@@ -1924,6 +1924,15 @@ if (window.electronAPI && window.electronAPI.onVrmPlayCue) {
         glbPet.action.cueT = 0;
     });
 }
+// 메인 펫이 캐릭터를 바꾸면 이 친구 창은 '반대' 펫으로 따라 전환한다 (메인은 무시).
+if (window.electronAPI && window.electronAPI.onVrmFriendFollow) {
+    window.electronAPI.onVrmFriendFollow(({ modelId } = {}) => {
+        if (!modelId || windowName === 'default') return;
+        const go = () => { const i = (allModels || []).findIndex(m => m.id === modelId); if (i >= 0) switchToModel(i); };
+        if (typeof allModels !== 'undefined' && allModels.length) go();
+        else getAllModels().then(go).catch(() => {});
+    });
+}
 
 let VRMname = await getVRMname();
 showModelSwitchingIndicator(VRMname);
@@ -4040,12 +4049,13 @@ function addcontrolPanel() {
             })();
             bindTapEvent(summonFriendBtn, async () => {
                 try {
-                    const [cfg, res] = await Promise.all([fetchVRMConfig(), fetch('/get_default_vrm_models')]);
+                    const res = await fetch('/get_default_vrm_models');
                     const models = ((await res.json()).models) || [];
                     if (models.length === 0) return;
-                    const curId = friendModelId || cfg.selectedModelId;
-                    const idx = models.findIndex(m => m.id === curId);
-                    const friend = models[(idx + 1 + models.length) % models.length] || models[0];
+                    // 현재(전환 반영) 메인 펫 기준으로 '다른' 펫을 친구로 소환 — 영속 selectedModelId는
+                    // 프론트 전환을 안 반영해 stale(메인=강아지인데 또 강아지 소환하던 버그).
+                    const curId = /puppy/i.test(currentGlbUrl || '') ? 'puppy' : 'chick';
+                    const friend = models.find(m => m.id !== curId) || models[0];
                     await window.electronAPI.summonFriend({ modelId: friend.id });
                 } catch (e) { console.error('[SummonFriend] failed', e); }
             });
@@ -5325,6 +5335,11 @@ async function switchToModel(index,isRefresh = false) {
     
     currentModelIndex = newIndex;
     const selectedModel = allModels[currentModelIndex];
+    // 메인 펫이 바뀌면 소환된 친구를 '반대' 펫으로 따라 바꾼다 — 둘은 항상 다른 펫(병아리↔강아지). 메인만 구동.
+    if (windowName === 'default' && window.electronAPI && typeof window.electronAPI.vrmFriendFollow === 'function') {
+        const comp = allModels.find(m => m.id !== selectedModel.id);
+        if (comp) { try { window.electronAPI.vrmFriendFollow(comp.id); } catch (e) {} }
+    }
     // Replace the protocol and host in userModel.path
     let userModelURL = new URL(selectedModel.path);
     userModelURL.protocol = window.location.protocol;

@@ -1336,6 +1336,16 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
       return { ok: true };
     });
 
+    // Friend-follow: when the main pet switches character, tell the summoned friend to switch to the
+    // complement so the two are always the different pets (병아리↔강아지). One-directional (main → friend).
+    ipcMain.handle('vrm-friend-follow', async (e, modelId) => {
+      const me = BrowserWindow.fromWebContents(e.sender);
+      if (!me || me.isDestroyed() || !modelId) return { ok: false };
+      const partner = findDuoPartner(me);
+      if (partner && !partner.isDestroyed()) { try { partner.webContents.send('vrm-friend-follow-play', { modelId }); } catch (er) {} }
+      return { ok: true, sent: !!partner };
+    });
+
     // Play (catch): set the windows a catch-distance apart, toss a ball (its own tiny window) back and
     // forth a few times — main cues each pet to throw/catch in sync with the ball — then part.
     let ballWin = null;
