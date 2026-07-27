@@ -9367,6 +9367,13 @@ chatInput.style.cssText = `flex:1; padding:10px 14px; border:none; border-radius
 const chatSend = document.createElement('button');
 chatSend.textContent = '보내기';
 chatSend.style.cssText = 'padding:10px 16px; border:none; border-radius:20px; background:#5b8def; color:#fff; font-size:13px; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,0.25);';
+// ▲ 대화 기록 — 입력창 앞(왼쪽)에서 게임식 채팅 로그를 채팅바 위로 펼친다(독 서랍 → 💬 안 거치는 지름길)
+const chatToggle = document.createElement('button');
+chatToggle.textContent = '▲';
+chatToggle.title = '대화 기록 펼치기';
+chatToggle.style.cssText = 'flex:0 0 auto; width:40px; padding:10px 0; border:none; border-radius:20px; background:rgba(30,32,40,0.85); color:#fff; font-size:12px; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,0.25);';
+chatToggle.addEventListener('click', () => toggleChatLog());
+chatBar.appendChild(chatToggle);
 chatBar.appendChild(chatInput);
 chatBar.appendChild(chatSend);
 document.body.appendChild(chatBar);
@@ -10037,7 +10044,7 @@ ecoBtn.addEventListener('dblclick', () => {
 });
 // 💬 대화 기록 패널: 이 세션의 월드 대화 로그 + 펫별 서버 기억 초기화. 독 왼쪽에 뜬다.
 const chatLogPanel = document.createElement('div');
-chatLogPanel.style.cssText = 'position:fixed; right:calc(70px + env(safe-area-inset-right, 0px)); bottom:calc(70px + env(safe-area-inset-bottom, 0px)); display:none; z-index:94; width:min(300px, calc(100vw - 100px)); max-height:46vh; background:rgba(30,32,40,0.93); border-radius:14px; box-shadow:0 8px 28px rgba(0,0,0,0.4); font-family:sans-serif; color:#fff; flex-direction:column; overflow:hidden;';
+chatLogPanel.style.cssText = 'position:fixed; left:50%; transform:translateX(-50%); bottom:calc(64px + env(safe-area-inset-bottom, 0px)); display:none; z-index:94; width:min(480px, calc(100% - 32px)); max-height:min(50vh, 420px); background:rgba(30,32,40,0.93); border-radius:14px; box-shadow:0 8px 28px rgba(0,0,0,0.4); font-family:sans-serif; color:#fff; flex-direction:column; overflow:hidden;';   // 채팅바 바로 위에서 위로 펼친다(게임식 채팅창)
 const chatLogHead = document.createElement('div');
 chatLogHead.style.cssText = 'display:flex; align-items:center; gap:6px; padding:8px 10px; font-size:12px; background:rgba(255,255,255,0.06);';
 const chatLogTitle = document.createElement('span');
@@ -10077,7 +10084,7 @@ function memResetBtn(petId, label) {
 }
 chatLogPanel.appendChild(chatLogHead);
 const chatLogBody = document.createElement('div');
-chatLogBody.style.cssText = 'overflow-y:auto; padding:8px 10px; display:flex; flex-direction:column; gap:6px; font-size:12px; line-height:1.45; flex:1;';
+chatLogBody.style.cssText = 'overflow-y:auto; min-height:0; padding:8px 10px; display:flex; flex-direction:column; gap:6px; font-size:12px; line-height:1.45; flex:1;';   // min-height:0 = flex 컬럼 안에서 실제로 스크롤되게(작은 창에서도)
 chatLogPanel.appendChild(chatLogBody);
 const chatLogFoot = document.createElement('div');
 chatLogFoot.style.cssText = 'display:flex; align-items:center; gap:6px; padding:7px 10px; font-size:11px; color:#99a; background:rgba(255,255,255,0.04);';
@@ -10134,13 +10141,16 @@ function pushChatLog(who, text) {
     while (chatLogBody.children.length > 60) chatLogBody.removeChild(chatLogBody.firstChild);
     chatLogBody.scrollTop = chatLogBody.scrollHeight;
 }
+function setChatLog(open) {   // ▲ 채팅바 토글과 💬 독 버튼이 함께 쓰는 단일 진입점 — 삼각형 방향도 여기서 동기
+    chatLogPanel.style.display = open ? 'flex' : 'none';
+    chatToggle.textContent = open ? '▼' : '▲';
+    chatToggle.title = open ? '대화 기록 접기' : '대화 기록 펼치기';
+    if (open) chatLogBody.scrollTop = chatLogBody.scrollHeight;
+}
+function toggleChatLog() { setChatLog(chatLogPanel.style.display === 'none'); }
 const logBtn = dockBtn('💬', '월드 대화 기록 · 기억 초기화');
 logBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
-logBtn.addEventListener('click', () => {
-    const open = chatLogPanel.style.display === 'none';
-    chatLogPanel.style.display = open ? 'flex' : 'none';
-    if (open) chatLogBody.scrollTop = chatLogBody.scrollHeight;
-});
+logBtn.addEventListener('click', () => toggleChatLog());
 // 📔 그림일기: 하루의 이벤트 로그를 펫이 1인칭 일기로 접어 서버(config/world_diary.json)에
 // 보관한다. 밤 10시가 넘으면 그날의 일기를 스스로 쓰고, ✍️ 버튼으로 먼저 쓰게 할 수도 있다.
 // 종이 노트 스타일 패널: ◀ 날짜 ▶ 넘기기 + 🐥/🐕 탭.
