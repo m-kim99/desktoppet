@@ -9221,6 +9221,29 @@ function recentEventsText() {
         })
         .join('\n');
 }
+// 🗣️ 곁에서 엿듣기 (리빙월드 방식): 사적 대화는 비공개지만, 대화할 때 다른 펫이 근처에 있으면
+// 그 요지가 그 펫 기억에 잠깐 남아 나중에 자연스럽게 안다는 듯 언급할 수 있다. 멀리 있으면 못 들으니 모른다.
+const OVERHEAR_R = 3.5;                    // 이 거리 안이면 "곁에" — 같은 구역 정도
+const OVERHEAR_WINDOW = 40 * 60000;        // 40분 지나면 잊는다(휘발성 관찰)
+function petDist(a, b) { return Math.hypot(a.mover.position.x - b.mover.position.x, a.mover.position.z - b.mover.position.z); }
+function recordOverheard(speaker, userText, reply) {
+    const clip = (s) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > 50 ? s.slice(0, 50) + '…' : s; };
+    for (const b of pets) {
+        if (b === speaker || b.pet.sleeping) continue;
+        if (petDist(b, speaker) > OVERHEAR_R) continue;   // 곁에 있어야 들린다
+        (b.overheard = b.overheard || []).push({ t: Date.now(), text: `주인이 ${petKo(speaker)}에게 "${clip(userText)}"라고 하니 ${petKo(speaker)}가 "${clip(reply)}"라고 답했다` });
+        while (b.overheard.length > 4) b.overheard.shift();
+    }
+}
+function overheardText(pet) {
+    const now = Date.now();
+    const rows = (pet.overheard || []).filter((o) => now - o.t < OVERHEAR_WINDOW);
+    if (!rows.length) return '';
+    return '\n\n[방금 곁에서 들은 것 — 참고만, 아는 척은 자연스럽게]\n' + rows.map((o) => {
+        const min = Math.round((now - o.t) / 60000);
+        return `- (${min < 1 ? '방금' : min + '분 전'}) ${o.text}`;
+    }).join('\n');
+}
 // 그림일기용: 해당 날짜(기본 오늘)의 이벤트를 시각과 함께 전부 — 밤을 넘긴 이월 작성은 어제로 부른다.
 function dayEventsText(d = new Date()) {
     const dayStart = new Date(d);
@@ -14009,7 +14032,7 @@ async function sendWorldChat() {
     if (!pet) return;
     pushChatLog('주인', text);
     const speech = await requestWorldChat(pet, text);
-    if (speech) maybeFriendChime(pet, text, speech);
+    if (speech) { maybeFriendChime(pet, text, speech); recordOverheard(pet, text, speech); }
 }
 
 // 한 턴의 공통 파이프(주인 채팅·선제 대화·절친 거들기 공용): think 포즈 → /api/world_chat →
@@ -14026,7 +14049,7 @@ async function requestWorldChat(pet, text) {
                 pet: pet.name,
                 text,
                 snapshot: buildWorldSnapshot(pet),
-                events: recentEventsText(),
+                events: recentEventsText() + overheardText(pet),
             }),
         });
         if (res.ok) reply = (await res.json()).reply;
@@ -14056,7 +14079,8 @@ function maybeFriendChime(first, ownerText, firstSpeech) {
     if (!friend || friend.pet.sleeping) return;
     const bothNamed = /병아리|삐약|chick/i.test(ownerText) && /강아지|멍멍|댕댕|puppy/i.test(ownerText);
     const groupCall = /얘들아|애들아|둘\s*다|너희|같이|모두/.test(ownerText);
-    if (!(bothNamed || groupCall) && Math.random() > 0.35) return;
+    // 이름을 콕 집어 부른 게 아니면(=지나가듯 거들기), 곁에 있을 때만 35%로 반응한다 — 멀리 떨어져 있으면 못 들었으니 안 거든다
+    if (!(bothNamed || groupCall) && (petDist(first, friend) > OVERHEAR_R || Math.random() > 0.35)) return;
     const delay = Math.min(7000, 1000 + firstSpeech.length * 45);
     setTimeout(() => {
         if (waitingReply || buildMode) return;
