@@ -331,14 +331,6 @@
     "edgettsGender": "Female",
     "edgettsVoice": "XiaoyiNeural",
     "edgettsRate": 1.0,
-    "gsvServer": "http://127.0.0.1:9880",
-    "gsvTextLang": "zh",
-    "gsvRate": 1.0,
-    "gsvPromptLang": "zh",
-    "gsvPromptText": "",
-    "gsvSample_steps": 4,
-    "gsvRefAudioPath": "",
-    "gsvAudioOptions": [],
     "selectedProvider": null,
     "vendor": "OpenAI",
     "model": "",
@@ -384,8 +376,6 @@
     "elevenLabsVoice": "JBFqnCBsd6RMkjVDRZzb",
     "elevenLabsModel": "eleven_multilingual_v2",
     "elevenLabsRate": 1.0,
-    "mossVoice": "Junhao",
-    "mossSpeed": 1.0,
     "newtts": {}
   },
   "largeMoreButtonDict": [

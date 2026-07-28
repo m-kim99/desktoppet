@@ -8370,13 +8370,6 @@ handleCreateSlackSeparator(val) {
       if (this.ttsSettings.enabled === true && this.settings.enableOmniTTS === true) {
         this.settings.enableOmniTTS = false;
         showNotification(this.t('autoDisableOmniControlSettings'), 'warning');
-      }else if (this.ttsSettings.enabled === true && this.ttsSettings.engine === 'moss'){
-        if (!this.mossModelExists){
-          showNotification(this.t('autoDownloadModel'), 'info');
-          this.ttsSettings.enabled = false;
-          let source = await this.getAutoSource();
-          await this.mossDownload(source);
-        }
       }
       await this.autoSaveSettings();
     },
@@ -9040,180 +9033,6 @@ handleCreateSlackSeparator(val) {
       // Update the gender in ttsSettings
       this.newTTSConfig.edgettsVoice = this.filteredNewVoices[0].name;
     },
-      // Browse for a reference-audio file
-  browseGsvRefAudioFile() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'audio/*';
-    input.onchange = (event) => {
-      const files = event.target.files;
-      if (files.length > 0) {
-        this.newGsvAudio.name = files[0].name;
-        this.newGsvAudio.file = files[0]; // Store the file object
-      }
-    };
-    input.click();
-  },
-  
-  // Handle reference-audio drag-and-drop
-  handleGsvRefAudioDrop(event) {
-    event.preventDefault();
-    const files = event.dataTransfer.files;
-    if (files.length > 0) {
-      this.newGsvAudio.name = files[0].name;
-      this.newGsvAudio.file = files[0]; // Store the file object
-    }
-  },
-  
-  // Remove the selected reference audio
-  removeNewGsvAudio() {
-    this.newGsvAudio.name = '';
-    this.newGsvAudio.file = null;
-  },
-  
-  // Cancel the upload
-  cancelGsvAudioUpload() {
-    this.showGsvRefAudioPathDialog = false;
-    this.newGsvAudio.name = '';
-    this.newGsvAudio.text = '';
-    this.newGsvAudio.file = null;
-  },
-  
-  // Upload the reference audio
-  async uploadGsvAudio() {
-    if (!this.newGsvAudio.file && !this.newGsvAudio.path) {
-      showNotification(this.t('notifySelectAudioFirst'), 'error');
-      return;
-    }
-    if (!this.newGsvAudio.file) {
-        // Add the new audio to the options list
-        const newAudioOption = {
-          path: this.newGsvAudio.path,
-          name: this.newGsvAudio.name,
-          text: this.newGsvAudio.text
-        };
-        
-        this.ttsSettings.gsvAudioOptions.push(newAudioOption);
-        
-        // Close the dialog and reset the state
-        this.cancelGsvAudioUpload();
-        
-        // Auto-save settings
-        await this.autoSaveSettings();
-        
-        showNotification(this.t('notifyRefAudioUploaded'));
-        return;
-    }
-    
-    const formData = new FormData();
-    formData.append('file', this.newGsvAudio.file);
-    formData.append('prompt_text', this.newGsvAudio.text);
-    
-    try {
-      const response = await fetch(`/upload_gsv_ref_audio`, {
-        method: 'POST',
-        body: formData
-      });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        // Add the new audio to the options list
-        const newAudioOption = {
-          path: result.file.unique_filename,
-          name: result.file.name,
-          text: this.newGsvAudio.text
-        };
-        
-        this.ttsSettings.gsvAudioOptions.push(newAudioOption);
-        
-        // Close the dialog and reset the state
-        this.cancelGsvAudioUpload();
-        
-        // Auto-save settings
-        await this.autoSaveSettings();
-        
-        showNotification(this.t('notifyRefAudioUploaded'));
-      } else {
-        showNotification(`${this.t('notifyUploadFailedColon')}${result.message}`, 'error');
-      }
-    } catch (error) {
-      console.error('上传参考音频失败:', error);
-      showNotification(this.t('notifyUploadFailedNetwork'), 'error');
-    }
-  },
-  
-  // Handle reference-audio path changes
-  handleRefAudioPathChange(value, option) {
-    // When a new reference audio is selected, update the corresponding prompt text
-    const selectedAudio = this.ttsSettings.gsvAudioOptions.find(
-      audio => audio.path === value
-    );
-    
-    if (selectedAudio && selectedAudio.text) {
-      if (option == 'role') {
-        this.newTTSConfig.gsvPromptText = selectedAudio.text;
-      }
-      else if (option == 'model') {
-        this.ttsSettings.gsvPromptText = selectedAudio.text;
-      }
-      
-    }
-    
-    // Auto-save settings
-    this.autoSaveSettings();
-  },
-
-
-    // Delete an audio option
-  async deleteAudioOption(path) {
-    try {
-      // Find the audio option to delete
-      const audioIndex = this.ttsSettings.gsvAudioOptions.findIndex(
-        audio => audio.path === path
-      );
-      
-      if (audioIndex === -1) return;
-      if (this.ttsSettings.gsvAudioOptions[audioIndex].path == this.ttsSettings.gsvAudioOptions[audioIndex].name){
-        // For path-uploaded audio, just remove it from the options
-        this.ttsSettings.gsvAudioOptions.splice(audioIndex, 1);
-        showNotification(this.t('notifyAudioDeleted'));
-        return;
-      }
-      // Get the filename for backend deletion
-      const uniqueFilename = this.ttsSettings.gsvAudioOptions[audioIndex].path
-        .split('/')
-        .pop();
-      
-      // Call the backend API to delete the file
-      const response = await fetch(`/delete_audio/${uniqueFilename}`, {
-        method: 'DELETE'
-      });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        // Remove it from the options
-        this.ttsSettings.gsvAudioOptions.splice(audioIndex, 1);
-        
-        // If the currently selected audio is deleted, reset the selection
-        if (this.ttsSettings.gsvRefAudioPath === path) {
-          this.ttsSettings.gsvRefAudioPath = '';
-          this.ttsSettings.gsvPromptText = '';
-        }
-        
-        // Auto-save settings
-        await this.autoSaveSettings();
-        
-        showNotification(this.t('notifyAudioDeleted'));
-      } else {
-        showNotification(`${this.t('notifyDeleteFailedColon')}${result.message}`, 'error');
-      }
-    } catch (error) {
-      console.error('删除音频失败:', error);
-      showNotification(this.t('notifyDeleteFailedRetry'), 'error');
-    }
-  },
     async startVRM() {
     if (this.isElectron) {
       this.VRMConfig.name = 'default';
@@ -9793,13 +9612,13 @@ copySubtitleOverlayEndpoint(){
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/ws/live/danmu`;
       
-      this.bilibiliWs = new WebSocket(wsUrl);
+      this.liveWs = new WebSocket(wsUrl);
       
-      this.bilibiliWs.onopen = (event) => {
+      this.liveWs.onopen = (event) => {
         console.log('WebSocket连接已建立');
       };
       
-      this.bilibiliWs.onmessage = (event) => {
+      this.liveWs.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
           this.handleDanmuMessage(data);
@@ -9808,7 +9627,7 @@ copySubtitleOverlayEndpoint(){
         }
       };
       
-      this.bilibiliWs.onclose = (event) => {
+      this.liveWs.onclose = (event) => {
         console.log('WebSocket连接已关闭');
         
         // Only reconnect when reconnection is allowed and the stream is still running
@@ -9828,7 +9647,7 @@ copySubtitleOverlayEndpoint(){
         }
       };
       
-      this.bilibiliWs.onerror = (error) => {
+      this.liveWs.onerror = (error) => {
         console.error('WebSocket连接错误:', error);
       };
     } catch (error) {
@@ -9840,10 +9659,10 @@ copySubtitleOverlayEndpoint(){
   disconnectLiveWebSocket() {
     console.log('断开WebSocket连接');
     
-    if (this.bilibiliWs) {
+    if (this.liveWs) {
       // Set it to null first to avoid the reconnect logic in the onclose event
-      const ws = this.bilibiliWs;
-      this.bilibiliWs = null;
+      const ws = this.liveWs;
+      this.liveWs = null;
       
       // Then close the connection
       ws.close();
@@ -9935,7 +9754,7 @@ copySubtitleOverlayEndpoint(){
         id: data.id,
         content: data.content,
         type: danmuType,
-        platform: data.platform || 'bilibili',
+        platform: data.platform || 'live',
         timestamp: new Date().toLocaleTimeString('zh-CN', { hour12: false })
       };
 
@@ -10602,11 +10421,6 @@ async deleteGaussSceneOption(sceneId) {
       await this.saveConversations();
     } catch (error) {
       // The user canceled the operation
-    }
-  },
-  changeGsvAudioPath() {
-    if (this.newGsvAudio.path) {
-      this.newGsvAudio.name = this.newGsvAudio.path;
     }
   },
     /* ===============  Read-aloud main flow  =============== */
@@ -11431,18 +11245,11 @@ stopTTSActivities() {
       name: '',
       enabled: true,
       SampleText: 'super agent party가 모든 것을 연결합니다!',
-      engine: 'moss',
+      engine: 'edgetts',
       edgettsLanguage: 'zh-CN',
       edgettsGender: 'Female',
       edgettsVoice: 'XiaoyiNeural',
       edgettsRate: 1.0,
-      gsvServer: "http://127.0.0.1:9880",
-      gsvTextLang: 'zh',
-      gsvRate: 1.0,
-      gsvPromptLang: 'zh',
-      gsvPromptText: '',
-      gsvRefAudioPath: '',
-      gsvAudioOptions: [],
       selectedProvider: null,
       vendor: "OpenAI",
       model: "",
@@ -11453,8 +11260,6 @@ stopTTSActivities() {
       customTTSserver: "http://127.0.0.1:9880",
       customTTSspeaker: "",
       customTTSspeed: 1.0,
-      mossVoice: 'Junhao',
-      mossSpeed: 1.0,
     };
     this.showAddTTSDialog = true;
   },
@@ -13663,91 +13468,6 @@ collapseSidePanel() {
     await this.sherpaModelStatus()
   },
 
-// 1. Get the MOSS model status
-  async mossModelStatus() {
-    try {
-      const res = await fetch('/moss-model/status')
-      if (!res.ok) return
-      const data = await res.json()
-      this.mossModelExists = data.exists
-      
-      // Sync the background download status (e.g. restore the UI after a page refresh)
-      if (data.downloading) {
-        this.mossDownloading = true
-        // Auto-resume polling
-        if (!this.mossPollInterval) this.startMossPolling()
-      } else {
-        this.mossDownloading = false
-      }
-    } catch (e) {
-      console.error('Failed to get MOSS status:', e)
-    }
-  },
-
-// Zero out the progress when starting a download
-  async mossDownload(source = 'huggingface') {
-    this.mossDownloading = true
-    this.mossDownloadSource = source
-    this.mossPercent = 0 // Initialize to 0
-    
-    try {
-      const res = await fetch(`/moss-model/download/${source}`, { method: 'POST' })
-      if (!res.ok) throw new Error('Network error')
-      this.startMossPolling()
-    } catch (e) {
-      this.mossDownloading = false
-      showNotification(this.t('modelDownloadFailed') || '다운로드 실패', 'error')
-    }
-  },
-
-  startMossPolling() {
-    if (this.mossPollInterval) clearInterval(this.mossPollInterval)
-    
-    this.mossPollInterval = setInterval(async () => {
-      try {
-        const statusRes = await fetch('/moss-model/status')
-        const data = await statusRes.json()
-        
-        // Update the real progress (computed by the backend from the folder size)
-        if (data.percent !== undefined) {
-          this.mossPercent = data.percent
-        }
-        
-        if (!data.downloading) {
-          clearInterval(this.mossPollInterval)
-          this.mossPollInterval = null
-          this.mossDownloading = false
-          this.mossModelExists = data.exists
-          
-          if (data.exists) {
-            this.mossPercent = 100 // Force it to 100% on completion
-            showNotification(this.t('modelDownloadSuccess') || 'MOSS 모델 다운로드 성공')
-          } else if (data.download_error) {
-            showNotification((this.t('modelDownloadFailed') || '다운로드 실패: ') + data.download_error, 'error')
-          }
-        }
-      } catch (err) {
-        console.error('MOSS Polling error', err)
-      }
-    }, 1000) // Poll once per second to make the progress bar smoother
-  },
-
-  // 4. Delete the MOSS model
-  async mossRemove() {
-    try {
-      const res = await fetch('/moss-model/remove', { method: 'DELETE' })
-      if (!res.ok) throw new Error()
-      showNotification(this.t('deleteSuccess') || '모델 삭제 성공')
-      this.mossModelExists = false
-    } catch {
-      showNotification(this.t('deleteFailed') || '모델 삭제 실패', 'error')
-    }
-  },
-
-  // 5. Call it on init (similar to loadSherpaStatus)
-  async loadMossStatus() {
-    await this.mossModelStatus()
-  },
 
     /**
      * Check the MiniLM model status (whether it exists)

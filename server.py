@@ -797,13 +797,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"尝试启动sherpa失败: {e}")
 
-    try:
-        from py.moss_tts import _get_moss_runtime
-        # Offload the heavy local TTS load to a background thread pool too; if no model is downloaded it just silently returns None
-        asyncio.get_running_loop().run_in_executor(None, _get_moss_runtime)
-    except Exception as e:
-        logger.error(f"尝试预热 MOSS TTS 失败: {e}")
-
     # MCP init logic (keeps the original logic, but reuses global_http_client internally)
     mcp_init_tasks = []
 
@@ -8665,37 +8658,6 @@ async def text_to_speech(request: Request):
             return StreamingResponse(generate_audio(), media_type=media_type, headers={"Content-Disposition": f"inline; filename={filename}", "X-Audio-Index": str(index)})
 
         # ==========================================
-        # 3. GSV engine (uses the global connection pool)
-        # ==========================================
-        elif tts_engine == 'GSV':
-            audio_path = os.path.join(UPLOAD_FILES_DIR, tts_settings.get('gsvRefAudioPath', ''))
-            if not os.path.exists(audio_path): audio_path = tts_settings.get('gsvRefAudioPath', '')
-
-            gsv_params = {
-                "text": text, "text_lang": tts_settings.get('gsvTextLang', 'zh'),
-                "ref_audio_path": audio_path, "prompt_lang": tts_settings.get('gsvPromptLang', 'zh'),
-                "prompt_text": tts_settings.get('gsvPromptText', ''), "speed_factor": tts_settings.get('gsvRate', 1.0),
-                "sample_steps": tts_settings.get('gsvSample_steps', 4), "streaming_mode": True,
-                "media_type": "ogg", "batch_size": 1, "seed": 42,
-            }
-            if mobile_optimized: gsv_params["speed_factor"] = min(gsv_params["speed_factor"] * 0.95, 1.1)
-            
-            servers = [s for s in tts_settings.get('gsvServer', 'http://127.0.0.1:9880').split('\n') if s.strip()]
-            gsvServer = servers[index % len(servers)]
-                
-            async def generate_audio():
-                safe_url = sanitize_url(input_url=gsvServer, default_base="http://127.0.0.1:9880", endpoint="/tts")
-                try:
-                    async with global_http_client.stream("POST", safe_url, json=gsv_params) as response:
-                        response.raise_for_status()
-                        async for chunk in response.aiter_bytes():
-                            yield chunk
-                except Exception as e:
-                    raise HTTPException(status_code=502, detail=f"GSV服务错误: {str(e)}")
-            
-            return StreamingResponse(generate_audio(), media_type="audio/ogg", headers={"Content-Disposition": f"inline; filename=tts_{index}.opus"})
-
-        # ==========================================
         # 4. Volcengine engine (uses the global connection pool)
         # ==========================================
         elif tts_engine == 'volcengine':
@@ -8762,13 +8724,7 @@ async def text_to_speech(request: Request):
                 response_format = target_format if target_format in ['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm'] else 'mp3'
                 params = {'model': tts_settings.get('model', 'tts-1'), 'input': text, 'speed': max(0.25, min(4.0, speed)), 'response_format': response_format}
                 
-                ref_audio = tts_settings.get('gsvRefAudioPath', '')
-                if ref_audio:
-                    audio_file_path = os.path.join(UPLOAD_FILES_DIR, ref_audio)
-                    audio_base64 = base64.b64encode(open(audio_file_path, "rb").read()).decode('utf-8')
-                    params['extra_body'] = {"references": [{"text": tts_settings.get('gsvPromptText', ''), "audio": f"data:audio/{Path(audio_file_path).suffix[1:]};base64,{audio_base64}"}]}
-                else:
-                    params['voice'] = tts_settings.get('openaiVoice', 'alloy')
+                params['voice'] = tts_settings.get('openaiVoice', 'alloy')
 
                 if tts_settings.get('openaiStream', False):
                     async with client.audio.speech.with_streaming_response.create(**params) as response:
@@ -8983,70 +8939,7 @@ async def text_to_speech(request: Request):
                     }
                 )
             
-        # ==========================================
-        # 9. MOSS TTS (pure local CPU engine, lazy-loaded)
-        # ==========================================
-        elif tts_engine == 'moss':
-            from py.moss_tts import moss_generate_audio
-            
-            # Read the MOSS parameter settings
-            moss_voice = tts_settings.get('mossVoice', 'Junhao')
-            moss_speed = float(tts_settings.get('mossSpeed', 1.0))
-            
-            # Safely slow down the speech rate on mobile
-            if mobile_optimized:
-                moss_speed = min(moss_speed * 0.95, 1.2)
-            
-            # Handle voice cloning
-            # MOSS reuses the existing gsvRefAudioPath selected file
-            clone_audio_path = tts_settings.get('gsvRefAudioPath', '')
-            abs_clone_path = ""
-            if clone_audio_path:
-                abs_clone_path = os.path.join(UPLOAD_FILES_DIR, clone_audio_path)
-                if not os.path.exists(abs_clone_path):
-                    abs_clone_path = clone_audio_path # Fallback in case an absolute path was passed
-                    
-            async def generate_moss_audio():
-                try:
-                    # Get the generated WAV byte stream
-                    wav_data = await moss_generate_audio(
-                        text=text,
-                        voice=moss_voice,
-                        speed=moss_speed,
-                        prompt_audio_path=abs_clone_path
-                    )
-                    
-                    final_data = wav_data
-                    # If mobile requests OPUS, call the converter you already wrote
-                    if target_format == "opus":
-                        res = await asyncio.to_thread(convert_to_opus_simple, wav_data)
-                        final_data = res[0] if isinstance(res, tuple) else res
-                    
-                    # Stream in slices
-                    chunk_size = 4096
-                    for i in range(0, len(final_data), chunk_size):
-                        yield final_data[i:i + chunk_size]
-                        
-                except Exception as e:
-                    import traceback
-                    traceback.print_exc()
-                    print(f"MOSS TTS generation error: {e}")
-                    raise HTTPException(status_code=500, detail=f"MOSS TTS 错误: {str(e)}")
-
-            # Set the response header based on the return format
-            media_type = "audio/ogg" if target_format == "opus" else "audio/wav"
-            filename = f"tts_{index}.opus" if target_format == "opus" else f"tts_{index}.wav"
-            return StreamingResponse(
-                generate_moss_audio(), 
-                media_type=media_type, 
-                headers={
-                    "Content-Disposition": f"inline; filename={filename}", 
-                    "X-Audio-Index": str(index),
-                    "X-Audio-Format": target_format
-                }
-            )
-
-        raise HTTPException(status_code=400, detail="不支持的TTS引擎")
+        raise HTTPException(status_code=400, detail="Unsupported TTS engine")
     
     except Exception as e:
         import traceback
@@ -9927,82 +9820,6 @@ async def delete_files_endpoint(req: FileNames):
     })
 
 ALLOWED_AUDIO_EXTENSIONS = ['wav', 'mp3', 'ogg', 'flac', 'aac']
-
-@app.post("/upload_gsv_ref_audio")
-async def upload_gsv_ref_audio(
-    request: Request,
-    file: UploadFile = File(...),
-):
-    fastapi_base_url = str(request.base_url)
-    
-    # Check the file extension
-    file_extension = file.filename.split('.')[-1].lower()
-    if file_extension not in ALLOWED_AUDIO_EXTENSIONS:
-        return JSONResponse(
-            status_code=400,
-            content={"success": False, "message": f"不支持的文件类型: {file_extension}"}
-        )
-    
-    # Generate a unique filename
-    unique_filename = f"{uuid.uuid4()}.{file_extension}"
-    destination = os.path.join(UPLOAD_FILES_DIR, unique_filename)
-    
-    try:
-        # Save the file
-        with open(destination, "wb") as buffer:
-            content = await file.read()
-            buffer.write(content)
-        
-        # Build the response
-        file_link = f"{fastapi_base_url}uploaded_files/{unique_filename}"
-        
-        return JSONResponse(content={
-            "success": True,
-            "message": "参考音频上传成功",
-            "file": {
-                "path": file_link,
-                "name": file.filename,
-                "unique_filename": unique_filename
-            }
-        })
-    
-    except Exception as e:
-        logger.error(f"参考音频上传失败: {str(e)}")
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"文件保存失败: {str(e)}"}
-        )
-
-@app.delete("/delete_audio/{filename}")
-async def delete_audio(filename: str):
-    try:
-        file_path = os.path.join(UPLOAD_FILES_DIR, filename)
-        
-        # Security check: ensure the filename is in UUID format to prevent path-traversal attacks
-        if not re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.\w+$", filename):
-            return JSONResponse(
-                status_code=400,
-                content={"success": False, "message": "Invalid filename"}
-            )
-        
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            return JSONResponse(content={
-                "success": True,
-                "message": "音频文件已删除"
-            })
-        else:
-            return JSONResponse(
-                status_code=404,
-                content={"success": False, "message": "文件不存在"}
-            )
-            
-    except Exception as e:
-        logger.error(f"删除音频失败: {str(e)}")
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"删除失败: {str(e)}"}
-        )
 
 # Allowed VRM file extensions
 ALLOWED_VRM_EXTENSIONS = {'vrm'}
@@ -11388,9 +11205,6 @@ app.include_router(skills_router)
 
 from py.sherpa_model_manager import router as sherpa_model_router
 app.include_router(sherpa_model_router)
-
-from py.moss_model_manager import router as moss_model_router
-app.include_router(moss_model_router)
 
 from py.ebd_model_manager import router as ebd_model_router
 app.include_router(ebd_model_router)

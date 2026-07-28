@@ -5,6 +5,17 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Removed (🇨🇳 중국 전용 기능 제거 — own-the-app P1 첫 라운드)
+- **MOSS-TTS**(푸단대 로컬 TTS): py/moss_tts.py·moss_model_manager.py·py/moss/ 삭제, 서버 예열/엔진 분기/
+  라우터, 설정 패널·다운로드 카드(설정·추가 다이얼로그 2벌), 자동다운로드 분기, 상태·메서드, 설정 키, 로케일.
+- **GPT-SoVITS(GSV)**: 엔진 분기·참조음성 업로드/삭제 라우트, 설정 패널 2벌·업로드 다이얼로그·openai 엔진의
+  gsv 참조음성 훅(서버+UI), 관련 메서드 8종, 설정 키 8종, 로케일. openai 엔진은 voice 지정만 남음.
+- **Bilibili**: 실제 백엔드는 없었음(라이브는 유튜브+트위치 전용) — 고아 로케일 키 5종, about 링크
+  (index/chat.html), 오해 소지 변수명 bilibiliWs→liveWs·폴백 라벨 정리.
+- 검증: server.py 부팅 OK(=import 전수), 대시보드 렌더 13카드·JS에러 0·엔진 옵션 잔재 0, world-smoke 15/15.
+  잔여 참조 0 (fontawesome 아이콘 폰트 제외). ※ own-the-app 브랜치.
+
+
 ### Fixed (👀 관측 중 채팅이 빙의처럼 느껴지던 문제 — 진단만, 동작은 평소대로)
 - 진단: 스펙테이트 중엔 possessed=null이라 실제로 빙의로 태깅되진 않았다(빙의 신호 2곳 모두 possessed만
   체크, 서버 페르소나에도 상시 조종 언급 없음). 카메라가 펫에 고정돼 빙의 화면과 같아 그렇게 느껴졌을 뿐.

@@ -214,7 +214,6 @@ let vue_data = {
     showHttpToolDialog: false,
     showComfyUIDialog: false,
     showStickerPacksDialog: false,
-    showGsvRefAudioPathDialog: false,
     showModelDialog: false,
     showLogoDialog: false,
     deletingConversationId: null, // The conversation ID being deleted
@@ -576,11 +575,6 @@ let vue_data = {
     minilmDownloading: false,       // Whether a download is in progress
     minilmPercent: 0,               // Live progress 0-100
     minilmEventSource: null,        // Current SSE instance
-    mossModelExists: false,
-    mossDownloading: false,
-    mossDownloadSource: '',
-    mossPollInterval: null,
-    mossPercent: 0, // New: real progress-bar percentage
 
     asrSettings: {
       enabled: false,
@@ -642,14 +636,6 @@ let vue_data = {
       edgettsGender: 'Female',
       edgettsVoice: 'XiaoyiNeural',
       edgettsRate: 1.0,
-      gsvServer: "http://127.0.0.1:9880",
-      gsvTextLang: 'zh',
-      gsvRate: 1.0,
-      gsvPromptLang: 'zh',
-      gsvPromptText: '',
-      gsvSample_steps: 4,
-      gsvRefAudioPath: '',
-      gsvAudioOptions: [],
       selectedProvider: null,
       vendor: "OpenAI",
       model: "",
@@ -716,9 +702,6 @@ let vue_data = {
       elevenLabsRate: 1.0,
 
 
-      // moss
-      mossVoice: 'Junhao',
-      mossSpeed: 1.0,
     },
     volcResourceOptions: [
         { value: 'volc_tts_release', label: '구버전/표준 (Standard)' },
@@ -745,14 +728,6 @@ let vue_data = {
       edgettsGender: 'Female',
       edgettsVoice: 'XiaoyiNeural',
       edgettsRate: 1.0,
-      gsvServer: "http://127.0.0.1:9880",
-      gsvTextLang: 'zh',
-      gsvRate: 1.0,
-      gsvSample_steps: 4,
-      gsvPromptLang: 'zh',
-      gsvPromptText: '',
-      gsvRefAudioPath: '',
-      gsvAudioOptions: [],
       selectedProvider: null,
       vendor: "OpenAI",
       model: "",
@@ -805,8 +780,6 @@ let vue_data = {
       googleServiceAccount: '', // JSON string
       googleVoice: '',
 
-      mossVoice: 'Junhao',
-      mossSpeed: 1.0,
 
       newtts:{}
     },
@@ -992,14 +965,8 @@ let vue_data = {
       '<neutral>',
       '<surprised>', 
       '<relaxed>'],
-    newGsvAudio: {
-      name: '',
-      path: '',
-      text: '',
-    },
     startTime: null,
     elapsedTime: 0,
-    gsvTextLangs:["zh", "en" , "yue","ja","ko","auto","auto_yue"],
     audioPlayQueue: [],
     currentAudio: null,
     edgettsLanguage: 'zh-CN',
@@ -1583,7 +1550,7 @@ let vue_data = {
     },
 
     danmu: [], // Bullet-chat list
-    bilibiliWs: null, // WebSocket connection
+    liveWs: null, // WebSocket connection
     danmuProcessTimer: null, // Bullet-chat processing timer
     isProcessingDanmu: false, // Whether bullet chats are being processed
     shouldReconnectWs :false,

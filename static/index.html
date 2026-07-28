@@ -4126,10 +4126,8 @@ function updateElement(el, rawMarkdown, formatFn) {
                         class="full-width-input"
                         @change="fetchTetosNewVoices(newTTSConfig.engine)"
                       >
-                        <el-option :label="t('moss-TTS')" value="moss"></el-option>
                         <el-option :label="t('edgetts')" value="edgetts"></el-option>
                         <el-option :label="t('systemtts')" value="systemtts" ></el-option>
-                        <el-option label="GPT Sovits" value="GSV"></el-option>
                         <el-option :label="t('openaiLikeTTS')" value="openai"></el-option>
                         <el-option :label="t('customTTS')" value="customTTS"></el-option>
                         <el-option label="Azure TTS" value="azure"></el-option>
@@ -4162,136 +4160,6 @@ function updateElement(el, rawMarkdown, formatFn) {
                       </el-tooltip>
                     </el-form-item>
 
-
-                  <!-- ================= MOSS TTS (纯本地) ================= -->
-                  <div class="tool-item" v-show="newTTSConfig.engine === 'moss'">
-                    <div class="tool-header">
-                      <div class="header-left">
-                        <span>
-                          <el-icon><i class="fa-solid fa-microchip"></i></el-icon> 
-                          MOSS TTS
-                          <el-link
-                            type="primary"
-                            :underline="false"
-                            href="https://github.com/OpenMOSS/MOSS-TTS" 
-                            target="_blank"
-                          >
-                            <el-icon class="mr-1"><i class="fa-brands fa-github"></i></el-icon>GitHub
-                          </el-link>
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <div class="tool-content">
-                      <!-- 默认音色选择 -->
-                      <el-form-item :label="t('DefaultVoice') || '기본 음색'" class="form-item-align">
-                        <el-select v-model="newTTSConfig.mossVoice" @change="autoSaveSettings" class="full-width-input">
-                          <!-- 中文音色 -->
-                          <el-option label="Junhao (zh-male)" value="Junhao"></el-option>
-                          <el-option label="Zhiming (zh-male)" value="Zhiming"></el-option>
-                          <el-option label="Weiguo (zh-male)" value="Weiguo"></el-option>
-                          <el-option label="Xiaoyu (zh-female)" value="Xiaoyu"></el-option>
-                          <el-option label="Yuewen (zh-female)" value="Yuewen"></el-option>
-                          <el-option label="Lingyu (zh-female)" value="Lingyu"></el-option>
-                          <el-option label="Mei (zh-female)" value="Mei"></el-option>
-
-                          <!-- 英文音色 -->
-                          <el-option label="Ava (en-female)" value="Ava"></el-option>
-                          <el-option label="Bella (en-female)" value="Bella"></el-option>
-                          <el-option label="Adam (en-male)" value="Adam"></el-option>
-                          <el-option label="Nathan (en-male)" value="Nathan"></el-option>
-                          <el-option label="Trump (en-male)" value="Trump"></el-option>
-
-                          <!-- 日文音色 (二次元ACG) -->
-                          <el-option label="Soyo (ja-female)" value="Soyo"></el-option>
-                          <el-option label="Anon (ja-female)" value="Anon"></el-option>
-                          <el-option label="Saki (ja-female)" value="Saki"></el-option>
-                          <el-option label="Arisa (ja-female)" value="Arisa"></el-option>
-                          <el-option label="Umiri (ja-female)" value="Umiri"></el-option>
-                          <el-option label="Mortis (ja-female)" value="Mortis"></el-option>
-                        </el-select>
-                      </el-form-item>
-
-                      <!-- 语速滑动条 -->
-                      <el-form-item :label="t('TTSRate') || '말 속도'" class="form-item-align">
-                        <el-slider
-                          v-model="newTTSConfig.mossSpeed"
-                          :min="0.5"
-                          :max="2.0"
-                          :step="0.1"
-                          show-input
-                          @change="autoSaveSettings">
-                        </el-slider>
-                      </el-form-item>
-
-                      <!-- 音色克隆：复用已有提示音频选择框 -->
-                      <el-form-item :label="t('promptAudio') || '참조 오디오 (음색 복제)'" class="form-item-align">
-                        <el-select
-                          v-model="newTTSConfig.gsvRefAudioPath"
-                          @change="handleRefAudioPathChange(newTTSConfig.gsvRefAudioPath,'model')"
-                          class="full-width-input"
-                          clearable
-                        >
-                          <el-option :key="null" :value="null" :label="t('noRefAudio') || '참조 오디오 사용 안 함'"></el-option>
-                          <el-option
-                            v-for="audio in ttsSettings.gsvAudioOptions"
-                            :key="audio.path"
-                            :label="audio.name"
-                            :value="audio.path"
-                          >
-                            <div class="model-option-item">
-                              <span>{{ audio.name }}</span>
-                              <i class="fa-solid fa-trash-can" style="color: #ff0000" @click.stop="deleteAudioOption(audio.path)"></i>
-                            </div>
-                          </el-option>
-                        </el-select>
-                      </el-form-item>
-                      
-                      <el-button @click="showGsvRefAudioPathDialog = true;currentUploadType='audio'" type="primary" class="add-server-btn" style="margin-bottom: 15px;">
-                        <i class="fa-solid fa-plus"></i> {{ t('addRefAudio') || '참조 오디오 추가' }}
-                      </el-button>
-
-                    </div>
-                  </div>
-
-                  <!-- MOSS 下载卡片 -->
-                  <el-card shadow="hover" class="sherpa-card" v-show="newTTSConfig.engine === 'moss'">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                      <span><strong>MOSS TTS Nano</strong></span>
-                      <div class="d-flex gap-2">
-                        <el-tag type="info" effect="dark">~784MB</el-tag>
-                        <el-tag :type="mossModelExists ? 'success' : 'info'" effect="dark">
-                          {{ mossModelExists ? t('installed') : t('notInstalled') }}
-                        </el-tag>
-                      </div>
-                    </div>
-
-                    <div class="card-actions">
-                      <div class="left-actions">
-                        <el-button
-                          type="primary"
-                          :style="{ margin: '0' }"
-                          :disabled="mossModelExists || mossDownloading"
-                          :loading="mossDownloading && mossDownloadSource==='huggingface'"
-                          @click="mossDownload('huggingface')"
-                        >
-                          {{ t('downloadFromHuggingFace') }}
-                        </el-button>
-                      </div>
-                      <el-button v-if="mossModelExists" type="danger" @click="mossRemove">
-                        {{ t('deleteModel') }}
-                      </el-button>
-                    </div>
-
-                    <!-- 下载过程中的等待进度条 -->
-                    <el-progress
-                      v-if="mossDownloading"
-                      :percentage="mossPercent"
-                      :show-text="false"
-                      style="margin-top: 16px;"
-                      :stroke-width="10"
-                    ></el-progress>
-                  </el-card>
 
                     <!-- ================= Azure TTS ================= -->
                     <div class="tool-item" v-show="newTTSConfig.engine === 'azure'">
@@ -4744,32 +4612,6 @@ function updateElement(el, rawMarkdown, formatFn) {
                             ></el-option>
                           </el-select>
                         </el-form-item>
-                        <!-- 提示音频选择框 -->
-                        <el-form-item :label="t('promptAudio')" class="form-item-align">
-                          <el-select
-                            v-model="newTTSConfig.gsvRefAudioPath"
-                            @change="handleRefAudioPathChange(newTTSConfig.gsvRefAudioPath,'role')"
-                            class="full-width-input"
-                          >
-                            <el-option :key="null" :value="null" :label="t('noRefAudio')"></el-option>
-                            <el-option
-                              v-for="audio in ttsSettings.gsvAudioOptions"
-                              :key="audio.path"
-                              :label="audio.name"
-                              :value="audio.path"
-                            >
-                              <div class="model-option-item">
-                                <span>{{ audio.name }}</span>
-                                <i 
-                                  class="fa-solid fa-trash-can"
-                                  style="color: #ff0000"
-                                  @click.stop="deleteAudioOption(audio.path)"
-                                ></i>
-                              </div>
-                            </el-option>
-                            
-                          </el-select>
-                        </el-form-item>
                         <!-- 语速滑动条 -->
                         <el-form-item :label="t('TTSRate')" class="form-item-align">
                           <el-slider
@@ -4781,12 +4623,6 @@ function updateElement(el, rawMarkdown, formatFn) {
                             @change="autoSaveSettings">
                         </el-form-item>
                       </div>
-                      <el-button 
-                        @click="showGsvRefAudioPathDialog = true;currentUploadType='audio'"
-                        type="primary" 
-                        class="add-server-btn">
-                        <i class="fa-solid fa-plus"></i> {{ t('addRefAudio') }}
-                      </el-button>
                       <el-alert
                         type="info"
                         :closable="false"
@@ -4965,137 +4801,6 @@ function updateElement(el, rawMarkdown, formatFn) {
                         </el-form-item>
                       </div>
                     </div>
-                    <div class="tool-item" v-show="newTTSConfig.engine === 'GSV'">
-                      <div class="tool-header">
-                        <div class="header-left">
-                          <span>
-                            <el-icon>
-                              <i class="fa-solid fa-volume-high"></i>
-                            </el-icon>
-                            GPT Sovits
-                            <el-link
-                              type="primary"
-                              :underline="false"
-                              href="https://github.com/RVC-Boss/GPT-SoVITS" 
-                              target="_blank"
-                            >
-                              <el-icon class="mr-1">
-                                <i class="fa-solid fa-key"></i>
-                              </el-icon>{{ t('gotoGithub') }}
-                            </el-link>
-                          </span>
-                        </div>
-                      </div>
-                      <div class="tool-content">
-                        <el-form-item :label="t('gsvServer')" class="form-item-align">
-                          <el-input
-                            v-model="newTTSConfig.gsvServer"
-                            :placeholder="t('gsvServerPlaceholder')"
-                            @input="autoSaveSettings"
-                            type="textarea"
-                          />
-                        </el-form-item>
-
-                        <!-- 语速滑动条 -->
-                        <el-form-item :label="t('gsvRate')" class="form-item-align">
-                          <el-slider
-                            v-model="newTTSConfig.gsvRate"
-                            :min="0.1"
-                            :max="2"
-                            :step="0.1"
-                            show-input
-                            @change="autoSaveSettings">
-                        </el-form-item>
-
-                        <el-form-item :label="t('gsvSample_steps')" class="form-item-align">
-                          <el-slider
-                            v-model="newTTSConfig.gsvSample_steps"
-                            :min="1"
-                            :max="16"
-                            :step="1"
-                            show-input
-                            @change="autoSaveSettings">
-                        </el-form-item>                       
-
-                        <!-- 语言选择框 -->
-                        <el-form-item :label="t('gsvTextLang')" class="form-item-align">
-                          <el-select
-                            v-model="newTTSConfig.gsvTextLang"
-                            @change="autoSaveSettings"
-                            class="full-width-input"
-                          >
-                            <el-option
-                              v-for="language in gsvTextLangs"
-                              :key="language"
-                              :label="t(language)"
-                              :value="language"
-                            ></el-option>
-                          </el-select>
-                        </el-form-item>
-
-                        <!-- 提示语言选择框 -->
-                        <el-form-item :label="t('gsvPromptLang')" class="form-item-align">
-                          <el-select
-                            v-model="newTTSConfig.gsvPromptLang"
-                            @change="autoSaveSettings"
-                            class="full-width-input"
-                          >
-                            <el-option
-                              v-for="language in gsvTextLangs"
-                              :key="language"
-                              :label="t(language)"
-                              :value="language"
-                            ></el-option>
-                          </el-select>
-                        </el-form-item>
-
-                        <!-- 提示音频选择框 -->
-                        <el-form-item :label="t('gsvPromptAudio')" class="form-item-align">
-                          <el-select
-                            v-model="newTTSConfig.gsvRefAudioPath"
-                            @change="handleRefAudioPathChange(newTTSConfig.gsvRefAudioPath,'role')"
-                            class="full-width-input"
-                          >
-                            <el-option
-                              v-for="audio in ttsSettings.gsvAudioOptions"
-                              :key="audio.path"
-                              :label="audio.name"
-                               :value="audio.path"
-                            >
-                              <div class="model-option-item">
-                                <span>{{ audio.name }}</span>
-                                <i 
-                                  class="fa-solid fa-trash-can"
-                                  style="color: #ff0000"
-                                  @click.stop="deleteAudioOption(audio.path)"
-                                ></i>
-                              </div>
-                            </el-option>
-                          </el-select>
-                        </el-form-item>
-
-                        <el-button 
-                          @click="showGsvRefAudioPathDialog = true;currentUploadType='audio'"
-                          type="primary" 
-                          class="add-server-btn">
-                          <i class="fa-solid fa-plus"></i> {{ t('addRefAudio') }}
-                        </el-button>
-
-                        <el-alert
-                          type="info"
-                          :closable="false"
-                          class="mb-2"
-                        >
-                          <template #default>
-                            <div class="alert-content">
-                              {{ t('gsvNotice1') }}<br>
-                              {{ t('gsvNotice2') }}
-                            </div>
-                          </template>
-                        </el-alert>
-                      </div>
-                    </div>
-
                   </el-form>
 
                   <template #footer>
@@ -5942,56 +5647,6 @@ function updateElement(el, rawMarkdown, formatFn) {
         </div>
 
         <!-- 音频上传对话框 -->
-        <el-dialog append-to-body
-          v-model="showGsvRefAudioPathDialog"
-          :title="t('uploadGsvRefAudio')"
-          width="80%"
-        >
-          <div class="upload-container">
-            <div
-              class="drop-zone"
-              @dragover.prevent
-              @drop.prevent="handleGsvRefAudioDrop"
-              @click="browseGsvRefAudioFile"
-            >
-              <el-icon :size="50"><i class="fa-solid fa-cloud-arrow-up"></i></el-icon>
-              <p>{{ t('clickOrDrop') }}</p>
-            </div>
-            
-            <!-- 文件列表 -->
-            <div class="compact-file-list" v-if="newGsvAudio.file">
-              <div class="compact-file-item">
-                <span class="file-name">@{{ newGsvAudio.name }}</span>
-                <el-button
-                  @click.stop="removeNewGsvAudio"
-                  class="delete-icon"
-                  circle
-                >
-                  <i class="fa-solid fa-trash"></i>
-                </el-button>
-              </div>
-            </div>
-          </div>
-          <el-form-item :label="t('gsvGsvAudioPath')" class="form-item-align" v-if="!newGsvAudio.file">
-            <el-input
-              v-model="newGsvAudio.path"
-              :placeholder="t('gsvGsvAudioPathPlaceholder')"
-              @input="changeGsvAudioPath"
-            ></el-input>
-          </el-form-item>
-          <el-form-item :label="t('gsvPromptText')" class="form-item-align">
-            <el-input
-              v-model="newGsvAudio.text"
-              :placeholder="t('gsvPromptTextPlaceholder')"
-            ></el-input>
-          </el-form-item>
-          <template #footer>
-            <el-button @click="cancelGsvAudioUpload">{{ t('cancel') }}</el-button>
-            <el-button type="primary" @click="uploadGsvAudio" :disabled="!newGsvAudio.name||!newGsvAudio.text">
-              {{ t('createImmediately') }}
-            </el-button>
-          </template>
-        </el-dialog>
 
         <div v-show="activeMenu === 'model-config'" class="page agent-suite-container">
           <div class="suite-layout">
@@ -7724,10 +7379,8 @@ function updateElement(el, rawMarkdown, formatFn) {
                           @change="autoSaveSettings();fetchTetosVoices(ttsSettings.engine)"
                           class="full-width-input"
                         >
-                          <el-option :label="t('moss-TTS')" value="moss"></el-option>
                           <el-option :label="t('edgetts')" value="edgetts" ></el-option>
                           <el-option :label="t('systemtts')" value="systemtts" ></el-option>
-                          <el-option label="GPT Sovits" value="GSV" ></el-option>
                           <el-option :label="t('openaiLikeTTS')" value="openai" ></el-option>
                           <el-option :label="t('customTTS')" value="customTTS" ></el-option>
                           <el-option label="Azure TTS" value="azure"></el-option>
@@ -7870,136 +7523,6 @@ function updateElement(el, rawMarkdown, formatFn) {
                   </div>
 
 
-                  <!-- ================= MOSS TTS (纯本地) ================= -->
-                  <div class="tool-item" v-show="ttsSettings.engine === 'moss'">
-                    <div class="tool-header">
-                      <div class="header-left">
-                        <span>
-                          <el-icon><i class="fa-solid fa-microchip"></i></el-icon> 
-                          MOSS TTS
-                          <el-link
-                            type="primary"
-                            :underline="false"
-                            href="https://github.com/OpenMOSS/MOSS-TTS" 
-                            target="_blank"
-                          >
-                            <el-icon class="mr-1"><i class="fa-brands fa-github"></i></el-icon>GitHub
-                          </el-link>
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <div class="tool-content">
-                      <!-- 默认音色选择 -->
-                      <el-form-item :label="t('DefaultVoice') || '기본 음색'" class="form-item-align">
-                        <el-select v-model="ttsSettings.mossVoice" @change="autoSaveSettings" class="full-width-input">
-                          <!-- 中文音色 -->
-                          <el-option label="Junhao (zh-male)" value="Junhao"></el-option>
-                          <el-option label="Zhiming (zh-male)" value="Zhiming"></el-option>
-                          <el-option label="Weiguo (zh-male)" value="Weiguo"></el-option>
-                          <el-option label="Xiaoyu (zh-female)" value="Xiaoyu"></el-option>
-                          <el-option label="Yuewen (zh-female)" value="Yuewen"></el-option>
-                          <el-option label="Lingyu (zh-female)" value="Lingyu"></el-option>
-                          <el-option label="Mei (zh-female)" value="Mei"></el-option>
-
-                          <!-- 英文音色 -->
-                          <el-option label="Ava (en-female)" value="Ava"></el-option>
-                          <el-option label="Bella (en-female)" value="Bella"></el-option>
-                          <el-option label="Adam (en-male)" value="Adam"></el-option>
-                          <el-option label="Nathan (en-male)" value="Nathan"></el-option>
-                          <el-option label="Trump (en-male)" value="Trump"></el-option>
-
-                          <!-- 日文音色 (二次元ACG) -->
-                          <el-option label="Soyo (ja-female)" value="Soyo"></el-option>
-                          <el-option label="Anon (ja-female)" value="Anon"></el-option>
-                          <el-option label="Saki (ja-female)" value="Saki"></el-option>
-                          <el-option label="Arisa (ja-female)" value="Arisa"></el-option>
-                          <el-option label="Umiri (ja-female)" value="Umiri"></el-option>
-                          <el-option label="Mortis (ja-female)" value="Mortis"></el-option>
-                        </el-select>
-                      </el-form-item>
-
-                      <!-- 语速滑动条 -->
-                      <el-form-item :label="t('TTSRate') || '말 속도'" class="form-item-align">
-                        <el-slider
-                          v-model="ttsSettings.mossSpeed"
-                          :min="0.5"
-                          :max="2.0"
-                          :step="0.1"
-                          show-input
-                          @change="autoSaveSettings">
-                        </el-slider>
-                      </el-form-item>
-
-                      <!-- 音色克隆：复用已有提示音频选择框 -->
-                      <el-form-item :label="t('promptAudio') || '참조 오디오 (음색 복제)'" class="form-item-align">
-                        <el-select
-                          v-model="ttsSettings.gsvRefAudioPath"
-                          @change="handleRefAudioPathChange(ttsSettings.gsvRefAudioPath,'model')"
-                          class="full-width-input"
-                          clearable
-                        >
-                          <el-option :key="null" :value="null" :label="t('noRefAudio') || '참조 오디오 사용 안 함'"></el-option>
-                          <el-option
-                            v-for="audio in ttsSettings.gsvAudioOptions"
-                            :key="audio.path"
-                            :label="audio.name"
-                            :value="audio.path"
-                          >
-                            <div class="model-option-item">
-                              <span>{{ audio.name }}</span>
-                              <i class="fa-solid fa-trash-can" style="color: #ff0000" @click.stop="deleteAudioOption(audio.path)"></i>
-                            </div>
-                          </el-option>
-                        </el-select>
-                      </el-form-item>
-                      
-                      <el-button @click="showGsvRefAudioPathDialog = true;currentUploadType='audio'" type="primary" class="add-server-btn" style="margin-bottom: 15px;">
-                        <i class="fa-solid fa-plus"></i> {{ t('addRefAudio') || '참조 오디오 추가' }}
-                      </el-button>
-
-                    </div>
-                  </div>
-
-                  <!-- MOSS 下载卡片 -->
-                  <el-card shadow="hover" class="sherpa-card" v-show="ttsSettings.engine === 'moss'">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                      <span><strong>MOSS TTS Nano</strong></span>
-                      <div class="d-flex gap-2">
-                        <el-tag type="info" effect="dark">~784MB</el-tag>
-                        <el-tag :type="mossModelExists ? 'success' : 'info'" effect="dark">
-                          {{ mossModelExists ? t('installed') : t('notInstalled') }}
-                        </el-tag>
-                      </div>
-                    </div>
-
-                    <div class="card-actions">
-                      <div class="left-actions">
-                        <el-button
-                          type="primary"
-                          :style="{ margin: '0' }"
-                          :disabled="mossModelExists || mossDownloading"
-                          :loading="mossDownloading && mossDownloadSource==='huggingface'"
-                          @click="mossDownload('huggingface')"
-                        >
-                          {{ t('downloadFromHuggingFace') }}
-                        </el-button>
-                      </div>
-                      <el-button v-if="mossModelExists" type="danger" @click="mossRemove">
-                        {{ t('deleteModel') }}
-                      </el-button>
-                    </div>
-
-                    <!-- 下载过程中的等待进度条 -->
-                    <el-progress
-                      v-if="mossDownloading"
-                      :percentage="mossPercent"
-                      :show-text="false"
-                      style="margin-top: 16px;"
-                      :stroke-width="10"
-                    ></el-progress>
-                  </el-card>
-
                   <div class="tool-item" v-show="ttsSettings.engine === 'openai'">
                     <div class="tool-header">
                       <div class="header-left">
@@ -8060,32 +7583,6 @@ function updateElement(el, rawMarkdown, formatFn) {
                           ></el-option>
                         </el-select>
                       </el-form-item>
-                      <!-- 提示音频选择框 -->
-                      <el-form-item :label="t('promptAudio')" class="form-item-align">
-                        <el-select
-                          v-model="ttsSettings.gsvRefAudioPath"
-                          @change="handleRefAudioPathChange(ttsSettings.gsvRefAudioPath,'model')"
-                          class="full-width-input"
-                        >
-                          <el-option :key="null" :value="null" :label="t('noRefAudio')"></el-option>
-                          <el-option
-                            v-for="audio in ttsSettings.gsvAudioOptions"
-                            :key="audio.path"
-                            :label="audio.name"
-                            :value="audio.path"
-                          >
-                            <div class="model-option-item">
-                              <span>{{ audio.name }}</span>
-                              <i 
-                                class="fa-solid fa-trash-can"
-                                style="color: #ff0000"
-                                @click.stop="deleteAudioOption(audio.path)"
-                              ></i>
-                            </div>
-                          </el-option>
-                          
-                        </el-select>
-                      </el-form-item>
                       <!-- 语速滑动条 -->
                       <el-form-item :label="t('TTSRate')" class="form-item-align">
                         <el-slider
@@ -8097,12 +7594,6 @@ function updateElement(el, rawMarkdown, formatFn) {
                           @change="autoSaveSettings">
                       </el-form-item>
                     </div>
-                    <el-button 
-                      @click="showGsvRefAudioPathDialog = true;currentUploadType='audio'"
-                      type="primary" 
-                      class="add-server-btn">
-                      <i class="fa-solid fa-plus"></i> {{ t('addRefAudio') }}
-                    </el-button>
                     <el-alert
                       type="info"
                       :closable="false"
@@ -8687,136 +8178,6 @@ function updateElement(el, rawMarkdown, formatFn) {
                           ></el-option>
                         </el-select>
                       </el-form-item>
-                    </div>
-                  </div>
-                  <div class="tool-item" v-show="ttsSettings.engine === 'GSV'">
-                    <div class="tool-header">
-                      <div class="header-left">
-                        <span>
-                          <el-icon>
-                            <i class="fa-solid fa-volume-high"></i>
-                          </el-icon>
-                          GPT Sovits
-                          <el-link
-                            type="primary"
-                            :underline="false"
-                            href="https://github.com/RVC-Boss/GPT-SoVITS" 
-                            target="_blank"
-                          >
-                            <el-icon class="mr-1">
-                              <i class="fa-solid fa-key"></i>
-                            </el-icon>{{ t('gotoGithub') }}
-                          </el-link>
-                        </span>
-                      </div>
-                    </div>
-                    <div class="tool-content">
-                      <el-form-item :label="t('gsvServer')" class="form-item-align">
-                        <el-input
-                          v-model="ttsSettings.gsvServer"
-                          :placeholder="t('gsvServerPlaceholder')"
-                          @input="autoSaveSettings"
-                          type="textarea"
-                        />
-                      </el-form-item>
-
-                      <!-- 语速滑动条 -->
-                      <el-form-item :label="t('gsvRate')" class="form-item-align">
-                        <el-slider
-                          v-model="ttsSettings.gsvRate"
-                          :min="0.1"
-                          :max="2"
-                          :step="0.1"
-                          show-input
-                          @change="autoSaveSettings">
-                      </el-form-item>
-
-                        <el-form-item :label="t('gsvSample_steps')" class="form-item-align">
-                          <el-slider
-                            v-model="ttsSettings.gsvSample_steps"
-                            :min="1"
-                            :max="16"
-                            :step="1"
-                            show-input
-                            @change="autoSaveSettings">
-                        </el-form-item>   
-
-                      <!-- 语言选择框 -->
-                      <el-form-item :label="t('gsvTextLang')" class="form-item-align">
-                        <el-select
-                          v-model="ttsSettings.gsvTextLang"
-                          @change="autoSaveSettings"
-                          class="full-width-input"
-                        >
-                          <el-option
-                            v-for="language in gsvTextLangs"
-                            :key="language"
-                            :label="t(language)"
-                            :value="language"
-                          ></el-option>
-                        </el-select>
-                      </el-form-item>
-
-                      <!-- 提示语言选择框 -->
-                      <el-form-item :label="t('gsvPromptLang')" class="form-item-align">
-                        <el-select
-                          v-model="ttsSettings.gsvPromptLang"
-                          @change="autoSaveSettings"
-                          class="full-width-input"
-                        >
-                          <el-option
-                            v-for="language in gsvTextLangs"
-                            :key="language"
-                            :label="t(language)"
-                            :value="language"
-                          ></el-option>
-                        </el-select>
-                      </el-form-item>
-
-                      <!-- 提示音频选择框 -->
-                      <el-form-item :label="t('gsvPromptAudio')" class="form-item-align">
-                        <el-select
-                          v-model="ttsSettings.gsvRefAudioPath"
-                          @change="handleRefAudioPathChange(ttsSettings.gsvRefAudioPath,'model')"
-                          class="full-width-input"
-                        >
-                          <el-option
-                            v-for="audio in ttsSettings.gsvAudioOptions"
-                            :key="audio.path"
-                            :label="audio.name"
-                            :value="audio.path"
-                          >
-                            <div class="model-option-item">
-                              <span>{{ audio.name }}</span>
-                              <i 
-                                class="fa-solid fa-trash-can"
-                                style="color: #ff0000"
-                                @click.stop="deleteAudioOption(audio.path)"
-                              ></i>
-                            </div>
-                          </el-option>
-                        </el-select>
-                      </el-form-item>
-
-                      <el-button 
-                        @click="showGsvRefAudioPathDialog = true;currentUploadType='audio'"
-                        type="primary" 
-                        class="add-server-btn">
-                        <i class="fa-solid fa-plus"></i> {{ t('addRefAudio') }}
-                      </el-button>
-
-                      <el-alert
-                        type="info"
-                        :closable="false"
-                        class="mb-2"
-                      >
-                        <template #default>
-                          <div class="alert-content">
-                            {{ t('gsvNotice1') }}<br>
-                            {{ t('gsvNotice2') }}
-                          </div>
-                        </template>
-                      </el-alert>
                     </div>
                   </div>
                 </el-form>
@@ -12837,14 +12198,6 @@ function updateElement(el, rawMarkdown, formatFn) {
                 </a>
               </div>
 
-              <div class="link-item">
-                <span>Bilibili：</span>
-                <a href="https://space.bilibili.com/26978344" 
-                  target="_blank" 
-                  class="social-link">
-                  @派酱llm-party
-                </a>
-              </div>
 
               <div class="link-item">
                 <span>Youtube：</span>
