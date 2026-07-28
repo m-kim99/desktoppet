@@ -9332,7 +9332,10 @@ function buildWorldSnapshot(me) {
         `날씨: ${wxKo}`,
     ];
     for (const p of pets) lines.push(`${petKo(p)}${p === me ? ' (나)' : ' (절친)'} — ${petStatusLine(p)}`);
-    lines.push(`주인: ${possessed ? `${petKo(possessed)}를 직접 조종하며 함께 노는 중` : '화면 밖에서 지켜보는 중'}`);
+    const ownerState = possessed ? `${petKo(possessed)}를 직접 조종하며 함께 노는 중`
+        : spectating ? `${spectating === me ? '너' : petKo(spectating)}의 시점을 따라다니며 지켜보는 중 (조종은 안 하고 관찰만 — 평소처럼 자유롭게 지내면 된다)`
+        : '화면 밖에서 지켜보는 중';
+    lines.push(`주인: ${ownerState}`);
     return lines.join('\n');
 }
 
