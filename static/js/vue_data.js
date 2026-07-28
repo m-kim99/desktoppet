@@ -662,29 +662,6 @@ let vue_data = {
       azureRegion: '',
       azureVoice: '',
 
-      // Volcengine
-      volcAppId: '',
-      volcAccessKey: '',
-      volcResourceId: 'seed-tts-2.0', // Default public-resource ID
-      volcVoice: 'zh_female_vv_uranus_bigtts', // Default LLM voice
-      volcRate: 1.0,
-
-      // Baidu
-      baiduApiKey: '',
-      baiduSecretKey: '',
-      baiduVoice: '',
-
-      // Minimax
-      minimaxApiKey: '',
-      minimaxGroupId: '',
-      minimaxVoice: '',
-
-      // Xunfei
-      xunfeiAppId: '',
-      xunfeiApiKey: '',
-      xunfeiApiSecret: '',
-      xunfeiVoice: '',
-
       // Fish Audio
       fishApiKey: '',
       fishVoice: '',
@@ -703,20 +680,6 @@ let vue_data = {
 
 
     },
-    volcResourceOptions: [
-        { value: 'volc_tts_release', label: '구버전/표준 (Standard)' },
-        // Doubao 1.0
-        { value: 'seed-tts-1.0', label: 'Doubao 모델 1.0 (문자 버전)' },
-        { value: 'volc.service_type.10029', label: 'Doubao 1.0 (문자 버전-ServiceType)' },
-        { value: 'seed-tts-1.0-concurr', label: 'Doubao 모델 1.0 (동시 버전)' },
-        { value: 'volc.service_type.10048', label: 'Doubao 1.0 (동시 버전-ServiceType)' },
-        // Doubao 2.0
-        { value: 'seed-tts-2.0', label: 'Doubao 모델 2.0 (문자 버전)' },
-        // Voice cloning
-        { value: 'seed-icl-1.0', label: '음성 복제 1.0 (문자 버전)' },
-        { value: 'seed-icl-1.0-concurr', label: '음성 복제 1.0 (동시 버전)' },
-        { value: 'seed-icl-2.0', label: '음성 복제 2.0 (문자 버전)' }
-    ],
     activeTTSTab: 'default', // Controls TTS tab switching
     showAddTTSDialog: false, // Controls the add-TTS dialog's visibility
     newTTSConfig: {
@@ -748,29 +711,6 @@ let vue_data = {
       azureSpeechKey: '',
       azureRegion: '',
       azureVoice: '',
-
-      // Volcengine
-      volcAppId: '',
-      volcAccessKey: '',
-      volcResourceId: 'seed-tts-2.0', // Default public-resource ID
-      volcVoice: 'zh_female_vv_uranus_bigtts', // Default LLM voice
-      volcRate: 1.0,
-
-      // Baidu
-      baiduApiKey: '',
-      baiduSecretKey: '',
-      baiduVoice: '',
-
-      // Minimax
-      minimaxApiKey: '',
-      minimaxGroupId: '',
-      minimaxVoice: '',
-
-      // Xunfei
-      xunfeiAppId: '',
-      xunfeiApiKey: '',
-      xunfeiApiSecret: '',
-      xunfeiVoice: '',
 
       // Fish Audio
       fishApiKey: '',

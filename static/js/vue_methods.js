@@ -14007,18 +14007,6 @@ collapseSidePanel() {
             case 'azure':
                 config = { speech_key: s.azureSpeechKey, speech_region: s.azureRegion };
                 break;
-            case 'volcengine':
-                config = { access_key: s.volcAccessKey, secret_key: s.volcSecretKey, app_key: s.volcAppKey };
-                break;
-            case 'baidu':
-                config = { api_key: s.baiduApiKey, secret_key: s.baiduSecretKey };
-                break;
-            case 'minimax':
-                config = { api_key: s.minimaxApiKey, group_id: s.minimaxGroupId };
-                break;
-            case 'xunfei':
-                config = { app_id: s.xunfeiAppId, api_key: s.xunfeiApiKey, api_secret: s.xunfeiApiSecret };
-                break;
             case 'fish':
                 config = { api_key: s.fishApiKey };
                 break;
@@ -14066,18 +14054,6 @@ collapseSidePanel() {
         switch(provider) {
             case 'azure':
                 config = { speech_key: s.azureSpeechKey, speech_region: s.azureRegion };
-                break;
-            case 'volcengine':
-                config = { access_key: s.volcAccessKey, secret_key: s.volcSecretKey, app_key: s.volcAppKey };
-                break;
-            case 'baidu':
-                config = { api_key: s.baiduApiKey, secret_key: s.baiduSecretKey };
-                break;
-            case 'minimax':
-                config = { api_key: s.minimaxApiKey, group_id: s.minimaxGroupId };
-                break;
-            case 'xunfei':
-                config = { app_id: s.xunfeiAppId, api_key: s.xunfeiApiKey, api_secret: s.xunfeiApiSecret };
                 break;
             case 'fish':
                 config = { api_key: s.fishApiKey };

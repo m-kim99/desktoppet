@@ -5,6 +5,16 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Removed (🇨🇳 중국계 클라우드 TTS 4종 제거 — own-the-app P1 라운드2)
+- **Volcengine(火山引擎/바이트댄스)**: 전용 엔진 브랜치(bytedance API 직결)·설정 패널 2벌·Doubao 리소스
+  옵션 배열·설정 키 5종·고아 로케일 키.
+- **Baidu·Minimax·Xunfei(讯飞)**: tetos 공용 브랜치에서 3종만 발라냄(azure/fish/google 유지) — 엔진 목록·
+  cache_key/스피커 elif·voices 목록 엔드포인트 블록·설정 패널 6벌·fetch-voices switch 케이스 ×2·설정 키 10종.
+- 범위 준수: LLM 공급자 프리셋(Volcano ark·minimax LLM·baidu qianfan)과 searxng 웹검색의 baidu는 TTS가
+  아니므로 유지. tetos 라이브러리 deps도 azure/fish/google이 계속 써서 유지.
+- 검증: 부팅 OK·대시보드 13카드/JS에러 0/엔진 옵션 잔재 0·world-smoke 15/15.
+
+
 ### Removed (🇨🇳 중국 전용 기능 제거 — own-the-app P1 첫 라운드)
 - **MOSS-TTS**(푸단대 로컬 TTS): py/moss_tts.py·moss_model_manager.py·py/moss/ 삭제, 서버 예열/엔진 분기/
   라우터, 설정 패널·다운로드 카드(설정·추가 다이얼로그 2벌), 자동다운로드 분기, 상태·메서드, 설정 키, 로케일.
