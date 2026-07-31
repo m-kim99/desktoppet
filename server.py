@@ -2352,26 +2352,6 @@ async def tools_change_messages(request: ChatRequest, settings: dict):
         text2img_messages = "\n\nAfter you use the image-generation tool, you must put the image URL in a markdown image tag, e.g.:\n\n<silence>![image name](image URL)</silence>\n\nThe image markdown must be on its own separate line! Send it to the user proactively—the user cannot see the tool's returned result! <silence> and </silence> are TTS silence tags, meaning the image part will not go into speech synthesis\n\nYou must correctly use the <silence> tag to wrap the image's markdown syntax\n\nNote!!! There must be no spaces or line breaks between <silence>/</silence> and the image's markdown syntax, or parsing will fail!\n\n"
         content_append(request.messages, 'system', text2img_messages)
 
-    # VRM expressions (fixed)
-    if settings['VRMConfig']['enabledExpressions'] and not request.is_app_bot and not request.is_sub_agent:
-        Expression_messages = "\n\nYou can use the following expressions: <happy> <angry> <sad> <neutral> <surprised> <relaxed>\n\nYou can insert an expression symbol at the start of a sentence to drive the character's current expression. Note! You must place the expression symbol at the start of the sentence (if there is a voice tag, place it right after the voice tag) so the character makes the expression while saying that sentence, e.g.: <angry>I'm really angry. <surprised>Wow! <happy>I'm so happy.\n\nYou must keep the expression symbol on the same line as the sentence it applies to. If there is a line break between the expression symbol and the sentence, the expression will not take effect, e.g.:\n\n<happy>\nI'm so happy.\n\nIn this case the expression symbol will not take effect."
-        content_append(request.messages, 'system', Expression_messages)
-
-    # VRM motions (fixed)
-    if settings['VRMConfig']['enabledMotions'] and not request.is_app_bot and not request.is_sub_agent:
-        motions = settings['VRMConfig']['defaultMotions'] + settings['VRMConfig']['userMotions']
-        motion_tags = [f"<{m.get('name','')}>" for m in motions]
-        print(motion_tags)
-        Motion_messages = (
-            "\n\nYou can use the following motions: "
-            + ", ".join(motion_tags) +
-            "\n\nYou can insert a motion symbol at the start of a sentence to drive the character's current motion. Note! You must place the motion symbol at the start of the sentence (if there is a voice tag, place it right after the voice tag), "
-            "so the character performs the motion while saying that sentence, e.g.: <scratchHead>I'm really angry. <playFingers>Wow! <akimbo>I'm so happy.\n\n"
-            "You must keep the motion symbol on the same line as the sentence it applies to. If there is a line break between the motion symbol and the sentence, "
-            "the motion will not take effect, e.g.:\n\n<playFingers>\nI'm so happy.\n\nIn this case the motion symbol will not take effect."
-        )
-        content_append(request.messages, 'system', Motion_messages)
-
     # TTS rules (fixed; originally prepend, changed to append)
     newttsList = []
     Narrator_label = "Narrator"
@@ -2750,31 +2730,6 @@ Clearly, for this request, sending the table directly using markdown syntax is m
             sub_task_context = await query_task_progress(cwd)
             if sub_task_context:
                 content_append(request.messages, 'system', sub_task_context)
-
-    # 4. VTS status (expression may differ each turn)
-    from py.vts_manager import vts_instance
-    if vts_instance.is_running and not request.is_app_bot and not request.is_sub_agent:
-        all_exp_names = [f"<{e['name']}>" for e in vts_instance.model_expressions]
-        all_mot_names = [f"<{h['name']}>" for h in vts_instance.available_hotkeys]
-        active_list = vts_instance.current_active_expressions
-        status_text = "、".join(active_list) if active_list else "平静"
-        if all_exp_names or all_mot_names:
-            vts_prompt = f"""
-\n\n# 人物表现控制
-你当前正在控制 Live2D 模型。当前表情状态：{status_text}。
-
-【可用表情标签】(发送即表示切换，并自动重置其他表情)
-{" ".join(all_exp_names)}
-
-【可用动作标签】(触发一次性动画)
-{" ".join(all_mot_names)}
-
-【使用规则】
-1. 每一句回复开头都可以插入一个标签。
-2. 表情标签是排他性的：如果你发送新的表情标签，系统会自动为你关闭旧表情。
-3. 标签必须放在句首，严禁换行。
-"""
-            content_append(request.messages, 'system', vts_prompt)
 
     # 5. Affection values (may change each turn)
     love_settings = settings.get('loveSettings', {})
@@ -8384,8 +8339,6 @@ async def broadcast_to_vrm(self, message: Union[str, bytes]):
     for conn in disconnected:
         self.disconnect_vrm(conn)
 
-from py.vts_manager import vts_instance
-
 @app.websocket("/ws/tts")
 async def tts_websocket_endpoint(websocket: WebSocket):
     await tts_manager.connect_main(websocket)
@@ -8402,26 +8355,6 @@ async def tts_websocket_endpoint(websocket: WebSocket):
                         metadata_bytes = data_bytes[4 : 4 + json_len]
                         audio_file_bytes = data_bytes[4 + json_len :]
                         
-                        if vts_instance.is_running and len(audio_file_bytes) > 0:
-                            import subprocess
-                            import imageio_ffmpeg  
-                            def decode_audio_to_pcm(b_data):
-                                ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-                                process = subprocess.Popen([
-                                    ffmpeg_exe,
-                                    '-i', 'pipe:0',       
-                                    '-f', 's16le',        
-                                    '-ar', '24000',       
-                                    '-ac', '1',           
-                                    'pipe:1'              
-                                ], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-                                pcm_raw_bytes, _ = process.communicate(input=b_data)
-                                return pcm_raw_bytes
-
-                            pcm_raw_bytes = await asyncio.to_thread(decode_audio_to_pcm, audio_file_bytes)
-                            if pcm_raw_bytes:
-                                asyncio.create_task(vts_instance.drive_mouth(pcm_raw_bytes))
-                        
                         await tts_manager.broadcast_to_vrm(data_bytes)
                     except Exception as e:
                         logging.error(f"万能音频解码出错: {e}")
@@ -8432,43 +8365,6 @@ async def tts_websocket_endpoint(websocket: WebSocket):
                     payload = json.loads(msg["text"]) 
                     msg_type = payload.get("type")
                     
-                    # === [New] clear VTS's historical debounce marker set at the start of each voice session ===
-                    if msg_type in ["ttsStarted", "startSpeaking"]:
-                        if hasattr(vts_instance, "triggered_tags_in_session"):
-                            vts_instance.triggered_tags_in_session.clear()
-                    
-                    if msg_type == "startVTS_Driver":
-                        success = await vts_instance.connect(payload.get("data", {}))
-                        feedback = {
-                            "type": "vts_connection_status",
-                            "data": {
-                                "success": success,
-                                "message": "Connected to VTube Studio" if success else "Failed to connect. Please make sure VTube Studio is running and the API is enabled."
-                            }
-                        }
-                        await websocket.send_text(json.dumps(feedback))
-                        
-                    elif msg_type == "stopVTS_Driver":
-                        await vts_instance.stop()
-                        await websocket.send_text(json.dumps({
-                            "type": "vts_connection_status",
-                            "data": {"success": False, "message": "VTS Disconnected"}
-                        }))
-                    elif msg_type == "startSpeaking":
-                        if vts_instance.is_running:
-                            data_content = payload.get("data", {})
-                            expressions = data_content.get("expressions",[])
-                            for exp in expressions:
-                                asyncio.create_task(vts_instance.trigger_hotkey(exp))
-
-                    # === [New] when TTS is disabled, support motion/expression triggers carried by streaming text (omniStreaming) ===
-                    elif msg_type == "omniStreaming":
-                        if vts_instance.is_running:
-                            data_content = payload.get("data", {})
-                            expressions = data_content.get("expressions", [])
-                            for exp in expressions:
-                                asyncio.create_task(vts_instance.trigger_hotkey(exp))
-
                     await tts_manager.broadcast_to_vrm(msg["text"])
                 except Exception as e:
                     logging.error(f"[PY] WS Text Error: {e}")
@@ -8507,12 +8403,11 @@ async def subtitles_websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         tts_manager.disconnect_overlay(websocket)
 
-# Update the status endpoint so the frontend can also tell whether VTS is connected (though it doesn't affect mute logic)
+# Status endpoint: connection counts for the pet window / overlay / main UI
 @app.get("/tts/status")
 async def get_tts_status():
     return {
         "vrm_connections": len(tts_manager.vrm_connections),
-        "vts_active": vts_instance.is_running, # New
         "overlay_connections": len(tts_manager.overlay_connections),
         "main_connections": len(tts_manager.main_connections)
     }
@@ -9729,56 +9624,6 @@ async def delete_files_endpoint(req: FileNames):
 
 ALLOWED_AUDIO_EXTENSIONS = ['wav', 'mp3', 'ogg', 'flac', 'aac']
 
-# Allowed VRM file extensions
-ALLOWED_VRM_EXTENSIONS = {'vrm'}
-
-@app.post("/upload_vrm_model")
-async def upload_vrm_model(
-    request: Request,
-    file: UploadFile = File(...),
-    display_name: str = Form(...)
-):
-    fastapi_base_url = str(request.base_url)
-    
-    # Check the file extension
-    file_extension = file.filename.split('.')[-1].lower()
-    if file_extension not in ALLOWED_VRM_EXTENSIONS:
-        return JSONResponse(
-            status_code=400,
-            content={"success": False, "message": f"不支持的文件类型: {file_extension}，只支持.vrm文件"}
-        )
-    
-    # Generate a unique filename
-    unique_filename = f"{uuid.uuid4()}.{file_extension}"
-    destination = os.path.join(UPLOAD_FILES_DIR, unique_filename)
-    
-    try:
-        # Save the file
-        with open(destination, "wb") as buffer:
-            content = await file.read()
-            buffer.write(content)
-        
-        # Build the response
-        file_link = f"{fastapi_base_url}uploaded_files/{unique_filename}"
-        
-        return JSONResponse(content={
-            "success": True,
-            "message": "VRM模型上传成功",
-            "file": {
-                "path": file_link,
-                "display_name": display_name,
-                "original_name": file.filename,
-                "unique_filename": unique_filename
-            }
-        })
-    
-    except Exception as e:
-        logger.error(f"VRM模型上传失败: {str(e)}")
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"文件保存失败: {str(e)}"}
-        )
-
 @app.get("/get_default_vrm_models")
 async def get_default_vrm_models(request: Request):
     try:
@@ -9828,204 +9673,6 @@ async def get_default_vrm_models(request: Request):
         return JSONResponse(
             status_code=500,
             content={"success": False, "message": f"获取默认模型失败: {str(e)}"}
-        )
-
-# Modify the delete-VRM-model endpoint, adding a security check
-@app.delete("/delete_vrm_model/{filename}")
-async def delete_vrm_model(filename: str):
-    try:
-        # Ensure only files in the upload directory can be deleted, not default models
-        file_path = os.path.join(UPLOAD_FILES_DIR, filename)
-        
-        # Security check: ensure the filename is in UUID format to prevent path-traversal attacks
-        if not re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.vrm$", filename):
-            return JSONResponse(
-                status_code=400,
-                content={"success": False, "message": "Invalid filename"}
-            )
-        
-        # Extra check: ensure the file path is in the upload directory to prevent deleting default models
-        if not file_path.startswith(os.path.abspath(UPLOAD_FILES_DIR)):
-            return JSONResponse(
-                status_code=403,
-                content={"success": False, "message": "Cannot delete default models"}
-            )
-        
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            return JSONResponse(content={
-                "success": True,
-                "message": "VRM模型文件已删除"
-            })
-        else:
-            return JSONResponse(
-                status_code=404,
-                content={"success": False, "message": "文件不存在"}
-            )
-            
-    except Exception as e:
-        logger.error(f"删除VRM模型失败: {str(e)}")
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"删除失败: {str(e)}"}
-        )
-
-ALLOWED_VRMA_EXTENSIONS = {"vrma"}
-
-animation_dir = os.path.join(DEFAULT_VRM_DIR, "animations")
-
-def make_file_url(request: Request, file_path: str) -> str:
-    """将本地文件路径转成对外可访问的 URL"""
-    return str(request.base_url) + file_path.lstrip("/")
-
-
-def scan_motion_files(directory: str, allowed_ext: set) -> List[dict]:
-    """
-    扫描指定目录下所有符合扩展名的文件，返回列表：
-    [
-      {
-        "id": "文件名(不含扩展名)",
-        "name": "文件名(不含扩展名)",
-        "path": "对外可访问的完整 URL",
-        "type": "default" | "user"
-      }
-    ]
-    """
-    files = []
-    if not os.path.exists(directory):
-        return files
-
-    for f in os.listdir(directory):
-        if f.lower().endswith(tuple(allowed_ext)):
-            file_id = Path(f).stem
-            file_path = os.path.join(directory, f)
-            # Note: return a relative path here, then assemble it into a URL later
-            files.append({
-                "id": file_id,
-                "name": file_id,
-                "path": file_path,
-                "type": "default" if directory == animation_dir else "user"
-            })
-    # Sort by filename
-    files.sort(key=lambda x: x["name"])
-    return files
-
-@app.get("/get_default_vrma_motions")
-async def get_default_vrma_motions(request: Request):
-    try:
-        motions = scan_motion_files(animation_dir, ALLOWED_VRMA_EXTENSIONS)
-
-        # Convert the disk path to a URL
-        for m in motions:
-            file_name = os.path.basename(m["path"])
-            m["path"] = str(request.base_url) + f"vrm/animations/{file_name}"
-
-        return {"success": True, "motions": motions}
-
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"获取默认动作失败: {str(e)}"}
-        )
-
-
-@app.get("/get_user_vrma_motions")
-async def get_user_vrma_motions(request: Request):
-    try:
-        motions = scan_motion_files(UPLOAD_FILES_DIR)
-
-        # Convert the disk path to a URL
-        for m in motions:
-            file_name = os.path.basename(m["path"])
-            m["path"] = str(request.base_url) + f"uploaded_files/{file_name}"
-
-        return {"success": True, "motions": motions}
-
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"获取用户动作失败: {str(e)}"}
-        )
-
-
-@app.post("/upload_vrma_motion")
-async def upload_vrma_motion(
-    request: Request,
-    file: UploadFile = File(...),
-    display_name: str = Form(...)
-):
-    # Check the extension
-    file_extension = Path(file.filename).suffix.lower().lstrip(".")
-    if file_extension not in ALLOWED_VRMA_EXTENSIONS:
-        return JSONResponse(
-            status_code=400,
-            content={"success": False, "message": f"不支持的文件类型: {file_extension}"}
-        )
-
-    # Generate a unique filename
-    unique_filename = f"{uuid.uuid4()}.vrma"
-    destination = os.path.join(UPLOAD_FILES_DIR, unique_filename)
-
-    try:
-        # Save the file
-        os.makedirs(UPLOAD_FILES_DIR, exist_ok=True)
-        with open(destination, "wb") as buffer:
-            content = await file.read()
-            buffer.write(content)
-
-        # Build the return data
-        file_url = make_file_url(request, f"uploaded_files/{unique_filename}")
-
-        return JSONResponse(content={
-            "success": True,
-            "message": "动作上传成功",
-            "file": {
-                "unique_filename": unique_filename,
-                "display_name": display_name,
-                "path": file_url
-            }
-        })
-
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"保存文件失败: {str(e)}"}
-        )
-
-
-@app.delete("/delete_vrma_motion/{filename}")
-async def delete_vrma_motion(filename: str):
-    try:
-        # Only allow deleting files in UPLOAD_FILES_DIR
-        if not re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.vrma$", filename):
-            return JSONResponse(
-                status_code=400,
-                content={"success": False, "message": "Invalid filename"}
-            )
-
-        file_path = os.path.join(UPLOAD_FILES_DIR, filename)
-        abs_upload = os.path.abspath(UPLOAD_FILES_DIR)
-        abs_file = os.path.abspath(file_path)
-
-        if not abs_file.startswith(abs_upload):
-            return JSONResponse(
-                status_code=403,
-                content={"success": False, "message": "禁止删除系统文件"}
-            )
-
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            return {"success": True, "message": "动作文件已删除"}
-        else:
-            return JSONResponse(
-                status_code=404,
-                content={"success": False, "message": "文件不存在"}
-            )
-
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"success": False, "message": f"删除失败: {str(e)}"}
         )
 
 # -------------- GAUSS scene-related --------------

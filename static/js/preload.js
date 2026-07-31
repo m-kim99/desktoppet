@@ -3,12 +3,6 @@ const path = require('path');
 const { remote } = require('@electron/remote/main')
 
 
-// Cache the last VMC config (off by default)
-let vmcCfg = { receive:{enable:false,port:39539,syncExpression: false}, send:{enable:false,host:'127.0.0.1',port:39540} };
-
-// The main process pushes the latest config
-ipcRenderer.on('vmc-config-changed', (_, cfg) => { vmcCfg = cfg; });
-
 // Server config kept consistent with main.js
 const HOST = '127.0.0.1'
 const PORT = 3456
@@ -107,9 +101,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       }
   },
 
-  setVMCConfig: (cfg) => ipcRenderer.invoke('set-vmc-config', cfg),
-  getVMCConfig: () => ipcRenderer.invoke('get-vmc-config'),
-  onVMCConfigChanged: (cb) => ipcRenderer.on('vmc-config-changed', (_, cfg) => cb(cfg)),
   captureDesktop: () => ipcRenderer.invoke('capture-desktop'), // Desktop screenshot
   toggleWindowSize: (width, height) => ipcRenderer.invoke('toggle-window-size', { width, height }),
   setAlwaysOnTop: (flag) => ipcRenderer.invoke('set-always-on-top', flag),
@@ -161,26 +152,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('workspace-changed');
     ipcRenderer.on('workspace-changed', (_, data) => callback(data));
   },
-});
-
-contextBridge.exposeInMainWorld('vmcAPI', {
-  onVMCBone: (callback) => ipcRenderer.on('vmc-bone', (_, data) => callback(data)),
-
-  onVMCOscRaw: (cb) => ipcRenderer.on('vmc-osc-raw', (_, oscMsg) => cb(oscMsg)),
-
-  sendVMCBone: (data) => {
-    if (!vmcCfg.send.enable) return;
-    return ipcRenderer.invoke('send-vmc-bone', data);
-  },
-  sendVMCBlend: (data) => {
-    if (!vmcCfg.send.enable) return;
-    return ipcRenderer.invoke('send-vmc-blend', data);
-  },
-  sendVMCBlendApply: () => {
-    if (!vmcCfg.send.enable) return;
-    return ipcRenderer.invoke('send-vmc-blend-apply');
-  },
-  sendVMCFrame: (data) => ipcRenderer.invoke('send-vmc-frame', data),
 });
 
 contextBridge.exposeInMainWorld('downloadAPI', {

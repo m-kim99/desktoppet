@@ -10,19 +10,14 @@ const fs = require('fs')
 const os = require('os')
 const net = require('net') // Add the net module for port detection
 const dgram = require('dgram');
-const osc = require('osc');
 const chokidar = require('chokidar');
 let workspaceWatcher = null; // Declare the global watcher variable
-// VMC: UDP send/receive resources
-let vmcUdpPort = null;          // osc.UDPPort instance
-let vmcReceiverActive = false;  // Whether receiving is running
 let vrmWindows = [];
 let summonVrmPetRef = null;            // tray-menu bridge to the pet-summon fn (assigned during app setup)
 let openWorldRef = null;               // tray-menu bridge to the pet-world window fn (assigned during app setup)
 let lastVrmConfig = { width: 540, height: 960 }; // The most recent size, reused when summoning the pet via a global shortcut
 let shotOverlay = null
 let isMac = process.platform === 'darwin';
-const vmcSendSocket = dgram.createSocket('udp4'); // Sending reuses the same socket
 const MAX_LOG_LINES = 2000; // Keep the most recent 2000 log lines
 let logBuffer = []; // In-memory log buffer
 let activeDownloads = new Map(); 
@@ -70,115 +65,6 @@ async function cropDesktop(rect) {
   return cropped.toPNG()
 }
 
-// Replaces the original startVMCReceiver
-function startVMCReceiver(cfg) {
-  if (vmcReceiverActive) return;
-  vmcUdpPort = new osc.UDPPort({
-    localAddress: '0.0.0.0',
-    localPort: cfg.receive.port,
-    metadata: true,
-  });
-  vmcUdpPort.open();
-  vmcUdpPort.on('message', (oscMsg) => {
-
-    /* -------- 1. Bones -------- */
-    if (oscMsg.address === '/VMC/Ext/Bone/Pos') {
-      if (!Array.isArray(oscMsg.args) || oscMsg.args.length < 8) return;
-      const [boneName, x, y, z, qx, qy, qz, qw] = oscMsg.args.map(v => v.value ?? v);
-      if (typeof boneName !== 'string') return;
-
-      vrmWindows.forEach(w => {
-        if (!w.isDestroyed()) {
-          w.webContents.send('vmc-bone', { boneName, position:{x,y,z}, rotation:{x:qx,y:qy,z:qz,w:qw} });
-          w.webContents.send('vmc-osc-raw', oscMsg);
-        }
-      });
-      return;
-    }
-
-    /* -------- 2. Expressions -------- */
-    if (oscMsg.address === '/VMC/Ext/Blend/Val') {
-      if (!Array.isArray(oscMsg.args) || oscMsg.args.length < 2) return;
-      vrmWindows.forEach(w => {
-        if (!w.isDestroyed()) w.webContents.send('vmc-osc-raw', oscMsg);
-      });
-      return;
-    }
-
-    /* -------- 3. Expression apply -------- */
-    if (oscMsg.address === '/VMC/Ext/Blend/Apply') {
-      // Apply takes no arguments; a length of 0 is valid too
-      vrmWindows.forEach(w => {
-        if (!w.isDestroyed()) w.webContents.send('vmc-osc-raw', oscMsg);
-      });
-    }
-  });
-
-
-  vmcReceiverActive = true;
-  console.log(`[VMC] 接收已启动 @ ${cfg.receive.port}`);
-}
-function stopVMCReceiver() {
-  if (!vmcReceiverActive) return;
-  vmcUdpPort.close();
-  vmcUdpPort = null;
-  vmcReceiverActive = false;
-  console.log('[VMC] 接收已停止');
-}
-
-// Send VMC Bone -------------------------------------------------
-function sendVMCBoneMain(data) {
-  if (!data) return;
-  const { boneName, position, rotation } = data;
-  if (!boneName || !position || !rotation) return;
-
-  const { host, port } = global.vmcCfg.send;          // <- panel config
-  const oscMsg = osc.writePacket({
-    address: `/VMC/Ext/Bone/Pos`,
-    args: [
-      { type: 's', value: boneName },
-      { type: 'f', value: position.x || 0 },
-      { type: 'f', value: position.y || 0 },
-      { type: 'f', value: position.z || 0 },
-      { type: 'f', value: rotation.x || 0 },
-      { type: 'f', value: rotation.y || 0 },
-      { type: 'f', value: rotation.z || 0 },
-      { type: 'f', value: rotation.w || 1 },
-    ],
-  });
-  vmcSendSocket.send(oscMsg, port, host, (err) => {
-    if (err) console.error('VMC send error:', err);
-  });
-}
-
-// Send VMC Blend ------------------------------------------------
-function sendVMCBlendMain(data) {
-  if (!data) return;
-  const { blendName, weight } = data;
-  if (typeof blendName !== 'string' || typeof weight !== 'number') return;
-
-  const { host, port } = global.vmcCfg.send;          // <- panel config
-  const oscMsg = osc.writePacket({
-    address: '/VMC/Ext/Blend/Val',
-    args: [
-      { type: 's', value: blendName },
-      { type: 'f', value: Math.max(0, Math.min(1, weight)) },
-    ],
-  });
-  vmcSendSocket.send(oscMsg, port, host, (err) => {
-    if (err) console.error('VMC blend send error:', err);
-  });
-}
-
-// Send VMC Blend Apply ------------------------------------------
-function sendVMCBlendApplyMain() {
-  const { host, port } = global.vmcCfg.send;          // <- panel config
-  const oscMsg = osc.writePacket({
-    address: '/VMC/Ext/Blend/Apply',
-    args: [],
-  });
-  vmcSendSocket.send(oscMsg, port, host);
-}
 
 let pythonExec;
 let isQuitting = false;
@@ -854,19 +740,8 @@ app.whenReady().then(async () => {
         console.log('捕获到下载请求 (来自主窗口):', item.getFilename());
         handleDownloadItem(event, item, webContents);
     });    
-      // Default config
-    global.vmcCfg = {
-      receive: { enable: false, port: 39539,syncExpression: false },
-      send:    { enable: false, host: '127.0.0.1', port: 39540 }
-    };
-    ipcMain.handle('get-vmc-config', () => {
-      // Ensure the fields exist to avoid undefined
-      global.vmcCfg.receive.syncExpression ??= false;
-      return global.vmcCfg;
-    });
     // Create the splash-screen window
     createSkeletonWindow()
-    if (global.vmcCfg.receive.enable) startVMCReceiver(global.vmcCfg);
     // Start the backend service (now auto-finds an available port)
     await startBackend()
     ipcMain.handle('get-backend-logs', () => {
@@ -1615,99 +1490,6 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
     // Create the system tray
     createTray();
     updatecontextMenu();
-    // The block below is where the 'main-process IPC + default config' goes
-    ipcMain.handle('set-vmc-config', async (_, cfg) => {
-      if (cfg.receive.enable) {
-        if (!vmcReceiverActive || cfg.receive.port !== global.vmcCfg?.receive.port) {
-          if (vmcReceiverActive) stopVMCReceiver();
-          startVMCReceiver(cfg);
-        }
-      } else {
-        stopVMCReceiver();
-      }
-      global.vmcCfg = cfg;
-      BrowserWindow.getAllWindows().forEach(w => {
-        if (!w.isDestroyed()) w.webContents.send('vmc-config-changed', cfg);
-      });
-      return { success: true };
-    });
-
-    ipcMain.handle('send-vmc-frame', (event, frameData) => {
-      if (!global.vmcCfg?.send.enable) return;
-
-      const { host, port } = global.vmcCfg.send;
-      const { bones, blends } = frameData;
-      const packets = [];
-
-      // 1. Send Root (keeps the previously corrected zeroing logic)
-      packets.push({
-        address: '/VMC/Ext/Root/Pos',
-        args: [
-          { type: 's', value: 'root' },
-          { type: 'f', value: 0 }, { type: 'f', value: 0 }, { type: 'f', value: 0 },
-          { type: 'f', value: 0 }, { type: 'f', value: 0 }, { type: 'f', value: 0 }, { type: 'f', value: 1 }
-        ]
-      });
-
-      // 2. Send bones (the core fix is here)
-      bones.forEach(b => {
-        if (b.name === 'root') return;
-
-        // Warudo strictly requires PascalCase
-        // Three.js uses "hips", Warudo wants "Hips"
-        // Three.js uses "leftUpperArm", Warudo wants "LeftUpperArm"
-        const vmcName = b.name.charAt(0).toUpperCase() + b.name.slice(1);
-
-        packets.push({
-          address: '/VMC/Ext/Bone/Pos',
-          args: [
-            { type: 's', value: vmcName },  // <--- use the converted capitalized name here
-            { type: 'f', value: b.pos.x },
-            { type: 'f', value: b.pos.y },
-            { type: 'f', value: b.pos.z },
-            { type: 'f', value: b.rot.x },
-            { type: 'f', value: b.rot.y },
-            { type: 'f', value: b.rot.z },
-            { type: 'f', value: b.rot.w }
-          ]
-        });
-      });
-
-      // 3. Send expressions (BlendShape names usually need mapping too)
-      blends.forEach(blend => {
-        // We already mapped the expression names in vrm.js (Joy, A, I...), so use them directly here
-        packets.push({
-          address: '/VMC/Ext/Blend/Val',
-          args: [
-            { type: 's', value: blend.name },
-            { type: 'f', value: blend.weight }
-          ]
-        });
-      });
-
-      // 4. Apply
-      if (blends.length > 0) {
-        packets.push({ address: '/VMC/Ext/Blend/Apply', args: [] });
-      }
-
-      // 5. OK (required by Warudo)
-      packets.push({ 
-        address: '/VMC/Ext/OK', 
-        args: [{ type: 'i', value: 1 }] 
-      });
-
-      // ... send logic stays unchanged ...
-      try {
-        const bundleBuffer = osc.writePacket({
-          timeTag: osc.timeTag(0),
-          packets: packets
-        });
-        vmcSendSocket.send(bundleBuffer, port, host, (err) => {
-            if (err) console.error(err);
-        });
-      } catch (e) { console.error(e); }
-    });
-
     // Window-control events
     ipcMain.handle('window-action', (_, action) => {
       switch (action) {

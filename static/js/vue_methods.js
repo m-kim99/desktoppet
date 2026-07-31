@@ -2012,7 +2012,6 @@ let vue_methods = {
           // change this.target_lang to navigator.language || navigator.userLanguage;
           this.target_lang = this.targetLangSelected!="system"? this.targetLangSelected: navigator.language || navigator.userLanguage || 'zh-CN';
           this.loadDefaultModels();
-          this.loadDefaultMotions();
           this.loadGaussScenes();
           this.checkMobile();
           this.checkTelegramBotStatus();
@@ -2341,7 +2340,7 @@ let vue_methods = {
         this.stopAllAudioPlayback();
         this.TTSrunning = false;
 
-        if ((this.vrmOnline || this.vtsOnline) && this.ttsWebSocket) {
+        if (this.vrmOnline && this.ttsWebSocket) {
             this.ttsWebSocket.send(JSON.stringify({ type: 'ttsStarted', data: {} }));
         }
 
@@ -2495,7 +2494,7 @@ let vue_methods = {
     // ==========================================
     async generateAIResponse(targetAgentId, agentDisplayName = null, isResume = false) {
 
-        if (!isResume && !this.ttsSettings.enabled && (this.vrmOnline || this.vtsOnline) && this.ttsWebSocket) {
+        if (!isResume && !this.ttsSettings.enabled && this.vrmOnline && this.ttsWebSocket) {
             this.sendTTSStatusToVRM('ttsStarted', {});
         }
 
@@ -2804,7 +2803,7 @@ let vue_methods = {
                                 this.cur_voice = remaining_voice;
                             } else {
                                 // === [New] text-and-expression sync logic when TTS is disabled ===
-                                if ((this.vrmOnline || this.vtsOnline) && this.ttsWebSocket) {
+                                if (this.vrmOnline && this.ttsWebSocket) {
                                     // Auto-detect and extract expression/motion tags from the accumulated text (e.g. [happy] or *wave*)
                                     const detectedExpressions = [];
                                     const tagRegex = /[\[\(\*]([a-zA-Z_0-9\u4e00-\u9fa5]+)[\]\)\*]/g;
@@ -3108,7 +3107,7 @@ let vue_methods = {
                 await audioProcess;
             } else {
                 // === [New] generation-complete notification when TTS is disabled ===
-                if ((this.vrmOnline || this.vtsOnline) && this.ttsWebSocket) {
+                if (this.vrmOnline && this.ttsWebSocket) {
                     this.sendTTSStatusToVRM('allChunksCompleted', {});
                 }
             }
@@ -3594,7 +3593,7 @@ let vue_methods = {
             }
 
             // ======= [Core change: sync to VRM via binary] =======
-            if ((this.vrmOnline || this.vtsOnline) && this.ttsWebSocket) {
+            if (this.vrmOnline && this.ttsWebSocket) {
                 const pcmUint8 = new Uint8Array(raw.length);
                 for(let i=0; i<raw.length; i++) pcmUint8[i] = raw.charCodeAt(i);
                 
@@ -3629,7 +3628,7 @@ let vue_methods = {
                     if (message.generationFinished && this.activeSources.length === 0) {
                         message.isPlaying = false;
                         message.omniCurrentTime = message.omniDuration;
-                        if (this.vrmOnline || this.vtsOnline) this.sendTTSStatusToVRM('allChunksCompleted', {});
+                        if (this.vrmOnline) this.sendTTSStatusToVRM('allChunksCompleted', {});
                         this.isOmniPlaying = false;
                     }
                 }
@@ -8584,7 +8583,7 @@ handleCreateSlackSeparator(val) {
                     type: 'startSpeaking',
                     data: { chunkIndex: index, text: chunk_text, voice: 'silence', expressions: chunk_expressions }
                 });
-                if (this.ttsWebSocket && (this.vrmOnline || this.vtsOnline)) this.ttsWebSocket.send(cmd);
+                if (this.ttsWebSocket && this.vrmOnline) this.ttsWebSocket.send(cmd);
                 message.audioChunks[index] = { url: null, expressions: chunk_expressions, text: chunk_text, index };
                 this.checkAudioPlayback();
             } else {
@@ -8710,7 +8709,7 @@ handleCreateSlackSeparator(val) {
                 }
 
                 // --- Core sync change: only send the binary data at this moment for non-bullet-chat chunks when VRM is online ---
-                if (!isVrmSilent && vrmIndex >= 0 && (this.vrmOnline || this.vtsOnline) && audioChunk.buffer) {
+                if (!isVrmSilent && vrmIndex >= 0 && this.vrmOnline && audioChunk.buffer) {
                     const metadata = {
                         type: 'audio_chunk',
                         chunkIndex: vrmIndex,
@@ -8771,10 +8770,8 @@ handleCreateSlackSeparator(val) {
         try {
           const r = await fetch('/tts/status').then(r => r.json())
           this.vrmOnline = r.vrm_connections > 0;
-          this.vtsOnline = r.vts_active; // Get whether VTS is active
         } catch (e) {
           this.vrmOnline = false;
-          this.vtsOnline = false;
         }
       }, 3000)
     },
@@ -9120,26 +9117,6 @@ handleCreateSlackSeparator(val) {
           if (typeof event.data === 'string') {
             const msg = JSON.parse(event.data);
             
-            // Match the VTS status feedback
-            if (msg.type === 'vts_connection_status') {
-              this.isVTSStarting = false; // Message received; stop loading
-              
-              if (msg.data.success) {
-                // Actually connected successfully
-                this.VTSConfig.enabled = true;
-                showNotification(msg.data.message || this.t('notifyVtsConnected'), 'success', 'VTS');
-              } else {
-                // Connection failed: revert the toggle state
-                this.VTSConfig.enabled = false;
-                // Show an error prompt guiding the user to enable VTS
-                showNotification(
-                  msg.data.message || 'VTube Studio에서 API 접근 권한을 켰는지 확인하세요', 
-                  'error', 
-                  'VTS connection failed'
-                );
-              }
-              this.autoSaveSettings(); // Sync-save to the local config
-            }
           } 
           // Handle binary (audio stream): if it's audio, forward or play it
           else if (event.data instanceof Blob) {
@@ -9264,102 +9241,6 @@ handleCreateSlackSeparator(val) {
     }
   },
 
-  // The modified upload-VRM-model method
-  async uploadVrmModel() {
-    if (!this.newVrmModel.file) {
-      showNotification(this.t('notifySelectVrmFirst'), 'error');
-      return;
-    }
-    
-    if (!this.newVrmModel.displayName.trim()) {
-      showNotification(this.t('notifyEnterModelName'), 'error');
-      return;
-    }
-    
-    const formData = new FormData();
-    formData.append('file', this.newVrmModel.file);
-    formData.append('display_name', this.newVrmModel.displayName.trim());
-    
-    try {
-      const response = await fetch(`/upload_vrm_model`, {
-        method: 'POST',
-        body: formData
-      });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        // Add the new model to the user-model list
-        const newModelOption = {
-          id: result.file.unique_filename,
-          name: result.file.display_name,
-          path: result.file.path,
-          type: 'user' // Mark it as a user-uploaded model
-        };
-        
-        this.VRMConfig.userModels.push(newModelOption);
-        
-        // Close the dialog and reset the state
-        this.cancelVrmModelUpload();
-        
-        // Auto-save settings
-        await this.autoSaveSettings();
-        
-        showNotification(this.t('notifyVrmUploaded'));
-      } else {
-        showNotification(`${this.t('notifyUploadFailedColon')}${result.message}`, 'error');
-      }
-    } catch (error) {
-      console.error('上传VRM模型失败:', error);
-      showNotification(this.t('notifyUploadFailedNetwork'), 'error');
-    }
-  },
-  
-  // The modified delete-model-option method (only user-uploaded models can be deleted)
-  async deleteModelOption(modelId) {
-    try {
-      // Find the model option to delete (only among user models)
-      const modelIndex = this.VRMConfig.userModels.findIndex(
-        model => model.id === modelId
-      );
-      
-      if (modelIndex === -1) {
-        showNotification(this.t('notifyCannotDeleteDefaultModel'), 'error');
-        return;
-      }
-      
-      // Call the backend API to delete the file
-      const response = await fetch(`/delete_vrm_model/${modelId}`, {
-        method: 'DELETE'
-      });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        // Remove it from the user-model list
-        this.VRMConfig.userModels.splice(modelIndex, 1);
-        
-        // If the currently selected model is deleted, reset to the default model
-        if (this.VRMConfig.selectedModelId === modelId) {
-          if (this.VRMConfig.defaultModels.length > 0) {
-            this.VRMConfig.selectedModelId = this.VRMConfig.defaultModels[0].id;
-          } else {
-            this.VRMConfig.selectedModelId = '';
-          }
-        }
-        
-        // Auto-save settings
-        await this.autoSaveSettings();
-        
-        showNotification(this.t('notifyVrmDeleted'));
-      } else {
-        showNotification(`${this.t('notifyDeleteFailedColon')}${result.message}`, 'error');
-      }
-    } catch (error) {
-      console.error('删除VRM模型失败:', error);
-      showNotification(this.t('notifyDeleteFailedRetry'), 'error');
-    }
-  },
   
   // Get the info of the currently selected model
   getCurrentSelectedModel() {
@@ -10065,220 +9946,6 @@ copySubtitleOverlayEndpoint(){
     // 4. Save the config after the operation succeeds
     // ==========================================
     this.autoSaveSettings();
-  },
-  
-    // Load the default motion list
-  async loadDefaultMotions() {
-    try {
-      const response = await fetch(`/get_default_vrma_motions`);
-      const result = await response.json();
-      
-      if (result.success) {
-        this.VRMConfig.defaultMotions = result.motions;
-        console.log('默认动作列表:', this.VRMConfig.defaultMotions);
-        await this.autoSaveSettings();
-      }
-    } catch (error) {
-      console.error('加载默认动作失败:', error);
-    }
-  },
-
-  // Handle motion-selection changes
-  handleMotionChange(value) {
-    console.log('选中的动作:', value);
-    // Auto-save settings
-    this.autoSaveSettings();
-  },
-
-  // Browse for a VRMA motion file
-  browseVrmaMotionFile() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.vrma';
-    input.multiple = true; // Allow multi-select
-    input.onchange = (event) => {
-      const files = event.target.files;
-      if (files.length > 0) {
-        // If multiple files are selected, only process the first (or modify this to support batch upload)
-        const file = files[0];
-        // Check the file extension
-        if (!file.name.toLowerCase().endsWith('.vrma')) {
-          showNotification(this.t('notifyOnlyVrma'), 'error');
-          return;
-        }
-        this.newVrmaMotion.name = file.name;
-        this.newVrmaMotion.file = file;
-        // Auto-set the display name (without the extension)
-        this.newVrmaMotion.displayName = file.name.replace(/\.vrma$/i, '');
-      }
-    };
-    input.click();
-  },
-
-  // Handle VRMA-motion drag-and-drop
-  handleVrmaMotionDrop(event) {
-    event.preventDefault();
-    const files = event.dataTransfer.files;
-    if (files.length > 0) {
-      const file = files[0];
-      // Check the file extension
-      if (!file.name.toLowerCase().endsWith('.vrma')) {
-        showNotification(this.t('notifyOnlyVrma'), 'error');
-        return;
-      }
-      this.newVrmaMotion.name = file.name;
-      this.newVrmaMotion.file = file;
-      // Auto-set the display name (without the extension)
-      this.newVrmaMotion.displayName = file.name.replace(/\.vrma$/i, '');
-    }
-  },
-
-  // Remove the selected VRMA motion
-  removeNewVrmaMotion() {
-    this.newVrmaMotion.name = '';
-    this.newVrmaMotion.displayName = '';
-    this.newVrmaMotion.file = null;
-  },
-
-  // Cancel the VRMA-motion upload
-  cancelVrmaMotionUpload() {
-    this.showVrmaMotionDialog = false;
-    this.newVrmaMotion.name = '';
-    this.newVrmaMotion.displayName = '';
-    this.newVrmaMotion.file = null;
-  },
-
-  // Upload the VRMA motion
-  async uploadVrmaMotion() {
-    if (!this.newVrmaMotion.file) {
-      showNotification(this.t('notifySelectVrmaFirst'), 'error');
-      return;
-    }
-    
-    if (!this.newVrmaMotion.displayName.trim()) {
-      showNotification(this.t('notifyEnterMotionName'), 'error');
-      return;
-    }
-    
-    const formData = new FormData();
-    formData.append('file', this.newVrmaMotion.file);
-    formData.append('display_name', this.newVrmaMotion.displayName.trim());
-    
-    try {
-      const response = await fetch(`/upload_vrma_motion`, {
-        method: 'POST',
-        body: formData
-      });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        // Add the new motion to the user-motion list
-        const newMotionOption = {
-          id: result.file.unique_filename,
-          name: result.file.display_name,
-          path: result.file.path,
-          type: 'user' // Mark it as a user-uploaded motion
-        };
-        
-        this.VRMConfig.userMotions.push(newMotionOption);
-        
-        // Auto-select the newly uploaded motion
-        if (!this.VRMConfig.selectedMotionIds.includes(newMotionOption.id)) {
-          this.VRMConfig.selectedMotionIds.push(newMotionOption.id);
-        }
-        
-        // Close the dialog and reset the state
-        this.cancelVrmaMotionUpload();
-        
-        // Auto-save settings
-        await this.autoSaveSettings();
-        
-        showNotification(this.t('notifyVrmaUploaded'));
-      } else {
-        showNotification(`${this.t('notifyUploadFailedColon')}${result.message}`, 'error');
-      }
-    } catch (error) {
-      console.error('上传VRMA动作失败:', error);
-      showNotification(this.t('notifyUploadFailedNetwork'), 'error');
-    }
-  },
-
-  // Delete a motion option (only user-uploaded motions can be deleted)
-  async deleteMotionOption(motionId) {
-    try {
-      // Find the motion option to delete (only among user motions)
-      const motionIndex = this.VRMConfig.userMotions.findIndex(
-        motion => motion.id === motionId
-      );
-      
-      // Call the backend API to delete the file
-      const response = await fetch(`/delete_vrma_motion/${motionId}`, {
-        method: 'DELETE'
-      });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        // Remove it from the user-motion list
-        this.VRMConfig.userMotions.splice(motionIndex, 1);
-        
-        // If the deleted motion is in the current selection, remove it from the selected list
-        const selectedIndex = this.VRMConfig.selectedMotionIds.indexOf(motionId);
-        if (selectedIndex > -1) {
-          this.VRMConfig.selectedMotionIds.splice(selectedIndex, 1);
-        }
-        
-        // Auto-save settings
-        await this.autoSaveSettings();
-        
-        showNotification(this.t("VRMAactionDeleted"));
-      } else {
-        showNotification(`error: ${result.message}`, 'error');
-      }
-    } catch (error) {
-      console.error('删除VRMA动作失败:', error);
-      showNotification(error, 'error');
-    }
-  },
-
-  // Get the info of the currently selected motions
-  getCurrentSelectedMotions() {
-    const selectedMotions = [];
-    
-    // Look among the default motions
-    this.VRMConfig.defaultMotions.forEach(motion => {
-      if (this.VRMConfig.selectedMotionIds.includes(motion.id)) {
-        selectedMotions.push(motion);
-      }
-    });
-    
-    // Look among the user motions
-    this.VRMConfig.userMotions.forEach(motion => {
-      if (this.VRMConfig.selectedMotionIds.includes(motion.id)) {
-        selectedMotions.push(motion);
-      }
-    });
-    
-    return selectedMotions;
-  },
-
-  // Get all available motions (default + user-uploaded)
-  getAllAvailableMotions() {
-    return [...this.VRMConfig.defaultMotions, ...this.VRMConfig.userMotions];
-  },
-
-  // Get motion info by ID
-  getMotionById(motionId) {
-    // Look in the default motions first
-    let motion = this.VRMConfig.defaultMotions.find(m => m.id === motionId);
-    
-    // If not found, look among the user motions
-    if (!motion) {
-      motion = this.VRMConfig.userMotions.find(m => m.id === motionId);
-    }
-    
-    return motion;
   },
 
 /* Lifecycle: read the scene list */
@@ -11148,7 +10815,7 @@ stopTTSActivities() {
     
     try {
       // --- Change 5: send binary data to VRM (copies the core logic of chat playback) ---
-      if ((this.vrmOnline || this.vtsOnline) && audioChunk.buffer) {
+      if (this.vrmOnline && audioChunk.buffer) {
           const metadata = {
               type: 'audio_chunk',
               chunkIndex: curIdx,
@@ -12547,7 +12214,7 @@ async doPlayAudio(url, idx, continuous = false) {
     const currentVrmIndex = this.readState.vrmIndex;
 
     // 4. Send the raw binary data to VRM (using the virtual index)
-    if ((this.vrmOnline || this.vtsOnline) && chunk.buffer && chunk.buffer.byteLength > 0) {
+    if (this.vrmOnline && chunk.buffer && chunk.buffer.byteLength > 0) {
         const metadata = {
             type: 'audio_chunk',
             chunkIndex: currentVrmIndex, // <--- use the virtual index
@@ -17299,58 +16966,6 @@ gotoAddExtension(){
     }
   },
 
-  async toggleVTSConnection() {
-    // If a connection is in progress, block duplicate clicks
-    if (this.isVTSStarting) return;
-    
-    this.isVTSStarting = true; // Show the loading animation (button spinner)
-    
-    try {
-      if (this.VTSConfig.enabled) {
-        // Action: stop the connection
-        // Note: don't set enabled = false directly here; wait for backend confirmation first
-        this.sendTTSStatusToVRM('stopVTS_Driver', {});
-      } else {
-        // Action: initiate the connection
-        this.sendTTSStatusToVRM('startVTS_Driver', this.VTSConfig);
-        
-        // Set up a 10-second timeout
-        // If the backend doesn't return any status message via WS within 10 seconds, auto-revert the state
-        setTimeout(() => {
-          if (this.isVTSStarting) {
-            this.isVTSStarting = false;
-            showNotification(this.t('notifyVtsTimeout'), 'warning', this.t('connectionTimeout'));
-          }
-        }, 10000);
-      }
-    } catch (e) {
-      console.error("VTS 操作失败:", e);
-      this.isVTSStarting = false;
-      showNotification(this.t('notifyCommandSendFailed'), 'error');
-    }
-  },
-  
-  async startVTS() {
-    // Simulate or actually send the WS command
-    this.sendTTSStatusToVRM('startVTS_Driver', this.VTSConfig);
-    this.VTSConfig.enabled = true;
-    this.autoSaveSettings();
-  },
-  
-  async stopVTS() {
-    this.sendTTSStatusToVRM('stopVTS_Driver', {});
-    this.VTSConfig.enabled = false;
-    this.autoSaveSettings();
-  },
-
-
-  connectToVTS() {
-      this.activeMenu = 'deploy-bot';
-      this.subMenu = 'vts_config';
-      if(!this.VTSConfig.enabled){
-        this.toggleVTSConnection();
-      }
-  },
 
   async checkAcpxStatus() {
     this.checkingAcpx = true

@@ -5,6 +5,21 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Removed (🎭 VTuber 장비 전부 제거 — own-the-app P1 라운드3: VRM 아바타·VMC·VTS)
+- **VRM 인간형 아바타 시스템**: three-vrm/three-vrm-animation 라이브러리(임포트·번들 3.1MB·deps)·
+  .vrm 로더 경로 2곳(초기+전환, GLB 전용화)·VRMA 유휴 애니 시스템(클래스+함수 11종, ~800줄)·
+  표정 모프/시선추적 렌더 블록·VRM 업로드/삭제·VRMA 모션 라우트 6종·vrm/animations/(.vrma 11개 14MB)·
+  업로드 UI(다이얼로그 4개·버튼·선택기 2벌)·VRM 표정/모션 프롬프트 주입. 립싱크 함수는 TTS 오디오
+  재생을 겸해서 유지(모프 구동만 무력화).
+- **VMC 모션캡처**: main.js OSC/UDP 수신·송신 전체(+osc dep)·preload vmcAPI·vrm.js 본/블렌드
+  테이블·송수신 로직·설정 패널·vmcp 안내 패널.
+- **VTS(VTube Studio)**: py/vts_manager.py·프롬프트 주입·/ws/tts의 입모양 구동/명령 분기(중계는 유지)·
+  대시보드 카드·설정 페이지·메서드 4종·vtsOnline 조건 전부 vrmOnline으로.
+- 유지: 펫 창(GLB 병아리/강아지) 전부·/ws/vrm 중계·get_default_vrm_models·vrmAPI(OBS 소스)·Gauss 배경(다음 후보).
+- 검증: 부팅 OK·대시보드 12카드/JS에러 0·펫창 canvas OK(기존 에러 1개만)·world-smoke 15/15.
+  수술 전 상태 태그: pre-vrm-removal.
+
+
 ### Removed (🇨🇳 중국계 클라우드 TTS 4종 제거 — own-the-app P1 라운드2)
 - **Volcengine(火山引擎/바이트댄스)**: 전용 엔진 브랜치(bytedance API 직결)·설정 패널 2벌·Doubao 리소스
   옵션 배열·설정 키 5종·고아 로케일 키.
