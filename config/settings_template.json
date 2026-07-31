@@ -615,18 +615,6 @@
       "enabled": false
     }
   ],
-  "liveConfig": {
-    "filterMode": "danmaku_only",
-    "danmakuQueueLimit": 5,
-    "wakeWord": "",
-    "youtube_enabled": false,
-    "youtube_vedio_id": "",
-    "youtube_api_key": "",
-    "twitch_enabled": false,
-    "twitch_channel": "",
-    "twitch_access_token": "",
-    "danmakuVoice": "default"
-  },
   "telegramBotConfig": {
     "TelegramAgent": "super-model",
     "memoryLimit": 20,

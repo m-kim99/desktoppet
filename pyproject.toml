@@ -54,7 +54,6 @@ dependencies = [
     "soundfile>=0.13.1",
     "nvidia-ml-py>=13.580.82",
     "pip-licenses>=5.5.0",
-    "google-api-python-client>=2.179.0",
     "pydub>=0.25.1",
     "imageio-ffmpeg>=0.6.0",
     "discord-py>=2.6.4",

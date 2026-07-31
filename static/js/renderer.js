@@ -680,7 +680,6 @@ const app = Vue.createApp({
     window.removeEventListener('keyup', this.handleKeyUp);
     window.removeEventListener('resize', this.checkMobile);
     this.shouldReconnectWs = false; // Set the flag
-    this.stopDanmuProcessor(); // Stop the bullet-chat processor
     this.disconnectWebSocket();
   },
   async mounted() {
@@ -1631,17 +1630,6 @@ docker-compose -f ${composeFile} up -d`;
           value: s
         }));
       return [...this.defaultSeparators, ...custom];
-    },
-    isLiveConfigValid() {
-        if (this.liveConfig.youtube_enabled) {
-          return this.liveConfig.youtube_video_id !== '' &&
-          this.liveConfig.youtube_api_key !== '';
-        }
-        else if (this.liveConfig.twitch_enabled) {
-          return this.liveConfig.twitch_channel !== '' &&
-          this.liveConfig.twitch_access_token !== '';
-        }
-        return false;
     },
     updateButtonText() {
       if (this.updateDownloaded) return this.t('installNow');

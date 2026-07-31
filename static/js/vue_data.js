@@ -1402,7 +1402,6 @@ let vue_data = {
     },
     deployTiles: [
       { id: 'table_pet', title: 'tablePet', icon: "fa-solid fa-user-ninja"},
-      { id: 'live_stream', title: 'live_stream_bot', icon: "fa-solid fa-video"},
       { id: 'im_bot', title: 'imBot', icon: 'fa-solid fa-comment' },
       { id: 'read_bot', title: 'readBot', icon: "fa-solid fa-book-open-reader"}, 
       { id: 'translate_bot', title: 'translateBot', icon: "fa-solid fa-language"}, 
@@ -1434,19 +1433,6 @@ let vue_data = {
     activeSegmentIdx: -1,    // The index of the segment being manually edited
     _curAudio: null,        // Current Audio instance
     isReadingOnetext: false,
-    liveConfig: {
-      filterMode: 'danmaku_only',
-      danmakuQueueLimit: 5,
-      wakeWord: '',
-      youtube_enabled: false,
-      youtube_vedio_id:  "",
-      youtube_api_key:  "",
-      twitch_enabled: false,
-      twitch_channel: "",
-      twitch_access_token: "",
-      danmakuVoice:"default",
-      enableDanmakuTTS: false,
-    },
     isSlackBotRunning: false,
     isSlackStarting: false,
     isSlackStopping: false,
@@ -1467,15 +1453,6 @@ let vue_data = {
       allowedUserIds: [],
     },
 
-    danmu: [], // Bullet-chat list
-    liveWs: null, // WebSocket connection
-    danmuProcessTimer: null, // Bullet-chat processing timer
-    isProcessingDanmu: false, // Whether bullet chats are being processed
-    shouldReconnectWs :false,
-    isLiveRunning: false,
-    isLiveStarting: false,
-    isLiveStopping: false,
-    isLiveReloading: false,
     stickerPacks: [],
     showStickerDialog: false,
     newStickerPack: {
@@ -1944,7 +1921,6 @@ main();`,
     selectedGroupAgents: [], 
     showGroupSettingsDialog: false,
     voiceStack : ['default'], // Stores the voice-playback queue
-    receivedMsgIds: new Set(), 
     lastProcessedContent: '', 
     approvalMap: {},
     isSubmitting: false,      // Controls the loading state inside the dialog

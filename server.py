@@ -10083,11 +10083,6 @@ async def vrm_config():
     settings = await load_settings()
     return {"VRMConfig": settings.get("VRMConfig", {})}
 
-from py.live_router import router as live_router, ws_router as live_ws_router
-
-# 2. Mount them separately
-app.include_router(live_router)     # /api/live/*
-app.include_router(live_ws_router)  # /ws/live/*
 
 
 from py.overlay_router import router as overlay_router

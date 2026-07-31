@@ -5,6 +5,14 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Removed (📺 트위치·유튜브 라이브(방송) 시스템 제거 — own-the-app P1 라운드5)
+- 라이브 방송 시스템 전체: py/live_router.py·twitch_service.py·ytdm.py(유튜브 라이브 채팅 폴러) 삭제,
+  /api/live/*·/ws/live/* 마운트 제거, 탄막(danmaku) 오버레이(html+라우트+ws+매니저, subtitle_overlay는 유지),
+  프론트 라이브 페이지(456줄)+대시보드 '라이브 시작' 카드+danmu 처리 파이프라인(397줄)+상태·설정·로케일 3종,
+  google-api-python-client dep. TTS 청크의 danmaku_vrm_silent 가드는 세터가 사라져 무해 — P2에서 정리 예정.
+- 검증: 부팅 OK·대시보드 11카드/JS에러 0·world-smoke 15/15.
+
+
 ### Removed (🌌 Gauss 3D 배경 씬 제거 — own-the-app P1 라운드4)
 - Gaussian splat 3D 배경(펫 창 뒤에 3D 방/바다/우주 씬을 까는 VTuber 방송용 기능) 전체 제거:
   vrm/scene/ .spz 3개(93MB)·spark 라이브러리 번들(11MB)·서버 라우트 4종(업로드/목록 2/삭제)·
