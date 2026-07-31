@@ -686,10 +686,7 @@
     "selectedMotionIds": [],
     "newVRM": {},
     "selectedNewModelId": "chick",
-    "selectedNewMotionIds": [],
-    "gaussDefaultScenes": [],
-    "gaussUserScenes": [],
-    "selectedGaussSceneId": ""
+    "selectedNewMotionIds": []
   },
   "comfyuiServers": [
     "http://127.0.0.1:8188"

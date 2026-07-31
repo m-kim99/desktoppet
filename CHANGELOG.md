@@ -5,6 +5,13 @@ Patch notes go here — newest on top.
 
 ## [Unreleased]
 
+### Removed (🌌 Gauss 3D 배경 씬 제거 — own-the-app P1 라운드4)
+- Gaussian splat 3D 배경(펫 창 뒤에 3D 방/바다/우주 씬을 까는 VTuber 방송용 기능) 전체 제거:
+  vrm/scene/ .spz 3개(93MB)·spark 라이브러리 번들(11MB)·서버 라우트 4종(업로드/목록 2/삭제)·
+  vrm.js SplatMesh 로더·설정 UI(선택기+업로드 다이얼로그)·메서드 7종·설정 키 3종·로케일 키.
+- 검증: 부팅 OK·대시보드 12카드/JS에러 0·펫창 canvas OK·world-smoke 15/15.
+
+
 ### Removed (🎭 VTuber 장비 전부 제거 — own-the-app P1 라운드3: VRM 아바타·VMC·VTS)
 - **VRM 인간형 아바타 시스템**: three-vrm/three-vrm-animation 라이브러리(임포트·번들 3.1MB·deps)·
   .vrm 로더 경로 2곳(초기+전환, GLB 전용화)·VRMA 유휴 애니 시스템(클래스+함수 11종, ~800줄)·

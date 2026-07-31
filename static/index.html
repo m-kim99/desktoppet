@@ -12857,67 +12857,6 @@ function updateElement(el, rawMarkdown, formatFn) {
                             </el-form-item>
 
                             
-                            <!-- 高斯场景选择框  GAUSS -->
-                            <el-form-item :label="t('selectGaussScene')">
-                              <el-select
-                                v-model="VRMConfig.selectedGaussSceneId"
-                                @change="handleGaussSceneChange"
-                                class="full-width-input"
-                              >
-                                <el-option
-                                  key="transparent"
-                                  value="transparent"
-                                  :label="t('transparentBackground')"
-                                >
-                                  <div class="scene-option-item">
-                                    <i class="fa-solid fa-check-circle" style="color:#28a745;margin-right:6px;"></i>
-                                    <span>{{ t('transparentBackground') }}</span>
-                                  </div>
-                                </el-option>
-                                <!-- 默认场景分组 -->
-                                <el-option-group :label="t('defaultScenes')">
-                                  <el-option
-                                    v-for="scene in VRMConfig.gaussDefaultScenes"
-                                    :key="scene.id"
-                                    :label="scene.name"
-                                    :value="scene.id"
-                                  >
-                                    <div class="scene-option-item">
-                                      <i class="fa-solid fa-star" style="color: #f39c12; margin-right: 6px;"></i>
-                                      <span>{{ scene.name }}</span>
-                                    </div>
-                                  </el-option>
-                                </el-option-group>
-
-                                <!-- 用户上传场景分组 -->
-                                <el-option-group :label="t('userScenes')" v-if="VRMConfig.gaussUserScenes.length > 0">
-                                  <el-option
-                                    v-for="scene in VRMConfig.gaussUserScenes"
-                                    :key="scene.id"
-                                    :label="scene.name"
-                                    :value="scene.id"
-                                  >
-                                    <div class="scene-option-item">
-                                      <i
-                                        class="fa-solid fa-trash-can"
-                                        style="color: #ff0000; margin-right: 6px;"
-                                        @click.stop="deleteGaussSceneOption(scene.id)"
-                                      ></i>
-                                      <span>{{ scene.name }}</span>
-                                    </div>
-                                  </el-option>
-                                </el-option-group>
-                              </el-select>
-
-                              <!-- 场景上传按钮 -->
-                              <el-button
-                                @click="showGaussSceneDialog = true"
-                                type="warning"
-                                class="add-server-btn"
-                              >
-                                <i class="fa-solid fa-plus"></i> {{ t('addGaussScene') }}
-                              </el-button>
-                            </el-form-item>
                             
                         </div>
                       </div>
@@ -12926,51 +12865,6 @@ function updateElement(el, rawMarkdown, formatFn) {
 
 
 
-                  <!-- 高斯场景上传对话框  GAUSS -->
-                  <el-dialog append-to-body
-                    v-model="showGaussSceneDialog"
-                    :title="t('uploadGaussScene')"
-                    width="80%"
-                  >
-                    <div class="upload-container">
-                      <div
-                        class="drop-zone"
-                        @dragover.prevent
-                        @drop.prevent="handleGaussSceneDrop"
-                        @click="browseGaussSceneFile"
-                      >
-                        <el-icon :size="50"><i class="fa-solid fa-cloud-arrow-up"></i></el-icon>
-                        <p>{{ t('clickOrDropGaussScene') }}</p>
-                      </div>
-                      
-                      <!-- 文件列表 -->
-                      <div class="compact-file-list" v-if="newGaussScene.name">
-                        <div class="compact-file-item">
-                          <span class="file-name">{{ newGaussScene.name }}</span>
-                          <el-button
-                            @click.stop="removeNewGaussScene"
-                            class="delete-icon"
-                            circle
-                          >
-                            <i class="fa-solid fa-trash"></i>
-                          </el-button>
-                        </div>
-                      </div>
-
-                      <el-input
-                        v-model="newGaussScene.displayName"
-                        :label="t('GaussSceneDisplayName')"
-                        :placeholder="t('GaussSceneDisplayNamePlaceholder')"
-                        required
-                      />
-                    </div>
-                    <template #footer>
-                      <el-button @click="cancelGaussSceneUpload">{{ t('cancel') }}</el-button>
-                      <el-button type="primary" @click="uploadGaussScene" :disabled="!newGaussScene.name">
-                        {{ t('createImmediately') }}
-                      </el-button>
-                    </template>
-                  </el-dialog>
 
                   <!-- 朗读页面 -->
                   <div v-show="subMenu === 'read_bot'">

@@ -2012,7 +2012,6 @@ let vue_methods = {
           // change this.target_lang to navigator.language || navigator.userLanguage;
           this.target_lang = this.targetLangSelected!="system"? this.targetLangSelected: navigator.language || navigator.userLanguage || 'zh-CN';
           this.loadDefaultModels();
-          this.loadGaussScenes();
           this.checkMobile();
           this.checkTelegramBotStatus();
           this.checkDiscordBotStatus();
@@ -9949,120 +9948,6 @@ copySubtitleOverlayEndpoint(){
   },
 
 /* Lifecycle: read the scene list */
-async loadGaussScenes() {
-  const [def, user] = await Promise.all([
-    fetch('/get_default_gauss_scenes').then(r => r.json()),
-    fetch('/get_user_gauss_scenes').then(r => r.json())
-  ]);
-  this.VRMConfig.gaussDefaultScenes = def.scenes || [];
-  this.VRMConfig.gaussUserScenes   = user.scenes || [];
-  console.log("默认场景：",this.VRMConfig.gaussDefaultScenes);
-  if (!this.VRMConfig.selectedGaussSceneId) {
-    this.VRMConfig.selectedGaussSceneId = 'transparent';
-  }
-  this.autoSaveSettings();
-},
-/* Switch the background in real time after selecting a scene */
-async handleGaussSceneChange(sceneId) {
-  // Similar to switching VRM models: write the scene id into VRMConfig
-  this.VRMConfig.selectedGaussSceneId = sceneId;
-
-  this.autoSaveSettings();
-},
-
-/* Upload-area click */
-browseGaussSceneFile() {
-  const ipt = document.createElement('input');
-  ipt.type = 'file';
-  ipt.accept = '.ply,.spz,.splat,.ksplat,.sog';
-  ipt.onchange = e => {
-    const file = e.target.files[0];
-    if (file) {
-      this.newGaussScene.name = file.name;
-      this.newGaussScene.file = file;   // Save the original File object
-      this.newGaussScene.displayName = this.newGaussScene.displayName || this.newGaussScene.name;
-    }
-  };
-  ipt.click();
-},
-
-/* Drag-and-drop upload */
-handleGaussSceneDrop(e) {
-  const file = e.dataTransfer.files[0];
-  if (!file) return;
-  const ext = file.name.split('.').pop().toLowerCase();
-  if (!['ply','spz','splat','ksplat','sog'].includes(ext)) {
-    return showNotification(this.t('notifyUnsupportedFileType'), 'error');
-  }
-  this.newGaussScene.name = file.name;
-  this.newGaussScene.file = file;
-  this.newGaussScene.displayName = this.newGaussScene.displayName || this.newGaussScene.name;
-},
-
-/* Remove the file pending upload */
-removeNewGaussScene() {
-  this.newGaussScene = { name: '', displayName: '' };
-},
-
-/* Actually upload */
-async uploadGaussScene() {
-  const fd = new FormData();
-  fd.append('file', this.newGaussScene.file);
-  fd.append('display_name', this.newGaussScene.displayName || this.newGaussScene.name);
-  console.log("上传场景：",fd);
-  const res = await fetch('/upload_gauss_scene', {
-    method: 'POST',
-    body: fd
-  }).then(r => r.json());
-
-  if (res.success) {
-    showNotification(this.t('notifySceneUploaded'));
-    this.showGaussSceneDialog = false;
-    // Add the new motion to the user-motion list
-    const newgaussScenes = {
-      id: res.file.unique_filename,
-      name: res.file.display_name,
-      path: res.file.path,
-      type: 'user' // Mark it as a user-uploaded motion
-    };
-        
-    this.VRMConfig.gaussUserScenes.push(newgaussScenes);
-    // Auto-select the newly uploaded scene
-    if (newgaussScenes) this.handleGaussSceneChange(newgaussScenes.id);
-  } else {
-    showNotification(res.message || this.t('notifyUploadFailed'), 'error');
-  }
-},
-
-/* Cancel the upload */
-cancelGaussSceneUpload() {
-  this.showGaussSceneDialog = false;
-  this.removeNewGaussScene();
-},
-
-/* Delete a user scene */
-async deleteGaussSceneOption(sceneId) {
-  const scene = this.VRMConfig.gaussUserScenes.find(s => s.id === sceneId);
-  if (!scene) return;
-
-  // Extract the uuid filename
-  const filename = scene.path.split('/').pop();
-  const res = await fetch(`/delete_gauss_scene/${filename}`, {
-    method: 'DELETE'
-  }).then(r => r.json());
-
-  if (res.success) {
-    showNotification(this.t('notifySceneDeleted'));
-    // If the scene being deleted is in use, switch back to the first default scene
-    if (this.VRMConfig.selectedGaussSceneId === sceneId) {
-      const firstDef = this.VRMConfig.gaussDefaultScenes[0];
-      if (firstDef) this.handleGaussSceneChange(firstDef.id);
-    }
-    await this.loadGaussScenes();
-  } else {
-    showNotification(res.message || this.t('notifyDeleteFailed'), 'error');
-  }
-},
 
 
   async confirmClearAll() {

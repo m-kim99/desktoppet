@@ -6,7 +6,6 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { SplatMesh } from '@sparkjsdev/spark';
 import { createGlbPetEntity, updateGlbPetEntity, disposeGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory } from './glb-pet-entity.js';
 let isVRM1 = true;
 let currentMixer = null;
@@ -84,9 +83,6 @@ async function fetchVRMConfig() {
             data.VRMConfig.selectedModelId = data.VRMConfig.selectedNewModelId;
             data.VRMConfig.selectedMotionIds = data.VRMConfig.selectedNewMotionIds;
         }
-        if (data.VRMConfig.selectedGaussSceneId == ''){
-            data.VRMConfig.selectedGaussSceneId = 'transparent';
-        }
         console.log(data.VRMConfig);
         return data.VRMConfig;
     } catch (error) {
@@ -101,9 +97,6 @@ async function fetchVRMConfig() {
             defaultMotions: [], // Store the default motions
             userMotions: [],     // Store user-uploaded motions
             selectedMotionIds: [],
-            gaussDefaultScenes: [],   // GAUSS
-            gaussUserScenes: [],      // GAUSS
-            selectedGaussSceneId: 'transparent',
         };
     }
 }
@@ -309,87 +302,6 @@ transformControl.setMode('translate');
 
 scene.add( transformControl.getHelper() ); // Add the gizmo/helper
 
-let currentSceneGroup = null;          // The current scene root node, for unloading it all at once
-
-/* One config fetch is enough; the outer code already awaited fetchVRMConfig(), so reuse it */
-async function loadGaussScene() {
-    /* ---------- 1. Read the config ---------- */
-    const cfg        = await fetchVRMConfig();
-    const sceneId    = cfg.selectedGaussSceneId;
-    const defaultArr = cfg.gaussDefaultScenes || [];
-    const userArr    = cfg.gaussUserScenes    || [];
-
-    /* ---------- 2. Build the URL ---------- */
-    let sceneURL = null;
-    if (sceneId === 'transparent') {
-        /* Transparent scene -> don't download the spz */
-        sceneURL = 'transparent';
-    } else {
-        const hit = [...defaultArr, ...userArr].find(s => s.id === sceneId);
-        if (!hit) {
-            console.warn(`[SceneLoader] 找不到 id=${sceneId} 的场景，回退到 transparent`);
-            sceneURL = 'transparent';
-        } else {
-            // Build the absolute address from the relative path
-            const url = new URL(hit.path);
-            url.protocol = window.location.protocol;
-            url.host     = window.location.host;
-            sceneURL     = url.toString();
-        }
-    }
-
-    /* ---------- 3. Unload the old scene ---------- */
-    if (currentSceneGroup) {
-        scene.remove(currentSceneGroup);
-        currentSceneGroup.traverse(o => {
-            if (o.dispose) o.dispose();      // SplatMesh has its own dispose
-        });
-        currentSceneGroup = null;
-    }
-
-    /* ---------- 4. Build the new scene ---------- */
-    const group = new THREE.Group();
-    group.name = `gaussScene_${sceneId}`;
-
-    if (sceneURL === 'transparent') {
-        /* ------ 4.1 Transparent shadow ground ------ */
-        const groundGeo = new THREE.PlaneGeometry(20, 20);
-        const shadowMat = new THREE.ShadowMaterial({ opacity: 0.4 });
-        const ground    = new THREE.Mesh(groundGeo, shadowMat);
-        ground.rotation.x = -Math.PI / 2;
-        ground.receiveShadow = true;
-        group.add(ground);
-    } else {
-        /* ------ 4.2 Load the .spz ------ */
-        const splat = new SplatMesh({ url: sceneURL });
-        let splat_height = 0;
-        let splat_scale = 2;
-        if (sceneId === 'space') {
-            splat_height = 1.55;
-        }else if (sceneId === 'home') {
-            splat_height = 1.6;
-        }else if (sceneId === 'sea') {
-            splat_height = 2.4;
-            splat_scale = 4;
-        }
-        // First scale/translate to center at the feet; tune the exact values per model
-        splat.quaternion.set(1, 0, 0, 0);
-        splat.position.set(0, splat_height, 2);
-        splat.scale.set(splat_scale, splat_scale, splat_scale);
-        splat.receiveShadow = true;
-        group.add(splat);
-    }
-
-    /* ---------- 5. Attach to the scene ---------- */
-    scene.add(group);
-    currentSceneGroup = group;
-    console.log(`[SceneLoader] 场景 ${sceneId} 加载完成`);
-}
-
-/* ------------------------------------------------------------------ */
-/* Call once during initialization                                                    */
-/* ------------------------------------------------------------------ */
-await loadGaussScene();
 
 
 // lookat target

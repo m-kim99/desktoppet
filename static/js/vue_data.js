@@ -836,8 +836,6 @@ let vue_data = {
     ],
     vrmOnline: false,   // New
     vrmPollTimer: null, // New
-    showGaussSceneDialog: false, // GAUSS
-    newGaussScene: { name: '', displayName: '' }, // GAUSS
     VRMConfig: {
       name: 'default',
       selectedModelId: 'chick', // 기본 펫: 병아리 (앨리스·밥 제거됨)
@@ -849,9 +847,6 @@ let vue_data = {
       selectedNewModelId: 'chick',
       selectedNewMotionIds: [],
       newVRM:{},
-      gaussDefaultScenes: [],   // GAUSS
-      gaussUserScenes: [],      // GAUSS
-      selectedGaussSceneId: '',
       textInputHotkey: 'F13',   // Global toggle shortcut for the desktop-pet text-input box
       showPetHotkey: 'F14',     // Global shortcut to summon the desktop pet
       hidePetHotkey: 'F15',     // Global shortcut to hide the desktop pet
