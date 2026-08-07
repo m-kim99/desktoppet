@@ -26467,11 +26467,13 @@ function fcFrogSpec() {
         w: fcFrogW,
         // ⚠️ 높이 필드는 |u|=1에서 0으로 떨어져야 한다 — 안 그러면 수직 테두리를 가진 슬래브(옆에서 보트)가 된다
         // 배복으로 눌린 체형: 단봉(물고기 등)이 아니라 **머리 평면 + 완만한 등**. 지수를 키워 정수리를 눕힌다.
-        top: (t, u) => 0.150 * L * Math.pow(Math.sin(Math.PI * Math.pow(THREE.MathUtils.clamp(t, 0, 1), 0.52)), 0.42) * fcUf(u, 3.2, 0.34)
+        // ⚠️ fcUf(u, 3.2, 0.34)는 |u|=0.9까지 높이의 66%를 유지하다 수직으로 떨어진다 → 옆구리가
+        // **평평한 판**이고 몸이 상자로 읽힌다(실측). p=2·q=0.5 = √(1−u²) = 정확한 타원 단면.
+        top: (t, u) => 0.150 * L * Math.pow(Math.sin(Math.PI * Math.pow(THREE.MathUtils.clamp(t, 0, 1), 0.52)), 0.42) * fcUf(u, 2.0, 0.50)
             + fcBump(t, u, 0.175, 0.30, 0.190, 0.360, 0.030 * L)   // 눈두덩 — 눈알이 얹힐 완만한 받침만(눈 자체는 구체 파트)
             + fcBump(t, u, 0.060, 0.0, 0.060, 0.42, 0.020 * L),    // 코끝 살짝 들림
         // 배: 0.058L → 0.155L. 보울에서 솔리드로 (뒤·아래에서 속이 안 보인다)
-        bot: (t, u) => 0.155 * L * Math.pow(Math.sin(Math.PI * Math.pow(THREE.MathUtils.clamp(t, 0, 1), 0.62)), 0.50) * fcUf(u, 3.0, 0.40),
+        bot: (t, u) => 0.155 * L * Math.pow(Math.sin(Math.PI * Math.pow(THREE.MathUtils.clamp(t, 0, 1), 0.62)), 0.50) * fcUf(u, 2.0, 0.50),
     };
 }
 // 관절 사지 — 뒷다리는 **무릎이 등선 위로** 접혀야 개구리로 읽힌다(수직 말뚝 금지).
@@ -26479,15 +26481,23 @@ function fcFrogSpec() {
 // 주석은 Z접힘을 말하는데 숫자가 안 따라가서 곧은 소시지로 렌더됐다. 그렇다고 0.235L로 올리면
 // 이번엔 **뿔 두 개**가 솟는다(실측). 그 자리 등선(≈0.093L) 바로 위인 0.135L이 접힌 무릎이다.
 // 앞다리는 T자로 뻗지 않는다: 짧게 앞-아래로 내려 **몸을 받치는** 자세(개구리 정좌).
+// ⚠️ **모든 관절이 몸 안에 파묻혀 있었다**(사용자 리포트 "팔다리 위치·모양이 이상해").
+// 만화 비율로 몸을 넓히면서(최대 반폭 0.440L→0.500L) 사지 좌표를 안 옮긴 게 원인 — 실측하니
+// 앞다리는 0.14~0.32L, 뒷무릎도 0.087L 안쪽이었다. 밖으로 나온 건 배 밑을 빠져나온 발뿐이라
+// "발만 달린 몸통"으로 보였다. 관절 x는 그 높이의 **실제 반폭**(등·배 곡면을 푼 값)에
+// 다리 반지름 + 여유를 더해 다시 구했다. 배(-0.146L)보다 낮은 점은 몸이 없어 자유롭다.
+//   무릎 z−0.300 y0.060 → 실반폭 0.401 → x 0.529 · 발목 z−0.040 y−0.070 → 0.446 → x 0.536
+//   팔꿈치 z0.230 y−0.095 → 0.405 → x 0.489
+// 엉덩이·어깨는 **일부러 몸 안**에 둔다 — 튜브가 몸 속에서 시작해야 이음매 없이 솟아난다.
 const FC_FROG_LIMBS = [
-    { pts: [[0.255, -0.020, 0.170], [0.330, -0.105, 0.235], [0.300, -0.150, 0.315]], r: [0.078, 0.060, 0.046],
-      foot: { at: [0.300, -0.156, 0.322], dir: [0.28, 0, 1], len: 0.105, wide: 0.062, toes: 4 } },
-    { pts: [[0.250, 0.040, -0.170], [0.450, 0.135, -0.300], [0.470, 0.010, -0.070], [0.395, -0.130, 0.055]], r: [0.115, 0.096, 0.060, 0.044],
-      foot: { at: [0.395, -0.140, 0.068], dir: [0.20, 0, 1], len: 0.165, wide: 0.115, toes: 5 } },
+    { pts: [[0.300, -0.020, 0.165], [0.489, -0.095, 0.230], [0.400, -0.172, 0.300]], r: [0.072, 0.056, 0.044], tub: 16,
+      foot: { at: [0.398, -0.178, 0.306], dir: [0.28, 0, 1], len: 0.105, wide: 0.062, toes: 3 } },
+    { pts: [[0.300, 0.010, -0.175], [0.529, 0.060, -0.300], [0.536, -0.070, -0.040], [0.420, -0.170, 0.080]], r: [0.096, 0.080, 0.055, 0.042], tub: 20,
+      foot: { at: [0.418, -0.178, 0.090], dir: [0.20, 0, 1], len: 0.165, wide: 0.112, toes: 3 } },
 ];
-function fcTaperTube(pts, radii, seg) {   // 관절 폴리라인 → 관절별 반지름 테이퍼 튜브
+function fcTaperTube(pts, radii, seg, tubSeg) {   // 관절 폴리라인 → 관절별 반지름 테이퍼 튜브
     const cur = new THREE.CatmullRomCurve3(pts);
-    const g = new THREE.TubeGeometry(cur, Math.max(7, pts.length * 4), 1, seg || 6, false);
+    const g = new THREE.TubeGeometry(cur, Math.max(7, tubSeg || pts.length * 4), 1, seg || 6, false);
     const P = g.attributes.position, U = g.attributes.uv;
     const rAt = (t) => {
         const f = t * (radii.length - 1), i = Math.min(radii.length - 2, Math.floor(f)), k = f - i;
@@ -26499,6 +26509,18 @@ function fcTaperTube(pts, radii, seg) {   // 관절 폴리라인 → 관절별 �
     }
     g.computeVertexNormals();
     return g;
+}
+// ⚠️ CatmullRom은 관절을 **둥글게 뭉갠다** — 4점으로 Z접힘을 그리면 무릎·발목이 사라지고
+// 몸 위를 넘어가는 **매끈한 아치 하나**가 된다(실측: 옆에서 보면 손잡이 달린 몸통).
+// 꺾는 점 앞뒤에 보조점을 끼워 직선 구간은 곧고 관절만 꺾이게 만든다.
+function fcJointPath(pts, tight) {
+    const k = tight == null ? 0.22 : tight, out = [pts[0]];
+    for (let i = 1; i < pts.length - 1; i++) {
+        const a = pts[i - 1], b = pts[i], c = pts[i + 1];
+        out.push(new THREE.Vector3().lerpVectors(b, a, k), b, new THREE.Vector3().lerpVectors(b, c, k));
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
 }
 function fcFrogFoot(f, L, sx) {
     // 만화 규율: 발가락은 **적고 굵고 끝이 둥글게**. 실물 4~5개 + 물갈퀴 막은 96px 아이콘에서
@@ -26530,15 +26552,18 @@ function fcFrogEyes(L) {
     const E = FC_FROG.EYE, out = [], ER = faRect(15);
     const zc = (0.5 - E.t) * L, hw = fcFrogW(E.t);
     for (const sx of [1, -1]) {
-        const g = new THREE.SphereGeometry(E.r * L, 12, 9);
+        // ⚠️ 완전구 + Math.min(1, …) 클램프는 하반구 정점을 **전부 원반 가장자리**에 몰아넣어,
+        //    클램프 경계에서 uv가 튀며 눈-머리 경계에 하얀 빗살 줄무늬가 생겼다(실측).
+        //    상반구보다 조금 큰 캡(0.62π)만 만들면 v 0~1이 원반에 정확히 맞아 클램프가 없어진다.
+        const g = new THREE.SphereGeometry(E.r * L, 16, 9, 0, Math.PI * 2, 0, Math.PI * 0.62);
         // ⚠️ 바깥으로 많이 눕히면 동공이 위-뒤를 향해 **눈이 뒤집힌** 것처럼 보인다(실측 0.42).
         //    만화 개구리는 위를 보되 앞도 본다 — 바깥 0.28 · 앞 0.52.
         g.rotateZ(-sx * 0.28);
         g.rotateX(0.52);
-        g.translate(sx * Math.min(E.x, hw / L * 0.60) * L, 0.132 * L, zc);   // 0.150→0.132: 머리에 더 묻는다
+        g.translate(sx * Math.min(E.x, hw / L * 0.60) * L, 0.124 * L, zc);   // 머리에 더 묻는다(교차선을 완만한 각도로)
         const uv = g.attributes.uv;
         for (let i = 0; i < uv.count; i++) {
-            const a = uv.getX(i) * Math.PI * 2, rr = Math.min(1, (1 - uv.getY(i)) * 2.0);   // ×2.0 = 적도가 원반 가장자리 (흰자가 아래로 안 넘어간다)
+            const a = uv.getX(i) * Math.PI * 2, rr = 1 - uv.getY(i);   // 캡의 극 → 원반 중심 · 캡 끝 → 원반 가장자리 (클램프 없음)
             uv.setXY(i, ER.u0 + FA_KU * (0.25 + rr * 0.215 * Math.cos(a)), ER.v1 - FA_KV * (0.25 + rr * 0.215 * Math.sin(a)));
         }
         out.push(g);
@@ -26548,7 +26573,8 @@ function fcFrogEyes(L) {
 function fcFrogParts() {
     const L = FC_FROG.L, out = [];
     for (const sx of [1, -1]) for (const lb of FC_FROG_LIMBS) {
-        out.push({ geo: fcTaperTube(lb.pts.map((q) => new THREE.Vector3(q[0] * sx * L, q[1] * L, q[2] * L)), lb.r.map((r) => r * L), 7) });
+        const jp = fcJointPath(lb.pts.map((q) => new THREE.Vector3(q[0] * sx * L, q[1] * L, q[2] * L)));
+        out.push({ geo: fcTaperTube(jp, lb.r.map((r) => r * L), 9, lb.tub) });   // 7각은 팔꿈치가 육각 덩어리로 보였다
         for (const g of fcFrogFoot(lb.foot, L, sx)) out.push({ geo: g });
     }
     for (const g of fcFrogEyes(L)) out.push({ geo: g, keepUv: true });   // 눈은 자기 uv를 지킨다
@@ -26586,15 +26612,19 @@ function fcPaintFrog(g) {   // 셀 9 — 위 절반 등, 아래 절반 배. uv =
         g.beginPath(); g.ellipse(BX(sx * 0.17), BY(0.070, true), C * 0.010, C * 0.007, 0, 0, Math.PI * 2);
         g.fillStyle = 'rgba(38,54,18,0.62)'; g.fill();
     }
-    // 입 — 만화는 **굵고 단순한 곡선 하나**. 끝이 살짝 올라가 웃는다. 입술 하이라이트는 뺐다.
-    for (const sx of [-1, 1]) {
+    // 입 — 만화는 **굵고 단순한 곡선 하나**. 끝이 살짝 올라가 웃는다.
+    // ⚠️ 등 밴드에만 그리면 |u|→1이 **실루엣 최대폭 선**이라 옆에서 볼 때 입이 모서리에 얹혀
+    //    사라진다(실측). 등·배 두 밴드에 걸쳐 그려 최대폭 선을 **감싸야** 어느 각도에서든 보인다.
+    for (const top of [true, false]) for (const sx of [-1, 1]) {
         g.beginPath();
         for (let j = 0; j <= 22; j++) {
-            const k2 = j / 22, t = 0.030 + k2 * 0.150 - 0.028 * Math.pow(k2, 3.2);   // ⚠️ 0.215까지 끌면 옆구리를 가로지르는 검은 띠가 된다(실측)
-            const u = sx * (0.06 + 0.92 * Math.pow(k2, 0.28));   // ⚠️ 지수가 크면 입이 콧등에 남아 **V자 골**이 된다(실측 0.55)
-            j ? g.lineTo(BX(u), BY(t, true)) : g.moveTo(BX(u), BY(t, true));
+            const k2 = j / 22;
+            const t = 0.030 + k2 * 0.185 - 0.034 * Math.pow(k2, 3.2);   // ⚠️ 0.215까지 끌면 옆구리를 가로지르는 검은 띠가 된다 — 0.185가 상한
+            const u = sx * (0.06 + (top ? 0.92 : 0.86) * Math.pow(k2, 0.28));   // ⚠️ 지수가 크면 입이 콧등에 남아 **V자 골**이 된다(실측 0.55)
+            j ? g.lineTo(BX(u), BY(t, top)) : g.moveTo(BX(u), BY(t, top));
         }
-        g.strokeStyle = 'rgba(34,50,14,0.78)'; g.lineWidth = 7; g.lineCap = 'round'; g.stroke();
+        g.strokeStyle = top ? 'rgba(34,50,14,0.78)' : 'rgba(34,50,14,0.58)';
+        g.lineWidth = top ? 7 : 6; g.lineCap = 'round'; g.stroke();
     }
     g.restore();
 }
