@@ -25928,6 +25928,16 @@ function fcAtlas() {
             g.beginPath(); g.arc(ox - orr * 0.13, oy - orr * 0.15, orr * 0.11, 0, Math.PI * 2);
             g.fillStyle = 'rgba(255,255,255,0.95)'; g.fill();                                              // 하이라이트 1개
         }
+        // 🦐 **좌하** 사분면 = 새우 눈. 검은 구슬 + 하이라이트 1점 — 새우 눈은 흰자가 없는
+        // 반짝이는 검은 알이라, 문어처럼 흰자를 두면 만화 눈이 되어 종이 안 맞는다.
+        {
+            const sx = R.x + C * 0.25, sy = R.y + C * 0.75, srr = C * 0.215;
+            g.beginPath(); g.arc(sx, sy, srr, 0, Math.PI * 2); g.fillStyle = '#c98058'; g.fill();          // 자루(테두리, 살색)
+            g.beginPath(); g.arc(sx, sy, srr * 0.86, 0, Math.PI * 2); g.fillStyle = '#241a18'; g.fill();   // 검은 알
+            g.beginPath(); g.arc(sx, sy, srr * 0.86, 0, Math.PI * 2); g.strokeStyle = 'rgba(90,40,26,0.55)'; g.lineWidth = 4; g.stroke();
+            g.beginPath(); g.arc(sx - srr * 0.24, sy - srr * 0.26, srr * 0.15, 0, Math.PI * 2);
+            g.fillStyle = 'rgba(255,246,236,0.92)'; g.fill();                                              // 하이라이트
+        }
         g.fillStyle = '#3a2a1c';   // 우하 사분면 = 장화 속 어둠(내벽·바닥이 여기를 샘플한다)
         g.fillRect(R.x + C * 0.52, R.y + C * 0.52, C * 0.46, C * 0.46);
         for (let k = 0; k < 10; k++) { g.fillStyle = `rgba(20,14,9,${0.2 + (k % 3) * 0.1})`; g.fillRect(R.x + C * (0.54 + (k % 5) * 0.085), R.y + C * (0.56 + ((k * 3) % 4) * 0.10), C * 0.05, C * 0.06); }
@@ -27654,7 +27664,9 @@ function fcShrimpRad(t) {
     // 로스트럼(뾰족한 주둥이) → 갑각(가장 굵음) → 복부 테이퍼 → 꼬리 자루
     const head = 0.16 + 0.84 * Math.min(1, Math.pow(t / 0.20, 0.8));
     const body = t < 0.20 ? 1 : 1 - 0.70 * Math.pow((t - 0.20) / 0.80, 1.25);
-    const cap = Math.min(1, t / 0.045) * Math.min(1, (1 - t) / 0.05);   // 양끝을 0으로 닫는다
+    // ⚠️ 앞끝을 t/0.045에 닫으면 ns=46에서 **링 2개**로 수렴한다 — 각진 종이 원뿔이 되던 정체
+    //    (사용자 리포트 "머리쪽이 어색해"). 0.10에 걸쳐 둥글게 닫는다.
+    const cap = Math.pow(Math.min(1, t / 0.10), 0.55) * Math.min(1, (1 - t) / 0.05);
     return head * body * cap;
 }
 function fcShrimpDisp(ph, t) {
@@ -27662,6 +27674,29 @@ function fcShrimpDisp(ph, t) {
     const f = ((t - 0.30) / 0.60) * 6;                 // 복부 6마디
     const lip = Math.pow(f - Math.floor(f), 2.6);      // 뒤로 갈수록 부풀다 뚝 — 겹친 판
     return 0.16 * lip * (0.55 + 0.45 * Math.max(0, -Math.sin(ph)));   // 등쪽이 더 두껍다
+}
+// 🦐 눈 — ⚠️ uv를 검은 점 한 곳으로 몰면 **평평한 검은 다각형**이 몸에 박힌 꼴이 된다(구멍처럼
+// 읽혔다). 문어·개구리와 같은 문법: 셀 15 **좌하** 사분면의 구슬 원반을 극좌표로 감는다.
+// ⚠️ 이 지오는 절대 아틀라스 uv를 쓰므로 **fcSeaShade 뒤에** 합쳐야 한다 — 셰이드가 uv를
+//    셀 26으로 통째 재매핑해서, 앞에 합치면 눈이 몸통 색을 집어 살색 혹이 된다(실측).
+function fcShrimpEyes(C) {
+    const out = [], ER = faRect(15), e = fcShrimpPath(0.15), e2 = fcShrimpPath(0.19);
+    const fx = e.x - e2.x, fy = e.y - e2.y, fl = Math.hypot(fx, fy) || 1;
+    for (const sz of [1, -1]) {
+        const g = new THREE.SphereGeometry(C.R * 0.34, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.5);
+        g.rotateX(Math.PI / 2);
+        g.rotateY(-sz * 0.55);
+        g.translate(e.x + (fx / fl) * C.R * 0.34, e.y + C.R * 0.26, sz * C.R * 0.70);
+        const uv = g.attributes.uv;
+        for (let i = 0; i < uv.count; i++) {
+            const th = uv.getX(i) * Math.PI * 2, q = 1 - uv.getY(i);
+            uv.setXY(i, ER.u0 + FA_KU * (0.25 + q * 0.215 * Math.cos(th)), ER.v1 - FA_KV * (0.75 + q * 0.215 * Math.sin(th)));
+        }
+        const cn = uv.count, col = new Float32Array(cn * 3).fill(1);
+        g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+        out.push(g);
+    }
+    return out;
 }
 function buildShrimpCartoon() {
     const A = fcAtlas(), C = FC_SHRIMP, R = faRect(C.cell);
@@ -27699,17 +27734,59 @@ function buildShrimpCartoon() {
             // 뒤집힌다(실측) → 0.115 → 0.072로 줄인다.
             path: (t) => ({ x: hd.x - 0.072 * t - 0.014 * t * t, y: hd.y + 0.024 * t - 0.052 * t * t, z: sz * (0.006 + curl * 0.026 * t) }),
             rad: (t) => (1 - 0.85 * t) * Math.min(1, (1 - t) / 0.06),
-        }), 0.02, 0.05));
+        }), 0.032, 0.058));   // ⚠️ 0.02~0.05는 검은 눈 밴드(0~0.030)와 겹쳐 **뿌리가 새까맣게** 나왔다
     }
-    for (const sz of [1, -1]) {   // 눈 — 갑각 옆 작은 검은 구슬
-        const e = fcShrimpPath(0.15);
-        const eg = new THREE.SphereGeometry(C.R * 0.30, 8, 6).translate(e.x - 0.006, e.y + C.R * 0.34, sz * C.R * 0.62);
-        const eu = eg.attributes.uv;
-        for (let i = 0; i < eu.count; i++) eu.setXY(i, 0.5, 0.015);   // 셀의 검은 점 한 곳
-        parts.push(eg);
+    // 로스트럼 — 눈 사이에서 앞으로 뻗는 톱니 칼날. **새우 머리 식별의 1순위**인데 아예 없었다.
+    // ⚠️ 이 C컬은 머리 끝에서 접선이 **거의 수직 아래**를 향한다. 그래서 "전방=접선"으로 두면
+    //    칼날이 턱 밑으로 늘어져 수염처럼 보인다(실측, 2회). 접선을 등 쪽으로 1.35rad 돌려
+    //    거의 수평(머리가 향한 왼쪽)으로 맞추고, 눈보다 위에서 시작하게 등 쪽으로 띄운다.
+    {
+        const h0 = fcShrimpPath(0.20), h1 = fcShrimpPath(0.26);
+        const fx = h0.x - h1.x, fy = h0.y - h1.y, fl = Math.hypot(fx, fy) || 1;
+        const ux = fx / fl, uy = fy / fl;
+        // ⚠️ ROT는 접선을 등 쪽으로 돌리는 각이다. 1.35는 **과회전**이라 칼날이 머리 위로
+        //    솟아올랐다(실측). t 0.20의 접선이 수평 아래 46°이므로 0.80이 정확히 수평,
+        //    0.95면 앞으로 뻗으며 살짝 들린다 — 실물 로스트럼의 각도다.
+        const ROT = 0.95, cr = Math.cos(ROT), sr = Math.sin(ROT);
+        const dx = ux * cr + uy * sr, dy = uy * cr - ux * sr, dl = Math.hypot(dx, dy) || 1;
+        const rx = dx / dl, ry = dy / dl;      // 로스트럼 방향(머리 정면)
+        const nx = ry, ny = -rx;               // 그에 수직 — 등 쪽(위)
+        // ⚠️ 뿌리를 몸 반지름 밖에 두면 칼날이 **공중에 뜬다**. 머리 앞쪽(t 0.11)은 반지름이
+        //    0.68R뿐이라 눈 위로 올리는 순간 떠 버렸다 — 갑각이 굵은 t 0.20(반지름 1.0R)에서
+        //    0.80R만 띄워 **속에 박은 채로** 앞으로 길게 뽑는다.
+        const bx0 = h0.x + nx * C.R * 0.80, by0 = h0.y + ny * C.R * 0.80;
+        const LEN = C.R * 2.30, N = 8, pos = [], uv = [], idx = [];
+        for (let i = 0; i <= N; i++) {
+            const u = i / N;
+            const saw = 1 + 0.22 * Math.sin(u * Math.PI * 5);
+            const hgt = C.R * 0.42 * Math.pow(1 - u, 0.65) * saw;
+            const bx = bx0 + rx * LEN * u, by = by0 + ry * LEN * u;
+            pos.push(bx, by, 0); uv.push(0.30, 0.96);
+            pos.push(bx + nx * hgt, by + ny * hgt, 0); uv.push(0.30, 0.90);
+        }
+        for (let i = 0; i < N; i++) { const a2 = i * 2; idx.push(a2, a2 + 1, a2 + 2, a2 + 1, a2 + 3, a2 + 2); }
+        const rg = new THREE.BufferGeometry();
+        rg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        rg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        rg.setIndex(idx); rg.computeVertexNormals();
+        parts.push(rg);
     }
-    const geo = mergeGeometries(parts, false);
-    fcSeaShade(geo, R);
+    // 주각(걷는 다리) 3쌍 — 갑각 아래가 텅 비어 머리가 '관의 뭉툭한 끝'으로만 읽혔다.
+    for (const sz of [1, -1]) for (const [tt, ln, sw] of [[0.16, 0.62, 0.55], [0.23, 0.70, 0.30], [0.30, 0.62, 0.06]]) {
+        const q0 = fcShrimpPath(tt);
+        parts.push(fcRemapV(fcTubeGeo({
+            R: C.R * 0.075, L: 1, ns: 7, np: 5,
+            path: (k) => ({
+                x: q0.x + C.R * (0.30 + sw) * k,
+                y: q0.y - C.R * (0.30 + 1.15 * ln) * k - C.R * 0.20 * k * k,
+                z: sz * (C.R * 0.42 + C.R * 0.55 * k),
+            }),
+            rad: (k) => (1 - 0.72 * k) * Math.min(1, (1 - k) / 0.10),
+        }), 0.032, 0.058));
+    }
+    const body = mergeGeometries(parts, false);
+    fcSeaShade(body, R);
+    const geo = mergeGeometries([body, ...fcShrimpEyes(C)], false);   // 눈은 셀 15를 보므로 셰이드 뒤에
     geo.computeBoundingBox();
     geo.translate(0, -geo.boundingBox.min.y, 0);
     const grp = new THREE.Group();
