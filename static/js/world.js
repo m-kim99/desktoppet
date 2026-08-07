@@ -25528,7 +25528,10 @@ const FISHC = {
         fin: { col: 0x4e463a, dorsal: { s0: 0.44, s1: 0.58, h: 0.062, rays: 0.28 }, anal: { s0: 0.64, s1: 0.76, h: 0.052, rays: 0.26 },
             caudal: { h: 0.126, len: 0.112, notch: 0.06, rays: 0.46 },
             pect: { s0: 0.30, s1: 0.375, c0: -0.16, c1: -0.62, l0: 0.275, l1: 0.115, down: 0.30, rays: 0.50 } },   // 팔처럼 큰 패들
-        scales: null, gill: 0.230, mouth: 0, eye: { s: 0.105, c: 0.66, r: 0.030, iris: '#c8b048' },   // 입은 칠하지 않는다 — 지오메트리다
+        // ⚠️ eye.s가 0.105라 눈이 **입 안쪽 분홍 바로 아래**에 찍혔다 — 아틀라스에서 두 원이 맞닿아
+        // 있고, 3D에선 눈알이 **입 속에 박힌** 꼴로 보였다(사용자 리포트 "얼굴이 기형"). 아귀 머리 돔은
+        // s 0.14~0.32 구간이다 → 눈을 0.195로 물려 입 뒤 머리 위에 앉힌다. 크기도 0.030 → 0.042.
+        scales: null, gill: 0.230, mouth: 0, eye: { s: 0.195, c: 0.66, r: 0.042, iris: '#c8b048' },   // 입은 칠하지 않는다 — 지오메트리다
         parts: [{ kind: 'jaw' }, { kind: 'lure', s: 0.085, h: 0.115 }, { kind: 'rimteeth', n: 13 }, { kind: 'fringe', n: 5 }],
         extra: 'anglermarble',
     },
@@ -26054,8 +26057,10 @@ function fcExtra(g, sp, H) {   // 종별 시그니처 무늬 — 비늘 위, 아
     } else if (sp.extra === 'glasslabel') {
         fcExtra2(g, sp, H);
     } else if (sp.extra === 'anglermarble') {   // 아귀 — 검갈색 얼룩 + 입 안쪽 분홍 + 피부 돌기
+        // ⚠️ 중심 s=0.028에 반경 0.9·(yOf(0.062)−yOf(0))이면 위쪽이 **셀 밖으로 잘린다**(머리 우선
+        //    워프라 s가 작을수록 셀을 크게 먹는다) — 잘린 분홍이 주둥이 끝에서 뚝 끊겨 보였다.
         g.fillStyle = 'rgba(214,140,138,0.80)';   // 벌어진 입 안쪽
-        g.beginPath(); g.ellipse(xOf(0.5), yOf(0.028), C * 0.30, (yOf(0.062) - yOf(0)) * 0.9, 0, 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.ellipse(xOf(0.5), yOf(0.040), C * 0.28, (yOf(0.074) - yOf(0.008)) * 0.48, 0, 0, Math.PI * 2); g.fill();
         for (let k = 0; k < 40; k++) {
             const u = ((k * 5) % 19) / 19, s0 = 0.06 + ((k * 11) % 23) / 23 * 0.88;
             blob(u, s0, 0.024 + (k % 4) * 0.010, 0.016 + (k % 3) * 0.008, `rgba(16,14,12,${0.16 + (k % 3) * 0.06})`, k * 1.1);
@@ -26063,9 +26068,9 @@ function fcExtra(g, sp, H) {   // 종별 시그니처 무늬 — 비늘 위, 아
         for (let k = 0; k < 16; k++) blob(((k * 7) % 11) / 11, 0.10 + ((k * 3) % 7) / 7 * 0.28, 0.010, 0.007, 'rgba(150,138,120,0.30)', 0);
         g.fillStyle = 'rgba(248,244,232,0.94)';   // 이빨 — 실루엣에 걸리는 앞줄만 지오, 나머지는 여기서 칠한다
         for (let k = 0; k < 15; k++) {
-            const u = 0.5 + (k / 14 - 0.5) * 0.60, tw = C * 0.011, th = (yOf(0.052) - yOf(0)) * 0.55;
-            g.beginPath(); g.moveTo(xOf(u) - tw, yOf(0.050)); g.lineTo(xOf(u) + tw, yOf(0.050)); g.lineTo(xOf(u), yOf(0.050) + th); g.closePath(); g.fill();
-            g.beginPath(); g.moveTo(xOf(u) - tw, yOf(0.014)); g.lineTo(xOf(u) + tw, yOf(0.014)); g.lineTo(xOf(u), yOf(0.014) - th * 0.8); g.closePath(); g.fill();
+            const u = 0.5 + (k / 14 - 0.5) * 0.58, tw = C * 0.011, th = (yOf(0.058) - yOf(0.012)) * 0.62;
+            g.beginPath(); g.moveTo(xOf(u) - tw, yOf(0.062)); g.lineTo(xOf(u) + tw, yOf(0.062)); g.lineTo(xOf(u), yOf(0.062) + th); g.closePath(); g.fill();
+            g.beginPath(); g.moveTo(xOf(u) - tw, yOf(0.019)); g.lineTo(xOf(u) + tw, yOf(0.019)); g.lineTo(xOf(u), yOf(0.019) - th * 0.8); g.closePath(); g.fill();
         }
     }
 }
