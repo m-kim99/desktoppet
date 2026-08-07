@@ -27851,8 +27851,15 @@ function buildOctoCartoon() {
             const t = i / NR2;
             for (let j = 0; j <= NW; j++) {
                 const ph = (j / NW) * Math.PI * 2;
-                const reach = rootR * 0.96 + C.R * C.armLen * (0.14 + 0.26 * Math.pow(Math.abs(Math.cos(4 * (ph - 0.22))), 0.7)) * t;
-                const y = rootY + (hg - rootY) * Math.min(1, Math.pow(t / 0.5, 0.8)) + C.R * 0.05 * t;
+                // ⚠️ 위상이 뒤집혀 있었다. 다리는 φ = 0.22 + i·2π/8인데 |cos(4(φ−0.22))|의 최대도
+                // **같은 각도**라, 막이 다리 사이가 아니라 **다리 위에서** 가장 넓게 퍼졌다 —
+                // 다리마다 꽃잎이 한 장씩 얹히고 그 사이로 다리가 삐져나오던 정체(사용자 리포트 "원반같은 것들").
+                // sin은 cos가 ±1인 곳에서 0이므로, 그대로 바꾸면 최대가 **다리와 다리의 한가운데**로 간다.
+                const gap = Math.pow(Math.abs(Math.sin(4 * (ph - 0.22))), 0.7);
+                const reach = rootR * 0.96 + C.R * C.armLen * (0.07 + 0.19 * gap) * t;   // 뻗는 길이도 줄인다(크라운 밖까지 나갔다)
+                // ⚠️ pow(t/0.5,…)는 t=0.5에 이미 바닥에 닿고 나머지 절반이 **수평 판**으로 뻗는다.
+                // 전 구간에 걸쳐 내려오게 해야 경사진 막이 된다.
+                const y = rootY + (hg - rootY) * Math.pow(t, 0.85) * 0.82 + C.R * 0.03 * t;
                 pos.push(Math.cos(ph) * reach, y, Math.sin(ph) * reach);
                 uv.push(j / NW, 0.30 + t * 0.06);   // 다리 뿌리 색과 이어지게
             }
