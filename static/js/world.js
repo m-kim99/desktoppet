@@ -27660,6 +27660,15 @@ function fcShrimpPath(t) {
     const th = -1.72 + t * 3.66;                       // 머리(좌하) → 등(위) → 꼬리(우하)
     return { x: Math.sin(th) * FC_SH_RC, y: Math.cos(th) * FC_SH_RC * 0.86 + FC_SH_RC * 0.30, z: 0 };
 }
+// 부속이 뻗는 **배(안쪽) 방향**. ⚠️ 고정 벡터(dx 0.34, dy −0.94)를 모든 부속에 썼더니 몸이 C로
+// 휘는 구간마다 각도가 어긋나 **제각각 삐친 가시**가 됐다(실측). 경로에서 법선을 뽑아 쓴다.
+function fcShrimpIn(t, back = 0) {
+    const th = -1.72 + t * 3.66;
+    let nx = -Math.sin(th), ny = -Math.cos(th) * 0.86;
+    const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+    const c = Math.cos(back), sn = Math.sin(back);       // back > 0 = 꼬리 쪽으로 눕힌다
+    return { x: nx * c - ny * sn, y: ny * c + nx * sn };
+}
 function fcShrimpRad(t) {
     // 로스트럼(뾰족한 주둥이) → 갑각(가장 굵음) → 복부 테이퍼 → 꼬리 자루
     // ⚠️ 머리→꼬리가 **하나의 매끈한 테이퍼**라 갑각이 없고, 그래서 전체가 껍질 깐 자숙
@@ -27678,8 +27687,10 @@ function fcShrimpRad(t) {
 function fcShrimpDisp(ph, t) {
     if (t < 0.28 || t > 0.90) return 0;                // 갑각(t<0.28)은 마디 없는 한 장이다
     const f = ((t - 0.28) / 0.62) * 6;                 // 복부 6마디
-    const lip = Math.pow(f - Math.floor(f), 2.2);      // 뒤로 갈수록 부풀다 뚝 — 겹친 판
-    return 0.22 * lip * (0.55 + 0.45 * Math.max(0, -Math.sin(ph)));   // 0.16 → 0.22: 판이 또렷해야 껍질로 읽힌다
+    // ⚠️ 진폭 0.22 + 지수 2.2로 세웠더니 마디 경계가 **등에서 뾰족한 가시**로 솟았다(실측 — 옆에서
+    //    등을 따라 6개가 삐죽). 판이 또렷한 건 텍스처(그늘+밝은 립)가 맡고, 조형은 부드러운 턱만 준다.
+    const lip = Math.pow(f - Math.floor(f), 1.5);      // 뒤로 갈수록 부풀다 뚝 — 겹친 판
+    return 0.13 * lip * (0.62 + 0.38 * Math.max(0, -Math.sin(ph)));
 }
 // 🦐 눈 — ⚠️ uv를 검은 점 한 곳으로 몰면 **평평한 검은 다각형**이 몸에 박힌 꼴이 된다(구멍처럼
 // 읽혔다). 문어·개구리와 같은 문법: 셀 15 **좌하** 사분면의 구슬 원반을 극좌표로 감는다.
@@ -27704,6 +27715,25 @@ function fcShrimpEyes(C) {
     }
     return out;
 }
+// 납작한 판 하나 — 꼬리 부채(uropod)·촉각비늘(scaphocerite)·배다리가 같이 쓴다.
+// o.wid(u)가 폭 프로파일: 노(paddle)는 중간이 부풀고 끝이 둥글다, 미절(telson)은 끝이 뾰족하다.
+function fcShrimpBlade(o) {
+    const N = o.n || 8, pos = [], uv = [], idx = [];
+    for (let i = 0; i <= N; i++) {
+        const u = i / N, w = o.wid(u), rise = o.rise ? o.rise(u) : 0;
+        for (const zs of [-1, 1]) {
+            const px = o.ox + o.dx * o.len * u, py = o.oy + o.dy * o.len * u + rise;   // ⚠️ 편집 잔재 `- o.nz*0`이 있었다: o.nz는 undefined이고 undefined*0 = NaN이라 새우가 통째로 사라졌다
+            pos.push(px, py, o.oz + zs * w + (o.zoff || 0) * o.len * u);
+            uv.push((zs + 1) / 2, o.v0 + u * o.vk);
+        }
+    }
+    for (let i = 0; i < N; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+}
 function buildShrimpCartoon() {
     const A = fcAtlas(), C = FC_SHRIMP, R = faRect(C.cell);
     if (!fcMat) fcMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: A.tex, roughness: 0.60, metalness: 0.05, side: THREE.DoubleSide });
@@ -27711,98 +27741,91 @@ function buildShrimpCartoon() {
     parts.push(fcRemapV(fcTubeGeo({ R: C.R, L: C.L, ns: 46, np: 20, path: fcShrimpPath, rad: fcShrimpRad, disp: fcShrimpDisp }), 0.30, 1.0));
     const tailP = fcShrimpPath(1), tailT = fcShrimpPath(0.98);
     const tx = tailP.x - tailT.x, ty = tailP.y - tailT.y, tl = Math.hypot(tx, ty) || 1;
-    // 꼬리 부채(uropod) 4장 — 눌린 원뿔이 아니라 **얇은 판**을 부챗살로. 끝이 뾰족해야 부채로 읽힌다.
-    for (const sp of [-0.62, -0.21, 0.21, 0.62]) {
-        const len = C.R * (2.35 - Math.abs(sp) * 0.85), wid = C.R * 0.30;
-        const ca = Math.cos(sp), sa = Math.sin(sp);
-        const dx = (tx / tl) * ca - (ty / tl) * sa, dy = (ty / tl) * ca + (tx / tl) * sa;
-        const pos = [], uv = [], idx = [], N = 6;
-        for (let i = 0; i <= N; i++) {
-            const u = i / N, w = wid * Math.sin(Math.PI * Math.pow(u, 0.75)) * (1 - 0.55 * u);
-            for (const zs of [-1, 1]) {
-                pos.push(tailP.x + dx * len * u, tailP.y + dy * len * u, zs * w);
-                uv.push((zs + 1) / 2, 0.06 + u * 0.20);
+    // 꼬리 부채 — ⚠️ 예전엔 **똑같이 뾰족한 날 4장**이라 삼지창처럼 보였다. 실물 미선(tail fan)은
+    // "a central plate flanked by the rudder-like uropods": **삼각 미절(telson) 1장**을 가운데 두고
+    // **넓은 노 모양 uropod 4장**이 양옆을 감싼다. 미절만 뾰족하고 나머지는 둥근 노다.
+    {
+        const ux = tx / tl, uy = ty / tl;
+        const put = (sp, len, wid, tip) => {
+            const ca = Math.cos(sp), sa = Math.sin(sp);
+            parts.push(fcShrimpBlade({
+                ox: tailP.x, oy: tailP.y, oz: 0,
+                dx: ux * ca - uy * sa, dy: uy * ca + ux * sa,
+                len, n: 9, v0: 0.06, vk: 0.20,
+                // tip=1 → 끝이 점(미절) · tip=0 → 끝이 둥근 노(uropod)
+                wid: (u) => wid * Math.sin(Math.PI * Math.pow(u, 0.62)) * (tip ? (1 - u) : Math.pow(1 - u * u, 0.42)),
+            }));
+        };
+        put(0, C.R * 2.45, C.R * 0.26, 1);                                   // 미절 — 가운데, 뾰족
+        for (const sp of [-0.30, 0.30]) put(sp, C.R * 2.30, C.R * 0.44, 0);  // 안쪽 노 한 쌍
+        for (const sp of [-0.62, 0.62]) put(sp, C.R * 2.05, C.R * 0.40, 0);  // 바깥 노 한 쌍
+    }
+    // 더듬이 — ⚠️ 예전엔 **같은 굵기 막대 2개**뿐이라 메기 수염처럼 보였다. 실물 새우는 셋이 다르다:
+    //   ⓐ 촉각비늘(scaphocerite) — 2번 더듬이 밑동의 **넓은 판**. 방향타로 쓰는 새우의 대표 특징인데 없었다
+    //   ⓑ 소촉각(antennule) — 짧고 **두 갈래로 갈라진다**
+    //   ⓒ 대촉각(antenna) — "one very long flagellum". 아주 가늘고 길게, 몸을 따라 **뒤로 흘려** 폭을 안 먹게
+    const hd = fcShrimpPath(0.06), hd2 = fcShrimpPath(0.13);
+    for (const sz of [1, -1]) {
+        parts.push(fcShrimpBlade({   // ⓐ 촉각비늘
+            ox: hd2.x, oy: hd2.y - C.R * 0.18, oz: sz * C.R * 0.46,
+            dx: -0.94, dy: -0.10, len: C.R * 1.75, n: 8, v0: 0.06, vk: 0.20, zoff: sz * 0.16,
+            wid: (u) => C.R * 0.46 * Math.sin(Math.PI * Math.pow(u, 0.52)) * Math.pow(1 - u * u, 0.42),   // 방향타 판 — 좁으면 또 가시가 된다
+        }));
+        for (const [fk, fl] of [[0.30, 0.052], [-0.18, 0.040]]) {   // ⓑ 소촉각 2갈래
+            parts.push(fcRemapV(fcTubeGeo({
+                R: C.R * 0.085, L: 1, ns: 8, np: 5,
+                path: (t) => ({ x: hd.x - fl * t, y: hd.y + C.R * (0.10 + fk) * t - fl * 0.55 * t * t, z: sz * (C.R * 0.30 + fl * 0.30 * t) }),
+                rad: (t) => (1 - 0.80 * t) * Math.min(1, (1 - t) / 0.08),
+            }), 0.032, 0.058));
+        }
+        parts.push(fcRemapV(fcTubeGeo({   // ⓒ 대촉각 — 가늘고 길게, 뒤로 흘린다
+            R: C.R * 0.070, L: 1, ns: 22, np: 4,
+            path: (t) => ({
+                x: hd.x - 0.072 * t + 0.086 * t * t * t,          // 앞으로 나갔다 몸을 따라 뒤로 흐른다
+                y: hd.y - C.R * 0.20 - 0.040 * t + 0.086 * t * t,
+                z: sz * (C.R * 0.34 + 0.026 * t + 0.010 * t * t),
+            }),
+            rad: (t) => (1 - 0.62 * t) * Math.min(1, (1 - t) / 0.05),
+        }), 0.032, 0.058));
+    }
+    // 배다리(pleopod) 5쌍 — 깐 새우살에 없는 부속이라 붙는 순간 통새우로 읽힌다.
+    // ⚠️ 둥근 막대로 뽑았더니 **잔털**처럼 보였다. 실물은 노처럼 **납작한 판**이다.
+    for (const sz of [1, -1]) for (let k = 0; k < 5; k++) {
+        const tt = 0.34 + k * 0.105, q0 = fcShrimpPath(tt), rr = fcShrimpRad(tt) * C.R;
+        const nn = fcShrimpIn(tt, 0.44);   // 배 방향에서 꼬리 쪽으로 25°
+        parts.push(fcShrimpBlade({
+            ox: q0.x + nn.x * rr * 0.42, oy: q0.y + nn.y * rr * 0.42, oz: sz * rr * 0.42,
+            dx: nn.x, dy: nn.y, len: C.R * 0.90, n: 5, v0: 0.032, vk: 0.026, zoff: sz * 0.30,
+            // ⚠️ 폭 0.13은 화면에서 **바늘**이었다 — 노로 읽히려면 길이 대비 1/3은 돼야 한다
+            wid: (u) => C.R * 0.30 * Math.sin(Math.PI * Math.pow(u, 0.48)) * Math.pow(1 - u * u, 0.40),
+        }));
+    }
+    // 주각(pereiopod) — 실물은 **5쌍**이고 "some pereiopods end in pincers". 3쌍은 갑각 밑이 비어
+    // 보였고 집게가 없어 다리가 그냥 철사였다. 5쌍으로 늘리고 앞 2쌍 끝에 작은 집게를 단다.
+    for (const sz of [1, -1]) for (const [tt, ln, claw] of [[0.11, 0.92, 1], [0.18, 1.00, 1], [0.25, 0.94, 0], [0.32, 0.80, 0]]) {
+        const q0 = fcShrimpPath(tt), rr = fcShrimpRad(tt) * C.R;
+        const nn = fcShrimpIn(tt, -0.20);   // 배 방향에서 머리 쪽으로 살짝
+        const L2 = C.R * 1.30 * ln;
+        parts.push(fcRemapV(fcTubeGeo({
+            R: C.R * 0.115, L: 1, ns: 7, np: 5,   // 0.075는 가시였다
+            path: (k) => ({
+                x: q0.x + nn.x * (rr * 0.5 + L2 * k) + C.R * 0.10 * k * k,
+                y: q0.y + nn.y * (rr * 0.5 + L2 * k),
+                z: sz * (rr * 0.40 + C.R * 0.30 * k),
+            }),
+            rad: (k) => (1 - 0.62 * k) * Math.min(1, (1 - k) / 0.10),
+        }), 0.032, 0.058));
+        if (claw) {   // 집게 — 끝에 작은 두 갈래
+            const cx = q0.x + nn.x * (rr * 0.5 + L2) + C.R * 0.10, cy = q0.y + nn.y * (rr * 0.5 + L2);
+            const cz = sz * (rr * 0.40 + C.R * 0.30);
+            for (const j of [-1, 1]) {
+                const cg = new THREE.CylinderGeometry(C.R * 0.018, C.R * 0.042, C.R * 0.26, 4);
+                cg.rotateZ(j * 0.40); cg.translate(cx + j * C.R * 0.055 + nn.x * C.R * 0.11, cy + nn.y * C.R * 0.11, cz);
+                const cu = cg.attributes.uv;
+                for (let i = 0; i < cu.count; i++) cu.setXY(i, 0.5, 0.045);
+                parts.push(cg);
             }
         }
-        for (let i = 0; i < N; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-        const fg = new THREE.BufferGeometry();
-        fg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        fg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-        fg.setIndex(idx); fg.computeVertexNormals();
-        parts.push(fg);
-    }
-    // 더듬이 2가닥 — 머리에서 **실제로 뻗어 나오게**(구 조형은 공중에 떠 있었다). 가늘어지는 튜브.
-    const hd = fcShrimpPath(0.06);
-    for (const [sz, curl] of [[1, 0.55], [-1, -0.42]]) {
-        parts.push(fcRemapV(fcTubeGeo({
-            R: C.R * 0.085, L: 1, ns: 16, np: 6,   // 굵으면 붉은 막대 두 개로 튄다
-            // ⚠️ 실물 더듬이는 몸보다 길지만, 그대로 두면 새우 폭(0.49)이 문어(0.47)를 넘어 크기 서열이
-            // 뒤집힌다(실측) → 0.115 → 0.072로 줄인다.
-            path: (t) => ({ x: hd.x - 0.072 * t - 0.014 * t * t, y: hd.y + 0.024 * t - 0.052 * t * t, z: sz * (0.006 + curl * 0.026 * t) }),
-            rad: (t) => (1 - 0.85 * t) * Math.min(1, (1 - t) / 0.06),
-        }), 0.032, 0.058));   // ⚠️ 0.02~0.05는 검은 눈 밴드(0~0.030)와 겹쳐 **뿌리가 새까맣게** 나왔다
-    }
-    // 로스트럼 — 눈 사이에서 앞으로 뻗는 톱니 칼날. **새우 머리 식별의 1순위**인데 아예 없었다.
-    // ⚠️ 이 C컬은 머리 끝에서 접선이 **거의 수직 아래**를 향한다. 그래서 "전방=접선"으로 두면
-    //    칼날이 턱 밑으로 늘어져 수염처럼 보인다(실측, 2회). 접선을 등 쪽으로 1.35rad 돌려
-    //    거의 수평(머리가 향한 왼쪽)으로 맞추고, 눈보다 위에서 시작하게 등 쪽으로 띄운다.
-    {
-        const h0 = fcShrimpPath(0.20), h1 = fcShrimpPath(0.26);
-        const fx = h0.x - h1.x, fy = h0.y - h1.y, fl = Math.hypot(fx, fy) || 1;
-        const ux = fx / fl, uy = fy / fl;
-        // ⚠️ ROT는 접선을 등 쪽으로 돌리는 각이다. 1.35는 **과회전**이라 칼날이 머리 위로
-        //    솟아올랐다(실측). t 0.20의 접선이 수평 아래 46°이므로 0.80이 정확히 수평,
-        //    0.95면 앞으로 뻗으며 살짝 들린다 — 실물 로스트럼의 각도다.
-        const ROT = 0.95, cr = Math.cos(ROT), sr = Math.sin(ROT);
-        const dx = ux * cr + uy * sr, dy = uy * cr - ux * sr, dl = Math.hypot(dx, dy) || 1;
-        const rx = dx / dl, ry = dy / dl;      // 로스트럼 방향(머리 정면)
-        const nx = ry, ny = -rx;               // 그에 수직 — 등 쪽(위)
-        // ⚠️ 뿌리를 몸 반지름 밖에 두면 칼날이 **공중에 뜬다**. 머리 앞쪽(t 0.11)은 반지름이
-        //    0.68R뿐이라 눈 위로 올리는 순간 떠 버렸다 — 갑각이 굵은 t 0.20(반지름 1.0R)에서
-        //    0.80R만 띄워 **속에 박은 채로** 앞으로 길게 뽑는다.
-        const bx0 = h0.x + nx * C.R * 0.80, by0 = h0.y + ny * C.R * 0.80;
-        const LEN = C.R * 2.30, N = 8, pos = [], uv = [], idx = [];
-        for (let i = 0; i <= N; i++) {
-            const u = i / N;
-            const saw = 1 + 0.22 * Math.sin(u * Math.PI * 5);
-            const hgt = C.R * 0.42 * Math.pow(1 - u, 0.65) * saw;
-            const bx = bx0 + rx * LEN * u, by = by0 + ry * LEN * u;
-            pos.push(bx, by, 0); uv.push(0.30, 0.96);
-            pos.push(bx + nx * hgt, by + ny * hgt, 0); uv.push(0.30, 0.90);
-        }
-        for (let i = 0; i < N; i++) { const a2 = i * 2; idx.push(a2, a2 + 1, a2 + 2, a2 + 1, a2 + 3, a2 + 2); }
-        const rg = new THREE.BufferGeometry();
-        rg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        rg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-        rg.setIndex(idx); rg.computeVertexNormals();
-        parts.push(rg);
-    }
-    // 배다리(swimmeret) 5쌍 — **깐 새우살에는 없는 부속**이라, 이게 붙는 순간 통새우로 읽힌다.
-    for (const sz of [1, -1]) for (let k = 0; k < 5; k++) {
-        const tt = 0.34 + k * 0.105, q0 = fcShrimpPath(tt);
-        const rr = fcShrimpRad(tt) * C.R;
-        parts.push(fcRemapV(fcTubeGeo({
-            R: C.R * 0.052, L: 1, ns: 5, np: 4,
-            path: (m) => ({
-                x: q0.x + C.R * 0.10 * m,
-                y: q0.y - rr * 0.55 - C.R * (0.34 + 0.10 * k) * m,
-                z: sz * (rr * 0.42 + C.R * 0.16 * m),
-            }),
-            rad: (m) => (1 - 0.55 * m) * Math.min(1, (1 - m) / 0.14),
-        }), 0.032, 0.058));
-    }
-    // 주각(걷는 다리) 3쌍 — 갑각 아래가 텅 비어 머리가 '관의 뭉툭한 끝'으로만 읽혔다.
-    for (const sz of [1, -1]) for (const [tt, ln, sw] of [[0.16, 0.62, 0.55], [0.23, 0.70, 0.30], [0.30, 0.62, 0.06]]) {
-        const q0 = fcShrimpPath(tt);
-        parts.push(fcRemapV(fcTubeGeo({
-            R: C.R * 0.075, L: 1, ns: 7, np: 5,
-            path: (k) => ({
-                x: q0.x + C.R * (0.30 + sw) * k,
-                y: q0.y - C.R * (0.30 + 1.15 * ln) * k - C.R * 0.20 * k * k,
-                z: sz * (C.R * 0.42 + C.R * 0.55 * k),
-            }),
-            rad: (k) => (1 - 0.72 * k) * Math.min(1, (1 - k) / 0.10),
-        }), 0.032, 0.058));
     }
     const body = mergeGeometries(parts, false);
     fcSeaShade(body, R);
