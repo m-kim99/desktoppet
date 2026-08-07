@@ -25915,6 +25915,19 @@ function fcAtlas() {
         g.beginPath(); g.arc(ex, ey, rr * 0.42, 0, Math.PI * 2); g.fillStyle = '#15130c'; g.fill();   // 크고 둥근 동공
         g.beginPath(); g.arc(ex - rr * 0.17, ey - rr * 0.19, rr * 0.15, 0, Math.PI * 2); g.fillStyle = 'rgba(255,255,255,0.95)'; g.fill();   // 하이라이트
         g.beginPath(); g.arc(ex + rr * 0.14, ey + rr * 0.17, rr * 0.07, 0, Math.PI * 2); g.fillStyle = 'rgba(255,255,255,0.55)'; g.fill();   // 반사 보조점
+        // 🐙 **우상** 사분면 = 문어 눈. 개구리 원반(좌상)을 빌려 썼더니 ① 동공 반경 0.42가
+        // 각도로 47°라 눈이 **거의 검게** 찼고 ② 테두리가 개구리용 **초록**이라 문어 눈 밑에
+        // 초록 띠가 생겼다(사용자 리포트 "눈이 너무 이상해"). 전용 원반으로 분리한다.
+        // 단순화: 동공 0.42→0.30(각 34°) · 하이라이트 2개 → **1개** · 테두리는 살색.
+        {
+            const ox = R.x + C * 0.75, oy = R.y + C * 0.25, orr = C * 0.215;
+            g.beginPath(); g.arc(ox, oy, orr, 0, Math.PI * 2); g.fillStyle = '#e8794f'; g.fill();          // 테두리 = 살색(머리에 묻히는 뒤쪽)
+            g.beginPath(); g.arc(ox, oy, orr * 0.84, 0, Math.PI * 2); g.fillStyle = '#fbfaf4'; g.fill();   // 흰자
+            g.beginPath(); g.arc(ox, oy, orr * 0.84, 0, Math.PI * 2); g.strokeStyle = 'rgba(120,48,30,0.48)'; g.lineWidth = 5; g.stroke();
+            g.beginPath(); g.arc(ox, oy, orr * 0.26, 0, Math.PI * 2); g.fillStyle = '#17140f'; g.fill();   // 동공
+            g.beginPath(); g.arc(ox - orr * 0.13, oy - orr * 0.15, orr * 0.11, 0, Math.PI * 2);
+            g.fillStyle = 'rgba(255,255,255,0.95)'; g.fill();                                              // 하이라이트 1개
+        }
         g.fillStyle = '#3a2a1c';   // 우하 사분면 = 장화 속 어둠(내벽·바닥이 여기를 샘플한다)
         g.fillRect(R.x + C * 0.52, R.y + C * 0.52, C * 0.46, C * 0.46);
         for (let k = 0; k < 10; k++) { g.fillStyle = `rgba(20,14,9,${0.2 + (k % 3) * 0.1})`; g.fillRect(R.x + C * (0.54 + (k % 5) * 0.085), R.y + C * (0.56 + ((k * 3) % 4) * 0.10), C * 0.05, C * 0.06); }
@@ -27720,7 +27733,10 @@ const FC_OCTO = { cell: 27, R: 0.062, L: 0.118, arms: 8, armLen: 2.1, armR: 0.25
 // v2 규율: ① 머리~외투막은 **하나의 매끈한 알** — 중간에 굴곡을 넣지 않는다
 //          ② 목 잘록함은 **다리 뿌리 바로 위(s 0.10~0.22)에서 깊게** — 거기가 진짜 목이다
 // 레퍼런스 공통 원칙: "a large, rounded oval for the head (mantle)".
-const FC_OC_PROF = [[0.00, 0.40], [0.08, 0.52], [0.16, 0.49], [0.30, 0.72], [0.46, 0.90], [0.62, 1.00], [0.76, 0.97], [0.88, 0.78], [0.95, 0.46], [1.00, 0.00]];
+// v3: s=0(맨 아래)이 0.40으로 **오므라들어** 다리 관 위에 작은 접시가 얹힌 꼴이었다 —
+// 머리와 다리 사이에 계단이 보이던 정체(사용자 리포트 "이어진 부분 이상해").
+// 맨 아래를 **다리 뿌리 굵기 그대로(0.52)** 열어 두고, 목 잘록함은 그 바로 위 s 0.12에 둔다.
+const FC_OC_PROF = [[0.00, 0.52], [0.12, 0.47], [0.26, 0.62], [0.40, 0.80], [0.54, 0.94], [0.68, 1.00], [0.80, 0.95], [0.90, 0.76], [0.96, 0.44], [1.00, 0.00]];
 // ⚠️ 구간마다 smoothstep을 쓰면 **키프레임마다 dr/ds = 0**이 강제된다 — 프로파일이 평평한 단을
 // 이어 붙인 계단이 되고, 그 단 경계가 **가로 크리스(통의 테)**로 렌더된다(사용자 리포트 "나무통").
 // 키프레임 값을 아무리 만져도 안 없어지던 정체가 이거였다. C1 연속인 에르미트(중앙차분 접선)로
@@ -27739,8 +27755,10 @@ function fcOctoRad(s) {
         + (-2 * t3 + 3 * t2) * r1 + (t3 - t2) * h * dNext);
 }
 // 눈은 **머리 불룩(s≈0.31)**에 붙는다 — 외투막(s 0.6+)에 붙이면 정수리에 눈이 달린 꼴이 된다.
-const FC_OC_EYE = [0.62, -0.62];   // 눈 방위 — 융기(받침)와 눈알 구체가 같이 쓴다(좌표 단일 소스)
-const FC_OC_EYE_S = 0.345;   // 0.30은 눈이 다리 관에 걸터앉았다
+// ⚠️ **극이 곧 동공**이다. ±0.62rad(35.5°)에 앙각 0.24까지 주면 정면에서 동공이 눈알 가장자리로
+// 밀려 눈이 **반쯤 검게** 보인다(사용자 리포트 "눈이 너무 이상해"). 방위·앙각을 줄여 앞을 보게 한다.
+const FC_OC_EYE = [0.60, -0.60];   // 0.46은 두 눈이 가운데서 맞붙어 흰 덩어리 하나로 뭉쳤다   // 눈 방위 — 융기(받침)와 눈알 구체가 같이 쓴다(좌표 단일 소스)
+const FC_OC_EYE_S = 0.375;   // 0.30은 눈이 다리 관에 걸터앉았다
 function fcOctoDisp(ph, s) {
     let d = 0;
     for (const e of FC_OC_EYE) {
@@ -27758,17 +27776,20 @@ function fcOctoEyes(C) {
     //    z 부호를 놓치면 눈이 반대편에 붙는다.
     // ⚠️ 이 지오는 **fcSeaShade 뒤에** 합쳐야 한다 — fcSeaShade가 uv를 셀 27로 재매핑하는데
     //    눈은 셀 15(개구리와 공용 만화 눈 원반)를 봐야 한다.
-    const out = [], ER = faRect(15), ELEV = 0.24;
+    const out = [], ER = faRect(15), ELEV = 0.13, SPLAY = 0.16;
     const sEye = FC_OC_EYE_S, ry = (sEye - 0.5) * C.L, rr = fcOctoRad(sEye) * C.R;
     for (const a of FC_OC_EYE) {
-        const g = new THREE.SphereGeometry(C.R * 0.40, 16, 9, 0, Math.PI * 2, 0, Math.PI * 0.62);
-        g.rotateZ(-(Math.PI / 2 - ELEV));   // 극을 +y에서 +x 쪽으로 눕힌다(ELEV만큼 위를 본다)
-        g.rotateY(a);                       // 눈 방위로 — (cosELEV·cos a, sinELEV, −cosELEV·sin a)
+        const g = new THREE.SphereGeometry(C.R * 0.355, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.50);   // 반구 — 투영 윤곽이 깨끗한 원이라 그린 원반이 그대로 보인다
+        // ⚠️ 극을 **눈이 붙은 방위 그대로**(=반지름 바깥) 돌리면, 정면에서 동공이 눈알 가장자리로
+        //    밀려 반쯤 검은 눈이 된다. 눈알을 옆에 두되 **시선은 앞으로** 모으는 게 캐릭터 문법이다.
+        //    위치는 방위 a, 조준은 정면 ± 약간의 벌어짐(SPLAY).
+        g.rotateZ(-(Math.PI / 2 - ELEV));            // 극을 +y → +x (앞)로 눕힌다
+        g.rotateY(Math.sign(a) * SPLAY);             // 앞을 보되 아주 살짝만 바깥으로
         g.translate(Math.cos(a) * rr * 0.80, ry + C.L * 0.03, -Math.sin(a) * rr * 0.80);
         const uv = g.attributes.uv;
         for (let i = 0; i < uv.count; i++) {
             const th = uv.getX(i) * Math.PI * 2, q = 1 - uv.getY(i);
-            uv.setXY(i, ER.u0 + FA_KU * (0.25 + q * 0.215 * Math.cos(th)), ER.v1 - FA_KV * (0.25 + q * 0.215 * Math.sin(th)));
+            uv.setXY(i, ER.u0 + FA_KU * (0.75 + q * 0.215 * Math.cos(th)), ER.v1 - FA_KV * (0.25 + q * 0.215 * Math.sin(th)));   // 0.75 = 우상 사분면(문어 전용)
         }
         const cn = uv.count, col = new Float32Array(cn * 3).fill(1);   // 눈은 정점색 음영 없이 텍스처 그대로
         g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -27785,7 +27806,7 @@ function buildOctoCartoon() {
     parts.push(fcRemapV(mantle, 0.34, 1.0));
     // ⚠️ 다리 뿌리 좌표는 **외투막 프로파일에서 파생**시킨다. 두 군데 하드코딩하면 목이 벌어진다
     // (굴 힌지에서 배운 것). rotateX(-π/2)로 z→y가 되므로 뿌리 y = (s−0.5)·L 그대로다.
-    const rs = 0.07, rootR = fcOctoRad(rs) * C.R, rootY = (rs - 0.5) * C.L;
+    const rs = 0.015, rootR = fcOctoRad(rs) * C.R, rootY = (rs - 0.5) * C.L;   // 림 바로 그 자리에서 나온다
     const hg = -0.5 * C.L - C.R * 0.10;   // 다리가 깔리는 바닥
     for (let i = 0; i < C.arms; i++) {
         const a = (i / C.arms) * Math.PI * 2 + 0.22;
@@ -27801,7 +27822,7 @@ function buildOctoCartoon() {
         const arm = fcTubeGeo({
             R: C.R * C.armR, L: 1, ns: 26, np: 10,
             path: (t) => {
-                const out = rootR * 0.80 + C.R * C.armLen * wob * Math.pow(t, 0.86);
+                const out = rootR * 0.96 + C.R * C.armLen * wob * Math.pow(t, 0.86);   // 0.80은 뿌리가 안쪽에 몰려 8개가 엉켰다
                 // S자: 뿌리에서 내려갔다가(sag) 끝에서 말려 올라간다(tipUp). 들린 다리는 바닥 대신 공중.
                 const floor = rootY + (hg - rootY) * Math.min(1, Math.pow(t / 0.33, 0.8));
                 const sag = -C.R * 0.30 * Math.sin(Math.PI * Math.min(1, t / 0.62)) * (1 - raise);
@@ -27830,7 +27851,7 @@ function buildOctoCartoon() {
             const t = i / NR2;
             for (let j = 0; j <= NW; j++) {
                 const ph = (j / NW) * Math.PI * 2;
-                const reach = rootR * 0.9 + C.R * C.armLen * (0.16 + 0.30 * Math.pow(Math.abs(Math.cos(4 * (ph - 0.22))), 0.7)) * t;
+                const reach = rootR * 0.96 + C.R * C.armLen * (0.14 + 0.26 * Math.pow(Math.abs(Math.cos(4 * (ph - 0.22))), 0.7)) * t;
                 const y = rootY + (hg - rootY) * Math.min(1, Math.pow(t / 0.5, 0.8)) + C.R * 0.05 * t;
                 pos.push(Math.cos(ph) * reach, y, Math.sin(ph) * reach);
                 uv.push(j / NW, 0.30 + t * 0.06);   // 다리 뿌리 색과 이어지게
