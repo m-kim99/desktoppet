@@ -26435,11 +26435,27 @@ function buildBootCartoon() {
 // 튜브 빌더로 만들었더니 위에서 잎사귀(최대폭이 몸 중앙, 코·엉덩이 뾰족)였다. 실제는 **둥근 삼각형** —
 // 뭉툭한 코, 최대폭이 눈·어깨(앞에서 30%), 엉덩이는 넓고 둥글다.
 // 셀 9 하나를 상하로 나눠 쓴다: v 0.5~1 = 등(초록 얼룩) · v 0~0.5 = 배(크림).
-const FC_FROG = { ko: '개구리', cell: 9, L: 0.115, PEAK: 0.30 };
+const FC_FROG = { ko: '개구리', cell: 9, L: 0.115, PEAK: 0.42 };
+// ⚠️ 개구리는 어류 로프트를 **어류 파라미터 그대로** 쓰고 있었다(사용자 리포트 "너무 기형").
+// 기계(로프트·uv·셰이딩)는 멀쩡했고 값이 물고기였다:
+//   ① 뒤폭이 피크의 10%까지 수축 = 꼬리자루 → 뒤에서 칼날. 개구리 몸은 엉치까지 넓다 → 0.55로.
+//   ② 등 0.268L vs 배 0.058L = 4.6:1 → 솔리드가 아니라 **보울**이라 DoubleSide 내부가 보였다 → 배를 채운다.
+//   ③ 눈두덩이 |u|=0.56(옆구리)·0.052L라 등 정점 0.268L을 못 뚫는다 → 개구리 눈은 **머리 위로 솟는다**.
 const fcFrogW = (t) => {
     const K = FC_FROG.PEAK;
-    const f = t < K ? Math.pow(t / K, 0.58) : Math.pow(1 - (t - K) / (1 - K), 0.72) * 0.90 + 0.10;
-    return FC_FROG.L * (0.075 + 0.285 * f);
+    // ⚠️ 뒤폭을 넓히기만 하면 **더 큰 칼날**이 된다. t=1에서 높이는 0으로 떨어지는데 폭이 남으면
+    // 뒤가 넓적한 판이 되고, 뒤에서 보면 오목한 접시(=속이 빈 그릇)로 읽힌다(실측). 엉치까지
+    // 넓게 버티되 **마지막 15%에서 빠르게 오므려** 둥근 엉덩이로 닫는다.
+    let f;
+    if (t < K) f = Math.pow(t / K, 0.42);   // 지수를 낮춰 주둥이가 빨리 넓어진다(뭉툭한 코)
+    else if (t < 0.85) f = 1 - 0.14 * ((t - K) / (0.85 - K));          // 엉치까지 0.86 유지
+    // ⚠️ Math.max(0, …) 필수 — t=1에서 (1−0.85)/0.15가 부동소수로 1.0000000000000002가 되어
+    //    밑이 −2e−16이 되고 pow(음수, 0.62) = **NaN**이 몸통 전체를 지운다(실측: 개구리가 사라짐).
+    else f = 0.86 * Math.pow(Math.max(0, 1 - (t - 0.85) / 0.15), 0.62);   // 둥글게 마감
+    // ⚠️ 상수항(예전 0.140)이 **양 끝의 칼날**이었다. t=0·1에서 높이는 0인데 폭이 0.140L 남으면
+    //    코와 엉덩이가 각각 폭 0.28L·두께 0인 판으로 끝나고, 정면·후면에서 접시로 읽힌다(실측).
+    //    상수항을 0.030L까지 낮추고 그만큼을 f 계수로 옮긴다 — 최대폭은 그대로 0.440L.
+    return FC_FROG.L * (0.030 + 0.410 * f);
 };
 function fcFrogSpec() {
     const L = FC_FROG.L;
@@ -26448,18 +26464,24 @@ function fcFrogSpec() {
         zOf: (t) => (0.5 - t) * L,
         w: fcFrogW,
         // ⚠️ 높이 필드는 |u|=1에서 0으로 떨어져야 한다 — 안 그러면 수직 테두리를 가진 슬래브(옆에서 보트)가 된다
-        top: (t, u) => 0.268 * L * Math.pow(Math.sin(Math.PI * Math.pow(THREE.MathUtils.clamp(t, 0, 1), 0.60)), 0.82) * fcUf(u, 2.8, 0.40)
-            + fcBump(t, u, 0.150, 0.56, 0.105, 0.230, 0.052 * L)   // ⚠️ 융기가 등 정점보다 높으면 정면에서 쌍봉+가운데 골이 된다      // 눈두덩 — 몸에서 이어진 융기(얹은 구슬 금지)
-            + fcBump(t, u, 0.055, 0.0, 0.055, 0.40, 0.014 * L),        // 코끝 살짝 들림
-        bot: (t, u) => 0.058 * L * Math.pow(Math.sin(Math.PI * Math.pow(THREE.MathUtils.clamp(t, 0, 1), 0.68)), 0.45) * fcUf(u, 2.8, 0.40),
+        // 배복으로 눌린 체형: 단봉(물고기 등)이 아니라 **머리 평면 + 완만한 등**. 지수를 키워 정수리를 눕힌다.
+        top: (t, u) => 0.150 * L * Math.pow(Math.sin(Math.PI * Math.pow(THREE.MathUtils.clamp(t, 0, 1), 0.52)), 0.42) * fcUf(u, 3.2, 0.34)
+            + fcBump(t, u, 0.175, 0.32, 0.150, 0.320, 0.072 * L)   // 눈 — 등 실루엣은 뚫되 **돔**이어야 한다(높이>폭이면 원뿔·뿔)
+            + fcBump(t, u, 0.060, 0.0, 0.060, 0.42, 0.020 * L),    // 코끝 살짝 들림
+        // 배: 0.058L → 0.155L. 보울에서 솔리드로 (뒤·아래에서 속이 안 보인다)
+        bot: (t, u) => 0.155 * L * Math.pow(Math.sin(Math.PI * Math.pow(THREE.MathUtils.clamp(t, 0, 1), 0.62)), 0.50) * fcUf(u, 3.0, 0.40),
     };
 }
-// 관절 사지 — 뒷다리는 **무릎이 등선 위로** 접혀야 개구리로 읽힌다(수직 말뚝 금지)
+// 관절 사지 — 뒷다리는 **무릎이 등선 위로** 접혀야 개구리로 읽힌다(수직 말뚝 금지).
+// ⚠️ 예전 값은 무릎 y=0.070L인데 그 자리 등선이 0.186L이라 **무릎이 등보다 한참 아래**였다 —
+// 주석은 Z접힘을 말하는데 숫자가 안 따라가서 곧은 소시지로 렌더됐다. 그렇다고 0.235L로 올리면
+// 이번엔 **뿔 두 개**가 솟는다(실측). 그 자리 등선(≈0.093L) 바로 위인 0.135L이 접힌 무릎이다.
+// 앞다리는 T자로 뻗지 않는다: 짧게 앞-아래로 내려 **몸을 받치는** 자세(개구리 정좌).
 const FC_FROG_LIMBS = [
-    { pts: [[0.295, 0.010, 0.150], [0.415, -0.048, 0.205], [0.360, -0.040, 0.292]], r: [0.052, 0.040, 0.030],
-      foot: { at: [0.360, -0.046, 0.300], dir: [0.28, 0, 1], len: 0.115, wide: 0.075, toes: 4 } },
-    { pts: [[0.300, 0.022, -0.155], [0.470, 0.070, -0.255], [0.455, -0.020, -0.055], [0.395, -0.038, 0.060]], r: [0.072, 0.058, 0.041, 0.031],
-      foot: { at: [0.395, -0.044, 0.070], dir: [0.20, 0, 1], len: 0.155, wide: 0.105, toes: 5 } },
+    { pts: [[0.255, -0.020, 0.170], [0.330, -0.105, 0.235], [0.300, -0.150, 0.315]], r: [0.056, 0.040, 0.030],
+      foot: { at: [0.300, -0.156, 0.322], dir: [0.28, 0, 1], len: 0.105, wide: 0.062, toes: 4 } },
+    { pts: [[0.250, 0.040, -0.170], [0.450, 0.135, -0.300], [0.470, 0.010, -0.070], [0.395, -0.130, 0.055]], r: [0.086, 0.070, 0.040, 0.028],
+      foot: { at: [0.395, -0.140, 0.068], dir: [0.20, 0, 1], len: 0.165, wide: 0.115, toes: 5 } },
 ];
 function fcTaperTube(pts, radii, seg) {   // 관절 폴리라인 → 관절별 반지름 테이퍼 튜브
     const cur = new THREE.CatmullRomCurve3(pts);
@@ -26514,8 +26536,13 @@ function fcPaintFrog(g) {   // 셀 9 — 위 절반 등(초록 얼룩·등줄·�
     bk.addColorStop(0, '#4c6b28'); bk.addColorStop(0.22, '#6d9438'); bk.addColorStop(0.5, '#93b855');
     bk.addColorStop(0.78, '#6d9438'); bk.addColorStop(1, '#4c6b28');
     g.fillStyle = bk; g.fillRect(R.x, R.y, C, C * 0.5);
-    const bl = g.createLinearGradient(R.x, 0, R.x + C, 0);   // 배 — 크림
-    bl.addColorStop(0, '#cfd79a'); bl.addColorStop(0.5, '#f4f0cc'); bl.addColorStop(1, '#cfd79a');
+    // ⚠️ 등/배 경계는 |u|=1, 즉 **실루엣이 가장 넓은 선**이다. 배 밴드를 전부 크림으로 칠하면
+    // 옆에서 볼 때 몸 허리를 가르는 크림 초승달이 생겨 물고기 측선처럼 읽힌다(실측).
+    // 배 밴드 가장자리(|u|→1)를 옆구리 초록으로 이어 붙여 **경계를 아래로** 내린다.
+    const bl = g.createLinearGradient(R.x, 0, R.x + C, 0);   // 배 — 가장자리 초록 → 가운데 크림
+    bl.addColorStop(0.00, '#4c6b28'); bl.addColorStop(0.14, '#7d9a52'); bl.addColorStop(0.30, '#cfd79a');
+    bl.addColorStop(0.50, '#f4f0cc');
+    bl.addColorStop(0.70, '#cfd79a'); bl.addColorStop(0.86, '#7d9a52'); bl.addColorStop(1.00, '#4c6b28');
     g.fillStyle = bl; g.fillRect(R.x, R.y + C * 0.5, C, C * 0.5);
     for (let k = 0; k < 30; k++) {   // 등 얼룩
         const u = rnd(k + 1) * 1.7 - 0.85, t = 0.12 + rnd(k + 50) * 0.82;
@@ -26523,23 +26550,49 @@ function fcPaintFrog(g) {   // 셀 9 — 위 절반 등(초록 얼룩·등줄·�
         g.beginPath(); g.ellipse(0, 0, C * (0.022 + rnd(k + 20) * 0.020), C * (0.011 + rnd(k + 30) * 0.010), 0, 0, Math.PI * 2);
         g.fillStyle = `rgba(48,66,24,${0.34 + rnd(k + 40) * 0.22})`; g.fill(); g.restore();
     }
+    for (const sx of [-1, 1]) {   // 등쪽 융기선 — 개구리 등의 좌우 두 줄. 있으면 확 개구리다워진다.
+        g.beginPath();
+        for (let j = 0; j <= 24; j++) {
+            const t = 0.18 + (j / 24) * 0.68, u = sx * (0.46 + 0.10 * Math.sin(t * 2.4));
+            j ? g.lineTo(BX(u), BY(t, true)) : g.moveTo(BX(u), BY(t, true));
+        }
+        g.strokeStyle = 'rgba(196,220,140,0.40)'; g.lineWidth = 7; g.stroke();
+        g.strokeStyle = 'rgba(44,60,20,0.30)'; g.lineWidth = 3; g.stroke();   // 아래 그림자 한 줄
+    }
     g.strokeStyle = 'rgba(222,236,164,0.52)'; g.lineWidth = 5;   // 등줄
     g.beginPath(); g.moveTo(BX(0), BY(0.14, true)); g.lineTo(BX(0), BY(0.95, true)); g.stroke();
-    for (const sx of [-1, 1]) {   // 눈 — 융기 자리(t 0.150 · |u| 0.58)에 칠한다. 금색 홍채 + **가로 동공**
-        const ex = BX(sx * 0.58), ey = BY(0.150, true), rr = C * 0.052;
+    // ⚠️ 눈 그림 좌표는 **융기 좌표와 반드시 같아야** 한다. 융기를 |u| 0.56→0.32로 올려놓고 그림을
+    // 0.58에 두었더니 돔은 민무늬 초록이고 금색 홍채는 옆구리에 따로 찍혔다(실측).
+    for (const sx of [-1, 1]) {   // 눈 — 융기 자리(t 0.175 · |u| 0.32)에 칠한다. 금색 홍채 + **가로 동공**
+        const ex = BX(sx * 0.32), ey = BY(0.175, true), rr = C * 0.060;
         const gr = g.createRadialGradient(ex, ey, rr * 0.12, ex, ey, rr);
         gr.addColorStop(0, '#f2c63c'); gr.addColorStop(0.58, '#d29c1c'); gr.addColorStop(0.86, '#8a600e'); gr.addColorStop(1, 'rgba(48,40,12,0.9)');
         g.beginPath(); g.arc(ex, ey, rr, 0, Math.PI * 2); g.fillStyle = gr; g.fill();
         g.beginPath(); g.ellipse(ex, ey, rr * 0.80, rr * 0.24, 0, 0, Math.PI * 2); g.fillStyle = '#12100a'; g.fill();
         g.beginPath(); g.arc(ex - sx * rr * 0.32, ey - rr * 0.38, rr * 0.15, 0, Math.PI * 2); g.fillStyle = 'rgba(252,255,246,0.94)'; g.fill();
         g.beginPath(); g.arc(ex, ey, rr * 1.10, Math.PI * 1.05, Math.PI * 1.95); g.strokeStyle = 'rgba(52,72,26,0.55)'; g.lineWidth = 4; g.stroke();   // 눈꺼풀 능선
-        g.beginPath(); g.ellipse(BX(sx * 0.30), BY(0.055, true), C * 0.008, C * 0.005, 0, 0, Math.PI * 2);
+        g.beginPath(); g.ellipse(BX(sx * 0.19), BY(0.072, true), C * 0.009, C * 0.006, 0, 0, Math.PI * 2);
         g.fillStyle = 'rgba(40,34,18,0.55)'; g.fill();   // 콧구멍
     }
-    g.strokeStyle = 'rgba(48,40,24,0.62)'; g.lineWidth = 4;   // 입선 — 넓게 씩 웃는다(등·배 경계를 따라)
-    g.beginPath();
-    for (let j = 0; j <= 20; j++) { const u = -0.9 + (j / 20) * 1.8, y = BY(0.052 + 0.030 * (1 - Math.abs(u)), true); j ? g.lineTo(BX(u), y) : g.moveTo(BX(u), y); }
-    g.stroke();
+    for (const sx of [-1, 1]) {   // 고막 — 눈 뒤 원반. 값싸고 '개구리다움'이 확실한 표식.
+        const cx = BX(sx * 0.64), cy = BY(0.275, true), rr = C * 0.040;
+        g.beginPath(); g.ellipse(cx, cy, rr * 0.78, rr, 0, 0, Math.PI * 2);
+        g.fillStyle = 'rgba(74,96,40,0.72)'; g.fill();
+        g.strokeStyle = 'rgba(40,56,18,0.60)'; g.lineWidth = 3; g.stroke();
+        g.beginPath(); g.ellipse(cx - sx * rr * 0.18, cy - rr * 0.18, rr * 0.34, rr * 0.42, 0, 0, Math.PI * 2);
+        g.fillStyle = 'rgba(146,176,96,0.45)'; g.fill();   // 가운데 옅은 반사
+    }
+    // 입선 — ⚠️ 예전엔 t 0.05~0.08의 짧은 호라 정면에서 **멍든 얼룩**으로만 보였다. 코끝에서
+    // 시작해 **눈 아래를 지나 고막 앞까지** 길게 끌어야 개구리의 큰 입이 된다.
+    for (const sx of [-1, 1]) {
+        g.beginPath();
+        for (let j = 0; j <= 22; j++) {
+            const k2 = j / 22, t = 0.030 + k2 * 0.245, u = sx * (0.10 + 0.86 * Math.pow(k2, 0.55));
+            j ? g.lineTo(BX(u), BY(t, true)) : g.moveTo(BX(u), BY(t, true));
+        }
+        g.strokeStyle = 'rgba(40,34,20,0.66)'; g.lineWidth = 5; g.stroke();
+        g.strokeStyle = 'rgba(226,240,180,0.34)'; g.lineWidth = 2; g.stroke();   // 아랫입술 하이라이트
+    }
     for (let k = 0; k < 14; k++) {   // 배 점무늬
         const u = rnd(k + 300) * 1.5 - 0.75, t = 0.20 + rnd(k + 400) * 0.66;
         g.beginPath(); g.arc(BX(u), BY(t, false), C * (0.008 + rnd(k + 70) * 0.008), 0, Math.PI * 2);
