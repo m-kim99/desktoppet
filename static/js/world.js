@@ -27662,18 +27662,24 @@ function fcShrimpPath(t) {
 }
 function fcShrimpRad(t) {
     // 로스트럼(뾰족한 주둥이) → 갑각(가장 굵음) → 복부 테이퍼 → 꼬리 자루
-    const head = 0.16 + 0.84 * Math.min(1, Math.pow(t / 0.20, 0.8));
-    const body = t < 0.20 ? 1 : 1 - 0.70 * Math.pow((t - 0.20) / 0.80, 1.25);
+    // ⚠️ 머리→꼬리가 **하나의 매끈한 테이퍼**라 갑각이 없고, 그래서 전체가 껍질 깐 자숙
+    //    새우살로 읽혔다(사용자 리포트). 실물 새우는 갑각(머리 껍질)이 배보다 **굵고**,
+    //    그 뒷변에서 **턱을 지며** 배 마디로 넘어간다. 그 턱이 머리·몸을 가르는 유일한 신호다.
+    const head = 0.16 + 0.84 * Math.min(1, Math.pow(t / 0.14, 0.75));
+    const CAR = 0.28;                                    // 갑각 뒷변
+    const body = t < CAR
+        ? 1.06 - 0.06 * (t / CAR)                        // 갑각 — 배보다 굵게 유지
+        : 0.86 - 0.60 * Math.pow((t - CAR) / (1 - CAR), 1.30);   // 1.06 → 0.86: 여기서 뚝 떨어진다(턱)
     // ⚠️ 앞끝을 t/0.045에 닫으면 ns=46에서 **링 2개**로 수렴한다 — 각진 종이 원뿔이 되던 정체
     //    (사용자 리포트 "머리쪽이 어색해"). 0.10에 걸쳐 둥글게 닫는다.
     const cap = Math.pow(Math.min(1, t / 0.10), 0.55) * Math.min(1, (1 - t) / 0.05);
     return head * body * cap;
 }
 function fcShrimpDisp(ph, t) {
-    if (t < 0.30 || t > 0.90) return 0;
-    const f = ((t - 0.30) / 0.60) * 6;                 // 복부 6마디
-    const lip = Math.pow(f - Math.floor(f), 2.6);      // 뒤로 갈수록 부풀다 뚝 — 겹친 판
-    return 0.16 * lip * (0.55 + 0.45 * Math.max(0, -Math.sin(ph)));   // 등쪽이 더 두껍다
+    if (t < 0.28 || t > 0.90) return 0;                // 갑각(t<0.28)은 마디 없는 한 장이다
+    const f = ((t - 0.28) / 0.62) * 6;                 // 복부 6마디
+    const lip = Math.pow(f - Math.floor(f), 2.2);      // 뒤로 갈수록 부풀다 뚝 — 겹친 판
+    return 0.22 * lip * (0.55 + 0.45 * Math.max(0, -Math.sin(ph)));   // 0.16 → 0.22: 판이 또렷해야 껍질로 읽힌다
 }
 // 🦐 눈 — ⚠️ uv를 검은 점 한 곳으로 몰면 **평평한 검은 다각형**이 몸에 박힌 꼴이 된다(구멍처럼
 // 읽혔다). 문어·개구리와 같은 문법: 셀 15 **좌하** 사분면의 구슬 원반을 극좌표로 감는다.
@@ -27770,6 +27776,20 @@ function buildShrimpCartoon() {
         rg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
         rg.setIndex(idx); rg.computeVertexNormals();
         parts.push(rg);
+    }
+    // 배다리(swimmeret) 5쌍 — **깐 새우살에는 없는 부속**이라, 이게 붙는 순간 통새우로 읽힌다.
+    for (const sz of [1, -1]) for (let k = 0; k < 5; k++) {
+        const tt = 0.34 + k * 0.105, q0 = fcShrimpPath(tt);
+        const rr = fcShrimpRad(tt) * C.R;
+        parts.push(fcRemapV(fcTubeGeo({
+            R: C.R * 0.052, L: 1, ns: 5, np: 4,
+            path: (m) => ({
+                x: q0.x + C.R * 0.10 * m,
+                y: q0.y - rr * 0.55 - C.R * (0.34 + 0.10 * k) * m,
+                z: sz * (rr * 0.42 + C.R * 0.16 * m),
+            }),
+            rad: (m) => (1 - 0.55 * m) * Math.min(1, (1 - m) / 0.14),
+        }), 0.032, 0.058));
     }
     // 주각(걷는 다리) 3쌍 — 갑각 아래가 텅 비어 머리가 '관의 뭉툭한 끝'으로만 읽혔다.
     for (const sz of [1, -1]) for (const [tt, ln, sw] of [[0.16, 0.62, 0.55], [0.23, 0.70, 0.30], [0.30, 0.62, 0.06]]) {
@@ -28193,22 +28213,42 @@ function fcPaintShrimp(g) {
     const S = FC_SHRIMP, R = faRect(S.cell), C = FA_CELL;
     const X = (u) => R.x + u * C, Y = (v) => R.y + (1 - v) * C;
     g.save(); g.beginPath(); g.rect(R.x, R.y, C, C); g.clip();
-    g.fillStyle = '#f08258'; g.fillRect(R.x, R.y, C, C);
-    // 몸통(v 0.30~1.0): v1 = 머리, v0.30 = 꼬리. 등(u 0.75 = φ 1.5π 위쪽)은 진하고 배는 희다.
+    g.fillStyle = '#e2714c'; g.fillRect(R.x, R.y, C, C);
+    // ⚠️ **v 방향이 주석과 반대였다.** 몸통은 fcTubeGeo가 v=t로 굽고 fcRemapV(0.30, 1.0)이
+    //    붙이므로 **v = 0.30 + 0.70·t** — 즉 v 0.30이 머리, v 1.0이 꼬리다. 주석은 "v1 = 머리"라고
+    //    적혀 있었고 마디선도 그 전제로 깔려 있어서, 갑각 음영과 마디선이 전부 **반대편**에
+    //    찍혔다(갑각 그늘이 꼬리에 갔다). t로 계산하는 헬퍼를 두고 좌표를 t 기준으로만 쓴다.
+    const VT = (t) => 0.30 + 0.70 * t;
+    const CART = 0.28;   // 갑각 뒷변 — fcShrimpRad·fcShrimpDisp의 CAR와 같은 값이어야 한다
+    // 등(u 0.74)은 진하고 배는 옅다. 크림색(255,242,230)을 넓게 깔았더니 **분홍 살 + 흰 띠** =
+    // 자숙 새우살 색조합이 됐다(사용자 리포트) → 흰기를 빼고 껍질 값 대비로.
     const belly = g.createLinearGradient(X(0), 0, X(1), 0);
-    belly.addColorStop(0.00, 'rgba(255,236,220,0.20)'); belly.addColorStop(0.24, 'rgba(255,242,230,0.72)');
-    belly.addColorStop(0.50, 'rgba(255,236,220,0.10)'); belly.addColorStop(0.74, 'rgba(176,52,24,0.52)');
-    belly.addColorStop(1.00, 'rgba(255,236,220,0.20)');
+    belly.addColorStop(0.00, 'rgba(214,138,102,0.30)'); belly.addColorStop(0.24, 'rgba(240,186,150,0.62)');
+    belly.addColorStop(0.50, 'rgba(214,138,102,0.10)'); belly.addColorStop(0.74, 'rgba(122,34,16,0.66)');
+    belly.addColorStop(1.00, 'rgba(214,138,102,0.30)');
     g.fillStyle = belly; g.fillRect(R.x, Y(1), C, Y(0.30) - Y(1));
-    for (let k = 0; k < 6; k++) {   // 마디 경계 — 조형 리플과 같은 6마디에 맞춘다
-        const v = 1.0 - 0.70 * (0.30 + k * 0.10);
-        g.beginPath(); g.moveTo(X(0), Y(v)); g.lineTo(X(1), Y(v));
-        g.strokeStyle = 'rgba(154,40,16,0.44)'; g.lineWidth = 7; g.stroke();
-        g.beginPath(); g.moveTo(X(0), Y(v + 0.012)); g.lineTo(X(1), Y(v + 0.012));
-        g.strokeStyle = 'rgba(255,220,190,0.34)'; g.lineWidth = 4; g.stroke();
+    {   // 갑각 — **한 장의 단단한 판**. 배 마디와 값이 달라야 머리로 갈라진다.
+        const cap = g.createLinearGradient(0, Y(VT(0)), 0, Y(VT(CART)));
+        cap.addColorStop(0, 'rgba(150,54,26,0.52)'); cap.addColorStop(1, 'rgba(150,54,26,0)');
+        g.fillStyle = cap; g.fillRect(R.x, Y(VT(CART)), C, Y(VT(0)) - Y(VT(CART)));
+        g.beginPath(); g.moveTo(X(0), Y(VT(CART))); g.lineTo(X(1), Y(VT(CART)));   // 갑각 뒷변(턱)
+        g.strokeStyle = 'rgba(88,24,10,0.70)'; g.lineWidth = 9; g.stroke();
+        g.beginPath(); g.moveTo(X(0), Y(VT(CART) + 0.012)); g.lineTo(X(1), Y(VT(CART) + 0.012));
+        g.strokeStyle = 'rgba(255,206,170,0.42)'; g.lineWidth = 5; g.stroke();     // 겹친 판의 밝은 립
+        g.beginPath(); g.moveTo(X(0.62), Y(VT(0))); g.lineTo(X(0.62), Y(VT(0.20)));   // 경부구
+        g.strokeStyle = 'rgba(112,34,16,0.34)'; g.lineWidth = 6; g.stroke();
     }
+    for (let k = 0; k < 6; k++) {   // 배 마디 6 — 조형 리플(t 0.28~0.90)과 **같은 t**에 찍는다
+        const v = VT(CART + (k + 1) * (0.62 / 6));
+        g.beginPath(); g.moveTo(X(0), Y(v)); g.lineTo(X(1), Y(v));
+        g.strokeStyle = 'rgba(96,26,10,0.62)'; g.lineWidth = 8; g.stroke();      // 판 사이 그늘
+        g.beginPath(); g.moveTo(X(0), Y(v + 0.011)); g.lineTo(X(1), Y(v + 0.011));
+        g.strokeStyle = 'rgba(255,208,172,0.46)'; g.lineWidth = 4; g.stroke();
+    }
+    g.beginPath(); g.moveTo(X(0.74), Y(VT(CART))); g.lineTo(X(0.74), Y(VT(0.95)));   // 등줄 — 껍질의 능선
+    g.strokeStyle = 'rgba(96,26,10,0.30)'; g.lineWidth = 14; g.stroke();
     for (let k = 0; k < 9; k++) {   // 붉은 얼룩 줄무늬 — 성기게(96px 아이콘)
-        const v = 0.34 + k * 0.072, u0 = fcHash(k + 1300);
+        const v = 0.52 + k * 0.046, u0 = fcHash(k + 1300);   // 배 마디 구간(t 0.31~0.90)
         g.save(); g.translate(X(u0), Y(v)); g.rotate((fcHash(k + 1311) - 0.5) * 0.6);
         g.beginPath(); g.ellipse(0, 0, C * 0.055, C * 0.011, 0, 0, Math.PI * 2);
         g.fillStyle = `rgba(190,48,18,${0.20 + fcHash(k + 1327) * 0.18})`; g.fill(); g.restore();
