@@ -26240,7 +26240,18 @@ function fcBootShaft() {   // 통 — 테이퍼 원통 + 발목 아코디언 접
         const r = (rBase + acc + crease) * flare * kR;
         const cx = 0.030 * L * t * t, cz = -0.058 * L - 0.052 * L * Math.pow(t, 1.6);   // 발목 위에 선다 + 뒤로 살짝 기운다
         const rimWob = 0.018 * L * Math.pow(t, 5) * Math.sin(th * 2 + 0.6);     // 입구가 평평한 원이 아니다
-        return [cx + r * Math.sin(th) * (1 + 0.07 * t), (y0 + (y1 - y0) * t) * L + rimWob, cz + r * Math.cos(th) * (1 - 0.05 * t)];
+        // ⚠️ 링을 발 속에 묻어 처마 립은 없앴지만 여전히 **구두에 원기둥을 올린** 꼴이었다
+        //    (사용자 리포트). 남은 원인 둘:
+        //    ① 통 단면은 **원**인데 발 단면은 **각진 슈퍼타원(n=3.4)** — 실루엣이 서로 다른 종류다
+        //    ② 통이 위아래 같은 굵기의 **곧은 기둥**이라 갑피로 흘러드는 구간이 없다
+        //    → 밑동에서 발과 **같은 슈퍼타원**으로 시작해 위로 가며 원이 되고, 아래로 완만히 부푼다.
+        const bl = Math.min(1, Math.pow(t / 0.46, 0.85));                       // 0=발목과 같은 완만한 각단면 → 1=원
+        const cS = Math.cos(th), sS = Math.sin(th), nSE = 2.35;   // 발목(fbN≈2.05)에 맞춘다 — 3.4로 두면 통만 각져 또 갈라진다
+        const eZ = Math.sign(cS) * Math.pow(Math.abs(cS), 2 / nSE);
+        const eX = Math.sign(sS) * Math.pow(Math.abs(sS), 2 / nSE);
+        const sx = eX + (sS - eX) * bl, sz = eZ + (cS - eZ) * bl;
+        const swell = 1 + 0.17 * Math.pow(Math.max(0, 1 - t / 0.46), 1.5);      // 발목으로 완만히 굵어진다
+        return [cx + r * swell * sx * (1 + 0.07 * t), (y0 + (y1 - y0) * t) * L + rimWob, cz + r * swell * sz * (1 - 0.05 * t)];
     };
     const pos = [], uv = [], idx = [];
     const push = (t, kR, flip) => {
@@ -26285,11 +26296,16 @@ const FB_FOOT = [   // t, 반폭, 등높이, 배깊이, 중심y  (전부 L 비�
     // ⚠️ 발목 반폭이 0.100~0.118로 **통 반지름 0.112보다 좁아** 통 벽이 뒤꿈치 쪽에서 발 밖으로
     //    삐져나왔다 — 그게 처마 립의 정체. 통을 감쌀 만큼 넓힌다(0.136~0.142).
     //    등높이 정점도 통 중심(z=−0.058 ⇒ t≈0.23) 근처로 옮겨 돔이 통을 받게 한다.
-    [0.00, 0.136, 0.140, 0.108, 0.166], [0.14, 0.142, 0.156, 0.112, 0.166],
-    [0.34, 0.134, 0.128, 0.110, 0.164], [0.56, 0.128, 0.098, 0.106, 0.160],
+    // ⚠️ 발목을 통보다 **넓게**(0.150) 두면 통 밑동이 발 실루엣 **안쪽**에 따로 그려져 3/4에서
+    //    둥근 혹으로 튄다 — 링은 안 보이는데 여전히 "올려놓은 원기둥". 반대로 발목을 통 밑동보다
+    //    **살짝 좁게** 두면 그 자리 최외곽이 통이 되어 실루엣이 하나로 이어지고, 발은 거기서
+    //    앞으로 넓어지며(볼) 흘러 나간다 — 위에서 본 실물 장화의 폭 곡선이 정확히 이 모양이다.
+    [0.00, 0.118, 0.140, 0.108, 0.166], [0.14, 0.126, 0.156, 0.112, 0.166],
+    [0.34, 0.140, 0.128, 0.110, 0.164], [0.56, 0.134, 0.098, 0.106, 0.160],
     [0.75, 0.120, 0.078, 0.098, 0.154], [0.89, 0.102, 0.062, 0.084, 0.146],
     [0.965, 0.074, 0.044, 0.062, 0.138], [1.00, 0.034, 0.022, 0.030, 0.132],
 ];
+const fbN = (t) => 2.05 + 1.35 * Math.min(1, Math.max(0, (t - 0.18) / 0.46));   // 발목 돔 → 발끝 토박스
 function fcBootFoot() {
     const L = FC_BOOT.L, SEG = 22, N = FB_FOOT.length;
     const at = (t, c) => {   // 스테이션 사이 선형 — 발은 곡률이 완만해서 에르미트까지 필요 없다
@@ -26304,7 +26320,10 @@ function fcBootFoot() {
         const z = (-0.200 + 0.620 * t) * L;
         for (let j = 0; j <= SEG; j++) {
             const ph = (j / SEG) * Math.PI * 2, cs = Math.cos(ph), sn = Math.sin(ph);
-            const n = 3.4;   // 슈퍼타원 지수 — 클수록 사각에 가깝다(고무장화 단면)
+            // ⚠️ 지수를 3.4로 **전 구간 고정**하니 발목 윗면이 평평한 **테이블**이 됐고, 통이 그 위에
+            //    서면서 벽↔상판 모서리가 생겼다 — 링을 묻고 단면을 맞춰도 남던 "원기둥 올린" 느낌의
+            //    마지막 원인. 발목은 둥근 돔(2.05), 발끝만 각진 토박스(3.4)로 — 실물 고무장화도 그렇다.
+            const n = fbN(t);
             const ex = Math.sign(cs) * Math.pow(Math.abs(cs), 2 / n), ey = Math.sign(sn) * Math.pow(Math.abs(sn), 2 / n);
             const wob = 1 + 0.022 * Math.sin(ph * 3 + t * 4.2) * (1 - t * 0.5);   // 살짝 구겨진 갑피
             pos.push(hw * ex * wob, cy + (ey > 0 ? ht : hb) * ey * (ey > 0 ? wob : 1), z);
@@ -26320,7 +26339,7 @@ function fcBootFoot() {
         pos.push(0, at(t, 4), (-0.200 + 0.620 * t) * L);
         uv.push(0.5, FB_B + (FB_A - FB_B) * t);
         for (let j = 0; j <= SEG; j++) {
-            const ph = (j / SEG) * Math.PI * 2, cs = Math.cos(ph), sn = Math.sin(ph), n = 3.4;
+            const ph = (j / SEG) * Math.PI * 2, cs = Math.cos(ph), sn = Math.sin(ph), n = fbN(t);
             const ex = Math.sign(cs) * Math.pow(Math.abs(cs), 2 / n), ey = Math.sign(sn) * Math.pow(Math.abs(sn), 2 / n);
             pos.push(at(t, 1) * ex, at(t, 4) + (ey > 0 ? at(t, 2) : at(t, 3)) * ey, (-0.200 + 0.620 * t) * L);
             uv.push(j / SEG, FB_B + (FB_A - FB_B) * t);
