@@ -11356,6 +11356,91 @@ async def world_diary_write(request: Request):
     return {"cached": False, **entry}
 
 
+# ---- ✍️ 주인 일기 + 펫 댓글 — 시간 기준(사용자 확정):
+#   ① 일기 날짜 = 로컬 자정 기준, 편집 창 = 그 날짜 당일뿐(자정 잠금 — 이 API가 강제)
+#   ② 댓글 = 잠금 후 첫 06:00(= 다음 날 아침, 펫 기상 시각)부터, 펫당 1개, 재댓글 없음
+#   ③ 멱등 키 = 그 펫 댓글의 존재. 잠금 후에만 달리므로 댓글은 항상 최종본 기준. ----
+@app.post("/api/world_diary_owner")
+async def world_diary_owner_write(request: Request):
+    data = await request.json()
+    date = str(data.get("date", "")).strip()
+    text = str(data.get("text", "")).strip()[:2000]
+    today = time.strftime("%Y-%m-%d")
+    if date != today:
+        return JSONResponse({"error": "locked", "message": "지난 날짜의 일기는 잠겼어요 — 오늘 일기만 쓸 수 있어요"}, status_code=409)
+    if not text:
+        return JSONResponse({"error": "empty"}, status_code=400)
+    diary = _world_diary_load()
+    prev = (diary.get(date) or {}).get("owner") or {}
+    entry = {"text": text, "ts": int(time.time() * 1000), "comments": prev.get("comments") or []}
+    diary.setdefault(date, {})["owner"] = entry
+    _world_diary_save(diary)
+    return entry
+
+
+@app.post("/api/world_diary_comment")
+async def world_diary_comment(request: Request):
+    data = await request.json()
+    pet = str(data.get("pet", "chick"))
+    if pet not in WORLD_PERSONAS:
+        pet = "chick"
+    date = str(data.get("date", "")).strip()
+    diary = _world_diary_load()
+    owner = (diary.get(date) or {}).get("owner")
+    if not owner or not owner.get("text"):
+        return JSONResponse({"error": "no owner entry"}, status_code=404)
+    try:
+        gate = time.mktime(time.strptime(date, "%Y-%m-%d")) + 30 * 3600   # 그 날짜 00:00 + 30h = 다음 날 06:00
+    except Exception:
+        return JSONResponse({"error": "bad date"}, status_code=400)
+    if time.time() < gate:
+        return JSONResponse({"error": "not yet", "gateMs": int(gate * 1000)}, status_code=425)
+    for c in owner.get("comments") or []:
+        if c.get("pet") == pet:
+            return {"cached": True, **c}
+    try:
+        wc_client, current_settings = await _world_chat_client_and_model()
+        eff = _world_persona_for(current_settings, pet)
+        own_diary = ((diary.get(date) or {}).get(pet) or {}).get("text", "")
+        sys_parts = [
+            eff["persona"],
+            eff["lore"],
+            "아침에 일어나 {{user}}가 어젯밤 쓴 일기를 읽고 짧은 댓글을 남긴다. 규칙:\n"
+            "- 내(펫) 목소리 그대로. 한국어 1~2문장, 이모지 0~2개.\n"
+            "- 일기에 적힌 내용에 다정하게 반응한다. 없던 일을 지어내지 않는다.\n"
+            "- 훈계·요약 금지 — 친구가 다는 댓글처럼.",
+        ]
+        uname = _world_user_name(current_settings)
+        ctx = f"[{{{{user}}}}의 {date} 일기]\n{owner['text']}"
+        if own_diary:
+            ctx += f"\n\n[그날 나의 일기]\n{own_diary}"
+        resp = await wc_client.chat.completions.create(
+            model=current_settings["model"],
+            messages=[
+                {"role": "system", "content": "\n\n".join(sys_parts).replace("{{user}}", uname)},
+                {"role": "user", "content": ctx.replace("{{user}}", uname) + "\n\n이제 댓글 한마디."},
+            ],
+            temperature=0.8,
+            max_tokens=160,
+        )
+        ctext = (resp.choices[0].message.content or "").strip()
+        if not ctext:
+            return JSONResponse({"error": "empty reply"}, status_code=502)
+    except Exception as e:
+        print(f"[world_diary] comment LLM failed: {e}")
+        return JSONResponse({"error": str(e)}, status_code=502)
+    c = {"pet": pet, "text": ctext[:400], "ts": int(time.time() * 1000)}
+    diary = _world_diary_load()   # reload — 다른 펫 댓글이 그새 저장됐을 수 있다
+    owner2 = (diary.get(date) or {}).get("owner")
+    if not owner2:
+        return JSONResponse({"error": "gone"}, status_code=409)
+    cs = owner2.setdefault("comments", [])
+    if not any(x.get("pet") == pet for x in cs):
+        cs.append(c)
+        _world_diary_save(diary)
+    return {"cached": False, **c}
+
+
 # ---- 추억의 섬 저장소 (㉓ 소원우물 / ㉔ 타임캡슐): world_layout처럼 서버 파일 — 기기 공유,
 # localStorage 초기화에도 살아남는다. LLM 불필요, 순수 파일 IO.
 WORLD_WISH_FILE = _world_file("world_wishes.json")

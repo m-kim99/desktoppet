@@ -9782,6 +9782,10 @@ if (statsOn) window.__worldDev = {
     aiEvaShort: () => { if (ROCKET.aiEvaT > 0) ROCKET.aiEvaT = 5; return +(ROCKET.aiEvaT || 0).toFixed(1); },
     graceShort: () => { if (ROCKET.poiGraceT > 0) ROCKET.poiGraceT = 2; return +(ROCKET.poiGraceT || 0).toFixed(1); },   // 🌙 밤 귀항 유예 단축 (E2E)
     spaceGapProbe: (a, b) => gapTouchedSleep(a, b),   // 🌙 부재-밤 판정 단위검사 (E2E)
+    diaryOwnerState: (d) => { const o = (diaryData[d || localDateStr()] || {}).owner; return o ? { len: o.text.length, comments: (o.comments || []).map((c) => c.pet) } : null; },   // ✍️ (E2E)
+    diaryOwnerDue: () => ownerCommentDue(),   // 💬 댓글 대상 날짜 판정 (E2E)
+    diaryOwnerSeed: (d, text, comments) => { (diaryData[d] = diaryData[d] || {}).owner = { text, ts: Date.now(), comments: comments || [] }; return true; },   // 💬 판정 단위검사용 로컬 시드 (서버 무접촉)
+    diaryOpen: (d) => { diaryPanel.style.display = 'flex'; diaryPet = 'owner'; if (d) diaryDate = d; renderDiary(); return diaryDate; },   // ✍️ (E2E — d 지정 시 그 날짜로)
     teleGo: () => { startTeleView(); return !!teleView; },
     plazaGo: () => { const was = possessed ? possessed.name : 'cam'; goPlaza(); return was; },
     teleState: () => teleView ? { i: teleView.vistas.i, n: teleView.vistas.list.length, cam: [+camera.position.x.toFixed(1), +camera.position.y.toFixed(1), +camera.position.z.toFixed(1)] } : null,
@@ -10150,8 +10154,16 @@ const mkDiaryBtn = (label) => {
 const diaryPrev = mkDiaryBtn('◀'), diaryNext = mkDiaryBtn('▶');
 const diaryDateEl = document.createElement('div');
 diaryDateEl.style.cssText = 'flex:1; text-align:center;';
-const diaryTabChick = mkDiaryBtn('🐥'), diaryTabPuppy = mkDiaryBtn('🐕');
-diaryHead.append('📔', diaryPrev, diaryDateEl, diaryNext, diaryTabChick, diaryTabPuppy);
+const diaryTabChick = mkDiaryBtn('🐥'), diaryTabPuppy = mkDiaryBtn('🐕'), diaryTabOwner = mkDiaryBtn('✍️');
+diaryHead.append('📔', diaryPrev, diaryDateEl, diaryNext, diaryTabChick, diaryTabPuppy, diaryTabOwner);
+// ✍️ 주인 일기 에디터 — 시간 기준: 편집 창 = 그 날짜 당일뿐(자정 잠금, 서버가 강제),
+// 댓글 = 잠금 후 첫 06:00(펫 기상 시각)에 펫당 1개·재댓글 없음. 초안은 기기 로컬 보존(자정 직전 사고 대비).
+const diaryOwnerTa = document.createElement('textarea');
+diaryOwnerTa.id = 'world-owner-ta';
+diaryOwnerTa.placeholder = '오늘 하루는 어땠나요?\n(자정까지 쓰고 고칠 수 있어요 — 아침 6시에 펫들이 댓글을 달아요)';
+diaryOwnerTa.style.cssText = 'width:100%; box-sizing:border-box; min-height:96px; border:none; background:transparent; color:#4a3f30; font:inherit; line-height:23px; resize:vertical; outline:none;';
+diaryOwnerTa.addEventListener('input', () => { try { localStorage.setItem('world-owner-draft-' + diaryDate, diaryOwnerTa.value); } catch (e) {} });
+diaryOwnerTa.addEventListener('pointerdown', (e) => e.stopPropagation());
 const diaryWriteBtn = document.createElement('button');
 diaryWriteBtn.style.cssText = 'flex:1; border:none; border-radius:8px; background:#e8b04b; color:#3d2f18; font-weight:700; font-size:12.5px; padding:7px 0; cursor:pointer;';
 diaryFoot.appendChild(diaryWriteBtn);
@@ -10172,8 +10184,40 @@ function renderDiary() {
     diaryDateEl.textContent = diaryDate.replace(/-/g, '.');
     diaryTabChick.style.background = diaryPet === 'chick' ? '#e8b04b' : 'rgba(120,90,50,0.15)';
     diaryTabPuppy.style.background = diaryPet === 'puppy' ? '#e8b04b' : 'rgba(120,90,50,0.15)';
-    const entry = (diaryData[diaryDate] || {})[diaryPet];
+    diaryTabOwner.style.background = diaryPet === 'owner' ? '#e8b04b' : 'rgba(120,90,50,0.15)';
     const today = diaryDate === localDateStr();
+    if (diaryPet === 'owner') {   // ✍️ 주인 일기 — 오늘=에디터, 지난날=본문+댓글(잠금)
+        const o = (diaryData[diaryDate] || {}).owner;
+        diaryBody.textContent = '';
+        if (today) {
+            let draft = '';
+            try { draft = localStorage.getItem('world-owner-draft-' + diaryDate) || ''; } catch (e) {}
+            diaryOwnerTa.value = (o && o.text) || draft;
+            diaryBody.appendChild(diaryOwnerTa);
+        } else if (o && o.text) {
+            const txt = document.createElement('div');
+            txt.textContent = o.text;
+            diaryBody.appendChild(txt);
+            for (const c of o.comments || []) {
+                const row = document.createElement('div');
+                row.style.cssText = 'margin-top:9px; padding:6px 9px; background:rgba(120,90,50,0.1); border-radius:9px; font-size:12.5px; line-height:19px; white-space:pre-wrap;';
+                row.textContent = `${c.pet === 'chick' ? '🐥' : '🐕'} ${c.text}`;
+                diaryBody.appendChild(row);
+            }
+            if (!(o.comments || []).length) {
+                const hint = document.createElement('div');
+                hint.style.cssText = 'margin-top:9px; opacity:0.55; font-size:12px;';
+                hint.textContent = '아침 6시에 펫들이 댓글을 달러 와요 💬';
+                diaryBody.appendChild(hint);
+            }
+        } else diaryBody.textContent = '이 날은 일기를 안 썼어요.';
+        diaryWriteBtn.textContent = o && o.text && today ? '💾 고쳐 쓰기 (자정까지)' : '💾 저장';
+        const canSave = !diaryBusy && today;
+        diaryWriteBtn.disabled = !canSave;
+        diaryWriteBtn.style.opacity = canSave ? '1' : '0.45';
+        return;
+    }
+    const entry = (diaryData[diaryDate] || {})[diaryPet];
     if (diaryBusy) diaryBody.textContent = '✍️ 일기 쓰는 중…';
     else if (entry) diaryBody.textContent = entry.text;
     else diaryBody.textContent = today ? '아직 오늘 일기를 안 썼어요.\n(밤 10시가 지나면 스스로 써요)' : '이 날의 일기가 없어요.';
@@ -10186,6 +10230,31 @@ diaryPrev.onclick = () => { const d = diaryDates(); const i = d.indexOf(diaryDat
 diaryNext.onclick = () => { const d = diaryDates(); const i = d.indexOf(diaryDate); if (i < d.length - 1) { diaryDate = d[i + 1]; renderDiary(); } };
 diaryTabChick.onclick = () => { diaryPet = 'chick'; renderDiary(); };
 diaryTabPuppy.onclick = () => { diaryPet = 'puppy'; renderDiary(); };
+diaryTabOwner.onclick = () => { diaryPet = 'owner'; renderDiary(); };
+async function saveOwnerDiary() {
+    const text = diaryOwnerTa.value.trim();
+    if (!text) { showToast('✍️ 내용을 한 줄이라도 적어주세요'); return; }
+    diaryBusy = true;
+    renderDiary();
+    try {
+        const res = await fetch('/api/world_diary_owner', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ date: diaryDate, text }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        (diaryData[diaryDate] = diaryData[diaryDate] || {}).owner = await res.json();
+        try { localStorage.removeItem('world-owner-draft-' + diaryDate); } catch (e) {}
+        showToast('📔 오늘 일기를 저장했어요 — 아침 6시에 펫들이 읽어요');
+        logWorldEvent('주인이 오늘의 일기를 썼다 ✍️');
+    } catch (e) {
+        console.error('[World] owner diary save failed', e);
+        showToast('📔 저장에 실패했어요 — 잠시 후 다시');
+    } finally {
+        diaryBusy = false;
+        renderDiary();
+    }
+}
 async function fetchDiary() {
     try {
         const res = await fetch('/api/world_diary');
@@ -10222,6 +10291,7 @@ async function writeDiary(petName, force = false, silent = false, forDate = null
 }
 diaryWriteBtn.onclick = () => {
     if (diaryWriteBtn.disabled) return;
+    if (diaryPet === 'owner') { saveOwnerDiary(); return; }
     writeDiary(diaryPet, !!(diaryData[diaryDate] || {})[diaryPet]);
 };
 diaryBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
@@ -10239,7 +10309,52 @@ diaryBtn.addEventListener('click', () => {
 // "쓴 날" 플래그는 실제로 썼을 때만 소모: 예전엔 검사 전에 플래그부터 찍어서, 22시 직후 GLB
 // 로딩이 끝나기 전에 열면 그날 일기가 영영 안 써졌다 (성공 확인 전 소진 금지).
 let diaryAutoAt = 0;   // 다음 검사 시각 — 매 프레임 스캔 방지 + 실패 백오프
+// 💬 주인 일기 댓글 — 시간 기준: 잠금(자정) 후 첫 06:00(= 그 날짜 00:00 + 30h, 펫 기상 시각).
+// 멱등 키 = 그 펫 댓글의 존재(재댓글 없음) — 앱이 꺼져 있었으면 부팅 후 이 폴링이 소급한다(오래된 날짜부터).
+let diaryCommentAt = 0, diaryCommentBusy = false;
+function ownerCommentDue() {
+    const now = Date.now();
+    return Object.keys(diaryData).filter((d) => {
+        const o = (diaryData[d] || {}).owner;
+        if (!o || !o.text) return false;
+        if (now < new Date(d + 'T00:00:00').getTime() + 30 * 3600000) return false;   // 다음 날 06:00 전
+        return pets.some((p) => !(o.comments || []).some((c) => c.pet === p.name));
+    }).sort()[0] || null;
+}
+async function runOwnerComments(d) {
+    diaryCommentBusy = true;
+    let allOk = true;
+    try {
+        for (const p of pets) {   // 순차 — LLM 호출이 겹치지 않게 (일기 문법)
+            const o = (diaryData[d] || {}).owner;
+            if (!o || (o.comments || []).some((c) => c.pet === p.name)) continue;
+            try {
+                const res = await fetch('/api/world_diary_comment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pet: p.name, date: d }),
+                });
+                if (!res.ok) { allOk = false; continue; }
+                const c = await res.json();
+                (o.comments = o.comments || []).push({ pet: c.pet, text: c.text, ts: c.ts });
+            } catch (e) { allOk = false; }
+        }
+        const o = (diaryData[d] || {}).owner;
+        if (o && pets.every((p) => (o.comments || []).some((c) => c.pet === p.name))) {
+            logWorldEvent('펫들이 주인 일기를 읽고 댓글을 남겼다 💬');
+            renderDiary();
+        }
+    } finally {
+        diaryCommentBusy = false;
+        diaryCommentAt = Date.now() + (allOk ? 60000 : 600000);   // 실패(LLM 다운 등) = 10분 백오프
+    }
+}
 function maybeAutoDiary() {
+    if (!diaryCommentBusy && Date.now() >= diaryCommentAt && pets.length) {
+        diaryCommentAt = Date.now() + 60000;
+        const due = ownerCommentDue();
+        if (due) runOwnerComments(due);
+    }
     if (Date.now() < diaryAutoAt || !pets.length) return;
     diaryAutoAt = Date.now() + 60000;
     const isNight = currentHour() >= 22.05;
@@ -10254,7 +10369,7 @@ function maybeAutoDiary() {
     (async () => {
         diaryAutoAt = Infinity;   // 쓰는 동안 재진입 금지
         for (const p of pets) await writeDiary(p.name, false, true, targetDay);   // 순차 — LLM 호출이 겹치지 않게
-        const ok = Object.keys(diaryData[target] || {}).length > 0;   // writeDiary는 실패를 삼킨다 — 결과로 판정
+        const ok = pets.some((p) => (diaryData[target] || {})[p.name]);   // writeDiary는 실패를 삼킨다 — 결과로 판정 (owner 항목은 펫 일기가 아니다 — 주인 일기만 있는 날에 플래그를 소모하면 펫 일기가 영영 안 써진다)
         if (ok) {
             try { localStorage.setItem('world-diary-auto', target); worldSync('world-diary-auto'); } catch (e) {}
             logWorldEvent(isNight ? '오늘의 그림일기를 썼다 📔' : '어제 못 쓴 그림일기를 마저 썼다 📔');
