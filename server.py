@@ -10739,27 +10739,52 @@ def _world_file(name):
 
 
 def _world_read_json(path: str):
-    """world 파일 공용 리더 — 파싱 실패한 파일은 <path>.corrupt로 격리하고 None을 준다.
+    """world 파일 공용 리더 — 3단: ① 본 파일 ② 실패 시 .corrupt로 격리 후 .bak ③ 최신 .snap.
     격리가 없으면: 손상 파일 → 로더가 빈 기본값 반환 → 다음 저장이 그 빈 값을 덮어써서
-    이전 기록 전체가 조용히 사라진다(일기·대화 기억이 이 패턴의 사정권이었다). 격리해 두면
-    손상 바이트가 남고, .bak(마지막 정상본)과 함께 복구가 가능하다."""
+    이전 기록 전체가 조용히 사라진다(일기·대화 기억이 이 패턴의 사정권이었다). 폴백이 없으면:
+    격리는 되지만 사용자는 빈 일기장을 보게 되고 복구는 수동 병합이다 → .bak(직전 정상본),
+    그것도 없으면 일일 스냅샷 중 최신을 읽어 **최대 저장 1회 분량 손실**로 자동 복구한다.
+    폴백 데이터는 다음 정상 저장 때 본 파일로 굳는다(리더는 파일을 만들지 않는다)."""
+    def _try(p):
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                return json.loads(f.read())
+        except Exception:
+            return None
+    missing = False
     try:
         with open(path, "r", encoding="utf-8") as f:
             raw = f.read()
     except FileNotFoundError:
-        return None
+        raw, missing = None, True
     except Exception as e:
         print(f"[world_file] read failed ({path}): {e}")
-        return None
-    try:
-        return json.loads(raw)
-    except Exception as e:
-        print(f"[world_file] corrupt ({path}): {e} — .corrupt로 격리")
+        raw = None
+    if raw is not None:
         try:
-            os.replace(path, path + ".corrupt")
-        except Exception:
-            pass
-        return None
+            return json.loads(raw)
+        except Exception as e:
+            print(f"[world_file] corrupt ({path}): {e} — .corrupt로 격리")
+            try:
+                os.replace(path, path + ".corrupt")
+            except Exception:
+                pass
+    data = _try(path + ".bak")
+    if data is not None:
+        if not missing:
+            print(f"[world_file] {os.path.basename(path)} → .bak에서 자동 복구")
+        return data
+    dirn, base = os.path.split(path)
+    try:
+        snaps = sorted((x for x in os.listdir(dirn or ".") if x.startswith(base + ".snap-")), reverse=True)
+    except Exception:
+        snaps = []
+    for x in snaps:
+        data = _try(os.path.join(dirn, x))
+        if data is not None:
+            print(f"[world_file] {base} → {x}에서 자동 복구")
+            return data
+    return None
 
 
 def _world_write_json(path: str, obj, indent=1):
@@ -10789,12 +10814,37 @@ def _world_write_json(path: str, obj, indent=1):
                 shutil.copy2(path, snap)
                 prefix = os.path.basename(path) + ".snap-"
                 dirn = os.path.dirname(path)
-                snaps = sorted(x for x in os.listdir(dirn) if x.startswith(prefix))
+                snaps = sorted(x for x in os.listdir(dirn) if x.startswith(prefix) and "-shrink-" not in x)
                 for x in snaps[:-7]:
                     os.remove(os.path.join(dirn, x))
         except Exception:
             pass
+        try:
+            # 수축 가드 — 새 내용이 기존의 30% 미만으로 줄면(기존 ≥ 2KB) 사고 가능성이 높다
+            # (2026-08-09 world-events 52건 → 1건 실사고). 거부하면 정당한 축소(링버퍼 트림)까지
+            # 막으므로, 저장은 그대로 하되 **덮이기 직전본을 즉시 보존**해 되돌릴 수 있게 한다.
+            oldsz, newsz = os.path.getsize(path), os.path.getsize(tmp)
+            if oldsz >= 2048 and newsz < oldsz * 0.3:
+                sk = f"{path}.snap-shrink-{time.strftime('%Y%m%d-%H%M%S')}"
+                if not os.path.exists(sk):
+                    shutil.copy2(path, sk)
+                    print(f"[world_file] 수축 감지 ({os.path.basename(path)}: {oldsz}B → {newsz}B) — 직전본을 {os.path.basename(sk)}로 보존")
+                prefix = os.path.basename(path) + ".snap-shrink-"
+                dirn = os.path.dirname(path)
+                sks = sorted(x for x in os.listdir(dirn) if x.startswith(prefix))
+                for x in sks[:-5]:
+                    os.remove(os.path.join(dirn, x))
+        except Exception:
+            pass
     os.replace(tmp, path)
+    try:
+        dfd = os.open(os.path.dirname(path) or ".", os.O_RDONLY)   # rename까지 디스크 안착 (디렉터리 fsync)
+        try:
+            os.fsync(dfd)
+        finally:
+            os.close(dfd)
+    except Exception:
+        pass
 
 
 WORLD_LAYOUT_FILE = _world_file("world_layout.json")
@@ -10821,9 +10871,8 @@ async def world_set_layout(request: Request):
 # 펫별 대화 기억)를 zip 하나로. 맥 교체·재설치 대비용. 복원은 경로 검증 후 그대로 풀어놓는다.
 _BACKUP_DIRS = {"world": WORLD_DATA_DIR, "world_chat": os.path.join(USER_DATA_DIR, "world_chat")}
 
-@app.get("/api/world_backup")
-async def world_backup_export():
-    import io, zipfile, time as _t
+def _world_backup_zip_bytes() -> bytes:
+    import io, zipfile
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for prefix, d in _BACKUP_DIRS.items():
@@ -10833,16 +10882,53 @@ async def world_backup_export():
                 fp = os.path.join(d, fn)
                 if os.path.isfile(fp) and fn.endswith(".json"):
                     z.write(fp, f"{prefix}/{fn}")
-    buf.seek(0)
+    return buf.getvalue()
+
+
+# 자동 백업 폴더 — 디스크 사망(매트릭스 ④)의 방어는 오프머신 사본뿐이다. ~/Documents는 맥에서
+# iCloud 동기 대상인 경우가 많아 사실상 오프머신이 된다. 없으면(서버·리눅스) userData 안으로.
+_doc = os.path.join(os.path.expanduser("~"), "Documents")
+WORLD_AUTOBACKUP_DIR = os.path.join(_doc if os.path.isdir(_doc) else USER_DATA_DIR, "DesktopPet-Backups")
+
+
+def _world_auto_backup(tag: str = "") -> str | None:
+    """zip 스냅샷 1개 생성 — 부팅 시 하루 1회(tag 없음, 같은 날짜면 스킵) + 복원 직전(tag 지정).
+    14세대 보관. 실패해도 앱을 막지 않는다(백업은 부가 기능, 본 기능의 인질이 아니다)."""
+    try:
+        os.makedirs(WORLD_AUTOBACKUP_DIR, exist_ok=True)
+        day = time.strftime("%Y%m%d")
+        name = f"pet-world-backup-{day}{tag}.zip" if not tag else f"pet-world-backup-{day}-{tag}-{time.strftime('%H%M%S')}.zip"
+        dest = os.path.join(WORLD_AUTOBACKUP_DIR, name)
+        if not tag and os.path.exists(dest):
+            return dest
+        data = _world_backup_zip_bytes()
+        tmp = dest + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, dest)
+        zips = sorted(x for x in os.listdir(WORLD_AUTOBACKUP_DIR) if x.startswith("pet-world-backup-") and x.endswith(".zip"))
+        for x in zips[:-14]:
+            os.remove(os.path.join(WORLD_AUTOBACKUP_DIR, x))
+        print(f"[world_backup] 자동 백업: {dest}")
+        return dest
+    except Exception as e:
+        print(f"[world_backup] auto backup failed: {e}")
+        return None
+
+
+@app.get("/api/world_backup")
+async def world_backup_export():
+    import time as _t
     name = f"pet-world-backup-{_t.strftime('%Y%m%d-%H%M%S')}.zip"
-    return Response(content=buf.read(), media_type="application/zip",
+    return Response(content=_world_backup_zip_bytes(), media_type="application/zip",
                     headers={"Content-Disposition": f"attachment; filename={name}"})
 
 @app.post("/api/world_backup")
 async def world_backup_import(request: Request):
     import io, zipfile
     body = await request.body()
-    restored = 0
+    restored, skipped = 0, 0
+    _world_auto_backup(tag="prerestore")   # 복원 자체를 되돌릴 수 있게 — 직전 상태를 먼저 zip
     try:
         with zipfile.ZipFile(io.BytesIO(body)) as z:
             for info in z.infolist():
@@ -10852,14 +10938,25 @@ async def world_backup_import(request: Request):
                 fn = os.path.basename(parts[1])                    # 경로 조작 차단
                 if not fn.endswith(".json"):
                     continue
+                raw = z.read(info)
+                try:
+                    json.loads(raw.decode("utf-8"))               # 깨진 백업을 그대로 심지 않는다
+                except Exception:
+                    skipped += 1
+                    continue
                 d = _BACKUP_DIRS[parts[0]]
                 os.makedirs(d, exist_ok=True)
-                with open(os.path.join(d, fn), "wb") as f:
-                    f.write(z.read(info))
+                fp = os.path.join(d, fn)
+                tmp = fp + ".tmp"                                  # 복원도 원자 교체 — 도중 크래시에 안전
+                with open(tmp, "wb") as f:
+                    f.write(raw)
+                os.replace(tmp, fp)
                 restored += 1
     except zipfile.BadZipFile:
         return JSONResponse({"error": "zip 파일이 아니에요"}, status_code=400)
-    return {"ok": True, "restored": restored}
+    return {"ok": True, "restored": restored, "skipped": skipped}
+
+_world_auto_backup()   # 부팅 시 하루 1회 — 스케줄러 불필요(앱을 켤 때마다 검사)
 
 # ⚠️ 클라이언트 오류 수집 — 폰에선 콘솔이 안 보이니 월드가 오류를 여기로 보낸다. 200KB 넘으면
 # 절반을 잘라 무한 증식을 막는다.
