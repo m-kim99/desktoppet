@@ -10736,16 +10736,73 @@ def _world_file(name):
             except Exception as e:
                 print(f"[world] migrate {name} failed: {e}")
     return new
+
+
+def _world_read_json(path: str):
+    """world 파일 공용 리더 — 파싱 실패한 파일은 <path>.corrupt로 격리하고 None을 준다.
+    격리가 없으면: 손상 파일 → 로더가 빈 기본값 반환 → 다음 저장이 그 빈 값을 덮어써서
+    이전 기록 전체가 조용히 사라진다(일기·대화 기억이 이 패턴의 사정권이었다). 격리해 두면
+    손상 바이트가 남고, .bak(마지막 정상본)과 함께 복구가 가능하다."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = f.read()
+    except FileNotFoundError:
+        return None
+    except Exception as e:
+        print(f"[world_file] read failed ({path}): {e}")
+        return None
+    try:
+        return json.loads(raw)
+    except Exception as e:
+        print(f"[world_file] corrupt ({path}): {e} — .corrupt로 격리")
+        try:
+            os.replace(path, path + ".corrupt")
+        except Exception:
+            pass
+        return None
+
+
+def _world_write_json(path: str, obj, indent=1):
+    """world 파일 공용 라이터 — ① tmp에 쓰고 fsync ② 기존 파일을 .bak으로 복사 ③ 하루 첫
+    쓰기라면 .snap-YYYYMMDD로도 복사(= 어제의 최종본, 7세대 보관) ④ os.replace 원자 교체.
+
+    왜 두 겹인가: 예전의 open(w) 직접 쓰기는 truncate가 먼저라 쓰는 도중 죽으면(전원·디스크 풀)
+    파일이 잘렸다 → 원자 교체가 막는다. 그런데 .bak 1세대만으로는 **연속 쓰기 사고**를 못 막는다
+    — KV는 900ms 디바운스로 여러 키가 잇달아 저장되므로, 잘못된 값이 들어온 뒤 두 번째 쓰기에서
+    .bak까지 오염본으로 회전한다(2026-08-09 world-events 소실 실사고). 일일 스냅샷은 그날 첫
+    쓰기 직전 상태를 붙잡아 두므로 "어제까지의 일기·대화 기억"은 무슨 일이 있어도 남는다.
+    손상 파일은 리더가 이미 .corrupt로 격리했으므로 .bak/.snap은 항상 정상본만 담는다."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=indent)
+        f.flush()
+        os.fsync(f.fileno())
+    if os.path.exists(path):
+        try:
+            shutil.copy2(path, path + ".bak")
+        except Exception:
+            pass
+        try:
+            snap = f"{path}.snap-{time.strftime('%Y%m%d')}"
+            if not os.path.exists(snap):
+                shutil.copy2(path, snap)
+                prefix = os.path.basename(path) + ".snap-"
+                dirn = os.path.dirname(path)
+                snaps = sorted(x for x in os.listdir(dirn) if x.startswith(prefix))
+                for x in snaps[:-7]:
+                    os.remove(os.path.join(dirn, x))
+        except Exception:
+            pass
+    os.replace(tmp, path)
+
+
 WORLD_LAYOUT_FILE = _world_file("world_layout.json")
 
 @app.get("/api/world_layout")
 async def world_get_layout():
-    try:
-        with open(WORLD_LAYOUT_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return {"layout": data if isinstance(data, dict) else {}}
-    except Exception:
-        return {"layout": {}}
+    data = _world_read_json(WORLD_LAYOUT_FILE)
+    return {"layout": data if isinstance(data, dict) else {}}
 
 @app.post("/api/world_layout")
 async def world_set_layout(request: Request):
@@ -10757,9 +10814,7 @@ async def world_set_layout(request: Request):
     # 정상 저장은 항상 소품 수십 키 + _sig 지문을 동봉한다 (전부 원위치도 좌표를 다 적는 풀 저장).
     if len([k for k in layout.keys() if not k.startswith("_")]) < 5 or "_sig" not in layout:
         return {"ok": False, "reason": "empty-or-unsigned layout rejected"}
-    os.makedirs(os.path.dirname(WORLD_LAYOUT_FILE), exist_ok=True)
-    with open(WORLD_LAYOUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(layout, f, ensure_ascii=False, indent=2)
+    _world_write_json(WORLD_LAYOUT_FILE, layout, indent=2)
     return {"ok": True}
 
 # 💾 월드 백업/복원 — 되돌릴 수 없는 개인 데이터(배치·일기·소원·캡슐·텃밭·별자리·우편·꽃 +
@@ -10926,9 +10981,8 @@ def _world_chat_file(pet: str) -> str:
 
 
 def _world_chat_load(pet: str) -> dict:
+    data = _world_read_json(_world_chat_file(pet))
     try:
-        with open(_world_chat_file(pet), "r", encoding="utf-8") as f:
-            data = json.load(f)
         if isinstance(data, dict) and isinstance(data.get("history"), list):
             return {"history": data["history"], "summary": str(data.get("summary", "")), "summary_upto": int(data.get("summary_upto", 0))}
     except Exception:
@@ -10938,8 +10992,7 @@ def _world_chat_load(pet: str) -> dict:
 
 def _world_chat_save(pet: str, store: dict):
     try:
-        with open(_world_chat_file(pet), "w", encoding="utf-8") as f:
-            json.dump(store, f, ensure_ascii=False, indent=1)
+        _world_write_json(_world_chat_file(pet), store)
     except Exception as e:
         print(f"[world_chat] save failed: {e}")
 
@@ -11073,21 +11126,13 @@ WORLD_DIARY_FILE = _world_file("world_diary.json")
 
 
 def _world_diary_load() -> dict:
-    try:
-        with open(WORLD_DIARY_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, dict):
-            return data
-    except Exception:
-        pass
-    return {}
+    data = _world_read_json(WORLD_DIARY_FILE)
+    return data if isinstance(data, dict) else {}
 
 
 def _world_diary_save(data: dict):
     try:
-        os.makedirs(os.path.dirname(WORLD_DIARY_FILE), exist_ok=True)
-        with open(WORLD_DIARY_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=1)
+        _world_write_json(WORLD_DIARY_FILE, data)
     except Exception as e:
         print(f"[world_diary] save failed: {e}")
 
@@ -11164,21 +11209,15 @@ WORLD_CAPSULE_FILE = _world_file("world_capsules.json")
 
 
 def _world_json_load(path: str, key: str) -> list:
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, dict) and isinstance(data.get(key), list):
-            return data[key]
-    except Exception:
-        pass
+    data = _world_read_json(path)
+    if isinstance(data, dict) and isinstance(data.get(key), list):
+        return data[key]
     return []
 
 
 def _world_json_save(path: str, key: str, items: list):
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump({key: items}, f, ensure_ascii=False, indent=1)
+        _world_write_json(path, {key: items})
     except Exception as e:
         print(f"[world_store] save failed ({path}): {e}")
 
@@ -11242,13 +11281,9 @@ WORLD_GARDEN_FILE = _world_file("world_garden.json")
 
 @app.get("/api/world_garden")
 async def world_garden_get():
-    try:
-        with open(WORLD_GARDEN_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, dict) and isinstance(data.get("plots"), list):
-            return {"plots": data["plots"]}
-    except Exception:
-        pass
+    data = _world_read_json(WORLD_GARDEN_FILE)
+    if isinstance(data, dict) and isinstance(data.get("plots"), list):
+        return {"plots": data["plots"]}
     return {"plots": [None, None, None, None]}
 
 
@@ -11259,9 +11294,7 @@ async def world_garden_set(request: Request):
     if not isinstance(plots, list) or len(plots) > 8:
         return JSONResponse({"error": "bad plots"}, status_code=400)
     try:
-        os.makedirs(os.path.dirname(WORLD_GARDEN_FILE), exist_ok=True)
-        with open(WORLD_GARDEN_FILE, "w", encoding="utf-8") as f:
-            json.dump({"plots": plots}, f, ensure_ascii=False, indent=1)
+        _world_write_json(WORLD_GARDEN_FILE, {"plots": plots})
     except Exception as e:
         print(f"[world_garden] save failed: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -11371,13 +11404,9 @@ _WORLD_KV_KEY_RE = re.compile(r"^[\w-]{1,64}$")
 
 @app.get("/api/world_kv")
 async def world_kv_get():
-    try:
-        with open(WORLD_KV_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        kv = data.get("kv") if isinstance(data, dict) else None
-        return {"kv": kv if isinstance(kv, dict) else {}}
-    except Exception:
-        return {"kv": {}}
+    data = _world_read_json(WORLD_KV_FILE)
+    kv = data.get("kv") if isinstance(data, dict) else None
+    return {"kv": kv if isinstance(kv, dict) else {}}
 
 
 @app.post("/api/world_kv")
@@ -11390,17 +11419,12 @@ async def world_kv_set(request: Request):
     if not isinstance(value, str) or len(value) > 300_000:
         return JSONResponse({"error": "value must be a string ≤ 300KB"}, status_code=400)
     try:
-        try:
-            with open(WORLD_KV_FILE, "r", encoding="utf-8") as f:
-                data0 = json.load(f)
-            kv = data0.get("kv") if isinstance(data0, dict) else {}
-            if not isinstance(kv, dict):
-                kv = {}
-        except Exception:
+        data0 = _world_read_json(WORLD_KV_FILE)
+        kv = data0.get("kv") if isinstance(data0, dict) else {}
+        if not isinstance(kv, dict):
             kv = {}
         kv[key] = value
-        with open(WORLD_KV_FILE, "w", encoding="utf-8") as f:
-            json.dump({"kv": kv}, f, ensure_ascii=False)
+        _world_write_json(WORLD_KV_FILE, {"kv": kv}, indent=None)
         return {"ok": True}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -11412,13 +11436,9 @@ WORLD_FRUIT_FILE = _world_file("world_fruit.json")
 
 @app.get("/api/world_fruit")
 async def world_fruit_get():
-    try:
-        with open(WORLD_FRUIT_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        state = data.get("state") if isinstance(data, dict) else None
-        return {"state": state if isinstance(state, dict) else {}}
-    except Exception:
-        return {"state": {}}
+    data = _world_read_json(WORLD_FRUIT_FILE)
+    state = data.get("state") if isinstance(data, dict) else None
+    return {"state": state if isinstance(state, dict) else {}}
 
 
 @app.post("/api/world_fruit")
@@ -11428,8 +11448,7 @@ async def world_fruit_set(request: Request):
     if not isinstance(state, dict):
         return JSONResponse({"error": "need state object"}, status_code=400)
     try:
-        with open(WORLD_FRUIT_FILE, "w", encoding="utf-8") as f:
-            json.dump({"state": state}, f, ensure_ascii=False)
+        _world_write_json(WORLD_FRUIT_FILE, {"state": state}, indent=None)
         return {"ok": True}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
