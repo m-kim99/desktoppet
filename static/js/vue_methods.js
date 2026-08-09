@@ -5179,6 +5179,20 @@ let vue_methods = {
       }
       this.autoSaveSettings();
     },
+    // 💾 백업 워치독 — 마지막 자동 백업이 2일 넘게 없으면 홈 카드에 조용한 배지 (토스트 금지 원칙).
+    // 상태를 못 읽으면(백엔드 다운 등) 배지를 지운다 — 배지는 확실할 때만 말한다.
+    async checkWorldBackupStatus() {
+      try {
+        const res = await fetch('/api/world_backup_status');
+        const j = await res.json();
+        if (j && j.latestMs) {
+          const days = Math.floor((Date.now() - j.latestMs) / 86400000);
+          this.worldBackupStale = days >= 2 ? (this.t('worldBackupStaleDays') || '자동 백업이 {n}일째 없어요').replace('{n}', days) : null;
+        } else {
+          this.worldBackupStale = this.t('worldBackupStaleNever') || '자동 백업이 아직 없어요';
+        }
+      } catch (e) { this.worldBackupStale = null; }
+    },
     // 💾 월드 데이터(배치·일기·소원·꽃·과일·펫 대화기억 등)를 zip 하나로 내려받는다 — 맥 교체·재설치 대비.
     worldBackup() {
       const a = document.createElement('a');

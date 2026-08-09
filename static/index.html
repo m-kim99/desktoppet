@@ -930,6 +930,7 @@ function updateElement(el, rawMarkdown, formatFn) {
               <div class="card-icon blue"><i class="fa-solid fa-download"></i></div>
               <div class="card-info">
                 <h3>{{ t('worldBackup') }}</h3>
+                <p v-if="worldBackupStale" style="color:#e6a23c; font-size:12px; margin:4px 0 0;">⚠️ {{ worldBackupStale }}</p>
               </div>
             </div>
 

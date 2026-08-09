@@ -62,6 +62,7 @@ if (isElectron) {
   const protocol = window.location.protocol;
   const backendURL = `${window.location.protocol}//${window.location.host}`;
 let vue_data = {
+    worldBackupStale: null,   // 💾 백업 워치독 배지 문구 (null = 배지 없음)
     isMac: false,
     isWindows: false,
     partyURL:`${window.location.protocol}//${window.location.host}`,

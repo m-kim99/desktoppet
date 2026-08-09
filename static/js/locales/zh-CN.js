@@ -665,6 +665,8 @@ window.lang_zhCN = {
         'idleTalkInterval': '发言间隔（秒）',
         'worldPetSettings': '🌏 世界宠物性格与系统指令',
         'worldBackup': '💾 备份世界数据',
+        'worldBackupStaleDays': '自动备份已 {n} 天未生成 — 请检查备份文件夹',
+        'worldBackupStaleNever': '还没有自动备份',
         'worldRestore': '📥 恢复世界数据',
         'worldPetSettingsHint': '3D 世界宠物（小鸡·小狗）的性格与系统提示词。几乎不会改动，故默认折叠。修改后从下一次对话生效。留空则使用默认值。{{user}} 会替换为 [设置 > 用户名]（未设置时回退为“주인”）。',
         'worldChickPersona': '小鸡性格',

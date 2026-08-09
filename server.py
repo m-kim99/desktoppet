@@ -10926,6 +10926,20 @@ def _world_auto_backup(tag: str = "") -> str | None:
         return None
 
 
+@app.get("/api/world_backup_status")
+async def world_backup_status():
+    """홈 대시보드 배지용 — 최신 자동 백업의 나이. 배지는 조용한 감시자: 폴더 접근 실패도
+    '백업 없음'으로 정직하게 돌려준다 (그래야 죽은 백업이 눈에 띈다)."""
+    try:
+        zips = sorted(x for x in os.listdir(WORLD_AUTOBACKUP_DIR)
+                      if x.startswith("pet-world-backup-") and x.endswith(".zip")) if os.path.isdir(WORLD_AUTOBACKUP_DIR) else []
+        latest = zips[-1] if zips else None
+        latest_ms = int(os.path.getmtime(os.path.join(WORLD_AUTOBACKUP_DIR, latest)) * 1000) if latest else None
+        return {"count": len(zips), "latest": latest, "latestMs": latest_ms, "dir": WORLD_AUTOBACKUP_DIR}
+    except Exception as e:
+        return {"count": 0, "latest": None, "latestMs": None, "dir": WORLD_AUTOBACKUP_DIR, "error": str(e)}
+
+
 @app.get("/api/world_backup")
 async def world_backup_export():
     import time as _t
@@ -10967,6 +10981,25 @@ async def world_backup_import(request: Request):
     return {"ok": True, "restored": restored, "skipped": skipped}
 
 _world_auto_backup()   # 부팅 시 하루 1회 — 스케줄러 불필요(앱을 켤 때마다 검사)
+
+
+def _world_auto_backup_tick():
+    """앱을 며칠씩 켜두면 부팅 검사만으론 백업이 낡는다 — 1시간마다 재검. _world_auto_backup은
+    오늘 zip이 있으면 즉시 반환하는 멱등 함수라 비용이 없고, 자체 try/except라 실패해도 조용하다.
+    데몬 타이머: 앱 종료를 붙잡지 않는다."""
+    try:
+        _world_auto_backup()
+    finally:
+        import threading
+        _t = threading.Timer(3600, _world_auto_backup_tick)
+        _t.daemon = True
+        _t.start()
+
+
+import threading as _wb_threading
+_wb_t0 = _wb_threading.Timer(3600, _world_auto_backup_tick)
+_wb_t0.daemon = True
+_wb_t0.start()
 
 # ⚠️ 클라이언트 오류 수집 — 폰에선 콘솔이 안 보이니 월드가 오류를 여기로 보낸다. 200KB 넘으면
 # 절반을 잘라 무한 증식을 막는다.
