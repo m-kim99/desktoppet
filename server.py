@@ -11356,18 +11356,20 @@ async def world_diary_write(request: Request):
     return {"cached": False, **entry}
 
 
-# ---- ✍️ 주인 일기 + 펫 댓글 — 시간 기준(사용자 확정):
-#   ① 일기 날짜 = 로컬 자정 기준, 편집 창 = 그 날짜 당일뿐(자정 잠금 — 이 API가 강제)
-#   ② 댓글 = 잠금 후 첫 06:00(= 다음 날 아침, 펫 기상 시각)부터, 펫당 1개, 재댓글 없음
-#   ③ 멱등 키 = 그 펫 댓글의 존재. 잠금 후에만 달리므로 댓글은 항상 최종본 기준. ----
+# ---- ✍️ 주인 일기 + 펫 댓글 — 시간 기준 v2(사용자 확정: "새벽에 써도 아침엔 받는다"):
+#   ① 주인 일기의 하루 = 06:00 ~ 다음 날 06:00. 새벽(0~6시) 글은 "어젯밤 일기" — 일기 앱들의
+#      수면 경계 관례. 편집 가능 날짜 = (지금 − 6h)의 달력 날짜, 이 API가 강제.
+#   ② 잠금 = 그 경계(아침 6시). 댓글 게이트 = 날짜 00:00 + 30h = 잠금과 같은 순간(펫 기상) —
+#      언제 쓰든 "다음에 오는 아침 6시"에 댓글을 받는다.
+#   ③ 펫당 1개·재댓글 없음, 멱등 키 = 그 펫 댓글의 존재. 잠금 후에만 달리므로 항상 최종본 기준. ----
 @app.post("/api/world_diary_owner")
 async def world_diary_owner_write(request: Request):
     data = await request.json()
     date = str(data.get("date", "")).strip()
     text = str(data.get("text", "")).strip()[:2000]
-    today = time.strftime("%Y-%m-%d")
+    today = time.strftime("%Y-%m-%d", time.localtime(time.time() - 6 * 3600))   # 06시 경계 — 새벽 글은 어젯밤 일기
     if date != today:
-        return JSONResponse({"error": "locked", "message": "지난 날짜의 일기는 잠겼어요 — 오늘 일기만 쓸 수 있어요"}, status_code=409)
+        return JSONResponse({"error": "locked", "message": "이 일기는 아침 6시에 잠겼어요 — 지금 열려 있는 일기에 써주세요"}, status_code=409)
     if not text:
         return JSONResponse({"error": "empty"}, status_code=400)
     diary = _world_diary_load()

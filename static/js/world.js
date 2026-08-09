@@ -9784,8 +9784,9 @@ if (statsOn) window.__worldDev = {
     spaceGapProbe: (a, b) => gapTouchedSleep(a, b),   // 🌙 부재-밤 판정 단위검사 (E2E)
     diaryOwnerState: (d) => { const o = (diaryData[d || localDateStr()] || {}).owner; return o ? { len: o.text.length, comments: (o.comments || []).map((c) => c.pet) } : null; },   // ✍️ (E2E)
     diaryOwnerDue: () => ownerCommentDue(),   // 💬 댓글 대상 날짜 판정 (E2E)
+    diaryBoundaryProbe: (ms) => localDateStr(new Date(ms - 6 * 3600000)),   // ✍️ 06시 경계 단위검사 (E2E)
     diaryOwnerSeed: (d, text, comments) => { (diaryData[d] = diaryData[d] || {}).owner = { text, ts: Date.now(), comments: comments || [] }; return true; },   // 💬 판정 단위검사용 로컬 시드 (서버 무접촉)
-    diaryOpen: (d) => { diaryPanel.style.display = 'flex'; diaryPet = 'owner'; if (d) diaryDate = d; renderDiary(); return diaryDate; },   // ✍️ (E2E — d 지정 시 그 날짜로)
+    diaryOpen: (d) => { diaryPanel.style.display = 'flex'; diaryPet = 'owner'; diaryDate = d || ownerDiaryDate(); renderDiary(); return diaryDate; },   // ✍️ (E2E — 기본 = 열려 있는 일기 날짜)
     teleGo: () => { startTeleView(); return !!teleView; },
     plazaGo: () => { const was = possessed ? possessed.name : 'cam'; goPlaza(); return was; },
     teleState: () => teleView ? { i: teleView.vistas.i, n: teleView.vistas.list.length, cam: [+camera.position.x.toFixed(1), +camera.position.y.toFixed(1), +camera.position.z.toFixed(1)] } : null,
@@ -10156,11 +10157,13 @@ const diaryDateEl = document.createElement('div');
 diaryDateEl.style.cssText = 'flex:1; text-align:center;';
 const diaryTabChick = mkDiaryBtn('🐥'), diaryTabPuppy = mkDiaryBtn('🐕'), diaryTabOwner = mkDiaryBtn('✍️');
 diaryHead.append('📔', diaryPrev, diaryDateEl, diaryNext, diaryTabChick, diaryTabPuppy, diaryTabOwner);
-// ✍️ 주인 일기 에디터 — 시간 기준: 편집 창 = 그 날짜 당일뿐(자정 잠금, 서버가 강제),
-// 댓글 = 잠금 후 첫 06:00(펫 기상 시각)에 펫당 1개·재댓글 없음. 초안은 기기 로컬 보존(자정 직전 사고 대비).
+// ✍️ 주인 일기 에디터 — 시간 기준 v2: 하루 = 06:00~다음 날 06:00(새벽 글은 "어젯밤 일기").
+// 편집은 그 경계까지, 잠기는 순간(아침 6시 = 펫 기상)에 댓글 — 언제 쓰든 다음 아침에 받는다.
+// 재댓글 없음(멱등 키 = 댓글 존재). 초안은 기기 로컬 보존(경계 직전·크래시 사고 대비).
+const ownerDiaryDate = () => localDateStr(new Date(Date.now() - 6 * 3600000));   // (지금 − 6h)의 달력 날짜
 const diaryOwnerTa = document.createElement('textarea');
 diaryOwnerTa.id = 'world-owner-ta';
-diaryOwnerTa.placeholder = '오늘 하루는 어땠나요?\n(자정까지 쓰고 고칠 수 있어요 — 아침 6시에 펫들이 댓글을 달아요)';
+diaryOwnerTa.placeholder = '오늘 하루는 어땠나요?\n(아침 6시까지 쓰고 고칠 수 있어요 — 6시가 되면 펫들이 읽고 댓글을 달아요)';
 diaryOwnerTa.style.cssText = 'width:100%; box-sizing:border-box; min-height:96px; border:none; background:transparent; color:#4a3f30; font:inherit; line-height:23px; resize:vertical; outline:none;';
 diaryOwnerTa.addEventListener('input', () => { try { localStorage.setItem('world-owner-draft-' + diaryDate, diaryOwnerTa.value); } catch (e) {} });
 diaryOwnerTa.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -10186,10 +10189,11 @@ function renderDiary() {
     diaryTabPuppy.style.background = diaryPet === 'puppy' ? '#e8b04b' : 'rgba(120,90,50,0.15)';
     diaryTabOwner.style.background = diaryPet === 'owner' ? '#e8b04b' : 'rgba(120,90,50,0.15)';
     const today = diaryDate === localDateStr();
-    if (diaryPet === 'owner') {   // ✍️ 주인 일기 — 오늘=에디터, 지난날=본문+댓글(잠금)
+    if (diaryPet === 'owner') {   // ✍️ 주인 일기 — 열린 날짜(06시 경계)=에디터, 잠긴 날짜=본문+댓글
         const o = (diaryData[diaryDate] || {}).owner;
+        const ownerToday = diaryDate === ownerDiaryDate();
         diaryBody.textContent = '';
-        if (today) {
+        if (ownerToday) {
             let draft = '';
             try { draft = localStorage.getItem('world-owner-draft-' + diaryDate) || ''; } catch (e) {}
             diaryOwnerTa.value = (o && o.text) || draft;
@@ -10211,8 +10215,8 @@ function renderDiary() {
                 diaryBody.appendChild(hint);
             }
         } else diaryBody.textContent = '이 날은 일기를 안 썼어요.';
-        diaryWriteBtn.textContent = o && o.text && today ? '💾 고쳐 쓰기 (자정까지)' : '💾 저장';
-        const canSave = !diaryBusy && today;
+        diaryWriteBtn.textContent = o && o.text && ownerToday ? '💾 고쳐 쓰기 (아침 6시까지)' : '💾 저장';
+        const canSave = !diaryBusy && ownerToday;
         diaryWriteBtn.disabled = !canSave;
         diaryWriteBtn.style.opacity = canSave ? '1' : '0.45';
         return;
@@ -10230,7 +10234,7 @@ diaryPrev.onclick = () => { const d = diaryDates(); const i = d.indexOf(diaryDat
 diaryNext.onclick = () => { const d = diaryDates(); const i = d.indexOf(diaryDate); if (i < d.length - 1) { diaryDate = d[i + 1]; renderDiary(); } };
 diaryTabChick.onclick = () => { diaryPet = 'chick'; renderDiary(); };
 diaryTabPuppy.onclick = () => { diaryPet = 'puppy'; renderDiary(); };
-diaryTabOwner.onclick = () => { diaryPet = 'owner'; renderDiary(); };
+diaryTabOwner.onclick = () => { diaryPet = 'owner'; if (diaryDate === localDateStr() && ownerDiaryDate() !== diaryDate) diaryDate = ownerDiaryDate(); renderDiary(); };   // 새벽엔 '어젯밤 일기'가 열려 있는 날짜
 async function saveOwnerDiary() {
     const text = diaryOwnerTa.value.trim();
     if (!text) { showToast('✍️ 내용을 한 줄이라도 적어주세요'); return; }
@@ -10245,7 +10249,7 @@ async function saveOwnerDiary() {
         if (!res.ok) throw new Error(await res.text());
         (diaryData[diaryDate] = diaryData[diaryDate] || {}).owner = await res.json();
         try { localStorage.removeItem('world-owner-draft-' + diaryDate); } catch (e) {}
-        showToast('📔 오늘 일기를 저장했어요 — 아침 6시에 펫들이 읽어요');
+        showToast('📔 일기를 저장했어요 — 다음 아침 6시에 펫들이 읽고 댓글을 달아요');
         logWorldEvent('주인이 오늘의 일기를 썼다 ✍️');
     } catch (e) {
         console.error('[World] owner diary save failed', e);
