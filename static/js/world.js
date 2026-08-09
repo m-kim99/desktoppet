@@ -32,16 +32,10 @@ const savedLayout = await (async () => {
 const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked', 'world-pantry', 'world-icebox', 'world-market-used', 'world-recipes-unlocked', 'world-dishes-found', 'world-kitchen-leftover',
     'world-sea-found', 'world-seabed-dug', 'world-islet-dug', 'world-discover', 'world-houselight', 'world-pets',
     'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-space-poi', 'world-moon-dug', 'world-last-seen', 'world-pier-order', 'world-pier-stock'];   // last-seen 공유 = 기기 간 이중 정산 방지
-try {   // 부트 1회 — 서버 값이 로컬을 덮는다 (아래 모든 리더보다 먼저 실행되는 게 핵심)
-    const r = await fetch('/api/world_kv', { signal: AbortSignal.timeout(1500) });
-    if (r.ok) {
-        const kv = (await r.json()).kv || {};
-        for (const k of WORLD_SYNC_KEYS) {
-            if (typeof kv[k] === 'string') { try { localStorage.setItem(k, kv[k]); } catch (e) {} }
-            else worldSync(k);   // 서버가 빈 키 = 이 기기 값을 올린다 (첫 이주 시드 — 없으면 빈약한 기기가 먼저 쓰는 순간 풍부한 쪽이 덮인다)
-        }
-    }
-} catch (e) { /* 백엔드 없는 정적 서빙 — 로컬 캐시로 진행 */ }
+// ⚠️ **부트 루프보다 먼저 선언돼야 한다.** 아래 루프는 서버에 없는 키를 만나면 worldSync(k)를
+// 부르는데, 이 const가 루프 아래에 있으면 TDZ ReferenceError가 나고 **try 전체가 중단**된다.
+// 그러면 그 키 이후의 모든 키가 영영 복원되지 않는다 — world-events·world-diary-auto가 딱
+// 그 뒤에 있어서, 기기마다 이벤트 로그가 갈리고 그림일기가 날짜를 통째로 건너뛰었다(실측).
 const worldSyncTimers = {};
 function worldSync(key) {   // 변경 키만 900ms 디바운스 POST — 원시 문자열 그대로 (스키마 무관)
     clearTimeout(worldSyncTimers[key]);
@@ -56,6 +50,17 @@ function worldSync(key) {   // 변경 키만 900ms 디바운스 POST — 원시 
         }).catch(() => {});
     }, 900);
 }
+
+try {   // 부트 1회 — 서버 값이 로컬을 덮는다 (아래 모든 리더보다 먼저 실행되는 게 핵심)
+    const r = await fetch('/api/world_kv', { signal: AbortSignal.timeout(1500) });
+    if (r.ok) {
+        const kv = (await r.json()).kv || {};
+        for (const k of WORLD_SYNC_KEYS) {
+            if (typeof kv[k] === 'string') { try { localStorage.setItem(k, kv[k]); } catch (e) {} }
+            else worldSync(k);   // 서버가 빈 키 = 이 기기 값을 올린다 (첫 이주 시드 — 없으면 빈약한 기기가 먼저 쓰는 순간 풍부한 쪽이 덮인다)
+        }
+    }
+} catch (e) { /* 백엔드 없는 정적 서빙 — 로컬 캐시로 진행 */ }
 // 이동 가능한 타입 (연못=지형 함몰이라 고정, furniture=집 내부 파생이라 집을 따라감)
 const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'scarecrow', 'compost', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'vine', 'fruitbasket', 'library', 'flowerbasket', 'pond', 'portal', 'icebox', 'kitchen', 'bonfire', 'pierboard']);
 // 섬 정의 지문 — 섬을 옮기거나 크기를 바꾸면 값이 달라진다(재발 방지: 저장 배치의 "섬 이사" 자동 감지).

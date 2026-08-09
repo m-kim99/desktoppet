@@ -3,6 +3,37 @@
 Personal fork of super-agent-party, customized for Korean-language desktop use.
 Patch notes go here — newest on top.
 
+## 미출시
+
+### Fixed (🔄 KV 부트 동기 — TDZ 하나가 22개 키의 기기 간 동기를 통째로 죽이고 있었다)
+
+증상: 폰에서 그림일기가 안 뜬다. 파보니 원인이 둘로 갈렸다.
+
+**① 폰에는 `/api`가 없었다.** 월드는 일기·채팅·KV를 상대경로 `/api/*`로 부르는데, 폰이 쓰는
+8765는 정적 서버뿐이라 전부 404였다. 앱 백엔드(3456)는 `networkVisible`이 꺼져 있어 127.0.0.1
+전용이라 폰이 직접 칠 수도 없다. → `scripts/serve-phone.py`: static은 직접, 백엔드 mount 경로
+(`/api /vrm /uploaded_files /screenshots /tool_temp /ext /ws`)는 3456으로 중계. ThreadingHTTPServer.
+  - 채팅이 "되는 것처럼" 보였던 건 스크롤백이 localStorage(`world_chat_log`)에 있어서다 —
+    실제로는 새 메시지 전송도 404로 죽어 있었다. 일기는 로컬 캐시가 없어 바로 빈 화면이 됐다.
+
+**② 부트 KV 복원이 5번째 키에서 죽고 있었다.** 복원 루프는 서버에 없는 키를 만나면
+`worldSync(k)`로 기기 값을 올리는데, `const worldSyncTimers`가 그 루프 **아래**에 선언돼 있어
+**TDZ ReferenceError**가 났다. try 전체가 중단되니 그 키 이후는 전부 복원 불가:
+
+```
+[KVBOOT] threw: ReferenceError Cannot access 'worldSyncTimers' before initialization
+루프는 4번째 키 'world-acc-unlocked'에서 던진다 → 이후 22개 키가 전부 복원 안 됨
+희생: world-pantry … world-events, world-diary-auto, world-last-seen, world-pier-* …
+```
+
+즉 `world-shells·treasure·seafood·fishdex` 4개만 동기되고 있었다. `world-events`(그림일기의
+재료)와 `world-diary-auto`(작성 플래그)가 희생 목록에 있었던 게 **일기가 날짜를 통째로
+건너뛴 진짜 원인**이다 — 기기마다 이벤트 로그가 갈리고, 이벤트가 비어 보이는 기기가 그날을
+"빈 날"로 굳혀 버렸다. 선언을 루프 위로 올려 고쳤다(센티넬 복원으로 검증).
+
+`npm run test:world` 15/15 PASS.
+
+
 ## [Unreleased]
 
 ### Removed (📺 트위치·유튜브 라이브(방송) 시스템 제거 — own-the-app P1 라운드5)
