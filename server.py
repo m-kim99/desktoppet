@@ -10906,9 +10906,19 @@ def _world_auto_backup(tag: str = "") -> str | None:
         with open(tmp, "wb") as f:
             f.write(data)
         os.replace(tmp, dest)
+        # 보관 정책: 최근 14개(일간) + 월별 최초 zip 36개월(장기). 14세대만 두면 "몇 년 뒤에
+        # 몇 달 전 상태로 돌아가고 싶다"가 불가능하다 — 서서히 진행되는 손상(로직 버그류)은
+        # 14일이 지나면 모든 백업에 전염되기 때문. 월간 보관본이 그 지평을 3년으로 늘린다.
         zips = sorted(x for x in os.listdir(WORLD_AUTOBACKUP_DIR) if x.startswith("pet-world-backup-") and x.endswith(".zip"))
-        for x in zips[:-14]:
-            os.remove(os.path.join(WORLD_AUTOBACKUP_DIR, x))
+        first_of_month = {}
+        for x in zips:
+            m = re.match(r"^pet-world-backup-(\d{6})", x)
+            if m and m.group(1) not in first_of_month:
+                first_of_month[m.group(1)] = x   # 정렬순 첫 zip = 그 달의 최초본 (1일에 안 켜도 동작)
+        keep = set(sorted(first_of_month.values())[-36:]) | set(zips[-14:])
+        for x in zips:
+            if x not in keep:
+                os.remove(os.path.join(WORLD_AUTOBACKUP_DIR, x))
         print(f"[world_backup] 자동 백업: {dest}")
         return dest
     except Exception as e:
@@ -11077,6 +11087,25 @@ def _world_chat_file(pet: str) -> str:
     return os.path.join(WORLD_CHAT_DIR, f"{pet}.json")
 
 
+def _world_chat_reset_files(pet: str):
+    """기억 초기화 — 본 파일만 지우면 안 된다. 리더의 자동 복구(.bak → .snap 폴백)가
+    다음 로드에서 지운 기억을 **되살려** 초기화가 조용히 무효가 된다(자동 복구를 넣으며 생긴
+    부작용 — 명시적 삭제와 사고 손실을 리더는 구분할 수 없다). 사이드카(.bak·.snap-*·.corrupt·
+    .tmp)까지 함께 지운다. Documents의 일일 zip 아카이브는 남는다 — 그건 "실수로 초기화"의
+    마지막 되돌리기 수단이고, 되살림은 복원 API를 통해서만 명시적으로 일어난다."""
+    try:
+        base = _world_chat_file(pet)
+        dirn, name = os.path.split(base)
+        for fn in os.listdir(dirn):
+            if fn == name or fn.startswith(name + "."):
+                try:
+                    os.remove(os.path.join(dirn, fn))
+                except FileNotFoundError:
+                    pass
+    except Exception as e:
+        print(f"[world_chat] reset failed: {e}")
+
+
 def _world_chat_load(pet: str) -> dict:
     data = _world_read_json(_world_chat_file(pet))
     try:
@@ -11153,12 +11182,7 @@ async def world_chat(request: Request):
     if pet not in WORLD_PERSONAS:
         pet = "chick"
     if data.get("reset"):
-        try:
-            os.remove(_world_chat_file(pet))
-        except FileNotFoundError:
-            pass
-        except Exception as e:
-            print(f"[world_chat] reset failed: {e}")
+        _world_chat_reset_files(pet)
         return {"ok": True}
     text = str(data.get("text", "")).strip()
     if not text:
