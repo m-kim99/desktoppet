@@ -8274,13 +8274,20 @@ function settleOffline(from, to) {
     }
     offlineLastSummary = { awakeMin: Math.round(awakeSec / 60), parts: [...parts] };
     if (!parts.length) return;
-    injectWorldEvents(evs.slice(0, 8));
+    // 단일 저자 규칙: 이미 그림일기가 써진 날짜엔 이벤트를 주입하지 않는다 — 서버 일기 데몬이
+    // 먼저 그날을 확정했으면 일기가 기록의 정본이고, 뒤늦은 정산 이벤트는 일기와 어긋난다.
+    // (상태 정산 — 낙과·재보급 등 — 은 위 훅에서 이미 적용됐다: 억제는 '기록 줄'만.)
+    const diarized = (t) => { const d = diaryData[localDateStr(new Date(t))]; return !!(d && (d.chick || d.puppy)); };
+    injectWorldEvents(evs.filter((e) => !diarized(e.t)).slice(0, 8));
     // 요약 토스트는 띄우지 않는다(사용자 피드백: 재접속마다 뜨는 정산 문구가 소음) —
     // 부재의 흔적은 주입된 이벤트 로그·일기·바닥의 낙과가 조용히 말해 준다.
 }
 function tickOfflineSettle() {
     const now = Date.now();
-    if (lastAliveMs && now - lastAliveMs > SETTLE_MIN_GAP_MS) settleOffline(lastAliveMs, now);   // 시계 역행은 음수 갭 — 자연 무시
+    if (lastAliveMs && now - lastAliveMs > SETTLE_MIN_GAP_MS) {                                  // 시계 역행은 음수 갭 — 자연 무시
+        if (!diaryBootFetched) return;   // 부팅 일기 로드 전엔 정산 보류(갭 보존) — 단일 저자 가드가 빈 diaryData를 보면 무의미. 로드 실패여도 8초면 풀린다.
+        settleOffline(lastAliveMs, now);
+    }
     lastAliveMs = now;
     if (now - lastSeenSavedAt > 30000) {           // 30초 결이면 충분 — 종료 직전 ≤30초 유실은 무시 가능
         lastSeenSavedAt = now;
@@ -10265,6 +10272,12 @@ async function fetchDiary() {
         if (res.ok) diaryData = (await res.json()) || {};
     } catch (e) {}
 }
+// 부팅 시 1회 로드 — ① 아침 댓글 소급(ownerCommentDue)이 패널을 열기 전에도 서버 날짜들을 보고
+// ② 오프라인 정산의 단일 저자 가드가 "이미 일기 써진 날짜"를 알 수 있게. 서버가 죽어 있어도
+// 8초 뒤엔 정산을 풀어준다(가드는 그냥 빈 손으로 통과 — 종전 동작).
+let diaryBootFetched = false;
+fetchDiary().finally(() => { diaryBootFetched = true; });
+setTimeout(() => { diaryBootFetched = true; }, 8000);
 async function writeDiary(petName, force = false, silent = false, forDate = null) {
     const me = pets.find((q) => q.name === petName);
     const day = forDate || new Date();

@@ -675,6 +675,7 @@ async def lifespan(app: FastAPI):
     from tzlocal import get_localzone
     
     asyncio.create_task(clean_temp_files_task())
+    asyncio.create_task(_world_diary_daemon())   # 🌙 일기 데몬 — 월드 창 없이도 매일 일기·아침 댓글 (하단 월드 블록)
     
     # Run the time-consuming operations in parallel
     init_db_task = init_db()
@@ -10724,7 +10725,7 @@ async def world_save_screenshot(request: Request):
 # 월드 개인 데이터는 USER_DATA_DIR/world 에 산다 — 레포 폴더(config/)는 패키징 앱에선 읽기
 # 전용이고 Docker/Railway에선 재배포마다 초기화되기 때문. 예전 위치의 파일은 처음 접근할 때
 # 한 번 복사해와서 기존 로컬 데이터가 그대로 이어진다.
-WORLD_DATA_DIR = os.path.join(USER_DATA_DIR, "world")
+WORLD_DATA_DIR = os.environ.get("WORLD_DATA_DIR") or os.path.join(USER_DATA_DIR, "world")   # env 오버라이드는 샌드박스 E2E용
 def _world_file(name):
     os.makedirs(WORLD_DATA_DIR, exist_ok=True)
     new = os.path.join(WORLD_DATA_DIR, name)
@@ -11291,6 +11292,62 @@ def _world_diary_save(data: dict):
         print(f"[world_diary] save failed: {e}")
 
 
+async def _world_diary_llm_entry(pet: str, date: str, events: str, snapshot: str, quiet: bool = False) -> dict:
+    """펫 일기 생성 공용부 — 엔드포인트(월드 창 트리거)와 일기 데몬이 같은 프롬프트를 쓴다.
+    quiet=부재일(소재 없음) 모드: 짧고 조용한 일기, 없던 사건을 지어내지 않는다. 실패는 예외로."""
+    wc_client, current_settings = await _world_chat_client_and_model()
+    store = _world_chat_load(pet)
+    eff = _world_persona_for(current_settings, pet)
+    if quiet:
+        rules = (
+            "오늘 하루를 마무리하며 그림일기를 쓴다. 오늘 {{user}}는 월드에 오지 않았고 적어둔 기록도 없다. 규칙:\n"
+            "- 1인칭, 내(펫) 목소리 그대로. 한국어 2~4문장, 이모지 1~2개.\n"
+            "- 조용한 하루의 정경과 기분만 담는다 — 구체적인 수확·발견·사건을 지어내지 않는다.\n"
+            "- {{user}}를 기다린 마음을 살짝 담아도 좋다.\n"
+            "- 마지막 줄은 반드시 '기분: <이모지 하나> <한 단어>' 형식으로 끝낸다."
+        )
+    else:
+        rules = (
+            "오늘 하루를 마무리하며 그림일기를 쓴다. 규칙:\n"
+            "- 1인칭, 내(펫) 목소리 그대로. 한국어 4~6문장, 이모지 1~3개.\n"
+            "- 아래 [오늘 있었던 일]에 적힌 사실만 쓴다. 없던 일을 지어내지 않는다.\n"
+            "- 절친이나 {{user}}가 등장했다면 꼭 언급한다.\n"
+            "- 마지막 줄은 반드시 '기분: <이모지 하나> <한 단어>' 형식으로 끝낸다."
+        )
+    sys_parts = [eff["persona"], eff["lore"], rules]
+    if store["summary"]:
+        sys_parts.append(f"[{{{{user}}}}와의 기억]\n{store['summary']}")
+    uname = _world_user_name(current_settings)
+    user_text = f"[오늘 날짜] {date}\n\n[오늘의 월드]\n{snapshot}\n\n[오늘 있었던 일]\n{events}\n\n이제 오늘의 일기를 쓰자."
+    resp = await wc_client.chat.completions.create(
+        model=current_settings["model"],
+        messages=[
+            {"role": "system", "content": "\n\n".join(sys_parts).replace("{{user}}", uname)},
+            {"role": "user", "content": user_text.replace("{{user}}", uname)},   # 데몬 스냅샷의 {{user}} 토큰용 — 클라 페이로드엔 원래 없다
+        ],
+        temperature=0.8,
+        max_tokens=500,
+    )
+    text = (resp.choices[0].message.content or "").strip()
+    if not text:
+        raise RuntimeError("empty reply")
+    mood = ""
+    m = re.search(r"기분\s*[:：]\s*(.+)$", text, re.M)
+    if m:
+        mood = m.group(1).strip()[:24]
+    return {"text": text, "mood": mood, "ts": int(time.time() * 1000)}
+
+
+def _world_diary_store_pet(date: str, pet: str, entry: dict, overwrite: bool = True) -> dict:
+    diary = _world_diary_load()   # reload — 다른 펫의 일기가 그새 저장됐을 수 있다
+    cur = (diary.get(date) or {}).get(pet)
+    if cur and not overwrite:
+        return cur                # 첫 저자 승리 — 데몬은 이미 있는 일기를 절대 덮지 않는다
+    diary.setdefault(date, {})[pet] = entry
+    _world_diary_save(diary)
+    return entry
+
+
 @app.get("/api/world_diary")
 async def world_diary_all():
     return _world_diary_load()
@@ -11314,45 +11371,11 @@ async def world_diary_write(request: Request):
     if not events:
         return JSONResponse({"error": "no events"}, status_code=400)
     try:
-        wc_client, current_settings = await _world_chat_client_and_model()
-        store = _world_chat_load(pet)
-        eff = _world_persona_for(current_settings, pet)
-        sys_parts = [
-            eff["persona"],
-            eff["lore"],
-            "오늘 하루를 마무리하며 그림일기를 쓴다. 규칙:\n"
-            "- 1인칭, 내(펫) 목소리 그대로. 한국어 4~6문장, 이모지 1~3개.\n"
-            "- 아래 [오늘 있었던 일]에 적힌 사실만 쓴다. 없던 일을 지어내지 않는다.\n"
-            "- 절친이나 {{user}}가 등장했다면 꼭 언급한다.\n"
-            "- 마지막 줄은 반드시 '기분: <이모지 하나> <한 단어>' 형식으로 끝낸다.",
-        ]
-        if store["summary"]:
-            sys_parts.append(f"[{{{{user}}}}와의 기억]\n{store['summary']}")
-        uname = _world_user_name(current_settings)
-        user_text = f"[오늘 날짜] {date}\n\n[오늘의 월드]\n{snapshot}\n\n[오늘 있었던 일]\n{events}\n\n이제 오늘의 일기를 쓰자."
-        resp = await wc_client.chat.completions.create(
-            model=current_settings["model"],
-            messages=[
-                {"role": "system", "content": "\n\n".join(sys_parts).replace("{{user}}", uname)},
-                {"role": "user", "content": user_text},
-            ],
-            temperature=0.8,
-            max_tokens=500,
-        )
-        text = (resp.choices[0].message.content or "").strip()
-        if not text:
-            return JSONResponse({"error": "empty reply"}, status_code=502)
+        entry = await _world_diary_llm_entry(pet, date, events, snapshot)
     except Exception as e:
         print(f"[world_diary] LLM call failed: {e}")
         return JSONResponse({"error": str(e)}, status_code=502)
-    mood = ""
-    m = re.search(r"기분\s*[:：]\s*(.+)$", text, re.M)
-    if m:
-        mood = m.group(1).strip()[:24]
-    entry = {"text": text, "mood": mood, "ts": int(time.time() * 1000)}
-    diary = _world_diary_load()   # reload — 다른 펫의 일기가 그새 저장됐을 수 있다
-    diary.setdefault(date, {})[pet] = entry
-    _world_diary_save(diary)
+    _world_diary_store_pet(date, pet, entry)
     return {"cached": False, **entry}
 
 
@@ -11380,26 +11403,23 @@ async def world_diary_owner_write(request: Request):
     return entry
 
 
-@app.post("/api/world_diary_comment")
-async def world_diary_comment(request: Request):
-    data = await request.json()
-    pet = str(data.get("pet", "chick"))
+async def _world_diary_comment_run(pet: str, date: str):
+    """댓글 생성 공용부 — 엔드포인트(클라 폴링)와 일기 데몬 공용. (status, payload) 반환, 200 = 신규 또는 캐시."""
     if pet not in WORLD_PERSONAS:
         pet = "chick"
-    date = str(data.get("date", "")).strip()
     diary = _world_diary_load()
     owner = (diary.get(date) or {}).get("owner")
     if not owner or not owner.get("text"):
-        return JSONResponse({"error": "no owner entry"}, status_code=404)
+        return 404, {"error": "no owner entry"}
     try:
         gate = time.mktime(time.strptime(date, "%Y-%m-%d")) + 30 * 3600   # 그 날짜 00:00 + 30h = 다음 날 06:00
     except Exception:
-        return JSONResponse({"error": "bad date"}, status_code=400)
+        return 400, {"error": "bad date"}
     if time.time() < gate:
-        return JSONResponse({"error": "not yet", "gateMs": int(gate * 1000)}, status_code=425)
+        return 425, {"error": "not yet", "gateMs": int(gate * 1000)}
     for c in owner.get("comments") or []:
         if c.get("pet") == pet:
-            return {"cached": True, **c}
+            return 200, {"cached": True, **c}
     try:
         wc_client, current_settings = await _world_chat_client_and_model()
         eff = _world_persona_for(current_settings, pet)
@@ -11427,20 +11447,145 @@ async def world_diary_comment(request: Request):
         )
         ctext = (resp.choices[0].message.content or "").strip()
         if not ctext:
-            return JSONResponse({"error": "empty reply"}, status_code=502)
+            return 502, {"error": "empty reply"}
     except Exception as e:
         print(f"[world_diary] comment LLM failed: {e}")
-        return JSONResponse({"error": str(e)}, status_code=502)
+        return 502, {"error": str(e)}
     c = {"pet": pet, "text": ctext[:400], "ts": int(time.time() * 1000)}
     diary = _world_diary_load()   # reload — 다른 펫 댓글이 그새 저장됐을 수 있다
     owner2 = (diary.get(date) or {}).get("owner")
     if not owner2:
-        return JSONResponse({"error": "gone"}, status_code=409)
+        return 409, {"error": "gone"}
     cs = owner2.setdefault("comments", [])
     if not any(x.get("pet") == pet for x in cs):
         cs.append(c)
         _world_diary_save(diary)
-    return {"cached": False, **c}
+    return 200, {"cached": False, **c}
+
+
+@app.post("/api/world_diary_comment")
+async def world_diary_comment(request: Request):
+    data = await request.json()
+    status, payload = await _world_diary_comment_run(str(data.get("pet", "chick")), str(data.get("date", "")).strip())
+    return payload if status == 200 else JSONResponse(payload, status_code=status)
+
+
+# ---- 🌙 일기 데몬 — "접속 안 해도 매일 일기": 월드 창(클라 트리거)이 못 챙긴 일기·댓글을 서버가
+# 챙긴다. 업계 문법으론 저해상도 서버 시뮬(심즈 스토리 프로그레션 위상) — 렌더링 없이 결과만 만든다.
+#   ① 오늘 몫: 22:30부터 (월드가 열려 있으면 22:05에 클라가 먼저 쓴다 — 데몬은 안전망)
+#   ② 소급: 지난 7일의 빈 (날짜, 펫) — 이월 1일 한계로 생기던 영구 구멍이 사라진다. 소재 사다리 =
+#      KV에 미러된 실제 이벤트 > 데이 시뮬(balance-sim --day) > "조용한 하루"(quiet) 일기.
+#   ③ 주인 일기 댓글: 게이트(날짜 00:00+30h)가 지난 미댓글 날짜 — 패널을 안 열어도 아침에 달린다.
+#   멱등: 일기 = (날짜,펫) 엔트리 존재(첫 저자 승리, 덮어쓰기 없음) · 댓글 = 그 펫 댓글 존재.
+#   실패 = 그 틱 중단 → 다음 틱(10분)이 자연 재시도(클라이언트와 같은 백오프 결). LLM은 순차 +
+#   틱당 상한(부팅 소급 폭주 방지). 클라 정산과의 단일 저자 규칙은 world.js settleOffline 쪽 가드가 담당.
+WORLD_DIARY_BACKFILL_DAYS = 7      # 소급 지평선 — 오프라인 정산 SETTLE_SPAN(7일)과 같은 상한
+WORLD_DIARY_TODAY_AFTER_H = 22.5   # 오늘 몫을 데몬이 챙기는 시각 — 클라(22:05)보다 뒤
+
+
+def _world_kv_events() -> list:
+    """클라이언트가 KV로 미러한 world-events 링버퍼 — 서버는 읽기만, 절대 되쓰지 않는다(키는 클라 소유)."""
+    try:
+        data = _world_read_json(WORLD_KV_FILE)
+        arr = json.loads(((data or {}).get("kv") or {}).get("world-events") or "[]")
+        return [e for e in arr if isinstance(e, dict) and e.get("t") and e.get("text")]
+    except Exception:
+        return []
+
+
+def _world_events_text_for(date: str) -> str:
+    """world.js dayEventsText와 같은 '- HH:MM 텍스트' 포맷 — 일기 프롬프트가 먹는 모양 그대로."""
+    rows = []
+    for e in _world_kv_events():
+        lt = time.localtime(e["t"] / 1000)
+        if time.strftime("%Y-%m-%d", lt) == date:
+            rows.append((e["t"], f"- {time.strftime('%H:%M', lt)} {e['text']}"))
+    rows.sort(key=lambda r: r[0])
+    return "\n".join(r[1] for r in rows)
+
+
+async def _world_day_sim(date: str) -> str:
+    """부재일 소재(데이 시뮬): balance-sim의 하루 샘플러로 그날의 추상 하루를 굴린다. 실패/부재 시 ''."""
+    return ""   # Phase 2에서 연결
+
+
+def _world_season_ko(date: str) -> str:
+    try:
+        m = int(date[5:7])
+    except Exception:
+        return ""
+    return "봄" if 3 <= m <= 5 else "여름" if 6 <= m <= 8 else "가을" if 9 <= m <= 11 else "겨울"
+
+
+async def _world_diary_tick(budget: int = 6) -> int:
+    """한 틱: 빈 (날짜,펫) 일기를 오래된 날짜부터 소급 + 게이트 지난 주인 일기 댓글. LLM 호출 수 반환."""
+    now = time.time()
+    lt = time.localtime(now)
+    dates = [time.strftime("%Y-%m-%d", time.localtime(now - k * 86400)) for k in range(WORLD_DIARY_BACKFILL_DAYS, 0, -1)]
+    if lt.tm_hour + lt.tm_min / 60 >= WORLD_DIARY_TODAY_AFTER_H:
+        dates.append(time.strftime("%Y-%m-%d", lt))
+    wrote = 0
+    for d in dates:
+        diary = _world_diary_load()   # 날짜마다 재로드 — 클라가 그새 썼을 수 있다
+        for pet in WORLD_PERSONAS:
+            if wrote >= budget:
+                return wrote
+            if (diary.get(d) or {}).get(pet):
+                continue
+            events, src = _world_events_text_for(d), "kv"
+            if not events:
+                events, src = await _world_day_sim(d), "sim"
+            quiet = not events
+            if quiet:
+                src, events = "quiet", "(적어둔 기록이 없다 — 조용한 하루)"
+            season = _world_season_ko(d)
+            snapshot = f"계절은 {season}." if season else ""
+            if src != "kv":
+                snapshot = (snapshot + " {{user}}는 오늘 월드에 들르지 않았다.").strip()
+            try:
+                entry = await _world_diary_llm_entry(pet, d, events, snapshot, quiet=quiet)
+                entry["src"] = src
+                if _world_diary_store_pet(d, pet, entry, overwrite=False) is entry:
+                    print(f"[world_diary_daemon] {d}/{pet} 일기 작성 (src={src})")
+                wrote += 1
+            except Exception as e:
+                print(f"[world_diary_daemon] {d}/{pet} 실패 — 다음 틱 재시도: {e}")
+                return wrote          # LLM이 죽어 있으면 이번 틱 전체 중단 (10분 백오프)
+    # ③ 주인 일기 아침 댓글 — 오래된 날짜부터, 펫당 1개 멱등 (게이트·캐시 검사는 comment_run 안에)
+    diary = _world_diary_load()
+    for d in sorted(diary.keys()):
+        o = (diary.get(d) or {}).get("owner")
+        if not o or not o.get("text"):
+            continue
+        for pet in WORLD_PERSONAS:
+            if any(c.get("pet") == pet for c in (o.get("comments") or [])):
+                continue
+            if wrote >= budget:
+                return wrote
+            status, payload = await _world_diary_comment_run(pet, d)
+            if status == 425:
+                break                 # 아직 아침 6시 전 — 이 날짜의 다른 펫도 마찬가지
+            if status != 200:
+                print(f"[world_diary_daemon] {d}/{pet} 댓글 실패({status}) — 다음 틱 재시도")
+                return wrote
+            if not payload.get("cached"):
+                wrote += 1
+                print(f"[world_diary_daemon] {d}/{pet} 아침 댓글 작성")
+    return wrote
+
+
+async def _world_diary_daemon():
+    """lifespan이 create_task로 띄운다. 틱 주기 env WORLD_DIARY_TICK_SEC는 샌드박스 E2E용."""
+    tick = int(os.environ.get("WORLD_DIARY_TICK_SEC") or 600)
+    await asyncio.sleep(min(45, tick))   # 부팅 직후 여유 — 클라 초기 동기(KV push·정산)가 먼저 앉게
+    while True:
+        try:
+            await _world_diary_tick()
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            print(f"[world_diary_daemon] tick error: {e}")
+        await asyncio.sleep(tick)
 
 
 # ---- 추억의 섬 저장소 (㉓ 소원우물 / ㉔ 타임캡슐): world_layout처럼 서버 파일 — 기기 공유,
