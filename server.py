@@ -11505,8 +11505,29 @@ def _world_events_text_for(date: str) -> str:
 
 
 async def _world_day_sim(date: str) -> str:
-    """부재일 소재(데이 시뮬): balance-sim의 하루 샘플러로 그날의 추상 하루를 굴린다. 실패/부재 시 ''."""
-    return ""   # Phase 2에서 연결
+    """부재일 소재(데이 시뮬): balance-sim --day(날짜 시드 결정론 — 소급해도 그날 굴렸을 결과와
+    동일)로 추상 하루를 굴려 '- HH:MM ...' 줄로 만든다. node가 없거나 실패하면 '' → quiet 폴백."""
+    try:
+        node = shutil.which("node")
+        script = os.path.join(base_path, "scripts", "balance-sim.mjs")
+        if not node or not os.path.exists(script):
+            return ""
+        proc = await asyncio.create_subprocess_exec(
+            node, script, "--day", date,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        try:
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=20)
+        except asyncio.TimeoutError:
+            proc.kill()
+            return ""
+        rows = []
+        for e in json.loads(out or b"{}").get("events") or []:
+            lt = time.localtime(e["t"] / 1000)
+            rows.append(f"- {time.strftime('%H:%M', lt)} {e['text']}")
+        return "\n".join(rows)
+    except Exception as e:
+        print(f"[world_diary_daemon] day-sim 실패({date}): {e}")
+        return ""
 
 
 def _world_season_ko(date: str) -> str:

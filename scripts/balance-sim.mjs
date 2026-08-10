@@ -6,6 +6,8 @@
 //   node scripts/balance-sim.mjs --mode both        # 두 모드 나란히 비교 (±편차 표)
 //   node scripts/balance-sim.mjs --fit-rate         # LEISURE_RATE 역산 스윕 (7944122 마이그레이션 재현은
 //                                                     동일 조건으로: --ride-sec 600 --dur-budget off)
+//   node scripts/balance-sim.mjs --day 2026-08-08     # 데이 샘플러: 부재일의 "추상 하루" 한 판을
+//                                                       날짜 시드로 굴려 이벤트 JSON 출력 (일기 데몬 소재)
 //   옵션: --days 400 --seed 42 --rate 0.40 --ride-sec N --dur-budget off --satiety off|초 --json
 // ⚠ 기본값 = world.js 현행 구성과 동기가 계약: LEISURE_RATE·SWING rideMs·weight·LEISURE_SATIETY_MS를 바꾸면 여기도 같이.
 //
@@ -20,6 +22,7 @@
 // 6) fire 계약: 성공 true / 실패 false(쿨다운 안 태움·3초 재시도). 물림·성공-쿨다운·계측(actStats)은 셀렉터가 자동.
 // 7) 검증 3종: 여기 ACTS에 같은 항목 추가(동기) → npm run balance:world(유효 활동 수 유지 +
 //    1위 15% 밴드 + 신규 시작/일이 의도 범위) → E2E(leisureState 훅) + world-smoke. 실플레이는 ?stats=1 acts: 대조.
+//    + 아래 데이 샘플러 LINES에 일기 문구 한 줄 — 없으면 부재일(접속 안 한 날) 일기에 그 활동이 안 나온다.
 // 8) 신규 활동이 게이트에서 점유 10%를 넘으면 의도한 게 맞는지 재확인.
 //
 // 모델 노트 (실측 아님 — 코드 정적 분석 기반):
@@ -125,6 +128,7 @@ function simulate(mode, opts = {}) {
         if (a.lock) locks[a.lock] = true;
         if (a.id === 'dip') { p.dipKind = r() < 0.5 ? 'sea' : 'pond'; p.dipExt = 0; }
         stat(a.id).starts += 1;
+        if (opts.log) opts.log.push({ t, id: a.id, pet: pets.indexOf(p) });   // 데이 샘플러용 발자국
         return d;
     };
     const eligible = (p, a, t, h) => {
@@ -187,7 +191,8 @@ function simulate(mode, opts = {}) {
         return durCache.get(a.id);
     };
 
-    const TOTAL = DAYS * DAY_SEC;
+    const days = opts.days ?? DAYS;                     // 데이 샘플러는 1일 — 게이트 기본값은 그대로 DAYS
+    const TOTAL = days * DAY_SEC;
     for (let t = 0; t < TOTAL; t++) {
         const h = hourAt(t);
         const dayT = t % DAY_SEC;
@@ -206,12 +211,14 @@ function simulate(mode, opts = {}) {
                 for (const p of pets) { p.mode = 'busy'; p.busyId = l.id; p.until = t + d; }
                 duoBusyUntil = t + d;
                 stat(l.id).starts += 1;
+                if (opts.log) opts.log.push({ t, id: l.id, pet: -1 });   // 듀오 — 둘이서
             } else {
                 const p = pets.find(free);
                 if (!p) continue;
                 p.mode = 'busy'; p.busyId = l.id; p.until = t + l.dur(r);
                 if (l.daily) l.dug = true;
                 stat(l.id).starts += 1;
+                if (opts.log) opts.log.push({ t, id: l.id, pet: pets.indexOf(p) });
             }
         }
         // 자율 잠수 — 25초 폴, 바다 물놀이 중 30% 연장 (최대 2회)
@@ -256,13 +263,13 @@ function simulate(mode, opts = {}) {
             const meta = ACTS.find((a) => a.id === id) || LOTTO.find((l) => l.id === id) || { ko: id === 'meal' ? '식사' : id };
             return {
                 id, ko: meta.ko,
-                perDay: s.starts / DAYS,
-                minPerDay: s.busy / DAYS / 60,
-                share: s.busy / (DAYS * DAY_SEC * pets.length),
+                perDay: s.starts / days,
+                minPerDay: s.busy / days / 60,
+                share: s.busy / (days * DAY_SEC * pets.length),
             };
         })
         .sort((a, b) => b.share - a.share);
-    return { rows, wanderShare: wanderSec / (DAYS * DAY_SEC * pets.length), bothFree: bothFreeSec / (DAYS * DAY_SEC) };
+    return { rows, wanderShare: wanderSec / (days * DAY_SEC * pets.length), bothFree: bothFreeSec / (days * DAY_SEC) };
 }
 
 const fmt = (x, d = 1) => x.toFixed(d).padStart(6);
@@ -280,6 +287,69 @@ function printRun(label, out) {
     const effN = 1 / ls.reduce((s, x) => s + (x.share / tot) ** 2, 0);
     const band = ls[0].share > 0.15 ? '  ← 15% 밴드 밖' : '';
     console.log(`다양성: 유효 활동 수 ${effN.toFixed(1)}종 · 1위 시간점유 ${(ls[0].share * 100).toFixed(1)}% (${ls[0].ko})${band}`);
+}
+
+// ---- 데이 샘플러 (--day YYYY-MM-DD) — 부재일의 "추상 하루" 한 판. 서버 일기 데몬(server.py)이
+// node 서브프로세스로 호출한다. 날짜가 시드: 같은 날짜는 언제 굴려도 같은 하루(소급 재현성 —
+// 앱이 꺼져 있던 날을 나중에 채워도 "그날 굴렸을 결과"와 동일). 출력 = {date, events:[{t(ms), text}]}.
+// 줄 문구는 상태 무주장(잡았다/발견했다 금지) — 도감·수집과 어긋나지 않는 기록만 남긴다.
+if (ARG.day) {
+    const dateStr = String(ARG.day);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { console.error('--day YYYY-MM-DD'); process.exit(2); }
+    // xmur3 문자열 해시 — 아발란치 시드 (연속 날짜가 비슷한 하루로 뭉치지 않게, rngT 시드 3계명)
+    const seedOf = (s) => {
+        let h = 1779033703 ^ s.length;
+        for (let i = 0; i < s.length; i++) { h = Math.imul(h ^ s.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+        h = Math.imul(h ^ (h >>> 16), 2246822507);
+        h = Math.imul(h ^ (h >>> 13), 3266489909);
+        return (h ^= h >>> 16) >>> 0;
+    };
+    const log = [];
+    simulate('registry', { days: 1, seed: seedOf(dateStr), log });
+    const PET_KO = ['병아리', '강아지'];
+    const LINES = {
+        dip:      (p) => `${p}가 물가에서 첨벙첨벙 물놀이를 했다 💦`,
+        fish:     (p) => `${p}가 부둣가에 앉아 한가로이 낚싯대를 드리웠다 🎣`,
+        sub:      (p) => `${p}가 노랑호 잠수정을 타고 해저를 구경하고 왔다 🤿`,
+        balloon:  (p) => `${p}가 열기구를 타고 하늘을 둥실 떠다녔다 🎈`,
+        rocket:   (p) => `${p}가 별똥호 로켓을 타고 우주에 다녀왔다 🚀`,
+        tramp:    (p) => `${p}가 트램펄린에서 폴짝폴짝 뛰었다 🤸`,
+        fruit:    (p) => `${p}가 과일나무 아래를 기웃거리며 과일을 땄다 🍎`,
+        tidy:     (p) => `${p}가 떨어진 낙과를 주워 바구니에 정리했다 🧺`,
+        ferry:    (p) => `${p}가 통통호 페리를 타고 섬을 한 바퀴 돌았다 ⛴️`,
+        swing:    (p) => `${p}가 그네를 타고 바람을 갈랐다`,
+        gym:      (p) => `${p}가 스트레칭으로 몸을 쭉쭉 풀었다 🤸`,
+        library:  (p) => `${p}가 도서관에서 그림책을 뒤적였다 📖`,
+        treat:    (p) => `${p}가 간식 부스 앞을 서성이다 간식을 먹었다 🍡`,
+        sand:     (p) => `${p}가 모래섬에서 모래를 쌓으며 놀았다 🏖️`,
+        boat:     (p) => `${p}가 나룻배를 타고 천천히 노를 저었다 🚣`,
+        radio:    (p) => `${p}가 라디오 앞에서 음악을 들으며 몸을 흔들었다 📻`,
+        cook:     (p) => `${p}가 주방에서 뚝딱뚝딱 요리 연습을 했다 🍳`,
+        piano:    (p) => `${p}가 피아노를 콩콩 연주했다 🎹`,
+        dig:      (p) => `${p}가 보물 모래밭을 신나게 파헤쳐 봤다 ⛏️`,
+        hideseek: () => `둘이서 숨바꼭질을 하며 월드를 뛰어다녔다 🙈`,
+    };
+    // 선별: (펫,활동)별로 그날 발생 중 하나를 무작위 대표로 — 첫 발생만 쓰면 전부 아침에 뭉친다.
+    // 특별 활동(탈것·추첨)은 하루 1~2건만("가끔의 나들이"), 나머지는 일상 활동으로 4~9줄.
+    const r2 = rng(seedOf(dateStr + '#pick'));
+    const shuffle = (arr) => { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(r2() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; };
+    const byKey = new Map();
+    for (const e of log) {
+        if (!LINES[e.id]) continue;
+        const k = e.pet + ':' + e.id;
+        if (!byKey.has(k)) byKey.set(k, []);
+        byKey.get(k).push(e);
+    }
+    const uniq = [...byKey.values()].map((arr) => arr[Math.floor(r2() * arr.length)]);
+    const RARE = new Set(['rocket', 'sub', 'ferry', 'balloon', 'boat', 'hideseek', 'dig', 'piano']);
+    const rare = shuffle(uniq.filter((e) => RARE.has(e.id)));
+    const common = shuffle(uniq.filter((e) => !RARE.has(e.id)));
+    const picked = [...rare.slice(0, 1 + Math.floor(r2() * 2)), ...common].slice(0, 4 + Math.floor(r2() * 6));
+    picked.sort((a, b) => a.t - b.t);
+    const base = new Date(dateStr + 'T06:00:00').getTime();   // 시뮬 t=0 ↔ 그날 06:00 (수면 22~06시는 시뮬 창 밖)
+    const events = picked.map((e) => ({ t: base + e.t * 1000, text: LINES[e.id](PET_KO[e.pet] ?? '둘이서') }));
+    console.log(JSON.stringify({ date: dateStr, seed: seedOf(dateStr), events }));
+    process.exit(0);
 }
 
 if (ARG['fit-rate']) {
