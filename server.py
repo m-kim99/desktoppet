@@ -11493,25 +11493,25 @@ def _world_kv_events() -> list:
         return []
 
 
-def _world_events_text_for(date: str) -> str:
+def _world_events_fmt(evs: list) -> str:
     """world.js dayEventsText와 같은 '- HH:MM 텍스트' 포맷 — 일기 프롬프트가 먹는 모양 그대로."""
-    rows = []
-    for e in _world_kv_events():
-        lt = time.localtime(e["t"] / 1000)
-        if time.strftime("%Y-%m-%d", lt) == date:
-            rows.append((e["t"], f"- {time.strftime('%H:%M', lt)} {e['text']}"))
-    rows.sort(key=lambda r: r[0])
-    return "\n".join(r[1] for r in rows)
+    rows = sorted(evs, key=lambda e: e["t"])
+    return "\n".join(f"- {time.strftime('%H:%M', time.localtime(e['t'] / 1000))} {e['text']}" for e in rows)
 
 
-async def _world_day_sim(date: str) -> str:
+def _world_events_text_for(date: str) -> str:
+    return _world_events_fmt([e for e in _world_kv_events()
+                              if time.strftime("%Y-%m-%d", time.localtime(e["t"] / 1000)) == date])
+
+
+async def _world_day_sim(date: str) -> list:
     """부재일 소재(데이 시뮬): balance-sim --day(날짜 시드 결정론 — 소급해도 그날 굴렸을 결과와
-    동일)로 추상 하루를 굴려 '- HH:MM ...' 줄로 만든다. node가 없거나 실패하면 '' → quiet 폴백."""
+    동일)로 추상 하루를 굴려 {t,text} 리스트로 돌려준다. node가 없거나 실패하면 [] → quiet 폴백."""
     try:
         node = shutil.which("node")
         script = os.path.join(base_path, "scripts", "balance-sim.mjs")
         if not node or not os.path.exists(script):
-            return ""
+            return []
         proc = await asyncio.create_subprocess_exec(
             node, script, "--day", date,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
@@ -11519,15 +11519,39 @@ async def _world_day_sim(date: str) -> str:
             out, _ = await asyncio.wait_for(proc.communicate(), timeout=20)
         except asyncio.TimeoutError:
             proc.kill()
-            return ""
-        rows = []
-        for e in json.loads(out or b"{}").get("events") or []:
-            lt = time.localtime(e["t"] / 1000)
-            rows.append(f"- {time.strftime('%H:%M', lt)} {e['text']}")
-        return "\n".join(rows)
+            return []
+        return [e for e in json.loads(out or b"{}").get("events") or []
+                if isinstance(e, dict) and e.get("t") and e.get("text")]
     except Exception as e:
         print(f"[world_diary_daemon] day-sim 실패({date}): {e}")
-        return ""
+        return []
+
+
+def _world_kv_merge_events(evs: list):
+    """시뮬 하루의 정사(正史) 편입: sim 소재로 일기를 쓴 날의 이벤트를 world-events(KV 미러)에
+    병합 — 다음 접속의 부팅 pull(서버 우선)로 클라 이벤트 로그에 승계된다. world-events는 클라
+    소유 키지만, 병합 조건(그날 KV 이벤트 0건 = 그날 클라 세션 없음)이 충돌 부재를 자체 증명.
+    클라 링버퍼와 같은 규칙(시간순 정렬·120캡·{t,text} 형태), (t,text) 중복 검사로 멱등."""
+    try:
+        data = _world_read_json(WORLD_KV_FILE)
+        if not isinstance(data, dict):
+            data = {}
+        kv = data.setdefault("kv", {})
+        try:
+            cur = [e for e in json.loads(kv.get("world-events") or "[]")
+                   if isinstance(e, dict) and e.get("t") and e.get("text")]
+        except Exception:
+            cur = []
+        have = {(e["t"], e["text"]) for e in cur}
+        add = [e for e in evs if (e["t"], e["text"]) not in have]
+        if not add:
+            return
+        merged = sorted(cur + add, key=lambda e: e["t"])[-120:]
+        kv["world-events"] = json.dumps(merged, ensure_ascii=False)
+        _world_write_json(WORLD_KV_FILE, data)
+        print(f"[world_diary_daemon] 시뮬 하루 이벤트 {len(add)}줄을 로그에 편입")
+    except Exception as e:
+        print(f"[world_diary_daemon] 이벤트 편입 실패: {e}")
 
 
 def _world_season_ko(date: str) -> str:
@@ -11548,26 +11572,31 @@ async def _world_diary_tick(budget: int = 6) -> int:
     wrote = 0
     for d in dates:
         diary = _world_diary_load()   # 날짜마다 재로드 — 클라가 그새 썼을 수 있다
-        for pet in WORLD_PERSONAS:
+        need = [p for p in WORLD_PERSONAS if not (diary.get(d) or {}).get(p)]
+        if not need:
+            continue
+        # 소재는 날짜당 한 번 — 두 펫이 같은 하루를 산다 (시뮬 이중 호출·펫 간 src 엇갈림 방지)
+        events, src, sim_evs = _world_events_text_for(d), "kv", []
+        if not events:
+            sim_evs = await _world_day_sim(d)
+            events, src = _world_events_fmt(sim_evs), "sim"
+        quiet = not events
+        if quiet:
+            src, events = "quiet", "(적어둔 기록이 없다 — 조용한 하루)"
+        season = _world_season_ko(d)
+        snapshot = f"계절은 {season}." if season else ""
+        if src != "kv":
+            snapshot = (snapshot + " {{user}}는 오늘 월드에 들르지 않았다.").strip()
+        for pet in need:
             if wrote >= budget:
                 return wrote
-            if (diary.get(d) or {}).get(pet):
-                continue
-            events, src = _world_events_text_for(d), "kv"
-            if not events:
-                events, src = await _world_day_sim(d), "sim"
-            quiet = not events
-            if quiet:
-                src, events = "quiet", "(적어둔 기록이 없다 — 조용한 하루)"
-            season = _world_season_ko(d)
-            snapshot = f"계절은 {season}." if season else ""
-            if src != "kv":
-                snapshot = (snapshot + " {{user}}는 오늘 월드에 들르지 않았다.").strip()
             try:
                 entry = await _world_diary_llm_entry(pet, d, events, snapshot, quiet=quiet)
                 entry["src"] = src
                 if _world_diary_store_pet(d, pet, entry, overwrite=False) is entry:
                     print(f"[world_diary_daemon] {d}/{pet} 일기 작성 (src={src})")
+                    if src == "sim" and sim_evs:
+                        _world_kv_merge_events(sim_evs)   # 정사 편입 — (t,text) 멱등이라 재호출 안전
                 wrote += 1
             except Exception as e:
                 print(f"[world_diary_daemon] {d}/{pet} 실패 — 다음 틱 재시도: {e}")
