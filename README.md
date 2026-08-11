@@ -1,397 +1,156 @@
-![image](static/source/cover.png)
+# Desktop Pet World
 
-<div align="center">
-  <a href="./README_ZH.md">
-    <img src="https://img.shields.io/badge/简体中文-自述文档-00B4AB?style=for-the-badge&logo=markdown"/>
-  </a>
-  <a href="./README.md">
-    <img src="https://img.shields.io/badge/English-Readme-0057D2?style=for-the-badge&logo=markdown"/>
-  </a>
-  <a href="./README_JA.md">
-    <img src="https://img.shields.io/badge/日本語-Readme-FF69B4?style=for-the-badge&logo=markdown"/>
-  </a>
-</div>
+데스크톱 위에서 병아리와 강아지가 사는 **실시간 3D 월드**.
+계절과 날씨가 흐르고, 펫들은 농사짓고 요리하고 낚시하고, **당신이 접속하지 않은 날에도 하루를 살고 일기를 씁니다.**
 
-####
-
-<p align="center">
-  <a href="https://trendshift.io/repositories/16259" target="_blank">
-    <img src="https://trendshift.io/api/badge/repositories/16259" alt="Trendshift" width="250" height="55">
-  </a>
-</p>
-
-####
-
-<div align="center">
-  <a href="https://www.agentparty.top/"><img src="https://img.shields.io/badge/Official website-AgentParty-blueviolet?style=for-the-badge"/></a>
-  <a href="https://www.agentparty.top/blog.html"><img src="https://img.shields.io/badge/Official%20Blog-Blog-orange?style=for-the-badge&logo=rss&logoColor=white"/></a>
-  <a href="https://space.bilibili.com/26978344"><img src="https://img.shields.io/badge/B站-观看教程-red?style=for-the-badge&logo=bilibili"/></a>
-  <a href="https://www.youtube.com/@LLM-party"><img src="https://img.shields.io/badge/YouTube-Subscribe-FF0000?style=for-the-badge&logo=youtube"/></a>
-  <a href="https://gcnij7egmcww.feishu.cn/wiki/DPRKwdetCiYBhPkPpXWcugujnRc"><img src="https://img.shields.io/badge/中文使用指南-飞书文档-00CDCD?style=for-the-badge&logo=docsdotrs"/></a>
-  <a href="https://temporal-lantern-7e8.notion.site/super-agent-party-211b2b2cb6f180c899d1c27a98c4965d"><img src="https://img.shields.io/badge/English%20Guide-Notion-000000?style=for-the-badge&logo=notion"/></a>
-  <a href="./README_ZH.md#快速开始"><img src="https://img.shields.io/badge/中国用户点这里-下载-0052CC?style=for-the-badge&logo=github"/></a>
-  <a href="#quick-start"><img src="https://img.shields.io/badge/Quick%20Start-Download-0052CC?style=for-the-badge&logo=github"/></a>
-</div>
-
-## Introduction
-
-### 🚀 **An AI desktop companion with endless possibilities!**  
-
-#### Desktop Companion: Supports custom VRM models, actions, 3D scenes, and is compatible with [live2D extensions](https://github.com/heshengtao/sap-live2d)
-![image](doc/image/img-2/cover.jpeg)
-
-#### Link VTS: Control Live2D models in Vtube Studio, supporting custom actions and expression control
-![image](doc/image/img-2/vts.jpeg)
-
-#### Task Center: Enable your AI agents to perform any advanced tasks in the background, automatically control your computer to get work done, supporting MCP and Agent Skills.
-![image](doc/image/img-2/task.jpeg)
-
-#### Computer Control: Through desktop vision combined with a toolchain for controlling the mouse, keyboard, and terminal, AI agents can accomplish any task on a computer! The image below shows an AI playing Wordle.
-![image](doc/image/img-2/vision.jpeg)
-
-#### Multi-Role Group Chat: Supports tavern character cards and long-term memory, allowing you to chat with multiple characters simultaneously!
-![image](doc/image/img-2/group.jpeg)
-
-#### Instant Messaging Bot: Supports one-click deployment to QQ, WeChat, Feishu, DingTalk, Telegram, Discord, Slack
-![image](doc/image/img-2/im.jpeg)
-
-#### Live Streaming Bot: Supports one-click deployment to Bilibili, YouTube, Twitch, and enables 360-degree panoramic live streaming.
-![image](doc/image/img-2/yt.jpeg)
-
-#### AI Browser: Equips your AI agents with their own browser, supporting automatic control
-![image](doc/image/img-2/browser.jpeg)
-
-#### Extension System: Supports installing extensions and creating new ones. The image below shows a galgame extension. All extensions can be opened either in an independent window or in a sidebar.You can even use the agent skill [sap-extension-creator](skills/sap-extension-creator) to create new SAP extensions, achieving the bootstrapping of the agent party!
-![image](doc/image/img-2/ext.jpeg)
-
-#### Developer-Friendly: Offers open OpenAI API interfaces and MCP interfaces, allowing agents to be externally connected
-![image](doc/image/img-2/api.jpeg)
-
-## Quick Start
-
-### 中国用户下载请点击 **中国用户点击下载** 的链接！
-
-### If you are a CLI Agent
-
-CLI Agent needs to check the documentation at [README_AGENT.md](https://raw.githubusercontent.com/heshengtao/super-agent-party/main/README_AGENT.md). Please refer to this document to guide users through installing this software!
-
-### If you are a human using a CLI Agent
-
-Send this link to your AI, and the AI will guide you through installing this software!
-
-```
-https://raw.githubusercontent.com/heshengtao/super-agent-party/main/README_AGENT.md
-```
-
-### Windows portable package (Recommended! Installation-free source version, support one-click synchronization to the latest version of the warehouse, no need to wait for the desktop version to be packaged)
-
-  👉 [Click to download](https://github.com/heshengtao/super-agent-party/releases/download/v0.4.1/super-agent-party-win-v0.4.1.zip)
-
-  👉 [中国用户点击下载](https://modelscope.cn/models/ailm32442/super-agent-party-portable/resolve/master/v0.4.1/super-agent-party-win-v0.4.1.zip)
-
-⭐ Note!  You can double-click `一键更新(update).bat` to update the software, or you can double-click `一键启动(start).bat` to start the software.The operating system must be **Windows 10/11, Windows Server 2025**, or a later version!
-
-### Windows Desktop Installation
-
-  👉 [Click to download](https://github.com/heshengtao/super-agent-party/releases/download/v0.4.1/Super-Agent-Party-Setup-0.4.1.exe)
-
-  👉 [中国用户点击下载](https://modelscope.cn/models/ailm32442/super-agent-party-portable/resolve/master/v0.4.1/Super-Agent-Party-Setup-0.4.1.exe)
-
-⭐ Note! Choose to install only for the current user during installation, otherwise, administrator privileges will be required to start.The operating system must be **Windows 10/11, Windows Server 2025**, or a later version!
-
-### MacOS Integrated Package (Currently only supports M chips, no-install source code version, supports one-click sync to the latest repository version, no need to wait for desktop version packaging)
-> **Suitable for developers/advanced users**: No-install source code version, supports one-click sync to the latest repository version, no need to wait for desktop version packaging.
-
-👉 [International users click to download](https://github.com/heshengtao/super-agent-party/releases/download/v0.4.1/super-agent-party-mac-v0.4.1.zip)  
-
-👉 [中国用户点击下载](https://modelscope.cn/models/ailm32442/super-agent-party-portable/resolve/master/v0.4.1/super-agent-party-mac-v0.4.1.zip)
-
-#### 🚀 Usage Steps
-
-**1. Remove Network Download Quarantine (Important)**
-After downloading and extracting, open Terminal, enter the following command (note there is a space at the end), then drag the **extracted folder** into the Terminal window and press Enter:
-```shell
-sudo xattr -rd com.apple.quarantine 
-```
-*(Note: The `-rd` parameter recursively removes the quarantine attributes for all components within the folder; otherwise, the Python environment may not function properly.)*
-
-**2. Grant Script Execution Permissions**
-Navigate to the folder in Terminal and execute:
-```shell
-chmod +x 一键更新(update).sh 一键启动(start).sh
-```
-
-**3. Run the Software**
-- **First use/Update:** It is recommended to first execute `./一键更新(update).sh` to ensure dependencies are synced to the latest.
-- **Daily startup:** Directly execute `./一键启动(start).sh`.
-
-### MacOS Desktop Installation (Currently only M chips are supported.)
-
-  👉 [Click to download](https://github.com/heshengtao/super-agent-party/releases/download/v0.4.1/Super-Agent-Party-0.4.1-Mac.dmg)
-
-  👉 [中国用户点击下载](https://modelscope.cn/models/ailm32442/super-agent-party-portable/resolve/master/v0.4.1/Super-Agent-Party-0.4.1-Mac.dmg)
-
-⭐Attention! After downloading, drag the app file of the dmg file into the `/Applications` directory, then open end point, execute the following command and enter the root password to remove the attached Quarantine attribute from the network download:
-
-  ```shell
-  sudo xattr -dr com.apple.quarantine /Applications/Super-Agent-Party.app
-  ```
-
-### Linux Desktop Installation
-
-We provide two mainstream Linux installation package formats for your convenience in different scenarios.
-
-#### 1. Install using `.AppImage`
-
-`.AppImage` is a Linux application format that does not require installation and can be used immediately. Suitable for most Linux distributions.
-
-  👉 [Click to download](https://github.com/heshengtao/super-agent-party/releases/download/v0.4.1/Super-Agent-Party-0.4.1-Linux.AppImage)
-
-#### 2. Install using `.deb` package (Suitable for Ubuntu/Debian systems)
-
-  👉 [Click to download](https://github.com/heshengtao/super-agent-party/releases/download/v0.4.1/Super-Agent-Party-0.4.1-Linux.deb)
-
-### Docker Deployment (This version of the desktop pet can only be viewed through a browser)
-
-#### International Users (Docker Hub)
-
-```shell
-docker pull ailm32442/super-agent-party:latest
-docker run -d -p 3456:3456 -v ./super-agent-data:/app/data ailm32442/super-agent-party:latest
-```
-
-#### Chinese Users (Alibaba Cloud ACR, faster pull)
-
-```shell
-docker pull crpi-9mgnqijkd7wc42x2.cn-shenzhen.personal.cr.aliyuncs.com/ailm32442/super-agent-party:latest
-docker run -d -p 3456:3456 -v ./super-agent-data:/app/data crpi-9mgnqijkd7wc42x2.cn-shenzhen.personal.cr.aliyuncs.com/ailm32442/super-agent-party:latest
-```
-
-⭐ Note! `./super-agent-data` can be replaced with any local folder. After Docker starts, all data will be cached in this local folder and will not be uploaded anywhere.
-
-**Out of the box:** Visit http://localhost:3456/
+> **English summary** — A real-time 3D desktop-pet world built as a fork of
+> [super-agent-party](https://github.com/heshengtao/super-agent-party). The upstream project provides
+> the Electron shell and LLM agent backend; this fork adds a ~29k-line 3D world
+> (`static/js/world.js`), two original characters modeled in Blender, and an offline day
+> simulator that keeps the pets living while you are away. Built with three.js under a hard
+> thermal budget on Apple Silicon, with a self-built test/perf/balance harness.
 
 ---
 
-### Docker Compose Deployment (This version of the desktop pet can only be viewed through a browser, and an additional gateway container will be started for login management)
+## 이 포크가 무엇인가
 
-#### International Users (Docker Hub)
+**상류 프로젝트** — [`heshengtao/super-agent-party`](https://github.com/heshengtao/super-agent-party) (AGPL-3.0)
+Electron 셸, LLM 에이전트 백엔드, 데스크톱 펫 창을 제공합니다. 원본 문서는 [README_UPSTREAM.md](README_UPSTREAM.md).
 
-```shell
-git clone https://github.com/heshengtao/super-agent-party.git
-cd super-agent-party
-docker-compose up -d
+**이 포크가 더한 것**
+
+| | |
+|---|---|
+| `static/js/world.js` | **28,687줄 · 전량 신규** — 3D 월드 전체 |
+| `chick_and_puppy_cute.blend` → `*.glb` | 병아리 · 강아지 **직접 모델링** |
+| `scripts/` | 스모크 테스트 · 성능 프로브 · 밸런스 시뮬레이터 |
+| `design/` | 조형 기준 시트(먹기/마시기 단계 일러스트 스펙) |
+| [`PATCHING-GUIDE.md`](PATCHING-GUIDE.md) | 이 프로젝트의 불변식과 검증 루틴 |
+
+포크 이후 205개 파일 · +42,030 / −75,023 (상류의 VRM 파이프라인 등을 걷어낸 순감).
+
+---
+
+## 월드
+
+### 살아있는 환경
+- **사계절** — 봄·여름·가을·겨울. 나무 색이 개체별로 갈리고, 겨울엔 잔디 텍스처가 설원으로 스왑
+- **날씨** — 맑음/흐림/비/눈. 비가 오면 펫이 스스로 집으로 뛰어들어가 앉아 기다리고, 개면 일어남
+  (눈은 예외 — 눈밭 산책은 두니까)
+- **낮과 밤** — 하늘 그라디언트, 해와 달이 호를 그리며 이동, 30초마다 갱신
+- **별자리** — 별을 이어 등록하면 그 별자리가 매일 밤 하늘에 남음 (`config/world_constellations.json`)
+
+### 생활
+- **농사** — 씨앗 → 새싹 → 성장 → 수확. 실시간 성장, 단계당 1회 물주기로 절반 단축
+- **요리** — 재료 계보(잠수채집 / 조개 / 장터 / 찬장) 매칭 → 플레이팅. 매칭 성공 시 정식 레시피 카드로 승격
+- **낚시 · 잠수 채집 · 조개잡이**
+- **페리 배달** — 하루 1주문 · 품목당 3개. 배달 알림은 토스트가 아니라 잔교에 놓인 상자로
+- **발굴** — 조종 중 ⌘ 또는 채팅 `<game=treasure>`. 펫이 아주 가끔 스스로 파기도 함
+
+### 상호작용
+- **펫 조종(빙의)** — 심즈式 패널 조작 / 동숲式 직접 조종 두 층
+- **탈것** — 걷기의 3배 속도, 조수석 탑승
+- **손잡기 · 숨바꼭질** — 창 간 IPC 없이 씬 안에서 안무로 재현
+- **음악** — `static/music/`에 파일을 넣으면 목록에 뜨고 루프 재생
+- **간식 · 음료** — 3D 컵이 발/날개에 parenting되어 몸짓 따라 흔들림. 베어물면 실제로 줄어듦
+
+### 부재일 시뮬레이션 ⭐
+이 프로젝트의 핵심 아이디어입니다.
+
+```
+접속하지 않은 날
+      ↓  데이 시뮬레이터가 날짜 시드로 "추상 하루"를 굴림
+  그날의 사건들
+      ↓  일기 데몬이 펫 시점으로 하루를 기록
+   월드 로그에 편입 (canon)
+      ↓
+다음 접속 시 펫이 아침 인사와 함께 그날 얘기를 꺼냄
 ```
 
-#### Chinese Users (Alibaba Cloud ACR, faster pull)
+펫은 당신이 없던 날에도 살아 있습니다. 하루는 오전 6시에 넘어가서 새벽 일기에도 아침 코멘트가 붙습니다.
 
-```shell
-git clone https://github.com/heshengtao/super-agent-party.git
-cd super-agent-party
-docker-compose -f docker-compose-acr.yml up -d
+---
+
+## 엔지니어링 노트
+
+### 발열 예산 (가장 큰 제약)
+M 시리즈 맥북에서 이 월드를 상시 띄워두려면 GPU 발열이 실질적 상한이었습니다.
+
+- **포스트프로세싱 체인 제거** — GTAO/bloom 컴포저가 프레임당 전체화면 half-float 패스를 ~19회 쌓고 있었음.
+  단일 포워드 패스 + MSAA + 블롭 그림자 + 글로우 스프라이트로 대체
+- **프레임 티어 60 / 30 / 15 fps** — 아무도 안 보고 있으면 15fps로 내려감. 펫 창도 동일
+- **파티클은 셰이더 Points만** (강수·분수·반딧불이). 스프라이트 생성/폐기 금지
+- **오션 파도는 버텍스 셰이더** — CPU는 프레임당 아무것도 쓰지 않음
+- **꺼진 라이트는 `scene.remove`** — `intensity = 0`은 금지 (포워드 셰이더는 라이트 수만큼 전 픽셀 과금)
+- **크로스 프롭 메시 병합** — 재질 인스턴스별로 합쳐 그룹당 몇 개의 메시로. 원본은 `visible=false`로만
+  숨겨서(제거 아님) Raycaster 클릭 판정은 유지
+- **정점 색 베이킹(`bakeGrad`)** — 그라디언트를 재질이 아니라 지오메트리가 들게 해서 1종 1드로우콜
+
+불변식은 [`PATCHING-GUIDE.md` §1](PATCHING-GUIDE.md)에 못박아 두었고, 스모크 테스트가 **`draws ≤ 250`** 을 강제합니다.
+
+### 검증 하네스
+
+```bash
+npm run test:world      # 스모크 10/10 — pageerror 0, draws ≤ 250, 핵심 상태 어서션
+npm run perf:world      # 헤드리스 fps/draws/CPU% — active/parked/ambient/toast 4개 시나리오
+npm run balance:world   # 자율행동 밸런스 몬테카를로
 ```
 
-⭐ Note! The default username is `root`, and the default password is `pass`. Please change the password after the first login.
+**밸런스 시뮬레이터**가 이 중 특이합니다. `world.js`의 여가 결정 로직을 미러링해 가상 하루를
+400회 굴리고 활동별 점유율 표를 냅니다. 리팩터·튜닝의 전후 비교 게이트로 쓰고, 신규 활동이
+점유 10%를 넘으면 의도한 것인지 다시 확인하게 되어 있습니다.
 
-**Out of the box:** Visit http://localhost:3456/
+```bash
+node scripts/balance-sim.mjs --mode both    # 패치 전/후 ±편차 표
+node scripts/balance-sim.mjs --day 2026-08-08   # 부재일 하루를 날짜 시드로 굴려 이벤트 JSON
+```
 
-**API key management:** Visit http://localhost:3456/token.html
+게임 밸런스를 감으로 맞추지 않기 위한 장치입니다.
 
-### Lite client that matches your Docker version, turning Docker into a desktop app
+### 조형 검수 랩
+먹기/마시기 단계는 [`design/`](design/README.md)에 기준 일러스트를 두고,
+월드에 내장된 검수 랩으로 3D 결과를 대조합니다.
 
-👉 [SAP-lite-Windows-exe](https://github.com/heshengtao/desktop-for-sap/releases/download/v0.1.2/super-agent-party-lite-Setup-0.1.2.exe)
+```
+world.html?foodlab=1    음식 9종 × 베어물기 3단계
+world.html?drinklab=1   음료 9종 × 마시기 3단계
+world.html?dishlab=1    수확 요리 8종
+```
 
-👉 [SAP-lite-MacOS-dmg](https://github.com/heshengtao/desktop-for-sap/releases/download/v0.1.2/super-agent-party-lite-0.1.2-Mac.dmg)
+헤드리스 스크린샷 스크립트(`scripts/_*lab-shot.mjs`)로 캡처해 스펙과 나란히 비교합니다.
 
-### Source Code Deployment
+---
 
-  ```shell
-  git clone https://github.com/heshengtao/super-agent-party.git
-  cd super-agent-party
-  uv sync
-  npm install
-  npm run dev
-  ```
+## 실행
 
-## Extension
+```bash
+npm install
+npm run dev        # Electron 개발 실행
+```
 
-Added a brand-new extension system. You can check available plugins at [plugins list](https://super-agent-party.github.io/plugins.html), or directly view and install them in the party under 【Developer】->【Extensions】. You can also add your own developed extensions to the official plugin list at [super-agent-party.github.io](https://github.com/super-agent-party/super-agent-party.github.io)! 
+빌드:
 
-### Existing Extension
+```bash
+npm run build:mac    # 또는 build:win / build:linux
+```
 
-| Name                  | Author            | Description                                                        | Repository URL                                   |
-|-----------------------|-------------------|--------------------------------------------------------------------|--------------------------------------------------|
-| Super Agent Party Example | heshengtao        | Example plugin for Super Agent Party, demonstrating plugin architecture and capabilities. | https://github.com/heshengtao/sap-example        |
-| Super Agent Party Example With NodeJS | heshengtao        | This is a chat frontend example with nodeJS environment | https://github.com/heshengtao/sap-example-with-node        |
-| Web Preview           | heshengtao        | A plugin enabling web previewing functionality for Super Agent Party. | https://github.com/heshengtao/sap-web-preview    |
-| Story Adventure       | heshengtao | An interactive story adventure plugin that generates story content and options using AI. | https://github.com/heshengtao/sap-story-adventure |
-| Live 2D      | heshengtao  | This is a Live 2D extension                   | https://github.com/heshengtao/sap-live2d  |
-| AI Editor      | heshengtao  | This is an AI Editor       | https://github.com/heshengtao/sap-aieditor  |
-| AI galgame      | heshengtao  | This is an AI galgame extension     | https://github.com/heshengtao/sap-aigalgame  |
-| AI tarot reader      | heshengtao  | This is an AI tarot reader extension      | https://github.com/heshengtao/sap-tarot  |
-| AI sheet      | heshengtao  | This is an AI Sheet extension                | https://github.com/heshengtao/sap-ai-sheet  |
-| AI drawio      | heshengtao  | This is an AI drawio extension                 | https://github.com/heshengtao/sap-ai-drawio  |
-| AI mermaid      | heshengtao  | This is an AI mermaid editor extension                  | https://github.com/heshengtao/sap-ai-mermaid  |
-| AI RSS reader      | heshengtao  | This is an AI RSS reader extension for the Super Agent Party      | https://github.com/heshengtao/sap-rss  |
-| Remote      | heshengtao  | One-click expose Super Agent Party to the public internet             | https://github.com/heshengtao/sap-remote  |
-| Code Server      | heshengtao  | IDE extension for Super Agent Party          | https://github.com/heshengtao/sap-code-server  |
-| CLI      | heshengtao  |  CLI extension for Super Agent Party           | https://github.com/heshengtao/sap-cli  |
-| LX-music      | heshengtao  | Connect super agent party to LX Music API, let AI companion control music playback! | https://github.com/heshengtao/sap-lx-music  |
-| AI PPT      | heshengtao  | AI PPT extension for Super Agent Party           | https://github.com/heshengtao/sap-ai-ppt  |
+LLM 백엔드 설정은 상류 문서([README_UPSTREAM.md](README_UPSTREAM.md))를 따릅니다.
 
-## Hardware requirements
+---
 
-- CPU: 2 cores or more
-- Memory: 2GB or more
+## 기술 스택
 
-**Because all models are optional, you can access the local deployment engine, or you can all use the Cloud as a Service provider interface, so there are few hardware requirements. Test the docker version on the 2-core 2G Cloud as a Service server and it will work fine**
+`three.js` · `Electron` · `Python (FastAPI)` · `Blender` · `Playwright(headless)` · `Node.js`
 
-## Usage
+---
 
-- Desktop: Click the desktop icon to use immediately.
+## 라이선스 · 크레딧
 
-- Web or docker: Access http://localhost:3456/ after startup.
+이 저장소는 [`heshengtao/super-agent-party`](https://github.com/heshengtao/super-agent-party)의
+포크이며, 상류와 동일하게 **AGPL-3.0**으로 배포됩니다. 전문은 [LICENSE](LICENSE),
+서드파티 목록은 [`LICENSE-third-party/`](LICENSE-third-party/)를 참조하세요.
 
-- API call: Developer-friendly, perfectly compatible with OpenAI format, can output in real-time, and does not affect the original API's response speed. No need to modify the calling code:
+발소리 음원은 [`static/sounds/steps/LICENSE.txt`](static/sounds/steps/LICENSE.txt)의 조건을 따릅니다.
 
-  ```python
-  from openai import OpenAI
-  client = OpenAI(
-    api_key="super-secret-key",
-    base_url="http://localhost:3456/v1"
-  )
-  response = client.chat.completions.create(
-    model="super-model",
-    messages=[
-        {"role": "user", "content": "What is Super Agent Party?"}
-    ]
-  )
-  print(response.choices[0].message.content)
-  ```
-
-- MCP call: After starting, you can invoke the local MCP service by writing the following content in the configuration file:
-
-  ```json
-  {
-    "mcpServers": {
-      "super-agent-party": {
-        "url": "http://127.0.0.1:3456/mcp",
-      }
-    }
-  }
-  ```
-
-## Features
-
-Please refer to the following document for the main functions:
-  - 👉 [Chinese document](https://gcnij7egmcww.feishu.cn/wiki/DPRKwdetCiYBhPkPpXWcugujnRc)
-  - 👉 [English document](https://temporal-lantern-7e8.notion.site/super-agent-party-211b2b2cb6f180c899d1c27a98c4965d)
-
-| Feature | Details |
-| --- | --- |
-| Supported Model Service Providers | Supports common local deployment engine interfaces and cloud service provider interfaces, such as: openai/ollama/dify, etc. |
-| Multimodal Model Integration | Integrates various types of models including role-playing, reasoning, vision, image generation, speech recognition, and speech synthesis for combined use. |
-| VRM Desktop Pet Robot | Highly customizable with support for custom avatars, custom animations, voice interaction, and dialogue interruption.It can be streamed transparently to screen recording software such as OBS, and supports bidirectional VMC protocol! |
-| Messaging Platform Bots | Currently supports QQ, WeChat, Feishu, Telegram, Discord, Slack, with more platforms to be added later |
-| Live Streaming Bots | Currently supports Bilibili, YouTube, Twitch, with more platforms to be added later |
-| Announcer Bot | Supports long text narration, multi-voice narration, digital human video narration, batch conversion of ultra-long texts to speech (with download capability), and parsing of common ebook formats like EPUB. Chapter-based conversion will be developed later. |
-| Chat Interface | The chat interface supports front-end rendering features such as A2UI, mathematical formulas, mermaid diagrams, and HTML code graphics. Images can be downloaded or copied.Supports capsule mode and assistant mode, making it easy to shrink and dock the conversation interface. Combined with desktop vision and screenshots, it seamlessly integrates into work and entertainment |
-| Role-Playing | Supports uploading, editing, and downloading tavern character cards. Allows configuring different voices and avatars for different characters. Features long-term memory, multi-voice support when using character cards, narrator voice for non-character text, and supports emojis and memes. |
-| Extensive Native Tools | Tool calling supports asynchronous execution, including web search, knowledge base access, smart home control, browser control, code execution in sandbox environments, controlling ComfyUI for image generation, and Claude code operates the file system. |
-| Custom Tool Interfaces | Supports MCP, Skills, A2A, HTTP requests, and any LLM interface as tools for the main agent, enabling users to freely customize their agent's toolchain. |
-| Open External APIs | Developer-friendly with open APIs simulating OpenAI and MCP, as well as desktop pet APIs. |
-| Extension System | You can check out the available plugins in the [Extension List](https://super-agent-party.github.io/plugins.html). You can also view and install plugins directly in Party by navigating to 【Developer】 -> 【Extensions】. You can add your own developed extensions to the official extension list at [super-agent-party.github.io](https://github.com/super-agent-party/super-agent-party.github.io)! |
-| Storage Space | All files and data are stored in the user's local data folder. When deployed with NAS, it can also serve as a personal image or file host within the local network. |
-
-## Disclaimer:
-This open-source project and its content (hereinafter referred to as the "project") are for reference only and do not imply any explicit or implicit warranties. The project contributors do not assume any responsibility for the completeness, accuracy, reliability, or applicability of the project. Any behavior that relies on the project content shall be at the user's own risk. In any case, the project contributors shall not be liable for any indirect, special, or incidental losses or damages arising from the use of the project content.
-
-## Special Note  
-1. Certain features of this open-source project (such as Edge TTS voice synthesis, etc.) rely on public interfaces or experimental functionalities provided by third-party services. These features may become unavailable at any time due to changes in third-party policies. The developer assumes no responsibility for their stability, legality, or continuity.By using this project, users are deemed to have understood and agreed to assume the associated risks. The developer does not recommend or encourage the use of these functions for commercial or large-scale deployment scenarios.
-
-2. The QQ bot utilizes the official QQ bot interface. Please comply with the [AIGC QQ Bot Usage Guidelines](https://q.qq.com/#/news/detail?id=1376238e8e2fbbc036676bb09d2f37da).
-
-3. The browser control functionality provided in this project is an accessibility-assisted browsing interface based on large language models (LLMs). It is designed to help visually impaired individuals, the elderly, or those with mobility challenges operate browsers more conveniently through natural language commands, using AI visual recognition technology. It is not intended for automated crawling or hacking purposes. The project adopts a technical architecture of "LLM visual reasoning → single-step operation." The accessibility-assisted browsing interface has the following characteristics:  
-   a. Non-high-frequency concurrency: Due to reliance on LLM reasoning speed (3–5 seconds per step) and built-in randomized human-like delay algorithms, the tool's operation frequency is strictly lower than the maximum manual speed of a typical human user.  
-   b. No server pressure: This tool does not support multi-threaded concurrency, batch data scraping, or DDoS attacks. From the server's perspective, its behavior is indistinguishable from that of a regular human user and will not impose additional load on the target website's server.
-
-4. Do not use this project on banking, payment gateway, or highly confidential information pages. The developer is not responsible for privacy breaches caused by improper user operations. Prohibited behaviors include large-scale data scraping, bypassing security mechanisms, network interference, and violations of laws and regulations.
-
-5. Any third-party trademarks, logos, or brand names appearing in this project (including but not limited to OpenAI, Microsoft, Google, Bing, Bilibili, etc.) are the property of their respective owners. These identifiers are displayed solely for the convenience of users to recognize the models or services used and do not imply any official affiliation, sponsorship, or endorsement by these rights holders. If the relevant trademark, interface, or brand owner believes that the use of this project is inappropriate or does not wish their brand identifiers/interfaces to be displayed or accessed through this software, please contact the repository administrator via GitHub Issues or hst97@qq.com. We will promptly (usually within 48 hours) remove, delete, or modify the content as requested upon receiving notice.
-
-6. This project is an independently developed open-source tool. When users utilize this software to access third-party API services, they are responsible for complying with the relevant service providers' Terms of Service.
-
-7. Any content generated by this software through third-party large models is the responsibility of the model providers and user actions in terms of accuracy, completeness, and compliance. The author of this software assumes no legal liability for such content.
-
-## License Agreement
-
-This project uses a dual licensing model:
-1. By default, this project follows the **GNU Affero General Public License v3.0 (AGPLv3)** license agreement
-2. If you need to use this project for closed-source commercial purposes, you must obtain a commercial license from the project administrator. Business cooperation: hst97@qq.com
-
-Using this project for closed-source commercial purposes without written authorization is considered a violation of this agreement. The complete text of AGPLv3 can be found in the LICENSE file in the project root directory or at [gnu.org/licenses](https://www.gnu.org/licenses/agpl-3.0.html).
-
-### Third-Party License Notices  
-
-This project may include or depend on certain third-party libraries or components, whose licenses may differ from the main project's license. To comply with the relevant license requirements, you can find the license information for these third-party components in the [LICENSE-third-party](./LICENSE-third-party) folder located in the project's root directory, or within the corresponding component's source code.  
-
-We extend our gratitude to all contributors of the third-party libraries and components and are committed to respecting their license terms.
-
-## Support:
-
-### Please star us!
-⭐Your support is the driving force for us to move forward!
-
-<div align="center">
-  <img src="doc/image/star.gif" width="400" alt="star">
-</div>
-
-### Tips Welcome!
-<div align="center" style="display: flex; gap: 20px; justify-content: center; flex-wrap: wrap;">
-
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/agentparty)
-[![爱发电](https://img.shields.io/badge/爱发电-支持我们-946ce6?style=for-the-badge&logo=affine&logoColor=white)](https://afdian.com/a/agentparty)
-
-</div>
-
-### Follow us
-<div align="center">
-  <a href="https://space.bilibili.com/26978344">
-    <img src="doc/image/B.png" width="100" height="100" style="border-radius: 80%; overflow: hidden;" alt="octocat"/>
-  </a>
-  <a href="https://www.youtube.com/@agentParty">
-    <img src="doc/image/YT.png" width="100" height="100" style="border-radius: 80%; overflow: hidden;" alt="octocat"/>
-  </a>
-</div>
-
-<div align="center">
-  <a href="https://www.youtube.com/watch?v=fIzlQOsuhZE" target="_blank">
-    <img src="https://img.youtube.com/vi/fIzlQOsuhZE/0.jpg" 
-         width="600" 
-         alt="YouTube Video Thumbnail"
-         style="border-radius: 8px; border: 1px solid #eee;">
-  </a>
-</div>
-
-### Join the Community
-If you have any questions or issues with the project, you are welcome to join our community.
-
-1. QQ Group: `931057213`
-
-<div style="display: flex; justify-content: center;">
-    <img src="doc/image/Q群.jpg" style="width: 48%;" />
-</div>
-
-2. WeChat Group: `we_glm` (add the assistant's WeChat and join the group)
-
-3. Discord: [Discord link](https://discord.gg/f2dsAKKr2V)
-
-## Contributors  
-
-<a href="https://github.com/heshengtao/super-agent-party/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=heshengtao/super-agent-party" />
-</a>
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=heshengtao/super-agent-party&type=Date)](https://www.star-history.com/#heshengtao/super-agent-party&Date)
+병아리·강아지 캐릭터(`chick_and_puppy_cute.blend`, `Chick.glb`, `Puppy.glb`)와
+`static/js/world.js`를 비롯한 월드 구현은 이 포크에서 새로 작성한 것입니다.
