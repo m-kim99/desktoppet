@@ -11427,9 +11427,10 @@ async def _world_diary_comment_run(pet: str, date: str):
         sys_parts = [
             eff["persona"],
             eff["lore"],
-            "아침에 일어나 {{user}}가 어젯밤 쓴 일기를 읽고 짧은 댓글을 남긴다. 규칙:\n"
-            "- 내(펫) 목소리 그대로. 한국어 1~2문장, 이모지 0~2개.\n"
-            "- 일기에 적힌 내용에 다정하게 반응한다. 없던 일을 지어내지 않는다.\n"
+            "아침에 일어나 {{user}}가 어젯밤 쓴 일기를 읽고 댓글을 남긴다. 규칙:\n"
+            "- 내(펫) 목소리 그대로. 한국어 2~4문장, 이모지 0~2개.\n"
+            "- 일기의 구체적인 대목을 짚어 다정하게 반응한다. 없던 일을 지어내지 않는다.\n"
+            "- [그날 나의 일기]가 있으면 내가 그날 겪은 일과 자연스럽게 이어도 좋다.\n"
             "- 훈계·요약 금지 — 친구가 다는 댓글처럼.",
         ]
         uname = _world_user_name(current_settings)
@@ -11440,10 +11441,10 @@ async def _world_diary_comment_run(pet: str, date: str):
             model=current_settings["model"],
             messages=[
                 {"role": "system", "content": "\n\n".join(sys_parts).replace("{{user}}", uname)},
-                {"role": "user", "content": ctx.replace("{{user}}", uname) + "\n\n이제 댓글 한마디."},
+                {"role": "user", "content": ctx.replace("{{user}}", uname) + "\n\n이제 댓글을 남기자."},
             ],
             temperature=0.8,
-            max_tokens=160,
+            max_tokens=320,
         )
         ctext = (resp.choices[0].message.content or "").strip()
         if not ctext:
@@ -11451,7 +11452,7 @@ async def _world_diary_comment_run(pet: str, date: str):
     except Exception as e:
         print(f"[world_diary] comment LLM failed: {e}")
         return 502, {"error": str(e)}
-    c = {"pet": pet, "text": ctext[:400], "ts": int(time.time() * 1000)}
+    c = {"pet": pet, "text": ctext[:600], "ts": int(time.time() * 1000)}
     diary = _world_diary_load()   # reload — 다른 펫 댓글이 그새 저장됐을 수 있다
     owner2 = (diary.get(date) or {}).get("owner")
     if not owner2:
