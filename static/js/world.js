@@ -5178,10 +5178,12 @@ function syncLeftoverMesh() {
     const pr = PROPS.find((q) => q.type === 'kitchen');
     if (!pr) return;
     if (kitchenLeftover && !leftoverGrp) {
-        const geo = makeFoodGeo({ id: 'cloche', name: kitchenLeftover.name }, 0);
-        const mesh = new THREE.Mesh(geo, gradMat);
-        mesh.castShadow = true;
+        // 조형 완성 요리는 실물 접시 그대로, 미조형(마음 요리 등)만 클로슈 — 자판기와 같은 관용구.
+        // makeFoodMesh 경유 필수: 광택 파츠(syncShinyParts)·유리컵(주스류)이 팩토리에서 붙는다.
+        const fid = MODELED_DISHES.has(kitchenLeftover.id) ? kitchenLeftover.id : 'cloche';
+        const mesh = makeFoodMesh({ id: fid, name: kitchenLeftover.name });
         leftoverGrp = new THREE.Group();
+        leftoverGrp.userData.dish = fid;   // E2E 훅 노출용
         leftoverGrp.position.set(pr.x, terrainHeight(pr.x, pr.z), pr.z);
         leftoverGrp.rotation.y = pr.rotY || 0;
         mesh.position.set(0.78, 0.475, 0);   // 서빙 선반 — 완성 접시의 지정석
@@ -5201,10 +5203,11 @@ function claimLeftover() {
         : pets.find((q) => q !== possessed && !q.pet.sleeping && !q.bed && !q.dip && !q.food && (q.ai.state === 'idle' || q.ai.state === 'walk'));
     if (!near) { showToast('🍽️ 접시를 받을 펫이 곁에 없어요'); return true; }
     const name = kitchenLeftover.name;
+    const fid = MODELED_DISHES.has(kitchenLeftover.id) ? kitchenLeftover.id : 'cloche';   // 실물 접시로 먹기 — 선반과 동일
     kitchenLeftover = null;
     saveLeftover();
     syncLeftoverMesh();
-    giveFood(near, { id: 'cloche', name }, '조리대에서');
+    giveFood(near, { id: fid, name }, '조리대에서');
     showToast(`🍽️ 부재 중 만들어둔 ${name}!`);
     if (near !== possessed) {
         releaseAI(near);
@@ -5328,11 +5331,12 @@ function updatePlateErrand() {
         if (!aiCookPost || aiCookPost.p !== p) return;
         if (!kitchenLeftover) { aiCookPost = null; if (p.ai.state === 'busy') releaseAI(p, 1); return; }
         const name = kitchenLeftover.name;
+        const fid = MODELED_DISHES.has(kitchenLeftover.id) ? kitchenLeftover.id : 'cloche';   // 실물 접시로 먹기 — 선반과 동일
         kitchenLeftover = null;
         saveLeftover();
         syncLeftoverMesh();
         p.ai.state = 'busy';
-        giveFood(p, { id: 'cloche', name }, '조리대에서');
+        giveFood(p, { id: fid, name }, '조리대에서');
         logWorldEvent(`${petKo(p)}가 조리대에 남겨진 제 몫의 ${name}를 발견했다 💌`);
         maybeProactive(null, `조리대에 내 몫으로 남겨진 ${name}가 있었다! 고마워서 더 맛있다!`);
         aiCookPost = { p, mode: 'eat', t: 0 };
@@ -9670,7 +9674,7 @@ if (statsOn) window.__worldDev = {
     mealCookP: (v) => { MEAL_COOK_P = v; return MEAL_COOK_P; },
     mealReset: (name) => { const p = pets.find((q) => q.name === name); if (!p) return null; p.mealDone = null; return true; },
     mealDoneOf: (name) => { const p = pets.find((q) => q.name === name); return p ? p.mealDone || null : null; },
-    leftover: () => (kitchenLeftover ? { ...kitchenLeftover, mesh: !!leftoverGrp } : null),
+    leftover: () => (kitchenLeftover ? { ...kitchenLeftover, mesh: !!leftoverGrp, dish: leftoverGrp && leftoverGrp.userData.dish } : null),
     plateErrandNow: () => { plateErrandAt = 0; return true; },
     petsOrder: () => pets.map((q) => q.name),
     petFree: (name) => {   // E2E: 펫 하나를 결정적으로 한가하게
