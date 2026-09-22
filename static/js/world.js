@@ -1260,6 +1260,9 @@ const glassMat = new THREE.MeshStandardMaterial({ color: 0xdcecf5, transparent: 
 // scene.environmentIntensity(0.15)가 어두워 envMapIntensity로 보상.
 const gradMatFoil = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.16, metalness: 0.92, envMap: scene.userData.envTex, envMapIntensity: 1.35 });
 const gradMatGloss = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.35, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.15, envMap: scene.userData.envTex, envMapIntensity: 1.0 });
+// 조개껍데기 속면(자개)용 반광 — 매트(0.95)는 스페큘러가 0이라 "딱딱한 것" 단서가 없고,
+// 광택(0.35+clearcoat)은 도자기로 날아간다. 그 사이 0.55 + 약한 환경반사가 자개 대역이다(실측).
+const gradMatShell = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0, envMap: scene.userData.envTex, envMapIntensity: 0.35 });
 // 비치는 음료(아이스티처럼 맑은 것)용 — bakeGrad 정점색 그대로 쓰되 반투명.
 const liquidMat = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.68, roughness: 0.18, metalness: 0, depthWrite: false });
 const liquidSoftMat = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.9, roughness: 0.22, metalness: 0, depthWrite: false });
@@ -10134,6 +10137,23 @@ function pushChatLog(who, text) {
 try {   // 재실행 후 이전 화면 로그 복원
     const arr = JSON.parse(localStorage.getItem(CHAT_LOG_KEY) || '[]');
     for (const m of arr) renderChatRow(m.who, m.text);
+    if (!arr.length) {
+        // 빈 스크롤백(새 기기·주소 변경·저장소 초기화) = 서버 원본에서 하이드레이션. 스크롤백은
+        // origin별 localStorage라 폰 주소 교체(9/17)로 증발했던 실측의 근본 수리 — 기억은 서버가 정본.
+        fetch('/api/world_chat_log').then((r) => (r.ok ? r.json() : null)).then((d) => {
+            if (!d || !Array.isArray(d.log) || !d.log.length) return;
+            try { if (JSON.parse(localStorage.getItem(CHAT_LOG_KEY) || '[]').length) return; } catch (e) {}   // 그새 새 대화가 저장됐으면 양보
+            const rows = [];
+            for (const m of d.log) {
+                const text = String(m.text || '').replace(/<[a-z]+=[^>]*>/gi, '').replace(/[ \t]+/g, ' ').trim();   // 액션 태그 제거
+                if (!text) continue;
+                if (m.role === 'user' && /^\s*\(/.test(text)) continue;   // 선제대화 트리거(괄호 지시문) — 주인이 실제로 친 말이 아니라 화면엔 안 올린다 (라이브 스크롤백과 동일 규칙)
+                rows.push({ who: m.role === 'user' ? '주인' : (m.pet === 'chick' ? '병아리' : '강아지'), text });
+            }
+            for (const m of rows.slice(-CHAT_LOG_CAP)) renderChatRow(m.who, m.text);
+            try { localStorage.setItem(CHAT_LOG_KEY, JSON.stringify(rows.slice(-CHAT_LOG_CAP))); } catch (e) {}
+        }).catch(() => {});
+    }
 } catch (e) {}
 function setChatLog(open) {   // ▲ 채팅바 토글의 단일 진입점 — 삼각형 방향도 여기서 동기
     chatLogPanel.style.display = open ? 'flex' : 'none';
@@ -11924,7 +11944,7 @@ function makeSeafoodMesh(id, scale = 1) {
 const SKEWER_FOODS = new Set(['fishskewer', 'grilledclam', 'marshmallow']);
 const SKEWER_SCALE = 2.6;
 function makeFoodGeo(f, bites = 0) {
-    const b = bites, parts = [], foilParts = [], glossParts = [], clearParts = [];   // foil/gloss/clear = 광택·반투명 자식 메시로 분리될 파트
+    const b = bites, parts = [], foilParts = [], glossParts = [], clearParts = [], shellParts = [];   // foil/gloss/clear/shell = 광택·반투명·반광 자식 메시로 분리될 파트
     const add = (geo, top, bottom, opts) => { parts.push(bakeGrad(geo, top, bottom, opts || { curve: 1.1 })); };
     const addF = (geo, top, bottom, opts) => { foilParts.push(bakeGrad(geo, top, bottom, opts || { curve: 1.1 })); };
     const addB = (geo, top, bottom, opts, c, sph, sharp) => { const g = bakeGrad(geo, top, bottom, opts || { curve: 1.1 }); if (b && sph) fruitBiteDent(g, c, sph, sharp); parts.push(g); };
@@ -13156,7 +13176,9 @@ function makeFoodGeo(f, bites = 0) {
             add(put(lip), raw ? 0x4e6472 : 0x6b3a16, raw ? 0x35464f : 0x3e1f08, { curve: 1 });
         }
         topH = (Y0 + L / 2) * 2;   // 꼬치의 topH = "먹이 중심 × 2" — 입 정렬(mouth − topH/2)이 스틱 중간이 아니라 생선에 맞도록
-    } else if (f.id === 'grilledclam') {   // 🦪🍢 조개구이 — raw=이음선만 보이는 꽉 닫힌 조개 2, cooked=40°만 살짝 벌어짐+초승달 조갯살+육즙, 살 2→1→0
+    // ⚠️⚠️ TEMP A/B — 조개구이 '개선 전' 조형. ?clamab=1 랩이 전/후를 나란히 띄우려고 남겨둔 사본이다.
+    //         승인 후 이 else-if 블록 전체와 아래 CLAM A/B 랩을 함께 지운다(커밋 전 제거).
+    } else if (f.id === 'grilledclam' && f.legacy) {   // 🦪🍢 조개구이 — raw=이음선만 보이는 꽉 닫힌 조개 2, cooked=40°만 살짝 벌어짐+초승달 조갯살+육즙, 살 2→1→0
         const raw = !!f.raw;
         skStick(0.185, !raw);
         // 밸브 = 극좌표 격자 셸(겉면+속면 두 시트 + 마진 테두리 스트립). ⚠️ExtrudeGeometry로는 불가:
@@ -13273,6 +13295,202 @@ function makeFoodGeo(f, bites = 0) {
         else if (b >= 1) { clamAt(0.082, 0.4, 'full'); clamAt(0.132, 3.5, 'empty'); }
         else { clamAt(0.082, 0.4, 'full'); clamAt(0.132, 3.5, 'full'); }
         topH = 0.107 * 2;   // 조개 2개의 중심(0.082·0.132) — 입은 껍데기 사이로 온다
+    // ⚠️⚠️ /TEMP A/B 끝
+    } else if (f.id === 'grilledclam') {   // 🦪🍢 조개구이 — 부채면이 카메라를 본다: raw=닫힌 리브 정면, cooked=경첩에서 활짝 펼친 나비(컵 안 관자), 살 2→1→0
+        const raw = !!f.raw;
+        skStick(0.185, !raw);
+        // 정점 예산 재배분(작업 후 감사): 옛 38×11은 정점 91%를 "매끄러운 돔"에 쓰고 리브·외곽선·두께에는
+        //   거의 쓰지 않았다 — 정점이 많아도 형태 정보가 없으면 저퀄로 읽힌다. v(돔 방향 링)는 형태에
+        //   기여가 거의 없으니 11→7로 줄이고, 그 몫을 u(리브 방향)와 3링 립에 옮긴다.
+        const NU = 50, NV = 7, RIB = 12;
+        // 밸브 = 극좌표 격자 셸. 겉면 시트(매트) + 속면 시트(광택 자식) + 3링 립을 따로 낸다.
+        // ⚠️ExtrudeGeometry로는 불가: 셰이프 삼각분할이 외곽선 정점만 쓰므로 면 내부에 정점이 없어
+        //   리브·성장륜·돔이 아예 렌더되지 않는다(실측 — 껍데기가 웨이퍼로 보인 원인).
+        const valve2 = (R, charK, hideInner) => {
+            const TH = 0.0026, A0 = -1.30, A1 = 1.30;   // 149° — 좁히면(115°) 가리비가 아니라 나뭇잎·꽃잎으로 읽힌다(사용자 리포트)
+            // 외곽 스캘럽 1.2% → 3%. 1.2%는 손에 든 크기(반지름 ≈ 병아리 키의 14%)에서 픽셀 이하라
+            // 실루엣이 매끄러운 원호로 읽혔다 — "껍데기만 저퀄"의 절반이 이것이었다(작업 후 감사).
+            // 리브와 같은 위상이라 능선이 물결 끝에서 끝난다 = 실제 가리비 문법.
+            const outR = (t) => R * (0.90 + 0.10 * Math.cos((A0 + t * (A1 - A0)) * 1.15)) * (1 + 0.030 * Math.sin(t * Math.PI * RIB));
+            // 돔 0.52R — 열린 조개의 속면이 정면이 된 뒤로는 "컵 깊이"가 곧 살을 담는 그릇이라
+            //   얕으면 관자가 접시 위에 얹힌 것처럼 뜬다. TH는 돔 깊이의 30% 선(그 이상이면 통짜).
+            // 리브 기복 3% → 5%(외곽 3%). 칠한 줄무늬(정점색)는 광원에 반응하지 않고 비스듬한 각도에서 사라진다 —
+            //   ⚠️ 대역이 좁다: 3%/1.2%면 픽셀 이하로 사라지고, 8%/4.5%면 옛 주석이 경고한 그대로
+            //   "크림프 파이 껍질"이 된다(양쪽 다 실측). 5%/3%가 그 사이다.
+            //   기하 능선만이 자기 그림자를 만든다. 단 림 근처는 (1−0.8v⁸)로 눌러 닫힘 상태에서
+            //   두 짝의 림이 벌어지지 않게 한다: 크레늘레이션은 위 outR(면내 물결)이 전담.
+            const lift = (t, v) => Math.max(0, Math.sin(Math.pow(v, 0.85) * Math.PI) * R * 0.52
+                + Math.sin(t * Math.PI * RIB) * R * 0.050 * Math.pow(v, 1.4) * (1 - 0.8 * Math.pow(v, 8))
+                + Math.cos(Math.pow(v, 0.8) * 9) * R * 0.008 * Math.min(1, v * 2.2));               // 성장륜 — 리브와 교차해 격자를 만든다
+            const cOutE = new THREE.Color(0xe6cda2), cOutU = new THREE.Color(0x8f6636), cBand = new THREE.Color(0x9d7842);
+            const cInE = new THREE.Color(0xcbb58c), cInU = new THREE.Color(0x98784a), cLip = new THREE.Color(0x8e6837), cScorch = new THREE.Color(0xa8763a), cc = new THREE.Color();
+            const paint = (s2, t, v) => {   // 시트가 두 지오메트리로 갈렸으니 정점색은 한 함수로 모은다
+                if (s2 && hideInner) {   // 닫힘 — 속면도 껍데기 톤(그늘진 밑면). 자개 흰빛이 보이면 벌어진 조개로 읽힌다(실측)
+                    cc.copy(cOutU).lerp(cOutE, Math.pow(v, 0.7) * 0.5);
+                    cc.offsetHSL(0, 0, -0.06 + Math.sin(t * Math.PI * RIB) * 0.03);
+                } else if (s2) {   // 속면 = 자개. 활짝 벌어진 조개에선 이 면이 정면이므로 리브 자국·성장 아치까지(순백이면 구겨진 랩으로 읽힌다 — 실측)
+                    cc.copy(cInU).lerp(cInE, Math.pow(v, 0.85));
+                    cc.offsetHSL(Math.sin(v * 9 + t * 6) * 0.016, 0.03, Math.sin(t * Math.PI * RIB) * 0.13 + Math.cos(Math.pow(v, 0.8) * 9) * 0.048);
+                    if (charK) cc.lerp(cScorch, Math.max(0, v - 0.66) / 0.34 * 0.30 * charK);   // 불에 닿은 테두리만 — 속면 전체를 태우면 탄 요리로 읽힌다
+                } else {   // 겉면 = 리브 명암 × 성장륜 명암 격자
+                    cc.copy(cOutU).lerp(cOutE, Math.pow(v, 0.7));
+                    for (const gw of [0.43, 0.71, 0.857]) if (Math.abs(v - gw) < 0.05) cc.lerp(cBand, 0.72);   // ⚠️ NV를 줄이면 창도 링 간격(1/NV)에 맞춰야 한다 — 좁으면 격자가 정점을 비켜가 아예 사라진다
+                    cc.offsetHSL(0, 0, Math.sin(t * Math.PI * RIB) * 0.075 + Math.cos(Math.pow(v, 0.8) * 9) * 0.055);   // 기하 능선이 8%로 커졌으니 칠한 줄무늬는 줄인다(둘 다 세면 콘트라스트가 이중으로 튄다)
+                    // 그을림은 테두리 링이 아니라 겉면의 부드러운 얼룩 — 테를 검게 칠하면 "탄 톱니"로 읽힌다(실측)
+                    if (charK) cc.lerp(cScorch, Math.min(0.6, Math.max(0, Math.sin(t * Math.PI * 2.2 + 0.7)) * Math.max(0, v - 0.25) / 0.75 * 0.75 * charK));
+                }
+                if (v > 0.71) cc.lerp(cLip, (v - 0.71) / 0.29 * 0.45);   // 립으로 들어가는 그라데이션 — 두께의 절반은 색이다
+                return cc;
+            };
+            const NPT = (NU + 1) * (NV + 1);
+            const mkSheet = (s2) => {
+                const pos = new Float32Array(NPT * 3), col = new Float32Array(NPT * 3), uvs = new Float32Array(NPT * 2);   // ⚠️uv 필수 — 없으면 mergeGeometries가 속성 불일치로 null을 반환해 요리 전체가 소실된다(실측)
+                for (let iu = 0; iu <= NU; iu++) {
+                    const t = iu / NU, a = A0 + t * (A1 - A0), ro = outR(t);
+                    for (let iv = 0; iv <= NV; iv++) {
+                        const v = iv / NV, i = iu * (NV + 1) + iv, k = i * 3;
+                        const rr = ro * v * (s2 ? 1 - 0.07 * Math.pow(v, 10) : 1);   // 속면 림만 살짝 안으로 말기 — 립이 "두꺼운 입술"로 보이게
+                        pos[k] = Math.sin(a) * rr; pos[k + 1] = Math.cos(a) * rr; pos[k + 2] = lift(t, v) - (s2 ? TH : 0);
+                        uvs[i * 2] = t; uvs[i * 2 + 1] = v;
+                        const c = paint(s2, t, v);
+                        col[k] = c.r; col[k + 1] = c.g; col[k + 2] = c.b;
+                    }
+                }
+                const idx = [];
+                for (let iu = 0; iu < NU; iu++) for (let iv = 0; iv < NV; iv++) {
+                    const A = iu * (NV + 1) + iv, B = A + (NV + 1);
+                    if (!s2) idx.push(A, B, A + 1, A + 1, B, B + 1); else idx.push(A, A + 1, B, A + 1, B + 1, B);
+                }
+                return { pos, col, uvs, idx };
+            };
+            const shExt = mkSheet(0), shInn = mkSheet(1);
+            // ── 3링 립: 겉면 림 → 립 정수리(5% 바깥·중간 두께) → 속면 림.
+            // 옛 조형은 두 시트를 한 줄 쿼드로 이어 붙인 '마진 스트립' 하나뿐이었고(주석이 "옆구리는 생략"이라
+            // 자백하고 있었다), 두께가 색으로만 있어 림이 보이는 모든 각도에서 칼날이었다(작업 후 감사).
+            // 정수리 면과 아래 면이 갈리면서 밝은 상단 패싯 + 어두운 하단 패싯이 생겨 "딱딱한 입술"로 읽힌다.
+            const NL = NU + 1, LB = NPT;   // shExt 버퍼 뒤에 붙는다
+            const lpos = new Float32Array(NL * 3 * 3), lcol = new Float32Array(NL * 3 * 3), luv = new Float32Array(NL * 3 * 2);
+            const cCrest = new THREE.Color(0xd9c093), cUnder = new THREE.Color(0x6f4f28);
+            for (let iu = 0; iu <= NU; iu++) {
+                const t = iu / NU, a = A0 + t * (A1 - A0), ro = outR(t), zr = lift(t, 1);
+                const rings = [[ro, zr, cLip], [ro * 1.05, zr - TH * 0.5, cCrest], [ro * 0.93, zr - TH, cUnder]];
+                for (let k2 = 0; k2 < 3; k2++) {
+                    const i = k2 * NL + iu, o = i * 3, rr = rings[k2][0], zz = rings[k2][1], c = rings[k2][2];
+                    lpos[o] = Math.sin(a) * rr; lpos[o + 1] = Math.cos(a) * rr; lpos[o + 2] = zz;
+                    luv[i * 2] = t; luv[i * 2 + 1] = 1;
+                    lcol[o] = c.r; lcol[o + 1] = c.g; lcol[o + 2] = c.b;
+                }
+            }
+            const lidx = [];
+            for (let iu = 0; iu < NU; iu++) for (let k2 = 0; k2 < 2; k2++) {
+                const a0 = LB + k2 * NL + iu, b0 = LB + (k2 + 1) * NL + iu;
+                lidx.push(a0, b0, a0 + 1, a0 + 1, b0, b0 + 1);   // 옛 마진 스트립과 같은 와인딩 규약
+            }
+            const cat = (a, b) => { const r = new Float32Array(a.length + b.length); r.set(a); r.set(b, a.length); return r; };
+            const mk = (pos, col, uvs, idx) => {
+                const g = new THREE.BufferGeometry();
+                g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+                g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+                g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+                g.setIndex(idx);
+                g.computeVertexNormals();
+                return g;
+            };
+            return {
+                ext: mk(cat(shExt.pos, lpos), cat(shExt.col, lcol), cat(shExt.uvs, luv), shExt.idx.concat(lidx)),
+                inn: mk(shInn.pos, shInn.col, shInn.uvs, shInn.idx),
+            };
+        };
+        // 자세 — 실물 조개구이의 관용구를 그대로 옮긴다: **경첩(움보)이 아래, 부채가 위로 벌어지고,
+        //   우리는 사발 안을 비스듬히 내려다본다.** 옛 조형은 부채가 거의 수평(TILT 0.44)이라 월드의
+        //   내려보는 시점(18~35°)에서 늘 edge-on이었다 — 아래짝은 감자칩, 위짝은 구겨진 랩으로 읽혔고
+        //   리브·성장륜·자개 정점색이 전부 안 보이는 면에 칠려 있었다(실측).
+        // ⚠️⚠️ 이매패류 문법: 두 짝은 서로의 거울 반쪽이라 **언제나 같은 방향**을 향하고, 벌어짐은
+        //   오직 경첩선(x축) 회전이다. 부채면 안에서 두 짝을 벌리면(rotateZ) 조개가 아니라 손에 쥔
+        //   부채 두 개가 된다 — 사용자 리포트 "껍데기 각도가 어색, 실제 조개 같지 않다"의 원인이었다.
+        // ⚠️ 부채를 세우면 수직 꼬치가 부채면을 가로지른다. 옆으로 밀어내면 껍데기가 꼬치에서 떠 보이므로,
+        //   조개를 꼬치보다 **앞(+z)** 에 두어 꼬치가 껍데기 뒤로 지나가게 한다 — 잘린 부채를 없애는 배치.
+        // ⚠️ "리브 겉면 정면 + 살 보이기"는 기하학적으로 동시에 불가능(두 짝은 거울). 익은 조개는
+        //   컵의 속면·관자를 정면에 두고, 리브 겉면은 raw(닫힘) 단계가 정면으로 전담한다.
+        const TIP = 0.55;         // 사발을 뒤로 31° 젖힘 — 속면 법선이 게임 부감(≈20°)과 거의 일치한다
+        const LID_OPEN = 2.15;    // 뚜껑짝 젖힘 123° — 경첩 아래로 늘어져 '열린 아래짝'이 된다
+        // FWD 실측: 사발이 뒤로 젖혀지면 관자의 최종 z = (FWD − 0.52)R 이므로, 0.34R로는 살이
+        //   꼬치 뒤로 들어가 스틱이 살을 덮는다. 0.95R이면 조개 전체가 꼬치 앞에 서고 스틱은
+        //   껍데기 뒤로 사라진다 — 대신 경첩과 스틱을 잇는 짧은 대나무 심(꼬치 끝)을 하나 박는다.
+        const FWD = 0.85;         // 꼬치보다 앞으로(×R) — 컵 돔의 최후방점이 스틱 앞면(0.124R)에 딱 닿는 값. 더 붙이면 스틱이 부채 가운데를 가로지른다
+        const clamAt = (yc, yaw, lidOpen, mode) => {
+            const R = 0.021, charK = raw ? 0 : 1, HI = mode === 'closed';
+            const place = (g, openX) => {   // openX = 경첩선 여닫기(조개가 벌어지는 단 하나의 자유도)
+                g.rotateX(-TIP - openX);
+                g.rotateY(yaw);             // 두 조개가 같은 각도로 굳지 않게 살짝만
+                g.translate(0, yc, R * FWD);
+                return g;
+            };
+            // valve2 = 부채 +y · 돔 +z. 짝의 반대쪽은 rotateY(π)로 만든다 — 부채 방향(+y)은 그대로 두고
+            // 돔만 −z로 뒤집는 유일한 순수 회전(rotateX(π)는 부채까지 아래로 뒤집고, 거울 scale은 와인딩이 깨진다).
+            const mkFan = (front) => { const p = valve2(R, charK, HI); if (!front) { p.ext.rotateY(Math.PI); p.inn.rotateY(Math.PI); } return p; };
+            const onCup = (g) => place(g, 0);   // 살·육즙은 컵짝과 똑같이 옮긴다(레몬 교훈)
+            // 겉면·립은 매트, 속면 자개는 광택 자식. 껍데기 전체를 roughness 0.95 매트로 두면 스페큘러가
+            // 0이라 "딱딱한 것"이라는 단서가 하나도 없다 — 자개는 실제로 반광이다(작업 후 감사).
+            // 살(광택)과 같은 재질을 쓰면 자개가 도자기로 날아가므로 gradMatShell(0.55) 전용 대역 — 드로우 +1.
+            const putFan = (p, openX) => { parts.push(place(p.ext, openX)); shellParts.push(place(p.inn, openX)); };
+            putFan(mkFan(false), 0);                        // 컵짝 = 돔 −z → 속면이 정면, 살을 담는다
+            putFan(mkFan(true), HI ? 0 : lidOpen);          // 뚜껑짝 = 경첩선 기준 아래로 젖힘
+            // 경첩 — 직선 인대선. 경첩선이 좌우(x축)이므로 인대도 좌우로 눕는다.
+            // 움보 구슬은 정체 모를 갈색 원으로 읽혔고(사용자 리포트), 이음선 토러스는 철사 고리로 읽혔다(실측) — 둘 다 금지.
+            // 귀(auricle)는 149° 부채가 이미 경첩변을 거의 직선으로 만들어 별도 파트가 필요없다
+            // (반지름을 부풀려 귀를 흉내내면 부채 양끝에 뿔이 솟는다 — 실측).
+            const lg = new RoundedBoxGeometry(R * 0.48, R * 0.15, R * 0.20, 2, R * 0.04);
+            lg.translate(0, -R * 0.02, 0);
+            add(place(lg, 0), 0xd8bd90, 0x9c7746, { curve: 1 });
+            const pin = new THREE.CylinderGeometry(0.0016, 0.0016, R * 0.92, 8);   // 꼬치 끝이 경첩을 관통 — 조개가 스틱 앞에 떠 있지 않게 명시적으로 잇는다
+            pin.rotateX(Math.PI / 2); pin.translate(0, yc, R * 0.42);
+            add(pin, 0xdcb888, 0xa8845c, { curve: 1 });
+            if (mode === 'full') {   // 조갯살 = 관자(원통) + 사발에 고인 육즙
+                // 옛 조형은 깊이 0.0044의 수평 납작 크레센트여서 게임 부감에서 옆구리만 보였다 → 버터·치즈
+                // 한 조각으로 읽혔다(실측). 축이 사발 바닥에서 아가리 쪽(+z)을 향하는 원통 덩어리로 바꾼다.
+                const cy = R * 0.58, MR = R * 0.48, MH = R * 0.36;   // 높이<지름 = 관자 특유의 퍽 형태. cy가 낮으면 뚜껑짝 윗변에 가려 살이 슬릿으로만 보인다(실측)
+                const prof = [[0, 0], [MR * 1.24, 0], [MR * 1.18, MH * 0.16], [MR, MH * 0.34], [MR, MH * 0.80], [MR * 0.92, MH], [MR * 0.52, MH], [0, MH * 0.93]];   // 밑단은 넓은 치마(외투막), 정수리는 평평 — 둥근 돔은 노른자·복숭아로 읽힌다(실측)
+                const scal = new THREE.LatheGeometry(prof.map(([r2, y2]) => new THREE.Vector2(r2, y2)), 18);
+                const sp2 = scal.attributes.position;
+                for (let i = 0; i < sp2.count; i++) {   // 로브 — 매끈한 회전체는 정면에서 완전한 원(=노른자)이 된다. 3·5차 굴곡으로 조갯살 덩어리 실루엣
+                    const x = sp2.getX(i), z = sp2.getZ(i), an = Math.atan2(z, x), k2 = 1 + 0.10 * Math.sin(an * 3 + 0.6) + 0.055 * Math.sin(an * 5 - 1.1);
+                    sp2.setXYZ(i, x * k2, sp2.getY(i), z * k2);
+                }
+                scal.computeVertexNormals();
+                scal.rotateX(-Math.PI / 2); scal.rotateZ(0.22); scal.rotateY(0.18);   // 축을 +z(아가리 쪽)로. 살짝 눕혀 정면 원판을 타원으로
+                scal.translate(0, cy, -R * 0.24);                                     // 사발 위쪽은 얕으니 살도 아가리 쪽으로
+                const mg = bakeGrad(scal, 0xe89a4e, 0xa8541a, { curve: 1.25 });        // ⚠️ 그라디언트는 회전·이동 뒤에 굽는다(bakeGrad는 y축 기준). glossParts는 밝은 주황을 흰 공으로 날린다 — 색을 낮춘다(실측)
+                const mc = mg.attributes.color, mp = mg.attributes.position, mtmp = new THREE.Color();
+                for (let i = 0; i < mc.count; i++) {   // 관자 결 + 불에 닿은 테두리 그림자
+                    const dx = mp.getX(i), dy = mp.getY(i) - cy, rr2 = Math.hypot(dx, dy);
+                    mtmp.setRGB(mc.getX(i), mc.getY(i), mc.getZ(i));
+                    mtmp.offsetHSL(0, 0, Math.sin(Math.atan2(dy, dx) * 13) * 0.075 - Math.max(0, rr2 / MR - 0.72) * 0.42);
+                    mc.setXYZ(i, mtmp.r, mtmp.g, mtmp.b);
+                }
+                glossParts.push(onCup(mg));
+                for (const [ox, oy, sc2] of [[-0.32, -0.14, 1], [0.28, -0.20, 0.78]]) {   // 육즙 — 사발이 위를 향하게 됐으니 고인 방울이 물리적으로 맞다(옛 국물 원반은 "왜 원반?"이 되기 쉬워 뺀다)
+                    const jc = new THREE.SphereGeometry(R * 0.11 * sc2, 7, 5); jc.scale(1.3, 1.1, 0.6);
+                    jc.translate(R * ox, cy + R * oy, -R * 0.24);
+                    clearParts.push(bakeGrad(onCup(jc), 0xf0b877, 0xcf8437, { curve: 1 }));
+                }
+            } else if (mode === 'empty') {   // 발라먹은 자리 — 잔여 살점 + 마른 육즙 자국
+                const cy = R * 0.62;
+                const rs = new THREE.SphereGeometry(R * 0.15, 7, 5); rs.scale(1.3, 0.9, 0.55);
+                rs.translate(R * 0.14, cy + R * 0.08, -R * 0.22);
+                add(onCup(rs), 0xdf9a5c, 0xb0703a, { curve: 1 });
+                const dj = new THREE.CircleGeometry(R * 0.36, 10);
+                dj.translate(0, cy - R * 0.06, -R * 0.28);
+                add(onCup(dj), 0xc9a06a, 0xa8824e, { curve: 1 });
+            }
+        };
+        // 두 조개는 높이와 좌우 요(yaw)로만 다르게 — 옛 head 0.4/3.5rad은 한쪽이 뒤통수(200°)를 보여
+        // 둘이 다른 음식처럼 읽혔다(실측).
+        if (raw) { clamAt(0.072, 0.22, LID_OPEN, 'closed'); clamAt(0.140, -0.26, LID_OPEN, 'closed'); }
+        else if (b >= 2) { clamAt(0.072, 0.22, LID_OPEN, 'empty'); clamAt(0.140, -0.26, LID_OPEN - 0.18, 'empty'); }
+        else if (b >= 1) { clamAt(0.072, 0.22, LID_OPEN, 'full'); clamAt(0.140, -0.26, LID_OPEN - 0.18, 'empty'); }
+        else { clamAt(0.072, 0.22, LID_OPEN, 'full'); clamAt(0.140, -0.26, LID_OPEN - 0.18, 'full'); }
+        topH = 0.105 * 2;   // 조개 2개의 중심(0.068·0.142) — 입은 껍데기 사이로 온다
     } else if (f.id === 'marshmallow') {   // 🍡🍢 마시멜로 — 통통한 원통 3개(틈 3mm): raw=분 묻은 무광, cooked=방향성 토스팅+물집+캐러멜 광택+처짐, 3→2→1
         const raw = !!f.raw;
         const hsh2 = (x, y) => { const t = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return t - Math.floor(t); };
@@ -13401,12 +13619,13 @@ function makeFoodGeo(f, bites = 0) {
     if (foilParts.length) merged.userData.foilGeo = mergeGeometries(foilParts.map((p) => (p.index ? p.toNonIndexed() : p)), false);
     if (glossParts.length) merged.userData.glossGeo = mergeGeometries(glossParts.map((p) => (p.index ? p.toNonIndexed() : p)), false);
     if (clearParts.length) merged.userData.clearGeo = mergeGeometries(clearParts.map((p) => (p.index ? p.toNonIndexed() : p)), false);
+    if (shellParts.length) merged.userData.shellGeo = mergeGeometries(shellParts.map((p) => (p.index ? p.toNonIndexed() : p)), false);
     return merged;
 }
 // 광택 자식 메시 동기화 — makeFoodGeo가 userData에 실어둔 은박/글레이즈 파트를 자식으로 부착/교체/제거.
 // makeFoodMesh 생성·먹기 단계 지오 스왑·랩 훅이 공용으로 쓴다. (과일 지오처럼 userData가 없으면 no-op)
 function syncShinyParts(mesh, geo) {
-    for (const [key, mat] of [['foilGeo', gradMatFoil], ['glossGeo', gradMatGloss], ['clearGeo', liquidMat]]) {
+    for (const [key, mat] of [['foilGeo', gradMatFoil], ['glossGeo', gradMatGloss], ['clearGeo', liquidMat], ['shellGeo', gradMatShell]]) {
         const ch = mesh.children && mesh.children.find((c) => c.userData && c.userData.shinyKey === key);
         const ng = geo && geo.userData ? geo.userData[key] : null;
         if (ng) {
@@ -25375,6 +25594,35 @@ function animate() {
 }
 worldBake();   // 씬이 전부 지어진 뒤 첫 베이크 — 이후엔 공사모드 종료 때마다 재베이크
 renderer.setAnimationLoop(animate);
+// ⚠️⚠️ TEMP CLAM A/B — ?clamab=1: 조개구이 개선 전(위 줄) / 후(아래 줄) × raw·구움·1입·2입.
+//        마우스로 돌려볼 수 있다. 승인 후 이 블록과 makeFoodGeo의 f.legacy 사본을 함께 제거(커밋 전 제거).
+if (location.search.includes('clamab')) {
+    const _cl = new THREE.DirectionalLight(0xffffff, 1.55); _cl.position.set(4, 26, 12); scene.add(_cl);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const ROWS = [{ legacy: true, y: 20.35 }, { legacy: false, y: 19.0 }];   // 스케일 5 × 스틱 0.185 = 0.93 높이 — 행 간격이 그보다 좁으면 두 줄이 겹친다
+    ROWS.forEach((row) => {
+        for (let bt = -1; bt <= 2; bt++) {
+            try {
+                const m = new THREE.Mesh(makeFoodGeo({ id: 'grilledclam', name: 'clam', raw: bt < 0, legacy: row.legacy }, Math.max(0, bt)), gradMat);
+                syncShinyParts(m, m.geometry);
+                m.scale.setScalar(5);
+                m.position.set((bt - 0.5) * 0.95, row.y, 0);
+                scene.add(m);
+            } catch (e) { console.error('clamab', row.legacy, bt, e); }
+        }
+    });
+    scene.background = new THREE.Color(0xeef0ea);
+    controls.minDistance = 0.6;   // 랩은 접사 허용
+    camera.position.set(0.1, 20.62, 3.55);
+    controls.target.set(0.1, 20.10, 0);
+    zoomTargetDist = camera.position.distanceTo(controls.target);   // ⚠️ 휠줌 글라이드가 매 프레임 끌어당긴다 — 동기 필수(망원경 실측)
+    controls.update();
+    const legend = document.createElement('div');
+    legend.style.cssText = 'position:fixed; left:14px; top:14px; z-index:9999; font:13px/1.7 "Apple SD Gothic Neo",system-ui,sans-serif; color:#2b3130; background:rgba(255,255,255,0.82); padding:10px 13px; border-radius:10px; pointer-events:none;';
+    legend.innerHTML = '<b>🦪 조개구이 A/B</b><br>위 줄 = 개선 <b>전</b> · 아래 줄 = 개선 <b>후</b><br>열: raw(굽는 중) · 구움 · 1입 · 2입<br><span style="color:#7a837f">드래그=회전 · 휠=줌</span>';
+    document.body.appendChild(legend);
+    window.__foodlab = { camera, renderer, scene, controls };   // 헤드리스 샷 훅 공용
+}
 // TEMP DISH LAB — ?dishlab: 수확 요리 8종 × 먹기 0/1/2 격자 (검수용, 커밋 전 제거)
 if (location.search.includes('dishlab')) {
     const _l = new THREE.DirectionalLight(0xffffff, 1.55); _l.position.set(4, 26, 12); scene.add(_l);

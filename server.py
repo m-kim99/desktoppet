@@ -11348,6 +11348,24 @@ def _world_diary_store_pet(date: str, pet: str, entry: dict, overwrite: bool = T
     return entry
 
 
+@app.get("/api/world_chat_log")
+async def world_chat_log():
+    """화면 스크롤백 하이드레이션 — 두 펫의 대화 원본(world_chat/*.json, 무손실)에서 최근 턴을
+    시간순으로 합쳐 준다. 스크롤백은 기기별 localStorage라 주소 변경·새 기기에서 비는데(9/22
+    폰 주소 교체로 실측), 원본은 서버가 정본이라 여기서 되살린다. t 없는 초창기 턴은 순서
+    병합이 불가해 제외 — 스크롤백 60줄 밖의 고대사다."""
+    rows = []
+    for pet in WORLD_PERSONAS:
+        store = _world_chat_load(pet)
+        for x in store.get("history") or []:
+            t = x.get("t")
+            if not t:
+                continue
+            rows.append({"pet": pet, "role": x.get("role"), "text": str(x.get("content") or ""), "t": t})
+    rows.sort(key=lambda r: r["t"])
+    return {"log": rows[-60:]}
+
+
 @app.get("/api/world_diary")
 async def world_diary_all():
     return _world_diary_load()
