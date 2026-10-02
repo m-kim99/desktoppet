@@ -11292,12 +11292,68 @@ def _world_diary_save(data: dict):
         print(f"[world_diary] save failed: {e}")
 
 
+# 🎲 일기 형식 룰렛 — 매일 같은 지시문은 같은 골격("아침엔~낮엔~저녁엔~" 시간순 나열)을 낳는다(실측).
+# 날짜+펫 시드 결정론: 소급 작성해도 같은 형식, 실패 재시도에도 형식이 안 흔들린다. quiet(무소재일)엔 미적용.
+WORLD_DIARY_STYLES = [
+    ("free", 45,
+     "오늘 하루를 돌아보는 그림일기. 모든 일을 나열하지 말고 가장 기억에 남는 순간을 중심으로 —"
+     " 시간순 보고서처럼 쓰지 않는다. 한국어 4~6문장, 이모지 1~3개."),
+    ("deep", 15,
+     "오늘 있었던 일 중 딱 하나만 골라 그 순간을 깊이 쓰는 일기. 그때의 기분·소리·풍경 같은"
+     " 디테일을 담고, 다른 일들은 생략하거나 한 줄로만. 한국어 4~6문장, 이모지 1~2개."),
+    ("friend", 12,
+     "절친을 관찰한 일기. 오늘 걔가 뭘 했고 어떤 모습이 웃기거나 멋졌는지 내 시점으로."
+     " 기록에 절친이 없으면 오늘 문득 걔가 떠올랐던 순간을 쓴다. 한국어 3~5문장, 이모지 1~2개."),
+    ("owner", 12,
+     "{{user}}에게 말을 걸듯 쓰는 일기(일기장에 적는 혼잣말이다). '{{user}}, 오늘은~' 같은"
+     " 말투로 오늘 이야기를 들려준다. 한국어 3~5문장, 이모지 1~2개."),
+    ("find", 10,
+     "오늘의 작은 발견 혹은 소소한 불평 하나를 적는 일기. 사소할수록 좋다(구름 모양, 낙과 냄새,"
+     " 그네 삐걱임 같은 것). 한국어 3~5문장, 이모지 1~2개."),
+    ("poem", 6,
+     "오늘 하루를 짧은 동시 네 줄로 쓴다. 쉬운 말, 내(펫) 목소리 그대로. 네 줄 뒤에 한 줄"
+     " 소감을 붙여도 좋다. 이모지 0~2개."),
+]
+
+
+def _world_diary_style(pet: str, date: str):
+    seed = int(hashlib.md5(f"{date}:{pet}:diary-style".encode()).hexdigest()[:8], 16)
+    x = seed % sum(w for _, w, _ in WORLD_DIARY_STYLES)
+    for key, w, rules in WORLD_DIARY_STYLES:
+        x -= w
+        if x < 0:
+            return key, rules
+    return WORLD_DIARY_STYLES[0][0], WORLD_DIARY_STYLES[0][2]
+
+
+def _world_diary_recent_ctx(pet: str, date: str):
+    """어제와 잇기 + 반복 회피 재료 — 어제 본문, 최근 3일의 기분 단어·첫머리. 일기가 수백 개로
+    쌓여도 입력은 이 고정 크기만 쓴다(스케일 무관)."""
+    try:
+        base = time.mktime(time.strptime(date, "%Y-%m-%d"))
+    except Exception:
+        return "", [], []
+    diary = _world_diary_load()
+    day = lambda k: time.strftime("%Y-%m-%d", time.localtime(base - k * 86400))
+    y_text = ((diary.get(day(1)) or {}).get(pet) or {}).get("text", "")
+    moods, openers = [], []
+    for k in range(1, 4):
+        e = (diary.get(day(k)) or {}).get(pet) or {}
+        if e.get("mood"):
+            moods.append(e["mood"])
+        t = (e.get("text") or "").strip()
+        if t:
+            openers.append(t.split("\n")[0][:30])
+    return y_text, moods, openers
+
+
 async def _world_diary_llm_entry(pet: str, date: str, events: str, snapshot: str, quiet: bool = False) -> dict:
     """펫 일기 생성 공용부 — 엔드포인트(월드 창 트리거)와 일기 데몬이 같은 프롬프트를 쓴다.
     quiet=부재일(소재 없음) 모드: 짧고 조용한 일기, 없던 사건을 지어내지 않는다. 실패는 예외로."""
     wc_client, current_settings = await _world_chat_client_and_model()
     store = _world_chat_load(pet)
     eff = _world_persona_for(current_settings, pet)
+    style = ""
     if quiet:
         rules = (
             "오늘 하루를 마무리하며 그림일기를 쓴다. 오늘 {{user}}는 월드에 오지 않았고 적어둔 기록도 없다. 규칙:\n"
@@ -11307,16 +11363,31 @@ async def _world_diary_llm_entry(pet: str, date: str, events: str, snapshot: str
             "- 마지막 줄은 반드시 '기분: <이모지 하나> <한 단어>' 형식으로 끝낸다."
         )
     else:
+        style, style_rules = _world_diary_style(pet, date)
         rules = (
-            "오늘 하루를 마무리하며 그림일기를 쓴다. 규칙:\n"
-            "- 1인칭, 내(펫) 목소리 그대로. 한국어 4~6문장, 이모지 1~3개.\n"
+            "오늘 하루를 마무리하며 그림일기를 쓴다. 오늘의 형식: " + style_rules + "\n"
+            "공통 규칙:\n"
+            "- 1인칭, 내(펫) 목소리 그대로.\n"
             "- 아래 [오늘 있었던 일]에 적힌 사실만 쓴다. 없던 일을 지어내지 않는다.\n"
-            "- 절친이나 {{user}}가 등장했다면 꼭 언급한다.\n"
+            "- 절친이나 {{user}}가 등장했다면 자연스럽게 담는다.\n"
+            "- '{{user}},' 호명으로 일기를 시작하는 건 '말 걸듯' 형식의 날에만 — 오늘이 그 형식이 아니면 다른 말로 시작한다.\n"
             "- 마지막 줄은 반드시 '기분: <이모지 하나> <한 단어>' 형식으로 끝낸다."
         )
     sys_parts = [eff["persona"], eff["lore"], rules]
     if store["summary"]:
         sys_parts.append(f"[{{{{user}}}}와의 기억]\n{store['summary']}")
+    y_text, moods, openers = _world_diary_recent_ctx(pet, date)
+    if y_text:
+        sys_parts.append("[어제 나의 일기]\n" + y_text
+                         + "\n(어제와 자연스럽게 이어져도 좋다 — 아쉬웠던 일의 후일담, 요즘 이어지는 관심사. 억지로 잇지는 말 것.)")
+    if moods or openers:
+        avoid = "[최근 일기에서 이미 쓴 것 — 반복 금지]"
+        if moods:
+            avoid += "\n기분 단어: " + ", ".join(moods)
+        if openers:
+            avoid += "\n첫 문장 시작: " + " / ".join(openers)
+        avoid += "\n(기분 단어와 첫 문장 시작을 위와 다르게.)"
+        sys_parts.append(avoid)
     uname = _world_user_name(current_settings)
     user_text = f"[오늘 날짜] {date}\n\n[오늘의 월드]\n{snapshot}\n\n[오늘 있었던 일]\n{events}\n\n이제 오늘의 일기를 쓰자."
     resp = await wc_client.chat.completions.create(
@@ -11335,7 +11406,10 @@ async def _world_diary_llm_entry(pet: str, date: str, events: str, snapshot: str
     m = re.search(r"기분\s*[:：]\s*(.+)$", text, re.M)
     if m:
         mood = m.group(1).strip()[:24]
-    return {"text": text, "mood": mood, "ts": int(time.time() * 1000)}
+    entry = {"text": text, "mood": mood, "ts": int(time.time() * 1000)}
+    if style:
+        entry["style"] = style   # 형식 룰렛 관측용(패널은 무시) — E2E가 분포를 검증한다
+    return entry
 
 
 def _world_diary_store_pet(date: str, pet: str, entry: dict, overwrite: bool = True) -> dict:
