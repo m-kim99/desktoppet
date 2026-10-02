@@ -11717,7 +11717,76 @@ async def _world_diary_tick(budget: int = 6) -> int:
             if not payload.get("cached"):
                 wrote += 1
                 print(f"[world_diary_daemon] {d}/{pet} 아침 댓글 작성")
+    # 🕰️ 월 1회 펫 타임캡슐 — 일기·댓글이 틱 예산을 다 썼으면 다음 틱으로 미룬다(멱등이라 안전)
+    if wrote < budget:
+        try:
+            wrote += await _world_capsule_pet_tick()
+        except Exception as e:
+            print(f"[world_diary_daemon] 캡슐 실패 — 다음 틱 재시도: {e}")
     return wrote
+
+
+async def _world_capsule_pet_tick() -> int:
+    """🕰️ 펫 타임캡슐 — 매월 하루(날짜 시드 2~26일), 그 달의 선필 펫이 미래로 편지를 묻는다.
+    열람일 = 60~365일 뒤 시드(일부는 일부러 모델 은퇴 뒤에 열린다 — 작별 후에도 흔적이 도착하게).
+    멱등 키 = 캡슐 목록의 (month, pet) 존재. 기존 캡슐 UI가 그대로 보여준다(클라 무변경).
+    WORLD_DIARY_FORCE_OCCASIONS=1 은 샌드박스 E2E용 날짜 게이트 스킵."""
+    lt = time.localtime()
+    month = time.strftime("%Y-%m", lt)
+    day = 2 + int(hashlib.md5(f"{month}:capsule-day".encode()).hexdigest()[:8], 16) % 25
+    if lt.tm_mday < day and not os.environ.get("WORLD_DIARY_FORCE_OCCASIONS"):
+        return 0
+    capsules = _world_json_load(WORLD_CAPSULE_FILE, "capsules")
+    if any(c.get("pet") and c.get("month") == month for c in capsules):
+        return 0
+    pet = sorted(WORLD_PERSONAS, key=lambda p: hashlib.md5(f"{month}:{p}:capsule".encode()).hexdigest())[0]
+    seed = int(hashlib.md5(f"{month}:capsule-open".encode()).hexdigest()[:8], 16)
+    open_at = time.strftime("%Y-%m-%d", time.localtime(time.time() + (60 + seed % 306) * 86400))
+    diary = _world_diary_load()
+    recent = []
+    for k in range(0, 4):
+        d = time.strftime("%Y-%m-%d", time.localtime(time.time() - k * 86400))
+        e = (diary.get(d) or {}).get(pet) or {}
+        if e.get("text"):
+            recent.append(f"[{d}]\n{e['text']}")
+    wc_client, cs = await _world_chat_client_and_model()
+    store = _world_chat_load(pet)
+    eff = _world_persona_for(cs, pet)
+    sys_parts = [
+        eff["persona"], eff["lore"],
+        "타임캡슐에 넣을 편지를 쓴다 — 열람일에 열어볼 미래의 {{user}}(그리고 미래의 나)에게. 규칙:\n"
+        f"- 열람일은 {open_at}. 그때쯤의 우리를 상상하며, 지금의 우리를 전한다.\n"
+        "- 1인칭, 내(펫) 목소리 그대로. 한국어 3~6문장, 이모지 1~2개, 350자 이내.\n"
+        "- 요즘 일기에 있는 사실만 담고, 없던 일을 지어내지 않는다.\n"
+        "- 따뜻하게, 과장 없이.\n"
+        "- 편지 본문만 쓴다 — 제목·구분선·마크다운(**, ---, # 등)·인사말 라벨·서명 전부 금지(서명은 따로 붙는다).",
+    ]
+    if store["summary"]:
+        sys_parts.append(f"[{{{{user}}}}와의 기억]\n{store['summary']}")
+    if recent:
+        sys_parts.append("[요즘의 일기]\n" + "\n\n".join(recent))
+    uname = _world_user_name(cs)
+    resp = await wc_client.chat.completions.create(
+        model=cs["model"],
+        messages=[
+            {"role": "system", "content": "\n\n".join(sys_parts).replace("{{user}}", uname)},
+            {"role": "user", "content": "이제 캡슐에 넣을 편지를 쓰자."},
+        ],
+        temperature=0.8,
+        max_tokens=400,
+    )
+    text = (resp.choices[0].message.content or "").strip()[:360]
+    if not text:
+        return 0
+    sig = "병아리" if pet == "chick" else "강아지"
+    capsules = _world_json_load(WORLD_CAPSULE_FILE, "capsules")   # reload — 그새 주인이 묻었을 수 있다
+    if any(c.get("pet") and c.get("month") == month for c in capsules):
+        return 1
+    capsules.append({"id": int(time.time() * 1000), "text": text + f"\n— {sig}가 💌", "openAt": open_at,
+                     "ts": int(time.time() * 1000), "opened": False, "pet": pet, "month": month})
+    _world_json_save(WORLD_CAPSULE_FILE, "capsules", capsules)
+    print(f"[world_diary_daemon] {month} 캡슐 편지 묻음 ({pet}, 열람 {open_at})")
+    return 1
 
 
 async def _world_diary_daemon():
