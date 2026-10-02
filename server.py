@@ -11665,7 +11665,10 @@ async def _world_diary_tick(budget: int = 6) -> int:
     wrote = 0
     for d in dates:
         diary = _world_diary_load()   # 날짜마다 재로드 — 클라가 그새 썼을 수 있다
-        need = [p for p in WORLD_PERSONAS if not (diary.get(d) or {}).get(p)]
+        # 선필(先筆) 교대 — 고정 순서(chick 먼저)는 실패 위험을 늘 뒤 순번이 짊어지는 비대칭(7/28 실측).
+        # 날짜 시드 결정론: 같은 날짜는 소급·재시도에도 같은 순서. (클라 경로는 원래 부팅마다 랜덤)
+        order = sorted(WORLD_PERSONAS, key=lambda p: hashlib.md5(f"{d}:{p}:diary-order".encode()).hexdigest())
+        need = [p for p in order if not (diary.get(d) or {}).get(p)]
         if not need:
             continue
         # 소재는 날짜당 한 번 — 두 펫이 같은 하루를 산다 (시뮬 이중 호출·펫 간 src 엇갈림 방지)
