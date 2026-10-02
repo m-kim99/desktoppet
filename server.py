@@ -11729,6 +11729,12 @@ async def _world_diary_tick(budget: int = 6) -> int:
             wrote += await _world_book_tick()
         except Exception as e:
             print(f"[world_diary_daemon] 회고록 실패 — 다음 틱 재시도: {e}")
+    # 💌 기념일 카드 — 기념일 아침에 두 펫 공동 명의로 우편함 배달
+    if wrote < budget:
+        try:
+            wrote += await _world_card_tick()
+        except Exception as e:
+            print(f"[world_diary_daemon] 카드 실패 — 다음 틱 재시도: {e}")
     return wrote
 
 
@@ -11859,6 +11865,99 @@ async def _world_book_tick() -> int:
     books.append({"id": int(time.time() * 1000), "month": month, "title": title, "text": text, "ts": int(time.time() * 1000)})
     _world_json_save(WORLD_BOOKS_FILE, "books", books)
     print(f"[world_diary_daemon] {month} 회고록 집필 — 《{title}》")
+    return 1
+
+
+WORLD_DATES_FILE = _world_file("world_dates.json")   # 생일 등 개인 기념일 — 공개 리포 밖(개인 데이터 디렉토리)
+
+
+def _world_card_occasion():
+    """오늘이 기념일이면 (멱등 키, 라벨) — 아니면 None. 함께한 날 기준일 = 첫 일기 날짜."""
+    lt = time.localtime()
+    md = time.strftime("%m-%d", lt)
+    y = lt.tm_year
+    dates = _world_read_json(WORLD_DATES_FILE)
+    bday = str((dates or {}).get("birthday", ""))
+    if bday and md == bday:
+        return f"{y}-birthday", "{{user}}의 생일 🎂"
+    if md == "01-01":
+        return f"{y}-newyear", "새해 첫날"
+    if md == "12-25":
+        return f"{y}-xmas", "크리스마스"
+    season = {"03-01": "봄의 첫날", "06-01": "여름의 첫날", "09-01": "가을의 첫날", "12-01": "겨울의 첫날"}.get(md)
+    if season:
+        return f"{y}-{md}-season", season
+    diary = _world_diary_load()
+    day_keys = sorted(k for k in diary if len(k) == 10)
+    if day_keys:
+        try:
+            anchor = time.mktime(time.strptime(day_keys[0], "%Y-%m-%d"))
+            today0 = time.mktime(time.strptime(time.strftime("%Y-%m-%d", lt), "%Y-%m-%d"))
+            n = int(round((today0 - anchor) / 86400))
+            if n > 0 and n % 100 == 0:
+                return f"days-{n}", f"함께한 지 {n}일"
+        except Exception:
+            pass
+    return None
+
+
+async def _world_card_tick() -> int:
+    """💌 기념일 카드 — 기념일 아침(8시 이후), 두 펫 공동 명의(mailPersona)로 카드를 써서 우편함에
+    배달(2~5분 뒤). 멱등 키 = letters의 occasion. 기념일 = 생일(world_dates.json)·새해·크리스마스·
+    계절 첫날·함께한 100일 단위. WORLD_DIARY_FORCE_OCCASIONS=샌드박스 E2E용 게이트 스킵."""
+    force = os.environ.get("WORLD_DIARY_FORCE_OCCASIONS")
+    lt = time.localtime()
+    if lt.tm_hour < 8 and not force:
+        return 0
+    occ = _world_card_occasion()
+    if not occ and force:
+        occ = (f"{time.strftime('%Y-%m-%d')}-test", "테스트 기념일")
+    if not occ:
+        return 0
+    key, label = occ
+    letters = _world_json_load(WORLD_MAIL_FILE, "letters")
+    if any(l.get("occasion") == key for l in letters):
+        return 0
+    diary = _world_diary_load()
+    recent = []
+    for k in range(1, 3):
+        d = time.strftime("%Y-%m-%d", time.localtime(time.time() - k * 86400))
+        for p in WORLD_PERSONAS:
+            e = (diary.get(d) or {}).get(p) or {}
+            if e.get("text"):
+                recent.append(e["text"])
+    wc_client, cs = await _world_chat_client_and_model()
+    eff = _world_persona_effective(cs)
+    rules = (
+        f"오늘은 {label}. 병아리와 강아지가 함께 {{{{user}}}}에게 보내는 짧은 기념 카드를 쓴다. 규칙:\n"
+        "- 한국어 3~5문장, 이모지 1~3개, 300자 이내. 둘의 목소리가 함께 담기게(서로 한두 번 거들기).\n"
+        "- 이 날의 의미에 맞는 다정한 축하와 인사 — 과장 없이, 우리 월드의 결로.\n"
+        "- 본문만 쓴다 — 제목·구분선·마크다운·서명 금지(서명은 따로 붙는다)."
+    )
+    uname = _world_user_name(cs)
+    sys_parts = [eff["mailPersona"], eff["lore"], rules]
+    if recent:
+        sys_parts.append("[요즘 우리의 일기]\n" + "\n\n".join(recent[:4]))
+    resp = await wc_client.chat.completions.create(
+        model=cs["model"],
+        messages=[
+            {"role": "system", "content": "\n\n".join(sys_parts).replace("{{user}}", uname)},
+            {"role": "user", "content": "이제 카드를 쓰자."},
+        ],
+        temperature=0.8,
+        max_tokens=300,
+    )
+    text = (resp.choices[0].message.content or "").strip()[:320]
+    if not text:
+        return 0
+    letters = _world_json_load(WORLD_MAIL_FILE, "letters")   # reload — 그새 편지가 왔을 수 있다
+    if any(l.get("occasion") == key for l in letters):
+        return 1
+    now_ms = int(time.time() * 1000)
+    letters.append({"id": now_ms, "kind": "card", "occasion": key, "text": text + "\n— 🐥💛🐕", "ts": now_ms,
+                    "deliverAt": now_ms + (120 + int(hashlib.md5(key.encode()).hexdigest()[:4], 16) % 180) * 1000})
+    _world_json_save(WORLD_MAIL_FILE, "letters", letters)
+    print(f"[world_diary_daemon] 기념 카드 발송 — {key}")
     return 1
 
 

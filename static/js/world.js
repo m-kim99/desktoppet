@@ -3294,6 +3294,14 @@ function renderMail() {
         const row = document.createElement('div');
         row.style.cssText = 'line-height:1.55; white-space:pre-wrap;';
         const d = new Date(m.ts);
+        if (m.kind === 'card') {   // 💌 펫들이 먼저 보낸 기념 카드 — 배달 전엔 숨김(서프라이즈)
+            if (m.deliverAt > now) continue;
+            row.textContent = `💌 ${d.getMonth() + 1}.${d.getDate()} 펫들의 카드\n${m.text}`;
+            row.style.background = 'rgba(120,90,50,0.08)';
+            row.style.cssText += 'border-radius:9px; padding:7px 9px;';
+            mailListEl.appendChild(row);
+            continue;
+        }
         let txt = `📤 ${d.getMonth() + 1}.${d.getDate()} 나: ${m.text}`;
         if (m.reply) txt += m.deliverAt <= now ? `\n📥 🐥🐕: ${m.reply}` : '\n🕊️ 답장이 오는 중…';
         row.textContent = txt;
@@ -3312,14 +3320,14 @@ let mailNotified = new Set();
 function updateMailFlag() {
     if (!mailFlag) return;
     const now = Date.now();
-    const has = mailData.some((m) => m.reply && m.deliverAt <= now && m.deliverAt > mailReadTs);
+    const has = mailData.some((m) => (m.reply || m.kind === 'card') && m.deliverAt <= now && m.deliverAt > mailReadTs);
     mailFlag.rotation.z = has ? -0.15 : -1.5;
-    for (const m of mailData) {   // 막 도착한 답장은 한 번 알려준다
-        if (m.reply && m.deliverAt <= now && !mailNotified.has(m.id)) {
+    for (const m of mailData) {   // 막 도착한 답장·카드는 한 번 알려준다
+        if ((m.reply || m.kind === 'card') && m.deliverAt <= now && !mailNotified.has(m.id)) {
             mailNotified.add(m.id);
             if (now - m.deliverAt < 90000) {
-                showToast('📮 우편함에 답장이 왔어요!');
-                logWorldEvent('우편함에 펫들의 답장이 도착했다 📮');
+                showToast(m.kind === 'card' ? '💌 펫들이 카드를 보냈어요!' : '📮 우편함에 답장이 왔어요!');
+                logWorldEvent(m.kind === 'card' ? '펫들이 기념 카드를 보냈다 💌' : '우편함에 펫들의 답장이 도착했다 📮');
             }
         }
     }
@@ -9802,6 +9810,7 @@ if (statsOn) window.__worldDev = {
     diaryOwnerSeed: (d, text, comments) => { (diaryData[d] = diaryData[d] || {}).owner = { text, ts: Date.now(), comments: comments || [] }; return true; },   // 💬 판정 단위검사용 로컬 시드 (서버 무접촉)
     diaryOpen: (d) => { diaryPanel.style.display = 'flex'; diaryPet = 'owner'; diaryDate = d || ownerDiaryDate(); renderDiary(); return diaryDate; },   // ✍️ (E2E — 기본 = 열려 있는 일기 날짜)
     booksOpen: async () => { await openBooks(); return (booksCache || []).length; },   // 📚 서재 (E2E)
+    mailOpen: async () => { openMailbox(); await new Promise((r) => setTimeout(r, 600)); return mailData.length; },   // 📮 우편함 (E2E)
     teleGo: () => { startTeleView(); return !!teleView; },
     plazaGo: () => { const was = possessed ? possessed.name : 'cam'; goPlaza(); return was; },
     teleState: () => teleView ? { i: teleView.vistas.i, n: teleView.vistas.list.length, cam: [+camera.position.x.toFixed(1), +camera.position.y.toFixed(1), +camera.position.z.toFixed(1)] } : null,
