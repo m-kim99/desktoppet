@@ -11841,6 +11841,9 @@ async def _world_book_tick() -> int:
         "- 전체 400~700자, 이모지는 적당히. 제목 외의 장식·마크다운(**, ---, #) 금지.\n"
         "- 서로의 말에 반응하며(티키타카), 마지막은 다음 달에 대한 기대 한마디로 닫는다."
     )
+    prev_titles = [b.get("title", "") for b in books if b.get("title")]
+    if prev_titles:   # 서가의 기존 제목과 닮지 않게 — 7·8월이 둘 다 "여름 끝자락…"으로 시작한 실측
+        rules += "\n- 제목은 기존 책들과 시작·결이 다르게: " + ", ".join(f"《{t}》" for t in prev_titles[-6:])
     uname = _world_user_name(cs)
     resp = await wc_client.chat.completions.create(
         model=cs["model"],
