@@ -11723,6 +11723,12 @@ async def _world_diary_tick(budget: int = 6) -> int:
             wrote += await _world_capsule_pet_tick()
         except Exception as e:
             print(f"[world_diary_daemon] 캡슐 실패 — 다음 틱 재시도: {e}")
+    # 📖 월간 회고록 — 완결된 달의 책이 없으면 오래된 달부터 틱당 1권
+    if wrote < budget:
+        try:
+            wrote += await _world_book_tick()
+        except Exception as e:
+            print(f"[world_diary_daemon] 회고록 실패 — 다음 틱 재시도: {e}")
     return wrote
 
 
@@ -11786,6 +11792,73 @@ async def _world_capsule_pet_tick() -> int:
                      "ts": int(time.time() * 1000), "opened": False, "pet": pet, "month": month})
     _world_json_save(WORLD_CAPSULE_FILE, "capsules", capsules)
     print(f"[world_diary_daemon] {month} 캡슐 편지 묻음 ({pet}, 열람 {open_at})")
+    return 1
+
+
+WORLD_BOOKS_FILE = _world_file("world_books.json")
+
+
+@app.get("/api/world_books")
+async def world_books_all():
+    return {"books": _world_json_load(WORLD_BOOKS_FILE, "books")}
+
+
+async def _world_book_tick() -> int:
+    """📖 월간 회고록 — 완결된 달(일기 ≥5일)의 펫 일기 전체를 입력으로, 병아리·강아지가 번갈아
+    말하는 대담 형식의 작은 책을 집필해 서재(world_books.json)에 소장한다. 오래된 달부터 틱당
+    1권 — 첫 가동 때 과거 달들이 자동 소급된다(사용자 승인). 멱등 키 = month."""
+    diary = _world_diary_load()
+    cur_month = time.strftime("%Y-%m")
+    months = {}
+    for d, entry in diary.items():
+        if len(d) == 10 and d[:7] < cur_month and any(p in entry for p in WORLD_PERSONAS):
+            months.setdefault(d[:7], set()).add(d)
+    books = _world_json_load(WORLD_BOOKS_FILE, "books")
+    have = {b.get("month") for b in books}
+    due = sorted(m for m, days in months.items() if len(days) >= 5 and m not in have)
+    if not due:
+        return 0
+    month = due[0]
+    lines = []
+    for d in sorted(months[month]):
+        for p in WORLD_PERSONAS:
+            e = (diary.get(d) or {}).get(p) or {}
+            if e.get("text"):
+                lines.append(f"[{d[5:]} {'병아리' if p == 'chick' else '강아지'}]\n{e['text']}")
+    wc_client, cs = await _world_chat_client_and_model()
+    eff = _world_persona_effective(cs)
+    rules = (
+        "지난달의 일기들을 함께 돌아보며 작은 책 한 권을 쓴다. 규칙:\n"
+        f"- 다루는 달: {month}. 일기에 있는 사실만 — 그 달의 하이라이트 3~5개를 골라서.\n"
+        "- 형식: 병아리와 강아지가 번갈아 이야기하는 대담. 각 발화는 '병아리:' 또는 '강아지:'로 시작하고 줄을 바꾼다.\n"
+        "- 첫 줄은 책 제목 한 줄 — 《제목》 형태로, 그 달의 정서를 담아서.\n"
+        "- 전체 400~700자, 이모지는 적당히. 제목 외의 장식·마크다운(**, ---, #) 금지.\n"
+        "- 서로의 말에 반응하며(티키타카), 마지막은 다음 달에 대한 기대 한마디로 닫는다."
+    )
+    uname = _world_user_name(cs)
+    resp = await wc_client.chat.completions.create(
+        model=cs["model"],
+        messages=[
+            {"role": "system", "content": "\n\n".join([eff["mailPersona"], eff["lore"], rules]).replace("{{user}}", uname)},
+            {"role": "user", "content": ("[지난달의 일기들]\n" + "\n\n".join(lines) + "\n\n이제 책을 쓰자.").replace("{{user}}", uname)},
+        ],
+        temperature=0.8,
+        max_tokens=1200,
+    )
+    text = (resp.choices[0].message.content or "").strip()
+    if not text:
+        return 0
+    title = f"{int(month[5:7])}월의 이야기"
+    m = re.match(r"^\s*《(.{1,40}?)》\s*\n?", text)
+    if m:
+        title = m.group(1).strip()
+        text = text[m.end():].strip()
+    books = _world_json_load(WORLD_BOOKS_FILE, "books")   # reload-before-merge
+    if any(b.get("month") == month for b in books):
+        return 1
+    books.append({"id": int(time.time() * 1000), "month": month, "title": title, "text": text, "ts": int(time.time() * 1000)})
+    _world_json_save(WORLD_BOOKS_FILE, "books", books)
+    print(f"[world_diary_daemon] {month} 회고록 집필 — 《{title}》")
     return 1
 
 

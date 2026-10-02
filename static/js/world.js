@@ -9801,6 +9801,7 @@ if (statsOn) window.__worldDev = {
     diaryBoundaryProbe: (ms) => localDateStr(new Date(ms - 6 * 3600000)),   // ✍️ 06시 경계 단위검사 (E2E)
     diaryOwnerSeed: (d, text, comments) => { (diaryData[d] = diaryData[d] || {}).owner = { text, ts: Date.now(), comments: comments || [] }; return true; },   // 💬 판정 단위검사용 로컬 시드 (서버 무접촉)
     diaryOpen: (d) => { diaryPanel.style.display = 'flex'; diaryPet = 'owner'; diaryDate = d || ownerDiaryDate(); renderDiary(); return diaryDate; },   // ✍️ (E2E — 기본 = 열려 있는 일기 날짜)
+    booksOpen: async () => { await openBooks(); return (booksCache || []).length; },   // 📚 서재 (E2E)
     teleGo: () => { startTeleView(); return !!teleView; },
     plazaGo: () => { const was = possessed ? possessed.name : 'cam'; goPlaza(); return was; },
     teleState: () => teleView ? { i: teleView.vistas.i, n: teleView.vistas.list.length, cam: [+camera.position.x.toFixed(1), +camera.position.y.toFixed(1), +camera.position.z.toFixed(1)] } : null,
@@ -10600,7 +10601,56 @@ function dockDrawer(emoji, title, children) {
 }
 // 배지(빨간점/초록점)는 전면 제거 — 알림 점은 게임이 숙제를 조르는 문법이라 힐링 톤과 충돌
 // (모드 상태는 버튼 자체의 색/투명도가 이미 말한다: 🔨 주황 배경 · 🌙 반투명).
-const collDrawer = dockDrawer('📖', '컬렉션 — 도감·그림일기', [dexBtn, diaryBtn]);
+// 📚 서재 — 매월 일기 데몬이 집필하는 월간 회고록(두 펫의 대담)을 서가처럼 열람. 양피지 문법(memorialPanel).
+const bookBtn = dockBtn('📚', '서재 — 월간 회고록');
+const bookUI = memorialPanel('📚 우리들의 서재');
+let booksCache = null;
+function renderBookList() {
+    bookUI.body.innerHTML = '';
+    const list = booksCache || [];
+    if (!list.length) {
+        const d = document.createElement('div');
+        d.style.cssText = 'opacity:0.6; padding:6px 2px;';
+        d.textContent = '아직 책이 없어요 — 매월 초, 지난달 이야기가 한 권씩 꽂혀요.';
+        bookUI.body.appendChild(d);
+        return;
+    }
+    for (const b of [...list].sort((a, z) => String(z.month).localeCompare(String(a.month)))) {
+        const row = document.createElement('button');
+        row.style.cssText = 'text-align:left; border:1px solid rgba(120,90,50,0.25); background:#fffdf6; color:#4a3f30; border-radius:9px; padding:8px 10px; cursor:pointer; font-size:12.5px; font-family:sans-serif;';
+        const [y, mo] = String(b.month || '').split('-');
+        row.textContent = `《${b.title}》 — ${y}년 ${+mo}월`;
+        row.onclick = () => renderBookRead(b);
+        bookUI.body.appendChild(row);
+    }
+}
+function renderBookRead(b) {
+    bookUI.body.innerHTML = '';
+    const back = document.createElement('button');
+    back.textContent = '← 서가로';
+    back.style.cssText = 'align-self:flex-start; border:none; background:rgba(120,90,50,0.15); color:#4a3f30; border-radius:7px; font-size:11.5px; padding:4px 9px; cursor:pointer;';
+    back.onclick = renderBookList;
+    const h = document.createElement('div');
+    h.style.cssText = 'font-weight:700; font-size:13px;';
+    const [y, mo] = String(b.month || '').split('-');
+    h.textContent = `《${b.title}》 — ${y}년 ${+mo}월`;
+    const t = document.createElement('div');
+    t.style.cssText = 'white-space:pre-wrap; line-height:1.55;';
+    t.textContent = b.text;
+    bookUI.body.append(back, h, t);
+}
+async function openBooks() {
+    const opening = bookUI.panel.style.display === 'none' || bookUI.panel.style.display === '';
+    bookUI.panel.style.display = opening ? 'flex' : 'none';
+    if (!opening) return;
+    renderBookList();
+    try {
+        const res = await fetch('/api/world_books');
+        if (res.ok) { booksCache = ((await res.json()) || {}).books || []; renderBookList(); }
+    } catch (e) {}
+}
+bookBtn.addEventListener('click', openBooks);
+const collDrawer = dockDrawer('📖', '컬렉션 — 도감·일기·서재', [dexBtn, diaryBtn, bookBtn]);
 const toolDrawer = dockDrawer('⚙️', '도구 — 날씨·공사·절전', [weatherBtn, buildBtn, ecoBtn]);
 const zoomBtns = [...dockUI.children].filter((b) => b.textContent === '＋' || b.textContent === '－');
 for (const el of [shotBtn, chickBtn, puppyBtn, fishBtn, diveBtn, invBtn, collDrawer.row, toolDrawer.row, ...zoomBtns]) dockUI.appendChild(el);   // 상주 순서 재배열 (appendChild = 이동)
