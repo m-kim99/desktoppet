@@ -11875,21 +11875,25 @@ WORLD_DATES_FILE = _world_file("world_dates.json")   # 생일 등 개인 기념�
 
 
 def _world_card_occasion():
-    """오늘이 기념일이면 (멱등 키, 라벨) — 아니면 None. 함께한 날 기준일 = 첫 일기 날짜."""
+    """오늘이 기념일이면 (멱등 키, 라벨, 의미 노트) — 아니면 None. 함께한 날 기준일 = 첫 일기 날짜.
+    생일·사용자 지정 기념일(의미 노트 포함)은 world_dates.json — 개인 데이터라 공개 리포 밖."""
     lt = time.localtime()
     md = time.strftime("%m-%d", lt)
     y = lt.tm_year
     dates = _world_read_json(WORLD_DATES_FILE)
     bday = str((dates or {}).get("birthday", ""))
     if bday and md == bday:
-        return f"{y}-birthday", "{{user}}의 생일 🎂"
+        return f"{y}-birthday", "{{user}}의 생일 🎂", ""
+    for a in (dates or {}).get("anniversaries") or []:
+        if str(a.get("md", "")) == md:
+            return f"{y}-{md}-anniv", str(a.get("label") or "기념일"), str(a.get("note") or "")
     if md == "01-01":
-        return f"{y}-newyear", "새해 첫날"
+        return f"{y}-newyear", "새해 첫날", ""
     if md == "12-25":
-        return f"{y}-xmas", "크리스마스"
+        return f"{y}-xmas", "크리스마스", ""
     season = {"03-01": "봄의 첫날", "06-01": "여름의 첫날", "09-01": "가을의 첫날", "12-01": "겨울의 첫날"}.get(md)
     if season:
-        return f"{y}-{md}-season", season
+        return f"{y}-{md}-season", season, ""
     diary = _world_diary_load()
     day_keys = sorted(k for k in diary if len(k) == 10)
     if day_keys:
@@ -11898,7 +11902,7 @@ def _world_card_occasion():
             today0 = time.mktime(time.strptime(time.strftime("%Y-%m-%d", lt), "%Y-%m-%d"))
             n = int(round((today0 - anchor) / 86400))
             if n > 0 and n % 100 == 0:
-                return f"days-{n}", f"함께한 지 {n}일"
+                return f"days-{n}", f"함께한 지 {n}일", ""
         except Exception:
             pass
     return None
@@ -11914,10 +11918,10 @@ async def _world_card_tick() -> int:
         return 0
     occ = _world_card_occasion()
     if not occ and force:
-        occ = (f"{time.strftime('%Y-%m-%d')}-test", "테스트 기념일")
+        occ = (f"{time.strftime('%Y-%m-%d')}-test", "테스트 기념일", "")
     if not occ:
         return 0
-    key, label = occ
+    key, label, note = occ
     letters = _world_json_load(WORLD_MAIL_FILE, "letters")
     if any(l.get("occasion") == key for l in letters):
         return 0
@@ -11937,6 +11941,8 @@ async def _world_card_tick() -> int:
         "- 이 날의 의미에 맞는 다정한 축하와 인사 — 과장 없이, 우리 월드의 결로.\n"
         "- 본문만 쓴다 — 제목·구분선·마크다운·서명 금지(서명은 따로 붙는다)."
     )
+    if note:
+        rules += f"\n- 이 날의 의미(참고): {note}"
     uname = _world_user_name(cs)
     sys_parts = [eff["mailPersona"], eff["lore"], rules]
     if recent:
