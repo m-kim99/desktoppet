@@ -34,7 +34,7 @@ const savedLayout = await (async () => {
 // 기기 유지: world-eco(성능)·world-layout(전용 API)·world-fruit-*(전용 API)·world-last-seen(기기별 리캡).
 const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked', 'world-pantry', 'world-icebox', 'world-market-used', 'world-recipes-unlocked', 'world-dishes-found', 'world-kitchen-leftover',
     'world-sea-found', 'world-seabed-dug', 'world-islet-dug', 'world-discover', 'world-houselight', 'world-pets',
-    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-space-poi', 'world-moon-dug', 'world-last-seen', 'world-pier-order', 'world-pier-stock', 'world-fishchair-noted'];   // last-seen 공유 = 기기 간 이중 정산 방지 · fishchair-noted = 의자 등장 이벤트 1회 공유
+    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-space-poi', 'world-moon-dug', 'world-last-seen', 'world-pier-order', 'world-pier-stock', 'world-fishchair-noted', 'world-aurora-said', 'world-proactive-recent'];   // last-seen 공유 = 기기 간 이중 정산 방지 · fishchair-noted = 의자 등장 이벤트 1회 공유
 // ⚠️ **부트 루프보다 먼저 선언돼야 한다.** 아래 루프는 서버에 없는 키를 만나면 worldSync(k)를
 // 부르는데, 이 const가 루프 아래에 있으면 TDZ ReferenceError가 나고 **try 전체가 중단**된다.
 // 그러면 그 키 이후의 모든 키가 영영 복원되지 않는다 — world-events·world-diary-auto가 딱
@@ -6723,6 +6723,21 @@ for (const p of PROPS) {
     }
 }
 
+// 🪑 낚시 의자 extras: 강아지가 병아리에게 만들어준 의자를 sit-침대로도 등록 — 조종 중
+// Ctrl/⌘ 앉기(mountBed 표준: 접근·앉기·하차·힌트 공짜)가 생긴다. 밤 수면 선택에선 제외되고
+// (mode 'sit'), 자율 낚시의 의자 착석(_chairSit)과는 occupant 예약으로 상호 배타.
+{
+    const chPr = PROPS.find((q) => q.type === 'fishchair');
+    if (chPr) {
+        const ry = chPr.rotY || 0;
+        BEDS.push({
+            id: 'fishchair', mode: 'sit', occupant: null, sway: 0,
+            lie: { x: chPr.x, z: chPr.z, y: terrainHeight(chPr.x, chPr.z) + 0.15, rotY: ry, tilt: -0.32 },
+            approach: { x: chPr.x + Math.cos(ry) * 0.6, z: chPr.z - Math.sin(ry) * 0.6 },   // 옆에서 다가온다 — 정면은 물가 쪽이라 섬 밖으로 밀릴 수 있다
+        });
+    }
+}
+
 // 🏰 모래성 extras: 성 곁에 sit-스팟 두 자리 — 0번은 삽 들고 모래놀이(파기), 1번은 옆에 앉아
 // 모래성 만지기. 일반 침대 문법(mountBed/bedExit)을 그대로 타서 접근·앉기·하차가 공짜다.
 {
@@ -7754,7 +7769,28 @@ function updateAurora(delta) {
         if (dayFactor(currentHour()) < 0.05 && now > auroraUntil && Math.random() < 0.14) {
             auroraUntil = now + (6 + Math.random() * 5) * 60000;
             logWorldEvent('밤하늘에 오로라가 떴다 🌌');
-            maybeProactive(pets.find((q) => q.name === 'puppy'), '방금 밤하늘에 오로라가 떴다! 초록 커튼이 일렁인다.');
+            // 오로라 멘트는 하루 1회 상한(키는 KV 동기 — 기기 간 공유). 밤에만 접속하는 주인에겐
+            // "매일 같은 오로라 인사"가 됐던 실측 — 하늘의 오로라 자체는 종전처럼 뜬다. cue도
+            // 5종 로테이션(직전 것 회피)으로 같은 사건·다른 말.
+            try {
+                const today = localDateStr();
+                if (localStorage.getItem('world-aurora-said') !== today) {
+                    const cues = [
+                        '방금 밤하늘에 오로라가 떴다! 초록 커튼이 일렁인다.',
+                        '오늘 오로라는 보랏빛이 유난히 짙게 섞여 있다. 넋 놓고 보던 참이다.',
+                        '오랜만에 오로라가 돌아왔다! 지난번보다 커튼이 크게 출렁인다.',
+                        '오로라가 떴다. 호들갑 대신 조용히 같이 보자고 권하고 싶은 밤이다.',
+                        '오로라가 떴다! 병아리도 깨워서 셋이 같이 볼까 고민 중이다.',
+                    ];
+                    let i = Math.floor(Math.random() * cues.length);
+                    if (i === +localStorage.getItem('world-aurora-cue-i')) i = (i + 1) % cues.length;
+                    if (maybeProactive(pets.find((q) => q.name === 'puppy'), cues[i])) {
+                        localStorage.setItem('world-aurora-said', today);
+                        localStorage.setItem('world-aurora-cue-i', String(i));
+                        worldSync('world-aurora-said');
+                    }
+                }
+            } catch (e) {}
         }
     }
     const active = manualWx === 'aurora' || WEATHER_OVERRIDE === 'aurora' || now < auroraUntil;
@@ -9341,7 +9377,7 @@ function describeSpot(x, z) {
     if (idx === 3) return '모험의 섬';
     return '바다';
 }
-const BED_KO = { sunbed: '선베드', hammock: '해먹', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', sofa: '소파', loftbed: '2층 침대' };
+const BED_KO = { sunbed: '선베드', hammock: '해먹', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', sofa: '소파', loftbed: '2층 침대', fishchair: '꼬마 낚시 의자' };
 function petStatusLine(p) {
     const pos = p.mover.position;
     const parts = [`위치: ${describeSpot(pos.x, pos.z)}`];
@@ -9852,6 +9888,18 @@ if (statsOn) window.__worldDev = {
         x: +aiFishing.p.mover.position.x.toFixed(2), z: +aiFishing.p.mover.position.z.toFixed(2), y: +aiFishing.p.mover.position.y.toFixed(3),
         groundY: +world.groundHeightAt(aiFishing.p.mover.position.x, aiFishing.p.mover.position.z).toFixed(3) } : null),
     fishChairEnd: () => { const f = aiFishing; if (!f) return null; endAiFishing(); return { x: +f.p.mover.position.x.toFixed(2), z: +f.p.mover.position.z.toFixed(2) }; },
+    possessGo: (name, x, z) => {   // 🎮 (E2E) 조종 시작 + 선택 위치로 순간이동
+        const p = pets.find((q) => q.name === name);
+        if (!p) return false;
+        if (!possessed) possessPet(p);
+        if (possessed === p && x !== undefined) { p.mover.position.set(x, world.groundHeightAt(x, z), z); }
+        return possessed === p;
+    },
+    chairBedState: () => {   // 🪑 (E2E) 의자 sit-침대 상태
+        const b = FISH_CHAIR && FISH_CHAIR.bed;
+        return b ? { occ: b.occupant ? b.occupant.name : null, phase: b.occupant ? b.occupant.bedPhase || null : null,
+            y: b.occupant ? +b.occupant.mover.position.y.toFixed(3) : null, lieY: +b.lie.y.toFixed(3) } : null;
+    },
     mailOpen: async () => { openMailbox(); await new Promise((r) => setTimeout(r, 600)); return mailData.length; },   // 📮 우편함 (E2E)
     teleGo: () => { startTeleView(); return !!teleView; },
     plazaGo: () => { const was = possessed ? possessed.name : 'cam'; goPlaza(); return was; },
@@ -14487,17 +14535,41 @@ function maybeFriendChime(first, ownerText, firstSpeech) {
 // 백그라운드면 건너뛴다 (호출 비용도 그래서 가볍다). cue는 서버 히스토리에 남아 기억도 된다.
 let lastProactiveAt = 0;
 function maybeProactive(pet, cue) {
-    if (waitingReply || buildMode || !winFocused) return;
-    if (Date.now() - lastProactiveAt < 8 * 60000) return;
+    if (waitingReply || buildMode || !winFocused) return false;
+    if (Date.now() - lastProactiveAt < 8 * 60000) return false;
     const p = pet || pets[Math.floor(Math.random() * pets.length)];
-    if (!p || p.pet.sleeping) return;
+    if (!p || p.pet.sleeping) return false;
     lastProactiveAt = Date.now();
-    requestWorldChat(p, `(주인은 아직 아무 말도 하지 않았다. ${cue} 지금 상황에 맞게 네가 먼저 주인에게 한두 문장으로 말을 걸어라. 어울리면 행동 태그도 붙여라.)`);
+    // 반복 금지: 최근에 먼저 건넨 말 2개를 같이 보내 같은 패턴을 피하게 한다 (일기의 실증 레버 이식 —
+    // 히스토리에 있어도 모델은 반복하니, 명시적 금지가 필요했다. 키는 KV 동기 — 폰·데탑 공유).
+    let avoid = '';
+    try {
+        const rec = JSON.parse(localStorage.getItem('world-proactive-recent') || '[]');
+        if (rec.length) avoid = ` 최근에 네가 먼저 건넸던 말: ${rec.map((s) => `"${s}"`).join(', ')} — 이번엔 똑같은 말이나 비슷한 문장 패턴을 반복하지 마라.`;
+    } catch (e) {}
+    requestWorldChat(p, `(주인은 아직 아무 말도 하지 않았다. ${cue} 지금 상황에 맞게 네가 먼저 주인에게 한두 문장으로 말을 걸어라. 어울리면 행동 태그도 붙여라.${avoid})`).then((speech) => {
+        if (!speech) return;
+        try {
+            const rec = JSON.parse(localStorage.getItem('world-proactive-recent') || '[]');
+            rec.push(speech);
+            localStorage.setItem('world-proactive-recent', JSON.stringify(rec.slice(-2)));
+            worldSync('world-proactive-recent');
+        } catch (e) {}
+    });
+    return true;
 }
-// 오랜만에 돌아오면 반겨준다 — 3시간 이상 비웠다가 열었을 때, 씬·펫이 자리 잡은 뒤 한 번.
+// 오랜만에 돌아오면 반겨준다 — 3시간 이상 비웠다가 열었을 때, 씬·펫이 자리 잡은 뒤. 공백은
+// 모듈 로드 시점에 스냅샷으로 떠둔다: 정산 틱(tickOfflineSettle)이 첫 프레임에 last-seen을
+// '지금'으로 덮어써서, +12초의 지연 읽기로는 공백이 늘 0이었다(정산 기능 이후 복귀 인사가
+// 한 번도 안 울린 진짜 원인 — 밤의 말걸기를 오로라가 독식한 배경, 대화록 실측). 첫 시도가
+// 조용히 죽으면(펫 로딩 전·뽑힌 펫이 수면 중) 20초 간격으로 2회 재시도.
+const bootAwayMs = (() => { try { const v = +localStorage.getItem('world-last-seen') || 0; return v ? Date.now() - v : 0; } catch (e) { return 0; } })();
+function welcomeBack(n) {
+    if (maybeProactive(null, '주인이 오랜만에 월드에 돌아왔다!')) return;
+    if (n < 2) setTimeout(() => welcomeBack(n + 1), 20000);
+}
 setTimeout(() => {
-    const last = +localStorage.getItem('world-last-seen') || 0;
-    if (last && Date.now() - last > 3 * 3600000) maybeProactive(null, '주인이 오랜만에 월드에 돌아왔다!');
+    if (bootAwayMs > 3 * 3600000) welcomeBack(0);
     try { localStorage.setItem('world-last-seen', String(Date.now())); } catch (e) {}
 }, 12000);
 setInterval(() => { try { localStorage.setItem('world-last-seen', String(Date.now())); } catch (e) {} }, 60000);
@@ -24687,6 +24759,7 @@ const FISH_CHAIR = (() => {
     const pr = PROPS.find((q) => q.type === 'fishchair');
     if (!pr) return null;
     return { x: pr.x, z: pr.z, seatY: 0.14,
+             bed: BEDS.find((b) => b.id === 'fishchair') || null,   // sit-침대 등록분 — 자율 착석과 조종 앉기의 상호 배타용
              stand: { x: pr.x + Math.sin(pr.rotY || 0) * 0.22, z: pr.z + Math.cos(pr.rotY || 0) * 0.22 } };
 })();
 if (FISH_CHAIR) try {   // 등장 이벤트 1회 — 오늘 밤 일기의 소재가 된다 (키는 KV 동기 — 기기 간 중복 방지)
@@ -24698,6 +24771,7 @@ if (FISH_CHAIR) try {   // 등장 이벤트 1회 — 오늘 밤 일기의 소재
 } catch (e) {}
 function fishChairStand(f) {   // 의자에서 일어나 원래 선 자리로 — 입질 캐스트·낚시 종료 공용
     if (f && f._chairSit) { f.p.mover.position.x = f._chairSit.bx; f.p.mover.position.z = f._chairSit.bz; }
+    if (f && f._chairSit && FISH_CHAIR && FISH_CHAIR.bed && FISH_CHAIR.bed.occupant === f.p) FISH_CHAIR.bed.occupant = null;   // 예약 반납
     if (f) f._chairSit = undefined;
 }
 function startAiFishing(p) {
@@ -24946,8 +25020,10 @@ function updateFishingInstance(f, delta) {
             //    입질·종료 때 fishChairStand가 원래 자리로 되돌린다(입질 오면 폴짝 일어나는 그림).
             if (f._chairSit === undefined) {
                 f._chairSit = (p.name === 'chick' && FISH_CHAIR
+                    && !(FISH_CHAIR.bed && FISH_CHAIR.bed.occupant)   // 조종 펫이 먼저 앉아 있으면 양보
                     && Math.hypot(m.position.x - FISH_CHAIR.stand.x, m.position.z - FISH_CHAIR.stand.z) < 1.1)
                     ? { bx: m.position.x, bz: m.position.z } : null;
+                if (f._chairSit && FISH_CHAIR.bed) FISH_CHAIR.bed.occupant = p;   // 예약 — 조종 ⌘앉기가 같은 자리에 못 겹치게
             }
             for (const ft of p.pet.feet) ft.rotation.x = (ft.userData._restRotX || 0) - 1.35 * f.sitT;
             if (f._chairSit) {
