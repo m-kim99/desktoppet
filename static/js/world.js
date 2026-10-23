@@ -24705,8 +24705,8 @@ function startAiFishing(p) {
     // 물가 지점: 펫에서 가장 가까운 림 각도부터 좌우로 훑어 통행 가능한 첫 자리 (짧은 산책 + 막힘 최소)
     const a0 = Math.atan2(p.mover.position.z - isl.z, p.mover.position.x - isl.x);
     let sx = null, sz = null;
-    // 병아리는 의자 명당 선호(60%) — 강아지가 만들어준 의자가 실제로 쓰이게 (본섬에 있을 때만)
-    if (p.name === 'chick' && FISH_CHAIR && idx <= 0 && Math.random() < 0.6
+    // 병아리는 의자 명당 선호(10% — 사용자 조정: 가끔의 특별함으로) — 본섬에 있을 때만
+    if (p.name === 'chick' && FISH_CHAIR && idx <= 0 && Math.random() < 0.1
         && !world.isBlocked(FISH_CHAIR.stand.x, FISH_CHAIR.stand.z)) {
         sx = FISH_CHAIR.stand.x; sz = FISH_CHAIR.stand.z;
     }
