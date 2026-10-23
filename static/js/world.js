@@ -31,7 +31,7 @@ const savedLayout = await (async () => {
 // 기기 유지: world-eco(성능)·world-layout(전용 API)·world-fruit-*(전용 API)·world-last-seen(기기별 리캡).
 const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked', 'world-pantry', 'world-icebox', 'world-market-used', 'world-recipes-unlocked', 'world-dishes-found', 'world-kitchen-leftover',
     'world-sea-found', 'world-seabed-dug', 'world-islet-dug', 'world-discover', 'world-houselight', 'world-pets',
-    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-space-poi', 'world-moon-dug', 'world-last-seen', 'world-pier-order', 'world-pier-stock'];   // last-seen 공유 = 기기 간 이중 정산 방지
+    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-space-poi', 'world-moon-dug', 'world-last-seen', 'world-pier-order', 'world-pier-stock', 'world-fishchair-noted'];   // last-seen 공유 = 기기 간 이중 정산 방지 · fishchair-noted = 의자 등장 이벤트 1회 공유
 // ⚠️ **부트 루프보다 먼저 선언돼야 한다.** 아래 루프는 서버에 없는 키를 만나면 worldSync(k)를
 // 부르는데, 이 const가 루프 아래에 있으면 TDZ ReferenceError가 나고 **try 전체가 중단**된다.
 // 그러면 그 키 이후의 모든 키가 영영 복원되지 않는다 — world-events·world-diary-auto가 딱
@@ -6245,6 +6245,7 @@ const HOVER_PROMPTS = {
     gym: () => '🧘 운동 공간 — 매트 클릭 또는 조종 중 ⌘로 스트레칭',
     library: () => '📚 도서관 코너 — 클릭하면 펫이 와서 책을 읽어요',
     fountain: () => '⛲ 분수',
+    fishchair: () => '🪑 강아지가 병아리를 위해 만든 꼬마 낚시 의자',
     flowerbasket: () => (flowerMode ? '🌸 꽃심기 모드 켜짐 — 다시 클릭하면 꺼요' : `🌸 꽃심기 바구니 — 클릭해서 심기 모드 (${flowersData.length}/100)`),
     boat: () => '🚣 노 젓는 보트 — 조종 중 ⌘로 타기 (절친 동승 가능)',
     plane: () => '🛩️ 경비행기 — 조종 중 ⌘로 탑승! 전속력 활주 = 이륙, W/S로 고도 (절친 동승 가능)',
@@ -6253,7 +6254,7 @@ const HOVER_PROMPTS = {
     sandcastle: () => '🏰 모래성 — 클릭하면 펫이 모래놀이 · 조종 중 ⌘ = 직접 앉기',
     palm: () => '🌴 야자수',
 };
-const HOVER_H = { icebox: 0.62, kitchen: 1.5, bonfire: 0.95, pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, scarecrow: 1.5, compost: 0.75, piano: 1.05, photoboard: 1.55, mailbox: 0.75, pierboard: 0.9, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, balloon: 2.1, ferry: 1.3, sandcastle: 0.65, palm: 1.2 };
+const HOVER_H = { icebox: 0.62, kitchen: 1.5, bonfire: 0.95, pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, scarecrow: 1.5, compost: 0.75, piano: 1.05, photoboard: 1.55, mailbox: 0.75, pierboard: 0.9, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, balloon: 2.1, ferry: 1.3, sandcastle: 0.65, palm: 1.2, fishchair: 0.42 };
 const hoverEl = document.createElement('div');
 hoverEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); z-index:88; pointer-events:none; background:rgba(30,32,40,0.88); color:#fff; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
 document.body.appendChild(hoverEl);
@@ -6394,7 +6395,34 @@ function makePierBoard() {
     g.add(p2);
     return g;
 }
-const PROP_BUILDERS = { icebox: makeIcebox, kitchen: makeKitchen, bonfire: makeBonfire, tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, scarecrow: makeScarecrow, compost: makeCompost, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, trampoline: makeTrampoline, vine: makeVine, fruitbasket: makeFruitBasket, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket, palm: makePalm, sandcastle: makeSandcastle, pierboard: makePierBoard };
+function makeFishChair() {
+    // 🪑 병아리의 꼬마 낚시 의자 — 강아지가 아침 댓글(2026-10-16)로 남긴 소원("공주님이 낚시할 때
+    // 앉을 수 있는 작은 의자")의 실현. 나무 스툴 + 낮은 등받이 + 노란 방석(병아리 전용의 표시).
+    // 정적 병합(MERGE_TYPES) 동승 — 추가 드로우 0. 등받이는 -z(물을 등지는 쪽), 앞(+z)이 바다.
+    const g = new THREE.Group();
+    const W = [0xb98d5f, 0x8a6240];
+    for (const [lx, lz] of [[-0.085, -0.07], [0.085, -0.07], [-0.085, 0.07], [0.085, 0.07]]) {
+        const leg = GM(new THREE.CylinderGeometry(0.015, 0.019, 0.12, 6), W[0], W[1]);
+        leg.position.set(lx, 0.06, lz);
+        g.add(leg);
+    }
+    const seat = GM(new RoundedBoxGeometry(0.24, 0.034, 0.2, 2, 0.012), W[0], W[1]);
+    seat.position.y = 0.135;
+    const cush = GM(new RoundedBoxGeometry(0.19, 0.026, 0.15, 2, 0.012), 0xf6d35f, 0xd9a93f);
+    cush.position.y = 0.164;
+    g.add(seat, cush);
+    for (const lx of [-0.082, 0.082]) {
+        const post = GM(new THREE.CylinderGeometry(0.013, 0.015, 0.17, 6), W[0], W[1]);
+        post.position.set(lx, 0.225, -0.086);
+        g.add(post);
+    }
+    const slat = GM(new RoundedBoxGeometry(0.215, 0.066, 0.02, 2, 0.009), W[0], W[1]);
+    slat.position.set(0, 0.285, -0.086);
+    slat.rotation.x = -0.1;
+    g.add(slat);
+    return g;
+}
+const PROP_BUILDERS = { fishchair: makeFishChair, icebox: makeIcebox, kitchen: makeKitchen, bonfire: makeBonfire, tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, scarecrow: makeScarecrow, compost: makeCompost, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, trampoline: makeTrampoline, vine: makeVine, fruitbasket: makeFruitBasket, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket, palm: makePalm, sandcastle: makeSandcastle, pierboard: makePierBoard };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -6506,7 +6534,7 @@ function unbakePropBeds(p) {
 //  · Mesh가 아닌 것(라이트·스프라이트·Points)과 visible=false(숨김 토글류)는 그냥 둔다
 const MERGE_TYPES = new Set(['house', 'bowl', 'fence', 'pond', 'sunbed', 'hammock', 'lamp', 'radio',
     'coffee', 'food', 'monument', 'pecktree', 'well', 'capsule', 'boulder', 'cave', 'lookout',
-    'garden', 'scarecrow', 'compost', 'piano', 'mailbox', 'gym', 'library', 'fountain', 'flowerbasket', 'swing', 'seesaw', 'palm', 'sandcastle', 'icebox', 'kitchen', 'pierboard']);
+    'garden', 'scarecrow', 'compost', 'piano', 'mailbox', 'gym', 'library', 'fountain', 'flowerbasket', 'swing', 'seesaw', 'palm', 'sandcastle', 'icebox', 'kitchen', 'pierboard', 'fishchair']);
 function mergePropGroup(root) {
     const skip = new Set(seasonSnowCaps);
     if (mailFlag) mailFlag.traverse((o) => skip.add(o));
@@ -9289,7 +9317,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', scarecrow: '허수아비', compost: '퇴비함', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', pierboard: '주문 게시판', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호' };
+const PROP_KO = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', scarecrow: '허수아비', compost: '퇴비함', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', pierboard: '주문 게시판', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호', fishchair: '꼬마 낚시 의자' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -9810,6 +9838,17 @@ if (statsOn) window.__worldDev = {
     diaryOwnerSeed: (d, text, comments) => { (diaryData[d] = diaryData[d] || {}).owner = { text, ts: Date.now(), comments: comments || [] }; return true; },   // 💬 판정 단위검사용 로컬 시드 (서버 무접촉)
     diaryOpen: (d) => { diaryPanel.style.display = 'flex'; diaryPet = 'owner'; diaryDate = d || ownerDiaryDate(); renderDiary(); return diaryDate; },   // ✍️ (E2E — 기본 = 열려 있는 일기 날짜)
     booksOpen: async () => { await openBooks(); return (booksCache || []).length; },   // 📚 서재 (E2E)
+    fishChairGo: () => {   // 🪑 (E2E) 병아리를 의자 명당에 세우고 AI 낚시 시작
+        const chick = pets.find((q) => q.name === 'chick');
+        if (!chick || !FISH_CHAIR) return null;
+        chick.mover.position.set(FISH_CHAIR.stand.x, world.groundHeightAt(FISH_CHAIR.stand.x, FISH_CHAIR.stand.z), FISH_CHAIR.stand.z);
+        return startAiFishing(chick);
+    },
+    fishChairBore: () => { if (aiFishing) { aiFishing.boredT = 25; return true; } return false; },   // 🪑 (E2E) 지루함 주입 → 앉기 유도
+    fishChairState: () => (aiFishing ? { state: aiFishing.state, sitT: +aiFishing.sitT.toFixed(2), chair: !!aiFishing._chairSit,
+        x: +aiFishing.p.mover.position.x.toFixed(2), z: +aiFishing.p.mover.position.z.toFixed(2), y: +aiFishing.p.mover.position.y.toFixed(3),
+        groundY: +world.groundHeightAt(aiFishing.p.mover.position.x, aiFishing.p.mover.position.z).toFixed(3) } : null),
+    fishChairEnd: () => { const f = aiFishing; if (!f) return null; endAiFishing(); return { x: +f.p.mover.position.x.toFixed(2), z: +f.p.mover.position.z.toFixed(2) }; },
     mailOpen: async () => { openMailbox(); await new Promise((r) => setTimeout(r, 600)); return mailData.length; },   // 📮 우편함 (E2E)
     teleGo: () => { startTeleView(); return !!teleView; },
     plazaGo: () => { const was = possessed ? possessed.name : 'cam'; goPlaza(); return was; },
@@ -24582,6 +24621,7 @@ function equipFishing() {
 }
 function unequipFishing() {
     if (!fishing) return;
+    fishChairStand(fishing);   // 🪑 의자에서 일어나기
     if (fishing.p && fishing.p.pet && fishing.p.pet.setExclaim) fishing.p.pet.setExclaim(false);
     hideGear(fishing);   // 리그는 캐시 — 씬에서 빼지 않고 숨긴다 (재장비 시 재생성 없음)
     if (fishing.fishMesh) { scene.remove(fishing.fishMesh); disposeTempMesh(fishing.fishMesh); }
@@ -24638,6 +24678,25 @@ function aiAfterRound(f) {
     f.castsLeft -= 1;
     if (f.castsLeft <= 0) endAiFishing();   // 남았으면 idle에서 1.2초 숨 고르고 다시 던진다
 }
+// 🪑 병아리의 낚시 의자 — 강아지의 아침 댓글 소원(2026-10-16) 실현. 레이아웃의 fishchair 프롭에서
+// 좌석·서는 자리를 셈한다. stand = 의자 앞 0.22m(물 쪽), seatY = 방석 높이.
+const FISH_CHAIR = (() => {
+    const pr = PROPS.find((q) => q.type === 'fishchair');
+    if (!pr) return null;
+    return { x: pr.x, z: pr.z, seatY: 0.14,
+             stand: { x: pr.x + Math.sin(pr.rotY || 0) * 0.22, z: pr.z + Math.cos(pr.rotY || 0) * 0.22 } };
+})();
+if (FISH_CHAIR) try {   // 등장 이벤트 1회 — 오늘 밤 일기의 소재가 된다 (키는 KV 동기 — 기기 간 중복 방지)
+    if (!localStorage.getItem('world-fishchair-noted')) {
+        logWorldEvent('강아지가 병아리를 위해 부둣가에 작은 낚시 의자를 만들어뒀다 🪑💛');
+        localStorage.setItem('world-fishchair-noted', '1');
+        worldSync('world-fishchair-noted');
+    }
+} catch (e) {}
+function fishChairStand(f) {   // 의자에서 일어나 원래 선 자리로 — 입질 캐스트·낚시 종료 공용
+    if (f && f._chairSit) { f.p.mover.position.x = f._chairSit.bx; f.p.mover.position.z = f._chairSit.bz; }
+    if (f) f._chairSit = undefined;
+}
 function startAiFishing(p) {
     if (aiFishing || (fishing && fishing.p === p)) return false;
     if (p === possessed || p.bed || p.dip || p.pet.sleeping) return false;   // 자거나 놀이 중이면 다음 기회에
@@ -24646,7 +24705,12 @@ function startAiFishing(p) {
     // 물가 지점: 펫에서 가장 가까운 림 각도부터 좌우로 훑어 통행 가능한 첫 자리 (짧은 산책 + 막힘 최소)
     const a0 = Math.atan2(p.mover.position.z - isl.z, p.mover.position.x - isl.x);
     let sx = null, sz = null;
-    for (let i = 0; i < 24; i++) {
+    // 병아리는 의자 명당 선호(60%) — 강아지가 만들어준 의자가 실제로 쓰이게 (본섬에 있을 때만)
+    if (p.name === 'chick' && FISH_CHAIR && idx <= 0 && Math.random() < 0.6
+        && !world.isBlocked(FISH_CHAIR.stand.x, FISH_CHAIR.stand.z)) {
+        sx = FISH_CHAIR.stand.x; sz = FISH_CHAIR.stand.z;
+    }
+    if (sx === null) for (let i = 0; i < 24; i++) {
         const a = a0 + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * (Math.PI / 12);
         const x = isl.x + Math.cos(a) * (isl.r - 0.55), z = isl.z + Math.sin(a) * (isl.r - 0.55);
         if (!world.isBlocked(x, z)) { sx = x; sz = z; break; }
@@ -24676,6 +24740,7 @@ function startAiFishing(p) {
 function endAiFishing() {
     if (!aiFishing) return;
     const f = aiFishing, p = f.p;
+    fishChairStand(f);   // 🪑 의자에서 일어나기
     if (f.fishMesh) { scene.remove(f.fishMesh); disposeTempMesh(f.fishMesh); f.fishMesh = null; }
     hideGear(f);
     p.mover.position.y = world.groundHeightAt(p.mover.position.x, p.mover.position.z);   // 잔여 부양 정리 (endDip 문법)
@@ -24690,6 +24755,7 @@ function startCast(f, target) {
     f.state = 'cast';
     f.t = 0;
     f.target = target;
+    fishChairStand(f);   // 🪑 의자에 앉아 있었다면 폴짝 일어나 원래 자리에서 캐스팅
     f.boredT = 0; f.sitT = 0; f.dip = 0; f.droop = 0;
     f.shown = false; f.bobberFlying = false;
     f.shadow.visible = false;
@@ -24873,8 +24939,21 @@ function updateFishingInstance(f, delta) {
         rodPitch = 0.75;
         if (f.boredT > 20) f.sitT = Math.min(1, f.sitT + delta * 2);   // 스르륵 앉는다
         if (f.sitT > 0) {
+            // 🪑 병아리 + 의자 곁(1.1m)이면 바닥 대신 강아지가 만들어준 의자에 앉는다.
+            //    입질·종료 때 fishChairStand가 원래 자리로 되돌린다(입질 오면 폴짝 일어나는 그림).
+            if (f._chairSit === undefined) {
+                f._chairSit = (p.name === 'chick' && FISH_CHAIR
+                    && Math.hypot(m.position.x - FISH_CHAIR.stand.x, m.position.z - FISH_CHAIR.stand.z) < 1.1)
+                    ? { bx: m.position.x, bz: m.position.z } : null;
+            }
             for (const ft of p.pet.feet) ft.rotation.x = (ft.userData._restRotX || 0) - 1.35 * f.sitT;
-            m.position.y = playerSupportY(p, m.position.x, m.position.z).y - 0.06 * f.sitT;
+            if (f._chairSit) {
+                m.position.x = THREE.MathUtils.lerp(f._chairSit.bx, FISH_CHAIR.x, f.sitT * 0.85);
+                m.position.z = THREE.MathUtils.lerp(f._chairSit.bz, FISH_CHAIR.z, f.sitT * 0.85);
+                m.position.y = playerSupportY(p, m.position.x, m.position.z).y + FISH_CHAIR.seatY * f.sitT;
+            } else {
+                m.position.y = playerSupportY(p, m.position.x, m.position.z).y - 0.06 * f.sitT;
+            }
             leanX = 0.12 - 0.1 * f.sitT;
         }
         // 지루함: 갸웃(6s 주기) · 하품(12s 주기, 부리)
