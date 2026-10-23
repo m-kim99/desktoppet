@@ -65,7 +65,7 @@ try {   // 부트 1회 — 서버 값이 로컬을 덮는다 (아래 모든 리�
     }
 } catch (e) { /* 백엔드 없는 정적 서빙 — 로컬 캐시로 진행 */ }
 // 이동 가능한 타입 (연못=지형 함몰이라 고정, furniture=집 내부 파생이라 집을 따라감)
-const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'scarecrow', 'compost', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'vine', 'fruitbasket', 'library', 'flowerbasket', 'pond', 'portal', 'icebox', 'kitchen', 'bonfire', 'pierboard']);
+const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'scarecrow', 'compost', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'vine', 'melonpatch', 'fruitbasket', 'library', 'flowerbasket', 'pond', 'portal', 'icebox', 'kitchen', 'bonfire', 'pierboard']);
 // 섬 정의 지문 — 섬을 옮기거나 크기를 바꾸면 값이 달라진다(재발 방지: 저장 배치의 "섬 이사" 자동 감지).
 // 'v2|' 접두 = 배치 리뉴얼 세대: 섬 기하가 그대로여도 접두를 올리면 위성섬 소품이 전부 새 기본값으로
 // 리셋된다. 좌표 테이블(MOVED_DEFAULTS)은 클라이언트별 사본(서버 파일/localStorage 오리진들)의
@@ -3413,6 +3413,42 @@ function makeVine(pr) {
     grp.add(mesh);
     return grp;
 }
+function makeMelonPatch() {
+    // 🍉 밭두렁 수박 덩굴 — 바닥을 기는 줄기 2가닥 + 넓은 잎 + 수염 끝 컬. 티피 덩굴의 바닥
+    // 변주: 전부 bakeGrad 병합 1메시(gradMat), 수박 열매는 fruitLayer가 단다.
+    const g = [];
+    for (const [x0, z0, x1, z1, bow, ph] of [[-0.44, -0.2, 0.46, 0.24, 0.07, 0], [0.4, -0.32, -0.36, 0.3, -0.06, 1.7]]) {
+        const pts = [];
+        for (let i = 0; i <= 10; i++) {
+            const t = i / 10;
+            pts.push(new THREE.Vector3(
+                THREE.MathUtils.lerp(x0, x1, t) + Math.sin(t * Math.PI * 2 + ph) * bow,
+                0.012 + Math.sin(t * Math.PI * 6 + ph) * 0.005,
+                THREE.MathUtils.lerp(z0, z1, t) + Math.cos(t * Math.PI * 1.6 + ph) * bow));
+        }
+        g.push(bakeGrad(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.011, 5), 0x5faa48, 0x35672a, { curve: 1 }));
+        const end = pts[pts.length - 1];
+        const curl = new THREE.TorusGeometry(0.03, 0.006, 5, 10, Math.PI * 1.5);   // 덩굴 수염
+        curl.rotateX(Math.PI / 2 * 0.9);
+        curl.translate(end.x + 0.04, 0.03, end.z);
+        g.push(bakeGrad(curl, 0x74c455, 0x3f7a34, { curve: 1 }));
+    }
+    for (let i = 0; i < 7; i++) {   // 넓은 잎 — 줄기 곁 지그재그
+        const t = (i + 0.5) / 7, a = t * Math.PI * 2 + 0.6;
+        const leaf = new THREE.SphereGeometry(0.052, 8, 6);
+        leaf.scale(1, 0.2, 0.68);
+        leaf.rotateZ(i % 2 ? 0.28 : -0.24);
+        leaf.rotateY(-a);
+        leaf.translate(Math.cos(a) * (0.16 + 0.22 * t), 0.035, Math.sin(a) * (0.14 + 0.2 * t));
+        g.push(bakeGrad(leaf, 0x74c455, 0x3f7a34, { curve: 1 }));
+    }
+    const mesh = new THREE.Mesh(mergeGeometries(g, false), gradMat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    const grp = new THREE.Group();
+    grp.add(mesh);
+    return grp;
+}
 function makeFruitBasket() {
     // 🧺 등나무 배불뚝이 바구니 — 왕복 Lathe(안벽↑립↓바깥벽)라 DS 필수 + 아치 손잡이
     const g = new THREE.Group();
@@ -6229,6 +6265,7 @@ const HOVER_PROMPTS = {
     swing: () => '🛝 그네 — 조종 중 ⌘/✋로 타요',
     trampoline: () => '🤸 트램펄린 — 올라서면 통통! · 클릭 = 절친 부르기',
     vine: () => '🍅 덩굴 시렁 — 열매가 달리면 조종 중 ⌘로 수확',
+    melonpatch: () => '🍉 수박 덩굴 — 병아리가 소원한 수박밭 · 열매는 조종 중 ⌘로 수확',
     fruitbasket: () => '🧺 과일바구니 — 클릭: 열기 · 과일 들고 ⌘: 담기',
     seesaw: () => '🛝 시소 — 조종 중 ⌘/✋로 타요',
     sunbed: () => '🛏️ 선베드 — 조종 중 ⌘/✋로 누워요',
@@ -6257,7 +6294,7 @@ const HOVER_PROMPTS = {
     sandcastle: () => '🏰 모래성 — 클릭하면 펫이 모래놀이 · 조종 중 ⌘ = 직접 앉기',
     palm: () => '🌴 야자수',
 };
-const HOVER_H = { icebox: 0.62, kitchen: 1.5, bonfire: 0.95, pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, scarecrow: 1.5, compost: 0.75, piano: 1.05, photoboard: 1.55, mailbox: 0.75, pierboard: 0.9, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, balloon: 2.1, ferry: 1.3, sandcastle: 0.65, palm: 1.2, fishchair: 0.42 };
+const HOVER_H = { icebox: 0.62, kitchen: 1.5, bonfire: 0.95, pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, scarecrow: 1.5, compost: 0.75, piano: 1.05, photoboard: 1.55, mailbox: 0.75, pierboard: 0.9, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, balloon: 2.1, ferry: 1.3, sandcastle: 0.65, palm: 1.2, fishchair: 0.42, melonpatch: 0.3 };
 const hoverEl = document.createElement('div');
 hoverEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); z-index:88; pointer-events:none; background:rgba(30,32,40,0.88); color:#fff; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
 document.body.appendChild(hoverEl);
@@ -6425,7 +6462,7 @@ function makeFishChair() {
     g.add(slat);
     return g;
 }
-const PROP_BUILDERS = { fishchair: makeFishChair, icebox: makeIcebox, kitchen: makeKitchen, bonfire: makeBonfire, tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, scarecrow: makeScarecrow, compost: makeCompost, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, trampoline: makeTrampoline, vine: makeVine, fruitbasket: makeFruitBasket, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket, palm: makePalm, sandcastle: makeSandcastle, pierboard: makePierBoard };
+const PROP_BUILDERS = { fishchair: makeFishChair, icebox: makeIcebox, kitchen: makeKitchen, bonfire: makeBonfire, tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, scarecrow: makeScarecrow, compost: makeCompost, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, trampoline: makeTrampoline, vine: makeVine, melonpatch: makeMelonPatch, fruitbasket: makeFruitBasket, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket, palm: makePalm, sandcastle: makeSandcastle, pierboard: makePierBoard };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -6537,7 +6574,7 @@ function unbakePropBeds(p) {
 //  · Mesh가 아닌 것(라이트·스프라이트·Points)과 visible=false(숨김 토글류)는 그냥 둔다
 const MERGE_TYPES = new Set(['house', 'bowl', 'fence', 'pond', 'sunbed', 'hammock', 'lamp', 'radio',
     'coffee', 'food', 'monument', 'pecktree', 'well', 'capsule', 'boulder', 'cave', 'lookout',
-    'garden', 'scarecrow', 'compost', 'piano', 'mailbox', 'gym', 'library', 'fountain', 'flowerbasket', 'swing', 'seesaw', 'palm', 'sandcastle', 'icebox', 'kitchen', 'pierboard', 'fishchair']);
+    'garden', 'scarecrow', 'compost', 'piano', 'mailbox', 'gym', 'library', 'fountain', 'flowerbasket', 'swing', 'seesaw', 'palm', 'sandcastle', 'icebox', 'kitchen', 'pierboard', 'fishchair', 'melonpatch']);
 function mergePropGroup(root) {
     const skip = new Set(seasonSnowCaps);
     if (mailFlag) mailFlag.traverse((o) => skip.add(o));
@@ -9356,7 +9393,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', scarecrow: '허수아비', compost: '퇴비함', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', pierboard: '주문 게시판', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호', fishchair: '꼬마 낚시 의자' };
+const PROP_KO = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', melonpatch: '수박 덩굴', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', scarecrow: '허수아비', compost: '퇴비함', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', pierboard: '주문 게시판', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호', fishchair: '꼬마 낚시 의자' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -9377,7 +9414,7 @@ function describeSpot(x, z) {
     if (idx === 3) return '모험의 섬';
     return '바다';
 }
-const BED_KO = { sunbed: '선베드', hammock: '해먹', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', sofa: '소파', loftbed: '2층 침대', fishchair: '꼬마 낚시 의자' };
+const BED_KO = { sunbed: '선베드', hammock: '해먹', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', melonpatch: '수박 덩굴', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', sofa: '소파', loftbed: '2층 침대', fishchair: '꼬마 낚시 의자' };
 function petStatusLine(p) {
     const pos = p.mover.position;
     const parts = [`위치: ${describeSpot(pos.x, pos.z)}`];
@@ -9888,11 +9925,12 @@ if (statsOn) window.__worldDev = {
         x: +aiFishing.p.mover.position.x.toFixed(2), z: +aiFishing.p.mover.position.z.toFixed(2), y: +aiFishing.p.mover.position.y.toFixed(3),
         groundY: +world.groundHeightAt(aiFishing.p.mover.position.x, aiFishing.p.mover.position.z).toFixed(3) } : null),
     fishChairEnd: () => { const f = aiFishing; if (!f) return null; endAiFishing(); return { x: +f.p.mover.position.x.toFixed(2), z: +f.p.mover.position.z.toFixed(2) }; },
-    possessGo: (name, x, z) => {   // 🎮 (E2E) 조종 시작 + 선택 위치로 순간이동
+    possessGo: (name, x, z, rotY) => {   // 🎮 (E2E) 조종 시작 + 선택 위치·방향으로 순간이동
         const p = pets.find((q) => q.name === name);
         if (!p) return false;
         if (!possessed) possessPet(p);
         if (possessed === p && x !== undefined) { p.mover.position.set(x, world.groundHeightAt(x, z), z); }
+        if (possessed === p && rotY !== undefined) p.mover.rotation.y = rotY;
         return possessed === p;
     },
     chairBedState: () => {   // 🪑 (E2E) 의자 sit-침대 상태
@@ -10765,7 +10803,7 @@ document.body.appendChild(dockUI);
 // 배치는 서버(/api/world_layout)+localStorage에 저장되고 다음 접속 때 씬을 짓기 전에 적용된다
 // (파일 상단 savedLayout). 지형 평탄화 패드는 섬 메시에 구워져 있어 리로드 후에야 새 위치를
 // 따라간다 — 그때까지 잔디가 살짝 울퉁불퉁할 수 있는 게 유일한 시각적 타협점.
-const PROP_LABELS = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', bowl: '밥그릇', fence: '울타리', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', house: '집', car: '자동차', pierboard: '주문 게시판' };
+const PROP_LABELS = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', bowl: '밥그릇', fence: '울타리', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', melonpatch: '수박 덩굴', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', house: '집', car: '자동차', pierboard: '주문 게시판' };
 const buildRingMat = new THREE.MeshBasicMaterial({ color: 0x66d9ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
 const buildRing = new THREE.Mesh(new THREE.RingGeometry(0.82, 1.0, 40), buildRingMat);
 buildRing.rotation.x = -Math.PI / 2;
@@ -11812,6 +11850,7 @@ const FRUITS = {
     tomato:     { emoji: '🍅', ko: '토마토' },
     eggplant:   { emoji: '🍆', ko: '가지' },
     coconut:    { emoji: '🥥', ko: '코코넛' },
+    watermelon: { emoji: '🍉', ko: '수박' },
 };
 const TREE_FRUIT_POOL = ['apple', 'orange', 'lemon', 'banana', 'strawberry', 'grape', 'peach'];   // 일반 나무 7그루 주간 셔플
 function fruitLathe(pts, top, bottom, opts, seg = 22) {   // 회전체 몸통 — 과일 프로파일의 주력
@@ -11904,7 +11943,87 @@ function makeFruitSpecialBitten(type, bites) {   // 클러스터·바나나는 �
     const te = a0 + arcLen; const cut = new THREE.SphereGeometry(0.021, 10, 8); cut.scale(1, 1, 0.55); cut.rotateZ(te); cut.translate(Math.cos(te) * 0.06, -0.028 + Math.sin(te) * 0.06, 0); g.push(bakeGrad(cut, 0xfbf1d2, 0xefe0ae, { curve: 1 }));   // 단면 크림색 속살
     return mergeGeometries(g, false);
 }
-function makeFruitGeo(type, bites = 0) {
+// ── 🍉 수박 (병아리의 소원): 밭·낙과는 통수박(줄무늬 = 각도 정점 페인트), 손에 들면 1/4통
+// 웨지 — 텐트(▲) 자세로 축이 수평, 빨간 단면 두 장이 능선에서 만나고 초록 호가 바닥.
+// 베어물기는 능선부터 서서히 파인다: 0=온전한 1/4 → 1=반쯤(원통 홈) → 2=껍질 보트 직전.
+// 단면은 캐노니컬 XY에서 반경 밴드(과육→흰 속껍질→초록 테)로 칠한 뒤 제 절단면으로 회전. ──
+const MELON_R = 0.075;
+function paintMelonStripes(geo) {   // 밝은 바탕 위 진초록 지그재그 세로 줄무늬 — 극축=Y 기준 방위각 밴드 (프로스팅 정점 페인트 문법)
+    const pos = geo.getAttribute('position'), col = geo.getAttribute('color');
+    const dark = new THREE.Color(0x1e5222), cc = new THREE.Color();   // 색은 THREE.Color로 — 생숫자는 리니어로 박혀 민트빛으로 떠 보인다(실측)
+    for (let i = 0; i < pos.count; i++) {
+        const a = Math.atan2(pos.getZ(i), pos.getX(i));
+        if (Math.sin(a * 8 + Math.sin(pos.getY(i) * 52) * 0.5) > 0.25) {
+            cc.setRGB(col.getX(i), col.getY(i), col.getZ(i)).lerp(dark, 0.78);
+            col.setXYZ(i, cc.r, cc.g, cc.b);
+        }
+    }
+}
+function melonFaceBands(geo, rc) {   // 캐노니컬 XY 디스크/링의 반경 밴드 — 과육(안쪽 밝게)→흰 속껍질→초록 테
+    const pos = geo.getAttribute('position'), col = geo.getAttribute('color');
+    const cIn = new THREE.Color(0xff6a60), cOut = new THREE.Color(0xe5404a),
+        white = new THREE.Color(0xf6f3e6), rind = new THREE.Color(0x2e6b2e), cc = new THREE.Color();
+    for (let i = 0; i < pos.count; i++) {
+        const r = Math.hypot(pos.getX(i), pos.getY(i)) / MELON_R;
+        if (r < 0.84) cc.copy(cIn).lerp(cOut, Math.max(0, (r - rc / MELON_R)) / Math.max(0.2, 0.84 - rc / MELON_R));
+        else if (r < 0.93) cc.copy(white);
+        else cc.copy(rind);
+        col.setXYZ(i, cc.r, cc.g, cc.b);
+    }
+}
+function flipWinding(geo) {   // 안쪽 면용 — 인덱스 삼각형 뒤집기 (gradMat은 FrontSide)
+    const idx = geo.getIndex();
+    for (let i = 0; i < idx.count; i += 3) { const t = idx.getX(i); idx.setX(i, idx.getX(i + 2)); idx.setX(i + 2, t); }
+    geo.computeVertexNormals();
+    return geo;
+}
+function makeMelonGeo(bites) {   // bites<0 = 통수박 · 0=온전한 1/4(손) · 1~2=파먹는 중
+    if (bites < 0) {
+        const g = [];
+        const body = new THREE.SphereGeometry(MELON_R, 22, 16); body.scale(1, 0.88, 1);
+        const b = bakeGrad(body, 0x63b053, 0x3a7c33, { curve: 1.15 });
+        paintMelonStripes(b); b.translate(0, -0.07, 0); g.push(b);
+        fruitStem(g, 0, -0.002, 0.012, 0.018);
+        fruitLeaf(g, 0.024, 0.012, 0, -0.5, 0.026);
+        return mergeGeometries(g, false);
+    }
+    const R = MELON_R, parts = [];
+    const TILT = Math.PI * 0.75;   // 능선이 위로 오는 텐트 자세
+    const orient = (geo) => { geo.rotateZ(Math.PI / 2); geo.rotateX(TILT); geo.translate(0, -0.015, 0); return geo; };
+    const rc = bites === 0 ? 0 : bites === 1 ? R * 0.5 : R * 0.78;   // 능선(축)에서부터 파먹힌 반경
+    const shell = new THREE.SphereGeometry(R, 20, 14, 0, Math.PI / 2);   // 바깥 껍질 — 1/4 방위각
+    const sb = bakeGrad(shell, 0x63b053, 0x3a7c33, { curve: 1.1 });
+    paintMelonStripes(sb); parts.push(orient(sb));
+    if (bites > 0) {   // 속 흰 라이닝 — 파인 뒤에야 보인다
+        const inner = flipWinding(new THREE.SphereGeometry(R * 0.965, 14, 10, 0, Math.PI / 2));
+        parts.push(orient(bakeGrad(inner, 0xf4f1e2, 0xe6ead6, { curve: 1 })));
+    }
+    for (const side of [0, 1]) {   // 단면 두 장 — A는 z=0면(법선 −z), B는 x=0면(+x)
+        const cap = rc > 0
+            ? new THREE.RingGeometry(rc, R, 18, 1, Math.PI / 2, Math.PI)
+            : new THREE.CircleGeometry(R, 18, Math.PI / 2, Math.PI);
+        const cb = bakeGrad(cap, 0xffffff, 0xffffff, { curve: 1 });
+        melonFaceBands(cb, rc);
+        if (side === 0) cb.rotateX(Math.PI); else cb.rotateY(Math.PI / 2);
+        parts.push(orient(cb));
+    }
+    if (rc > 0) {   // 베어문 바닥 — 능선 자리의 1/4 원통 홈 (안쪽을 보는 면)
+        const L = 2 * Math.sqrt(Math.max(0.0001, R * R - rc * rc)) * 0.94;
+        const floor = flipWinding(new THREE.CylinderGeometry(rc, rc, L, 12, 1, true, -Math.PI / 2, Math.PI / 2));
+        parts.push(orient(bakeGrad(floor, 0xd8333e, 0xb8232e, { curve: 1 })));
+    }
+    for (const [cap, t, a] of [['A', 0.3, 2.1], ['A', 0.58, 2.6], ['A', 0.46, 3.0], ['B', 0.36, 0.55], ['B', 0.62, 1.15]]) {   // 씨 — 과육 밴드 안
+        const r = rc + (R * 0.8 - rc) * t;
+        if (r > R * 0.8) continue;
+        const s = new THREE.SphereGeometry(0.0062, 6, 5);
+        if (cap === 'A') { s.scale(1, 1.25, 0.55); s.translate(Math.cos(a) * r, Math.sin(a) * r, -0.002); }
+        else { s.scale(0.55, 1.25, 1); s.translate(0.002, Math.cos(a) * r, Math.sin(a) * r); }
+        parts.push(orient(bakeGrad(s, 0x241a14, 0x120c08, { curve: 1 })));
+    }
+    return mergeGeometries(parts, false);
+}
+function makeFruitGeo(type, bites = 0, held = false) {
+    if (type === 'watermelon') return makeMelonGeo((held || bites) ? Math.min(2, bites) : -1);
     if (bites && (type === 'grape' || type === 'cherry' || type === 'banana')) return makeFruitSpecialBitten(type, bites);
     const S = bites ? 2 : 1;   // 베어물 땐 몸통을 고해상도로 — 카빙 단면이 매끈하게
     const bodyG = [], crownG = [];   // bodyG=베어물 몸통·속살 · crownG=꼭지/잎/꽃받침(남는다)
@@ -11969,8 +12088,8 @@ function makeFruitGeo(type, bites = 0) {
     if (c.pit && bites >= 2) { const p = new THREE.SphereGeometry(1, 10, 8); p.scale(0.012, 0.016, 0.012); p.translate(0.003, c.cy, 0.006); parts.push(bakeGrad(p, 0x9a6a3e, 0x5f3f22, { curve: 1 })); }   // 복숭아 씨
     return mergeGeometries(parts, false);
 }
-function makeFruitMesh(type, scale = 1) {
-    const mesh = new THREE.Mesh(makeFruitGeo(type), gradMat);
+function makeFruitMesh(type, scale = 1, held = false) {   // held: 수박은 손에 들면 1/4통
+    const mesh = new THREE.Mesh(makeFruitGeo(type, 0, held), gradMat);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     if (scale !== 1) mesh.scale.setScalar(scale);
@@ -21686,6 +21805,7 @@ const FRUIT_REGROW_MS = 2 * 3600 * 1000;
 const fruitWeek = () => Math.floor(Date.now() / (7 * 86400000));
 function fruitTypeFor(pr) {
     if (pr.type === 'palm') return 'coconut';
+    if (pr.type === 'melonpatch') return 'watermelon';
     if (pr.type === 'vine') return pr.vine || 'tomato';
     if (pr.type !== 'tree' || pr.variant) return null;
     if (pr.cherry) return 'cherry';
@@ -21702,6 +21822,7 @@ function fruitAnchors(pr) {   // 프롭 로컬 → 월드 (스윙 회전 관례:
     const W = (lx, y, lz) => [pr.x + lx * cy + lz * sy, y, pr.z - lx * sy + lz * cy];
     if (pr.type === 'palm') return [W(0.44, 0.74, 0.1), W(0.3, 0.7, -0.14)];   // 수관 밑에 대롱대롱 (트렁크는 +x로 휜다 — 몸통과 겹치지 않게 바깥·아래로)
     if (pr.type === 'vine') return [W(0.15, 0.3, 0.05), W(-0.13, 0.42, -0.08), W(0.02, 0.52, 0.13)];   // 티피 나선 곁
+    if (pr.type === 'melonpatch') return [W(0.3, 0.16, 0.2), W(-0.33, 0.16, -0.16)];   // 고랑 곁 — 통수박이 바닥에 앉는 높이
     // 나무: 동숲 레퍼런스 그대로 — 과일이 수관 '표면' 잎 포켓에 반쯤 안겨 삼각 배치
     // (위 1 + 아래 양옆 2). 로브 중심에 넣으면 파묻히고(실측), 밑에 매달면 동숲 느낌이 아니다:
     // 로브 반지름보다 살짝 바깥(몸통 ~70% 노출)이 정답. 좌표는 로브 지오메트리와 1:1.
@@ -21712,7 +21833,7 @@ function fruitAnchors(pr) {   // 프롭 로컬 → 월드 (스윙 회전 관례:
 }
 const fruitBearing = [];   // { pr, type, group, shakeT }
 let groundFruits = [];     // { type, x, z, y, vy, mesh, settled, at, wilting }
-const FRUIT_LAY = { banana: 0.045, eggplant: 0.055 };   // 길쭉 과일 — 눕힌 몸통 반지름
+const FRUIT_LAY = { banana: 0.045, eggplant: 0.055, watermelon: 0.075 };   // 길쭉 과일 — 눕힌 몸통 반지름 (수박은 둥글지만 커서 — 꼭지 옆으로 눕는 게 수확한 그림)
 function layFruitMesh(mesh, type, gy) {   // 낙과 자세: 길쭉이는 옆으로 눕는다 (원점=꼭지·세로면 '꽂힘' — 사용자 리포트)
     if (FRUIT_LAY[type] === undefined) return gy + 0.1;
     mesh.rotation.order = 'YXZ';   // 야우 먼저(월드 업) → 눕히기 — XYZ면 눕는 방향이 안 섞인다
@@ -21827,7 +21948,7 @@ function harvestFruit(e, p) {
     e.shakeT = 0.001;   // updateFruits가 웍블 → 낙과 진행
     playBuffer(rustleBuf, { vol: 0.55, rate: 0.9 + Math.random() * 0.2, filterFreq: 2400 });
     const gy = terrainHeight(e.pr.x, e.pr.z);
-    const crownY = gy + (e.pr.type === 'palm' ? 0.9 : e.pr.type === 'vine' ? 0.55 : 0.62);
+    const crownY = gy + (e.pr.type === 'palm' ? 0.9 : e.pr.type === 'vine' ? 0.55 : e.pr.type === 'melonpatch' ? 0.15 : 0.62);
     for (let i = 0; i < 6; i++) {   // 잎 플러터 — 파이어&포겟 스프라이트 (dig 퍼프 패턴)
         const leaf = new THREE.Sprite(new THREE.SpriteMaterial({ map: blobTex, color: 0x74c455, transparent: true, opacity: 0.85, depthWrite: false }));
         leaf.scale.setScalar(0.05 + Math.random() * 0.05);
@@ -21835,7 +21956,7 @@ function harvestFruit(e, p) {
         scene.add(leaf);
         hugBurst.push({ spr: leaf, vx: (Math.random() - 0.5) * 0.6, vy: -0.25 - Math.random() * 0.3, vz: (Math.random() - 0.5) * 0.6, t: Math.random() * -0.4 });
     }
-    if (p) logWorldEvent(`${petKo(p)}가 ${e.pr.type === 'palm' ? '야자수' : e.pr.type === 'vine' ? '덩굴' : '나무'}를 흔들었다 — ${FRUITS[e.type].emoji} 후두둑!`);
+    if (p) logWorldEvent(`${petKo(p)}가 ${e.pr.type === 'palm' ? '야자수' : e.pr.type === 'vine' ? '덩굴' : e.pr.type === 'melonpatch' ? '수박 덩굴' : '나무'}를 흔들었다 — ${FRUITS[e.type].emoji} 후두둑!`);
 }
 function nearestFruitProp(maxD) {
     if (!possessed) return null;
@@ -21859,7 +21980,7 @@ function nearestGroundFruit(maxD) {
 }
 function giveFruit(p, type) {   // 부스 음식 문법 (giveFood 미러) — 'food' 슬롯이라 메뉴·냠냠·연출 공짜
     removeFood(p);
-    const mesh = makeFruitMesh(type, 1.15);
+    const mesh = makeFruitMesh(type, 1.15, true);   // held — 수박은 여기서 1/4통이 된다
     p.pet.wrap.add(mesh);
     mesh.rotation.y = Math.PI;   // 펫은 wrap -z를 향한다(mouthLocal 주석) → 베어문 면·코코넛 얼굴(+z)이 펫 뒤로 감. π 돌려 시청자(펫 앞) 쪽으로.
     const dims = p.pet.dims;
