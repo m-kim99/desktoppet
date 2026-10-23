@@ -50,11 +50,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
         self.send_response(status)
         for k, v in headers.items():
-            if k.lower() not in HOP:
+            # Cache-Control is owned by end_headers() below (single source on the relay)
+            if k.lower() not in HOP and k.lower() != "cache-control":
                 self.send_header(k, v)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def end_headers(self):
+        # JS/HTML은 휴리스틱 캐시 금지 — 매번 ETag 재검증(구버전 모듈이 폰에 며칠 남는 실측 버그 방지)
+        if getattr(self, "path", "").split("?")[0].endswith((".js", ".html")):
+            self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
 
     def _body(self):
         n = int(self.headers.get("Content-Length") or 0)

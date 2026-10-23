@@ -7,9 +7,12 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory } from './glb-pet-entity.js';
-import { ISLAND_R, ISLANDS, BRIDGES, HILLS, HOUSE, FLAT_SPOTS, PROPS, FERRY_PIERS, FERRY_SEA_POINTS } from './world-layout.js';
-import { kitProp } from './world-kit.js';
+// ⚠️ 모듈 임포트의 ?v= 쿼리 = 캐시 버스터. 워치독은 world.js만 ETag 감시하고, 임포트 모듈은
+// 브라우저 휴리스틱 캐시로 며칠씩 신선 취급돼 재접속으로도 안 갱신된다(의자 미표시 실측 —
+// 2026-10-23). 모듈을 수정하면 여기 v를 올릴 것. 서버 no-cache 헤더가 2차 방어.
+import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory } from './glb-pet-entity.js?v=2';
+import { ISLAND_R, ISLANDS, BRIDGES, HILLS, HOUSE, FLAT_SPOTS, PROPS, FERRY_PIERS, FERRY_SEA_POINTS } from './world-layout.js?v=2';
+import { kitProp } from './world-kit.js?v=2';
 
 // ---- 🔨 공사모드 저장 레이아웃: 씬을 짓기 "전에" PROPS/HOUSE/FLAT_SPOTS에 덮어쓴다. 지형 패드·
 // 침대 좌표·블롭 그림자·집 내부가 전부 빌드 시점의 p.x/z에서 파생되므로, 여기서 바꿔두면 아래의

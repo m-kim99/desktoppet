@@ -935,7 +935,13 @@ async def cors_options_workaround(request: Request, call_next):
                 "Access-Control-Max-Age": "86400",   # Preflight cache 24h
             }
         )
-    return await call_next(request)
+    resp = await call_next(request)
+    # JS/HTML은 휴리스틱 캐시 금지: ESM 임포트 모듈(world-layout.js 등)은 버전 워치독 범위 밖이라
+    # 브라우저가 캐시를 며칠씩 신선 취급하면 재접속해도 구버전이 로드된다(2026-10-23 실측).
+    # no-cache = 매번 ETag 재검증(변경 없으면 304라 전송 비용 없음).
+    if request.url.path.endswith((".js", ".html")):
+        resp.headers.setdefault("Cache-Control", "no-cache")
+    return resp
 
 async def t(text: str) -> str:
     global locales
