@@ -14769,7 +14769,9 @@ function releasePossession() {
     cancelPhoneCall();   // 통화 중이었으면 끊는다
     releaseHandHold();
     running = false;
-    snapToLand(p);
+    // 착석/취침(침대) 중 해제는 그 자리 그대로 둔다 — snapToLand 말미의 지면 스냅이 좌석 높이를
+    // 뭉개 의자·소파에 '합체'됐다(실측). 침대는 정의상 뭍 위라 스냅이 필요 없다.
+    if (!p.bed) snapToLand(p);
     if (p.ai.state === 'player') { p.ai.state = 'idle'; releaseAI(p); }
     logWorldEvent(`주인이 ${petKo(p)} 조종을 마쳤다`);
     heldKeys.clear();
