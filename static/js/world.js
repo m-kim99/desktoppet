@@ -10,7 +10,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 // ⚠️ 모듈 임포트의 ?v= 쿼리 = 캐시 버스터. 워치독은 world.js만 ETag 감시하고, 임포트 모듈은
 // 브라우저 휴리스틱 캐시로 며칠씩 신선 취급돼 재접속으로도 안 갱신된다(의자 미표시 실측 —
 // 2026-10-23). 모듈을 수정하면 여기 v를 올릴 것. 서버 no-cache 헤더가 2차 방어.
-import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory, makeBffRing, setGlbPetCharm } from './glb-pet-entity.js?v=8';
+import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory, makeBffRing, setGlbPetCharm } from './glb-pet-entity.js?v=9';
 import { ISLAND_R, ISLANDS, BRIDGES, HILLS, HOUSE, FLAT_SPOTS, PROPS, FERRY_PIERS, FERRY_SEA_POINTS } from './world-layout.js?v=2';
 import { kitProp } from './world-kit.js?v=2';
 

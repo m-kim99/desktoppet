@@ -278,22 +278,11 @@ export function setGlbPetCharm(pet, id) {
     if (kind === 'chick') {   // 날개 중간을 감싸는 팔찌 — 참이 날개 위에서 빼꼼 (wrap은 π 플립: 월드 +X = 로컬 −X)
         group.position.set(-pet.dims.x * 0.44, pet.dims.y * 0.52, 0.01);   // 날개 중간 — 끝(0.52)은 패들에서 떠 보였다(주인 피드백)
         group.rotation.y = -Math.PI / 2;   // 구멍 축 = 날개 길이 방향, 참 얼굴은 바깥(몸 반대쪽)을 본다 — 주인 피드백
-    } else {   // 볼에 기댄 반지 (주인 지정 자리) — 몸이 한 구라 수치 추측이 빗나가서, 눈 랜드마크에서 역산
-        pet.wrap.updateWorldMatrix(true, true);
-        let eyeL = null, eyeR = null;
-        pet.root.traverse((o) => { if (/Eye_Left$/i.test(o.name)) eyeL = o; if (/Eye_Right$/i.test(o.name)) eyeR = o; });
-        if (eyeL && eyeR) {
-            const L = (node) => pet.wrap.worldToLocal(new THREE.Vector3().setFromMatrixPosition(node.matrixWorld));
-            const el = L(eyeL), er = L(eyeR);
-            const side = er.clone().sub(el).normalize();            // 오른볼 방향
-            const cheek = er.clone().add(side.multiplyScalar(0.078)).add(new THREE.Vector3(0, -0.125, 0));   // 눈에서 넉넉히 떨어진 볼 아래쪽 (주인 피드백 2회 — 참 머리가 눈높이까지 올라오는 몫 포함)
-            const n = cheek.clone().setY(0).normalize();            // 머리 구의 바깥 법선(수평)
-            cheek.add(n.clone().multiplyScalar(R * 0.3));           // 표면에서 반지 두께만큼 띄움
-            group.position.copy(cheek);
-            group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n.clone().add(new THREE.Vector3(0, 0.25, 0)).normalize());   // 뺨에 비스듬히 기댐
-        } else {
-            group.position.set(-pet.dims.x * 0.44, pet.dims.y * 0.52, pet.dims.z * 0.42);
-        }
+    } else {   // 강아지: 간식 들 때 생기는 '손'(updateHeldPose의 paw rest) 자리 — 들면 손에 반지가 딱 (주인 지정)
+        // paw rest = (간식손 플랭크 x + 0.045, dims.y*0.34 + 0.055, -dims.z*0.12) — flankX 폴백 공식으로 근사
+        const d = pet.dims;
+        group.position.set(d.x * 0.5 * 0.8 + 0.042, d.y * 0.34 + 0.052, -d.z * 0.12);
+        group.rotation.y = Math.PI / 2;   // 구멍 축 = 팔(옆) 방향 — 손목에 끼운 모양, 참은 위를 본다
     }
     group.name = 'bff-charm-' + kind;   // 검수 프로브가 씬에서 찾는 이름
     pet.wrap.add(group);
