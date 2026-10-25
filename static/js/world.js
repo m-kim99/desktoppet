@@ -7275,7 +7275,7 @@ for (const p of PROPS) {
             const ap = bw(lx, 0.62);
             BEDS.push({
                 id: `gardenbench-${i}`, mode: 'sit', occupant: null, sway: 0,
-                lie: { x: w.x, z: w.z, y: baseY + 0.245, rotY: gbPr.rotY || 0, tilt: -0.35 },
+                lie: { x: w.x, z: w.z, y: baseY + 0.245, rotY: gbPr.rotY || 0, tilt: 0.38 },   // +가 등받이 쪽으로 기대는 방향 — 음수는 다이빙 자세였다(주인 실측)
                 approach: { x: ap.x, z: ap.z },
             });
         });
