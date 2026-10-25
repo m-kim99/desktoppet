@@ -286,7 +286,7 @@ export function setGlbPetCharm(pet, id) {
             const L = (node) => pet.wrap.worldToLocal(new THREE.Vector3().setFromMatrixPosition(node.matrixWorld));
             const el = L(eyeL), er = L(eyeR);
             const side = er.clone().sub(el).normalize();            // 오른볼 방향
-            const cheek = er.clone().add(side.multiplyScalar(0.06)).add(new THREE.Vector3(0, -0.095, 0));   // 눈을 가리지 않게 한 뼘 아래(참 머리가 눈높이까지 올라오는 걸 감안 — 주인 피드백)
+            const cheek = er.clone().add(side.multiplyScalar(0.078)).add(new THREE.Vector3(0, -0.125, 0));   // 눈에서 넉넉히 떨어진 볼 아래쪽 (주인 피드백 2회 — 참 머리가 눈높이까지 올라오는 몫 포함)
             const n = cheek.clone().setY(0).normalize();            // 머리 구의 바깥 법선(수평)
             cheek.add(n.clone().multiplyScalar(R * 0.3));           // 표면에서 반지 두께만큼 띄움
             group.position.copy(cheek);
