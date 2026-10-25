@@ -203,11 +203,11 @@ export function makeBffRing(R, kind) {
         return geo;
     };
     const g = new THREE.Group();
-    // 금빛 몸 — 밴드 + 바깥 능선 한 줄 + 참 받침 칼라 (한 재질 병합 = 1메시)
+    // 금빛 몸 — 납작한 밴드(단면: 반경 방향 얇게 × 폭 넓게 = 우리가 아는 반지, '도넛' 아님 — 주인 피드백)
+    // + 참 받침 칼라 (한 재질 병합 = 1메시)
     const gold = [
-        new THREE.TorusGeometry(R, R * 0.2, 12, 36),
-        new THREE.TorusGeometry(R * 1.13, R * 0.055, 8, 36),
-        new THREE.CylinderGeometry(R * 0.3, R * 0.46, R * 0.32, 10).translate(0, R * 1.1, 0),
+        new THREE.TorusGeometry(R, R * 0.11, 10, 40).scale(1, 1, 2.1),
+        new THREE.CylinderGeometry(R * 0.3, R * 0.46, R * 0.3, 10).translate(0, R * 1.06, 0),
     ];
     const goldMesh = new THREE.Mesh(mergeGeometries(gold, false),
         new THREE.MeshStandardMaterial({ color: 0xf2c14e, metalness: 0.78, roughness: 0.26, emissive: 0x4a3608, emissiveIntensity: 0.38 }));
@@ -234,6 +234,26 @@ export function makeBffRing(R, kind) {
             m.push(tint(new THREE.SphereGeometry(R * 0.07, 6, 5).translate(sx * R * 0.18, hy + R * 0.12, R * 0.42), 0x241a14));           // 눈
         }
     }
+    // 이니셜 돋을새김 — 밴드 양옆 바깥면에 'M'(병아리)/'C'(강아지). 폰트 없이 박스·아크 조형.
+    const letter = (az) => {
+        const parts = [];
+        if (kind === 'chick') {   // M — 세로 둘 + 가운데 V
+            const h = R * 0.6, w = R * 0.56, t = R * 0.14, d = R * 0.12;
+            parts.push(new THREE.BoxGeometry(t, h, d).translate(-w / 2 + t / 2, 0, 0));
+            parts.push(new THREE.BoxGeometry(t, h, d).translate(w / 2 - t / 2, 0, 0));
+            parts.push(new THREE.BoxGeometry(t * 0.9, h * 0.62, d).rotateZ(-0.6).translate(-w * 0.14, h * 0.1, 0));
+            parts.push(new THREE.BoxGeometry(t * 0.9, h * 0.62, d).rotateZ(0.6).translate(w * 0.14, h * 0.1, 0));
+        } else {   // C — 3/4 아크
+            parts.push(new THREE.TorusGeometry(R * 0.26, R * 0.08, 6, 16, Math.PI * 1.5).scale(1, 1, 0.75).rotateZ(Math.PI * 0.25));
+        }
+        for (const geo of parts) {
+            geo.rotateX(Math.PI / 2);                 // 글자 위 = 밴드 폭(Z) 방향
+            geo.rotateZ(az + Math.PI / 2);            // 법선을 방위각 바깥으로
+            geo.translate(Math.cos(az) * R * 1.13, Math.sin(az) * R * 1.13, 0);
+            m.push(tint(geo, 0x6a4428));
+        }
+    };
+    letter(0); letter(Math.PI);
     const matteMesh = new THREE.Mesh(mergeGeometries(m, false),
         new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0 }));
     g.add(matteMesh);
