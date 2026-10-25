@@ -251,26 +251,33 @@ export function setGlbPetCharm(pet, id) {
     }
     if (!id) return;
     const kind = pet.wings && pet.wings.length ? 'chick' : 'puppy';
-    // 둘 다 발찌로 — 날개는 납작 패들이라 반지가 묻혀 안 읽혔다(스샷 수회 실측). 커플템 통일.
-    const R = Math.min(pet.dims.x, pet.dims.z) * (kind === 'chick' ? 0.085 : 0.09);   // 발 블록보다 커야 보인다(작으면 발 안에 삼켜짐)
+    // 둘 다 wrap 앵커(산타모자 문법) — 림 노드는 비균일 스케일이라 링이 찌그러진다(계측 2026-10-25).
+    // 발찌는 풀에 가려 안 보였다(주인 피드백) → 병아리는 날개에 끼운 팔찌, 강아지는 볼에 얹은 반지.
+    const R = Math.min(pet.dims.x, pet.dims.z) * (kind === 'chick' ? 0.11 : 0.1);
     const group = makeBffRing(R, kind);
-    const anchor = pet.footWave || pet.wrap;
-    pet.wrap.updateWorldMatrix(true, true);
-    const ws = new THREE.Vector3();
-    anchor.getWorldScale(ws);
-    const inv = 1 / (ws.x || 1);
-    group.scale.setScalar(inv);
-    if (anchor === pet.wrap) {
-        group.position.set(pet.dims.x * 0.45, pet.dims.y * 0.12, 0);
-    } else {
-        // 발 노드는 로컬이 90° 틀어져 있다(로컬 +Y=월드 +Z·로컬 +Z=월드 −Y, 계측 2026-10-25):
-        // 무회전 = 밴드 수평(발찌), 내리기 = 로컬 +Z. 참은 복사뼈 곁에서 빼꼼 — 병아리는 앞쪽으로.
-        group.position.set(0, 0, kind === 'chick' ? 0.012 : 0.022).multiplyScalar(inv);
-        if (kind === 'chick') group.rotation.z = Math.PI;
+    if (kind === 'chick') {   // 날개 중간을 감싸는 팔찌 — 참이 날개 위에서 빼꼼 (wrap은 π 플립: 월드 +X = 로컬 −X)
+        group.position.set(-pet.dims.x * 0.52, pet.dims.y * 0.54, 0.01);
+        group.rotation.y = Math.PI / 2;   // 구멍 축 = 날개 길이 방향
+    } else {   // 볼에 기댄 반지 (주인 지정 자리) — 몸이 한 구라 수치 추측이 빗나가서, 눈 랜드마크에서 역산
+        pet.wrap.updateWorldMatrix(true, true);
+        let eyeL = null, eyeR = null;
+        pet.root.traverse((o) => { if (/Eye_Left$/i.test(o.name)) eyeL = o; if (/Eye_Right$/i.test(o.name)) eyeR = o; });
+        if (eyeL && eyeR) {
+            const L = (node) => pet.wrap.worldToLocal(new THREE.Vector3().setFromMatrixPosition(node.matrixWorld));
+            const el = L(eyeL), er = L(eyeR);
+            const side = er.clone().sub(el).normalize();            // 오른볼 방향
+            const cheek = er.clone().add(side.multiplyScalar(0.055)).add(new THREE.Vector3(0, -0.06, 0));
+            const n = cheek.clone().setY(0).normalize();            // 머리 구의 바깥 법선(수평)
+            cheek.add(n.clone().multiplyScalar(R * 0.3));           // 표면에서 반지 두께만큼 띄움
+            group.position.copy(cheek);
+            group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n.clone().add(new THREE.Vector3(0, 0.25, 0)).normalize());   // 뺨에 비스듬히 기댐
+        } else {
+            group.position.set(-pet.dims.x * 0.44, pet.dims.y * 0.52, pet.dims.z * 0.42);
+        }
     }
     group.name = 'bff-charm-' + kind;   // 검수 프로브가 씬에서 찾는 이름
-    anchor.add(group);
-    pet.charm = { id, group, anchor };
+    pet.wrap.add(group);
+    pet.charm = { id, group, anchor: pet.wrap };
 }
 
 // Load a .glb pet and return an entity object ready for updateGlbPetEntity. `targetHeight` is the

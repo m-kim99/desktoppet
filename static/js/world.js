@@ -10,7 +10,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 // ⚠️ 모듈 임포트의 ?v= 쿼리 = 캐시 버스터. 워치독은 world.js만 ETag 감시하고, 임포트 모듈은
 // 브라우저 휴리스틱 캐시로 며칠씩 신선 취급돼 재접속으로도 안 갱신된다(의자 미표시 실측 —
 // 2026-10-23). 모듈을 수정하면 여기 v를 올릴 것. 서버 no-cache 헤더가 2차 방어.
-import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory, makeBffRing, setGlbPetCharm } from './glb-pet-entity.js?v=3';
+import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory, makeBffRing, setGlbPetCharm } from './glb-pet-entity.js?v=4';
 import { ISLAND_R, ISLANDS, BRIDGES, HILLS, HOUSE, FLAT_SPOTS, PROPS, FERRY_PIERS, FERRY_SEA_POINTS } from './world-layout.js?v=2';
 import { kitProp } from './world-kit.js?v=2';
 
@@ -3537,21 +3537,20 @@ function startRingCeremony() {
     const chick = pets.find((q) => q.name === 'chick');
     const puppy = pets.find((q) => q.name === 'puppy');
     if (!pr || !box || !box.rings || box.rings.length < 2 || !chick || !puppy) return;
-    for (const q of [chick, puppy]) {
-        q.pet.sleeping = false; q.pet.autoSleeping = false;
-        if (q.bed) forceEndBed(q);
-        if (q.dip) endDip(q);
-        if (aiFishing && aiFishing.p === q) endAiFishing();
-        if (q !== possessed) releaseAI(q);
-    }
     (async () => {
+        if (aiFishing && [chick, puppy].includes(aiFishing.p)) endAiFishing();
+        for (const q of [chick, puppy]) {
+            q.pet.sleeping = false; q.pet.autoSleeping = false;
+            if (q !== possessed) { await freeForScript(q); releaseAI(q); }   // 정석 정리 — 침대·물놀이·대기 onArrive까지
+        }
         const cy = Math.cos(pr.rotY || 0), sy = Math.sin(pr.rotY || 0);
         const W = (lx, lz) => ({ x: pr.x + lx * cy + lz * sy, z: pr.z - lx * sy + lz * cy });
         const a = W(-0.66, 0.34), b = W(0.66, 0.34);
-        // 도착 보장: gotoAsync는 막힘/스톨 10초면 미도착 resolve가 설계(실측 — 장거리에선 교환식이
-        // 다리 앞에서 열렸다). 재시도는 자율활동 디렉터와 줄다리기가 돼 분 단위로 늘어져서(실측 2),
-        // 한 번 걸어가 보고 못 닿으면 바로 곁으로 폴짝 — 광장 패스트트래블의 TP 문법. 상한 ~15초.
-        await Promise.all([gotoAsync(chick, a.x, a.z), gotoAsync(puppy, b.x, b.z)]);
+        // 도착 보장: gotoAsync는 막힘/스톨 10초면 미도착 resolve가 설계지만, 디렉터가 goto를 덮어쓰면
+        // 약속이 영원히 안 풀린다(실측 — 놀이터 활동 선점 시 교환식이 멈춤). 12초 레이스로 상한을
+        // 두고, 못 닿은 펫은 곁으로 폴짝 — 광장 패스트트래블의 TP 문법. 교환식 시작 상한 ~12초.
+        const go = (q, sp) => Promise.race([gotoAsync(q, sp.x, sp.z), new Promise((res) => setTimeout(res, 12000))]);
+        await Promise.all([go(chick, a), go(puppy, b)]);
         for (const [q, sp] of [[chick, a], [puppy, b]]) {
             if (Math.hypot(q.mover.position.x - sp.x, q.mover.position.z - sp.z) > 1.2) {
                 q.mover.position.set(sp.x, world.groundHeightAt(sp.x, sp.z), sp.z);
