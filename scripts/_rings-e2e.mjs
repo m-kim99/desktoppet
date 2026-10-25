@@ -105,6 +105,21 @@ await page.evaluate(() => window.__worldDev.ringToggle());
 let solo2 = null;
 for (let i = 0; i < 16; i++) { await page.waitForTimeout(500); solo2 = await page.evaluate(() => window.__worldDev.ringState()); if (solo2 && !solo2.stored.length && !solo2.stashing && solo2.chick) break; }
 check('R10 병아리 단독 재착용', !!(solo2 && !solo2.stored.length && solo2.chick && solo2.puppy && solo2.stash === 0), JSON.stringify(solo2));
+// 💍 재회식 — 빙의 해제 후 둘 다 보관 → ringReunion → 걸어와 마주 서고 함께 재착용
+await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
+await page.waitForTimeout(800);
+await page.evaluate(() => window.__worldDev.ringToggle());   // 빙의 없음 → 둘 다 보관
+let st2 = null;
+for (let i = 0; i < 16; i++) { await page.waitForTimeout(500); st2 = await page.evaluate(() => window.__worldDev.ringState()); if (st2 && st2.stored.length === 2 && !st2.stashing) break; }
+await page.evaluate(() => window.__worldDev.ringReunion());
+let reu = null;
+for (let i = 0; i < 150; i++) { await page.waitForTimeout(500); reu = await page.evaluate(() => window.__worldDev.ringState()); if (reu && !reu.stored.length && !reu.scene && reu.chick) break; }
+check('R11 재회식 — 걸어와 함께 재착용', !!(reu && !reu.stored.length && reu.chick && reu.puppy && reu.stash === 0), JSON.stringify(reu));
+// ✨ 추억 재생 — 상태 불변(착용 그대로), 씬만 돌았다 끝남
+await page.evaluate(() => window.__worldDev.ringReplay());
+let rep = null, sawScene = false;
+for (let i = 0; i < 150; i++) { await page.waitForTimeout(500); rep = await page.evaluate(() => window.__worldDev.ringState()); if (rep && rep.scene && rep.sceneKind === 'replay') sawScene = true; if (sawScene && rep && !rep.scene) break; }
+check('R12 추억 재생 — 씬 완주 + 상태 불변', !!(sawScene && rep && !rep.scene && rep.chick && rep.puppy && !rep.stored.length), JSON.stringify(rep));
 check('R6 JS 에러 없음', errs.length === 0, errs[0] || '');
 await browser.close(); server.close();
 console.log(fails ? `===== ${fails} FAIL =====` : '===== ALL PASS =====');
