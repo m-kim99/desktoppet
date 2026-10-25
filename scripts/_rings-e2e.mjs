@@ -86,6 +86,15 @@ for (let i = 0; i < 10; i++) {   // equip tick(2.5s) 대기
     if (re && re.chick && re.puppy) break;
 }
 check('R5 리로드 영속 — 다시 착용·둥지는 빈 채', !!(re && re.exchanged && re.chick && re.puppy && re.boxRings === 0), JSON.stringify(re));
+// 🪺 보관 토글 — 착용 중 클릭 = 알 위 보관, 다시 클릭 = 재착용
+await page.evaluate(() => window.__worldDev.ringToggle());
+let stored = null;
+for (let i = 0; i < 16; i++) { await page.waitForTimeout(500); stored = await page.evaluate(() => window.__worldDev.ringState()); if (stored && stored.stored && !stored.stashing) break; }
+check('R7 보관 — 펫 벗고 알 위에 반지 2', !!(stored && stored.stored && !stored.chick && !stored.puppy && stored.stash === 2), JSON.stringify(stored));
+await page.evaluate(() => window.__worldDev.ringToggle());
+let worn2 = null;
+for (let i = 0; i < 16; i++) { await page.waitForTimeout(500); worn2 = await page.evaluate(() => window.__worldDev.ringState()); if (worn2 && !worn2.stored && !worn2.stashing && worn2.chick) break; }
+check('R8 재착용 — 알 비우고 양쪽 착용', !!(worn2 && !worn2.stored && worn2.chick && worn2.puppy && worn2.stash === 0), JSON.stringify(worn2));
 check('R6 JS 에러 없음', errs.length === 0, errs[0] || '');
 await browser.close(); server.close();
 console.log(fails ? `===== ${fails} FAIL =====` : '===== ALL PASS =====');

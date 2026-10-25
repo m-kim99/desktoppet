@@ -773,7 +773,12 @@ async function loadGlbPet(url) {
 // 💍 우정반지 동기 — 월드 창과 localStorage(world-rings)를 공유하므로, 교환 순간 storage
 // 이벤트로 이 창의 펫에도 실시간으로 끼워진다 (같은 오리진의 두 창 문법).
 function applyBffRing() {
-    try { if (glbPet && !glbPet.charm && localStorage.getItem('world-rings')) setGlbPetCharm(glbPet, 'bff-ring'); } catch (e) {}
+    try {
+        const st = JSON.parse(localStorage.getItem('world-rings') || 'null');
+        const want = !!(st && !st.stored);   // 둥지에 보관 중이면 데탑 펫도 벗는다
+        if (glbPet && want && !glbPet.charm) setGlbPetCharm(glbPet, 'bff-ring');
+        if (glbPet && !want && glbPet.charm) setGlbPetCharm(glbPet, null);
+    } catch (e) {}
 }
 window.addEventListener('storage', (e) => { if (e.key === 'world-rings') applyBffRing(); });
 

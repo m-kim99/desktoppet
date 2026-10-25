@@ -3524,7 +3524,21 @@ function makeRingNest() {
         g.add(r);
         rings.push(r);
     }
-    g.userData = { lids, rings, ringY: 0.088 };
+    // 🥚 알 보관대 — 교환 후에야 둥지에 '알'이 생긴다. 보관 시 반지 둘이 알 위에 얹힌다(주인 설계).
+    const egg = new THREE.Mesh(bakeGrad(new THREE.SphereGeometry(0.105, 18, 14).scale(1, 1.12, 1).translate(0, 0.165, 0), 0xfdf8ec, 0xe4d8be, { curve: 1.2 }), gradMat);
+    egg.castShadow = true;
+    egg.receiveShadow = true;
+    egg.visible = !!ringsState;
+    g.add(egg);
+    const buildStash = () => [['chick', -0.057, 0.34], ['puppy', 0.057, -0.34]].map(([kind, rx, ry]) => {
+        const r = makeBffRing(0.034, kind);
+        r.position.set(rx, 0.252, 0.035);
+        r.rotation.set(-0.55, ry, 0);   // 알 윗비탈에 기대 얹힘
+        g.add(r);
+        return r;
+    });
+    g.userData = { lids, rings, ringY: 0.088, egg, buildStash, stash: [] };
+    if (ringsState && ringsState.stored) g.userData.stash = buildStash();
     g.scale.setScalar(0.55);   // 펫(0.455) 무릎께의 아담한 둥지 — 1.0은 솥뚜껑, 0.7도 라면그릇이었다(스샷 실측)
     return g;
 }
@@ -3562,19 +3576,59 @@ function startRingCeremony() {
         ringScene = { t: 0, pr, box, chick, puppy, sparked: false, flew: false, done: false, doneAt: 0 };
     })();
 }
-// 교환 상태 적용(부트·KV 늦동기·타기기 교환) — 멱등
+function saveRings() { try { localStorage.setItem('world-rings', JSON.stringify(ringsState)); worldSync('world-rings'); } catch (e) {} }
+// 🪺 보관/재착용 토글 — 착용 중 둥지 클릭 = 반지가 반짝 사라져 알 위로, 보관 중 클릭 = 다시 착용
+let ringStash = null;   // { mode: 'store'|'wear', t, box }
+function ringSparkle(v) {
+    for (let i = 0; i < 5; i++) {
+        const spr = glowSprite(0xffe08a, 0.045 + Math.random() * 0.03, 0.95);
+        spr.position.set(v.x + (Math.random() - 0.5) * 0.12, v.y + (Math.random() - 0.5) * 0.1, v.z + (Math.random() - 0.5) * 0.12);
+        scene.add(spr);
+        hugBurst.push({ spr, vx: 0, vy: 0.3, vz: 0, t: 0.6 });
+    }
+}
+function startRingToggle() {
+    if (ringScene || ringStash || !ringsState || buildMode) return;
+    const pr = PROPS.find((q) => q.type === 'ringnest');
+    const box = pr && pr.obj && pr.obj.userData;
+    if (!box || pets.length < 2) return;
+    const mode = ringsState.stored ? 'wear' : 'store';
+    const v = new THREE.Vector3();
+    if (mode === 'store') {   // 펫들 발치에서 반짝 — 반지가 벗겨져 둥지로
+        for (const q of pets) {
+            if (q.pet.charm) { q.pet.charm.group.getWorldPosition(v); ringSparkle(v); }
+            try { setGlbPetCharm(q.pet, null); } catch (e) {}
+        }
+    } else {
+        for (const r of box.stash) { r.getWorldPosition(v); ringSparkle(v); }
+    }
+    ringStash = { mode, t: 0, box, spawned: false };
+}
+// 교환 상태 적용(부트·KV 늦동기·타기기 교환/보관) — 멱등
 function applyRingsWorldState() {
     const pr = PROPS.find((q) => q.type === 'ringnest');
     const box = pr && pr.obj && pr.obj.userData;
-    if (box && box.rings) for (const r of box.rings) r.visible = false;
-    if (box && box.lids) { box.lids[0].rotation.z = 0.95; box.lids[1].rotation.z = -0.95; }
-    for (const q of pets) if (q.pet && !q.pet.charm) { try { setGlbPetCharm(q.pet, 'bff-ring'); } catch (e) {} }
+    const stored = !!(ringsState && ringsState.stored);
+    if (box) {
+        if (box.rings) for (const r of box.rings) r.visible = false;
+        if (box.lids) { box.lids[0].rotation.z = 0.95; box.lids[1].rotation.z = -0.95; }
+        if (box.egg) box.egg.visible = true;
+        if (stored && box.stash && !box.stash.length) box.stash = box.buildStash();
+        if (!stored && box.stash && box.stash.length) {
+            for (const r of box.stash) { if (r.parent) r.parent.remove(r); r.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
+            box.stash = [];
+        }
+    }
+    for (const q of pets) {
+        if (!q.pet) continue;
+        if (!stored && !q.pet.charm) { try { setGlbPetCharm(q.pet, 'bff-ring'); } catch (e) {} }
+        if (stored && q.pet.charm) { try { setGlbPetCharm(q.pet, null); } catch (e) {} }
+    }
 }
-const ringEquipTick = setInterval(() => {   // 펫 로딩·동기 타이밍과 무관하게 스스로 아문다
+setInterval(() => {   // 펫 로딩·동기 타이밍과 무관하게 스스로 아문다 (보관 토글·타기기 동기 포함 — 멱등이라 상시)
     if (!ringsState) { try { ringsState = JSON.parse(localStorage.getItem('world-rings') || 'null'); } catch (e) {} }
-    if (!ringsState || ringScene) return;
+    if (!ringsState || ringScene || ringStash) return;
     applyRingsWorldState();
-    if (pets.length >= 2 && pets.every((q) => q.pet.charm)) clearInterval(ringEquipTick);
 }, 2500);
 let ringGlintAt = 0;
 function updateBffRings(delta) {
@@ -3645,8 +3699,9 @@ function updateBffRings(delta) {
             s.box.rings.length = 0;
             setGlbPetCharm(s.chick.pet, 'bff-ring');
             setGlbPetCharm(s.puppy.pet, 'bff-ring');
-            ringsState = { at: Date.now() };
-            try { localStorage.setItem('world-rings', JSON.stringify(ringsState)); worldSync('world-rings'); } catch (e) {}
+            ringsState = { at: Date.now(), stored: false };
+            saveRings();
+            if (s.box.egg) s.box.egg.visible = true;   // 둥지에 알이 생긴다 — 보관대
             const mx = (s.chick.mover.position.x + s.puppy.mover.position.x) / 2;
             const mz = (s.chick.mover.position.z + s.puppy.mover.position.z) / 2;
             for (let i = 0; i < 14; i++) {   // 하트 폭발 💕 (금빛 반짝 섞어서)
@@ -3668,6 +3723,50 @@ function updateBffRings(delta) {
         if (s.t > s.doneAt + 3.2) {
             for (const q of [s.chick, s.puppy]) if (q !== possessed && q.ai.state === 'busy') releaseAI(q, 1.5);
             ringScene = null;
+        }
+    }
+}
+function updateRingStash(delta) {
+    if (!ringStash) return;
+    const st = ringStash;
+    st.t += delta;
+    if (st.mode === 'store') {
+        if (!st.spawned && st.t > 0.35) {   // 반지 둘이 반짝 사라졌다가 — 알 위로 내려앉는다
+            st.spawned = true;
+            st.box.stash = st.box.buildStash();
+            for (const r of st.box.stash) { r.userData._ty = r.position.y; r.position.y += 0.45; }
+        }
+        if (st.spawned) {
+            let settled = true;
+            for (const r of st.box.stash) {
+                r.position.y += (r.userData._ty - r.position.y) * Math.min(1, delta * 5.5);
+                if (r.position.y - r.userData._ty > 0.004) settled = false;
+            }
+            if (settled && st.t > 1.4) {
+                for (const r of st.box.stash) r.position.y = r.userData._ty;
+                ringsState.stored = true;
+                saveRings();
+                showToast('🪺 우정반지를 둥지의 알 위에 보관했어요 (클릭: 다시 착용)');
+                logWorldEvent('우정반지를 잠시 둥지의 알 위에 보관했다 🪺💍');
+                ringStash = null;
+            }
+        }
+    } else {   // wear — 알 위의 반지가 떠오르며 사라지고, 펫들 몸에서 다시 반짝
+        const k = Math.min(1, st.t / 0.7);
+        for (const r of st.box.stash) { r.position.y += delta * 0.4; r.scale.setScalar(Math.max(0.02, 1 - k)); }
+        if (k >= 1) {
+            for (const r of st.box.stash) { if (r.parent) r.parent.remove(r); r.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
+            st.box.stash = [];
+            const v = new THREE.Vector3();
+            for (const q of pets) {
+                try { setGlbPetCharm(q.pet, 'bff-ring'); } catch (e) {}
+                if (q.pet.charm) { q.pet.charm.group.getWorldPosition(v); ringSparkle(v); }
+            }
+            ringsState.stored = false;
+            saveRings();
+            showToast('💍 우정반지를 다시 나눠 꼈어요');
+            logWorldEvent('둥지에서 우정반지를 꺼내 다시 나눠 꼈다 💍');
+            ringStash = null;
         }
     }
 }
@@ -6440,10 +6539,9 @@ function openCapsulePanel() {
 // 두 경로를 병행하고, Roblox ProximityPrompt처럼 호버 라벨이 "무엇이 되는지"를 그 자리에서
 // 알려준다 (updateHoverPrompt). ----
 const PROP_CLICKS = {
-    ringnest: () => {   // 💍 교환식 (1회) · 이후엔 그날의 기록
+    ringnest: () => {   // 💍 미교환=교환식 · 착용 중=알 위에 보관 · 보관 중=다시 착용
         if (!ringsState) { startRingCeremony(); return; }
-        const d = new Date(ringsState.at);
-        showToast(`💍 ${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} — Mini ♥ Claude · BFF ∞`);
+        startRingToggle();
     },
     icebox: () => openIcebox(),
     bonfire: () => toggleGrillPanel(),
@@ -6493,7 +6591,12 @@ const HOVER_PROMPTS = {
     trampoline: () => '🤸 트램펄린 — 올라서면 통통! · 클릭 = 절친 부르기',
     vine: () => '🍅 덩굴 시렁 — 열매가 달리면 조종 중 ⌘로 수확',
     melonpatch: () => '🍉 수박 덩굴 — 병아리가 소원한 수박밭 · 열매는 조종 중 ⌘로 수확',
-    ringnest: () => ringsState ? '💍 우정반지 둥지 — Mini ♥ Claude · BFF ∞ (클릭: 그날의 기록)' : '💍 우정반지 둥지 — 주인의 주말 선물 · 클릭하면 교환식이 열려요',
+    ringnest: () => {
+        if (!ringsState) return '💍 우정반지 둥지 — 주인의 주말 선물 · 클릭하면 교환식이 열려요';
+        const d = new Date(ringsState.at);
+        const ds = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+        return `💍 우정반지 둥지 — ${ds}부터 BFF ∞ · 클릭: ${ringsState.stored ? '다시 착용' : '알 위에 보관'}`;
+    },
     fruitbasket: () => '🧺 과일바구니 — 클릭: 열기 · 과일 들고 ⌘: 담기',
     seesaw: () => '🛝 시소 — 조종 중 ⌘/✋로 타요',
     sunbed: () => '🛏️ 선베드 — 조종 중 ⌘/✋로 누워요',
@@ -10154,7 +10257,9 @@ if (statsOn) window.__worldDev = {
         x: +aiFishing.p.mover.position.x.toFixed(2), z: +aiFishing.p.mover.position.z.toFixed(2), y: +aiFishing.p.mover.position.y.toFixed(3),
         groundY: +world.groundHeightAt(aiFishing.p.mover.position.x, aiFishing.p.mover.position.z).toFixed(3) } : null),
     fishChairEnd: () => { const f = aiFishing; if (!f) return null; endAiFishing(); return { x: +f.p.mover.position.x.toFixed(2), z: +f.p.mover.position.z.toFixed(2) }; },
-    ringState: () => ({ exchanged: !!ringsState, scene: !!ringScene,
+    ringToggle: () => { startRingToggle(); return !!ringStash; },   // 🪺 (E2E) 보관/착용 토글
+    ringState: () => ({ exchanged: !!ringsState, scene: !!ringScene, stored: !!(ringsState && ringsState.stored), stashing: !!ringStash,
+        stash: (() => { const pr = PROPS.find((q) => q.type === 'ringnest'); const b = pr && pr.obj && pr.obj.userData; return b && b.stash ? b.stash.length : -1; })(),
         pos: pets.map((q) => [q.name, +q.mover.position.x.toFixed(2), +q.mover.position.z.toFixed(2), q.ai.state]),
         chick: !!((pets.find((q) => q.name === 'chick') || {}).pet || {}).charm, puppy: !!((pets.find((q) => q.name === 'puppy') || {}).pet || {}).charm,
         boxRings: (() => { const pr = PROPS.find((q) => q.type === 'ringnest'); const b = pr && pr.obj && pr.obj.userData; return b && b.rings ? b.rings.filter((r) => r.visible).length : -1; })() }),   // 💍 (E2E)
@@ -26112,6 +26217,7 @@ function animate() {
     updateCooking(delta);                    // 🍳 조리 시퀀스 — 손질·웍·플레이팅
     updateEternScene(delta);                 // 🎂 영원 케이크 나눠 먹기
     updateBffRings(delta);                   // 💍 우정반지 — 교환식 + 함께 반짝
+    updateRingStash(delta);                  // 🪺 반지 보관/재착용 토글
     updateAiCookPost(delta);                 // 🍳 자율 요리사 후처리 — 대접/셀프 냠냠
     updatePlateErrand();                     // 💌 절친 몫 접시 회수 심부름
     updateFruitThrows(delta);                // 🧺 원거리 휙 담기 아크
