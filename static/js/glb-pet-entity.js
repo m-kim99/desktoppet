@@ -277,7 +277,7 @@ export function setGlbPetCharm(pet, id) {
     const group = makeBffRing(R, kind);
     if (kind === 'chick') {   // 날개 중간을 감싸는 팔찌 — 참이 날개 위에서 빼꼼 (wrap은 π 플립: 월드 +X = 로컬 −X)
         group.position.set(-pet.dims.x * 0.44, pet.dims.y * 0.52, 0.01);   // 날개 중간 — 끝(0.52)은 패들에서 떠 보였다(주인 피드백)
-        group.rotation.y = Math.PI / 2;   // 구멍 축 = 날개 길이 방향
+        group.rotation.y = -Math.PI / 2;   // 구멍 축 = 날개 길이 방향, 참 얼굴은 바깥(몸 반대쪽)을 본다 — 주인 피드백
     } else {   // 볼에 기댄 반지 (주인 지정 자리) — 몸이 한 구라 수치 추측이 빗나가서, 눈 랜드마크에서 역산
         pet.wrap.updateWorldMatrix(true, true);
         let eyeL = null, eyeR = null;
