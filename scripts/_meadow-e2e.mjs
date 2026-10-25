@@ -23,7 +23,7 @@ page.on('pageerror', (e) => errs.push(String(e.message)));
 await page.goto(`http://127.0.0.1:${PORT}/world.html?weather=clear&hour=12&stats=1`, { waitUntil: 'load' });
 await page.waitForTimeout(9000);
 // 결정화: 강아지를 동산에 한가하게 세워둔다 (자율활동이 선점했으면 합류 게이트가 막는 건 설계)
-await page.evaluate(() => window.__worldDev.possessGo('puppy', -2.0, -10.9));
+await page.evaluate(() => window.__worldDev.possessGo('puppy', -2.6, -12.0));
 await page.waitForTimeout(400);
 await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
 await page.waitForTimeout(900);
@@ -38,7 +38,7 @@ for (let i = 0; i < 300; i++) {   // 본섬→동산 다리 도보 — 넉넉히
 check('M2 병아리 — 다리 건너 벤치 착석', !!(st && st.find((r) => r[0] === 'chick' && r[1] && r[2] === 'lying')), JSON.stringify(st));
 const pos = await page.evaluate(() => window.__worldDev.ringState().pos);
 const cp = pos.find((r) => r[0] === 'chick');
-check('M3 착석 좌표 = 동산 벤치', !!cp && Math.hypot(cp[1] + 2.6, cp[2] + 11.75) < 0.6, JSON.stringify(pos));
+check('M3 착석 좌표 = 동산 벤치', !!cp && Math.hypot(cp[1] + 3.1, cp[2] + 12.8) < 0.7, JSON.stringify(pos));
 let duo = null;
 for (let i = 0; i < 60; i++) {   // 절친 합류(한가했다면)
     await page.waitForTimeout(400);
@@ -58,8 +58,8 @@ const shots = await page.evaluate(async () => {
     const cam = new THREE.PerspectiveCamera(32, 1, 0.01, 200);
     const out = [];
     for (const [ox, oy, oz] of [[0, 1.5, -2.2], [1.6, 1.2, -1.2]]) {
-        cam.position.set(-2.6 + ox, 0.72 + oy, -11.75 + oz);
-        cam.lookAt(-2.6, 1.0, -11.75);
+        cam.position.set(-3.1 + ox, 0.78 + oy, -12.8 + oz);
+        cam.lookAt(-3.1, 1.08, -12.8);
         r.render(dev.scene, cam); out.push(cv.toDataURL('image/png'));
     }
     r.dispose(); return out;

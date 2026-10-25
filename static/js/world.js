@@ -1386,13 +1386,14 @@ function terrainHeight(x, z) {
 // to the island's radius) over a lathed strata cliff tapering to a rounded tip.
 function buildIslandMeshes(isl) {
     const sand = isl.kind === 'sand';   // 휴양지 모래섬 — 텍스처·얼룩 팔레트·해변 경사·스커트 톤이 갈린다
+    const meadow = isl.kind === 'meadow';   // 🌸 병아리 동산 — 노란빛 밝은 연두 (주인 지정 톤)
     const rings = Math.max(16, Math.round(isl.r * 6.5));
     const segs = Math.max(48, Math.round(isl.r * 18));
     const positions = [], colors = [], uvs = [], indices = [];
-    const base = sand ? new THREE.Color(0.97, 0.95, 0.9) : new THREE.Color(0.93, 0.95, 0.88);
-    const light = sand ? new THREE.Color(1.06, 1.04, 0.98) : new THREE.Color(1.07, 1.1, 1.0);
-    const warmG = sand ? new THREE.Color(1.09, 1.02, 0.88) : new THREE.Color(1.1, 1.05, 0.8);
-    const coolG = sand ? new THREE.Color(0.9, 0.9, 0.96) : new THREE.Color(0.8, 0.94, 1.02);
+    const base = sand ? new THREE.Color(0.97, 0.95, 0.9) : meadow ? new THREE.Color(1.04, 1.06, 0.78) : new THREE.Color(0.93, 0.95, 0.88);
+    const light = sand ? new THREE.Color(1.06, 1.04, 0.98) : meadow ? new THREE.Color(1.16, 1.18, 0.9) : new THREE.Color(1.07, 1.1, 1.0);
+    const warmG = sand ? new THREE.Color(1.09, 1.02, 0.88) : meadow ? new THREE.Color(1.2, 1.14, 0.7) : new THREE.Color(1.1, 1.05, 0.8);
+    const coolG = sand ? new THREE.Color(0.9, 0.9, 0.96) : meadow ? new THREE.Color(0.98, 1.08, 0.8) : new THREE.Color(0.8, 0.94, 1.02);
     const c = new THREE.Color();
     for (let i = 0; i <= rings; i++) {
         const r = (i / rings) * isl.r;
@@ -3867,39 +3868,22 @@ function makeChickGarden(pr) {
         head.translate(lx, y + 0.095, lz);
         g.push(bakeGrad(head, col, col, { curve: 1.15 }));
     };
-    const HCZ = 0.85;   // 언덕 중심(로컬)
+    const HCZ = 0.95;   // 언덕 중심(로컬) — 앵커는 벤치 간격 규칙 때문에 남비탈
     const COLS = [0xff8fb3, 0xffffff, 0xb39ddb, 0xff8a65, 0xf27ba0];
-    for (let i = 0; i < 92; i++) {   // 들꽃 — 언덕 비탈 랜덤 (벤치·통로·실루엣 구역은 비움)
-        const a = rnd() * Math.PI * 2, rr = 0.7 + rnd() * 1.45;
+    COLS.push(0xffd54f);   // 노란 들꽃도 섞는다 — 동산의 톤 (실루엣 꽃그림은 어색해서 제거, 주인 피드백)
+    for (let i = 0; i < 128; i++) {   // 들꽃 — 언덕 비탈 랜덤 (벤치·통로만 비움)
+        const a = rnd() * Math.PI * 2, rr = 0.55 + rnd() * 1.8;
         const lx = Math.sin(a) * rr, lz = HCZ + Math.cos(a) * rr;
-        if (Math.abs(lx) < 0.62 && lz > 0.95 && lz < 1.75) continue;        // 벤치 자리
-        if (Math.abs(lx - 0.25) < 0.55 && lz > 1.7) continue;               // 다리→벤치 통로
-        if (Math.abs(lx) < 1.1 && lz < 0.15) continue;                      // 실루엣 구역
+        if (Math.abs(lx) < 0.78 && lz > 0.9 && lz < 1.8) continue;          // 벤치 자리
+        if (Math.abs(lx - 0.4) < 0.6 && lz > 1.55) continue;                // 다리→벤치 통로
         flower(lx, lz, COLS[Math.floor(rnd() * COLS.length)]);
     }
-    const PIX = [   // 🐥 병아리 실루엣 — 남비탈, 탑뷰 꽃그림 (1=노랑 2=부리 3=눈)
-        '..1111...',
-        '.111111..',
-        '11311112.',
-        '111111122',
-        '11111111.',
-        '.111111..',
-        '..1111...',
-    ];
-    PIX.forEach((row, rI) => {   // 셀 0.16 + 큰 송이(0.042) — 하늘에서 면으로 읽히게 (0.21 점묘는 흩어졌다, 실측)
-        [...row].forEach((ch, cI) => {
-            if (ch === '.') return;
-            const lx = (cI - 4) * 0.16 + (rnd() - 0.5) * 0.02;
-            const lz = -0.2 - rI * 0.155 + (rnd() - 0.5) * 0.02;
-            flower(lx, lz, ch === '2' ? 0xff8a3c : ch === '3' ? 0x4a3828 : 0xffd54f, 0.044);
-        });
-    });
-    const sgy = sy(0.85, 2.3);   // 입구 팻말 — 다리에서 내려오는 길목 동편
+    const sgy = sy(1.1, 2.5);   // 입구 팻말 — 다리에서 내려오는 길목 동편
     const post = new THREE.CylinderGeometry(0.02, 0.024, 0.36, 7);
-    post.translate(0.85, sgy + 0.18, 2.3);
+    post.translate(1.1, sgy + 0.18, 2.5);
     g.push(bakeGrad(post, 0xb08a55, 0x7e5f3a, { curve: 1 }));
     const board = new THREE.BoxGeometry(0.48, 0.18, 0.03);
-    board.translate(0.85, sgy + 0.4, 2.3);
+    board.translate(1.1, sgy + 0.4, 2.5);
     g.push(bakeGrad(board, 0xc29a62, 0x8a6a44, { curve: 1.1 }));
     const mesh = new THREE.Mesh(mergeGeometries(g, false), gradMat);
     mesh.castShadow = true;
@@ -3916,30 +3900,30 @@ function makeChickGarden(pr) {
     const tex = new THREE.CanvasTexture(cv);
     tex.colorSpace = THREE.SRGBColorSpace;
     const label = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.165), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
-    label.position.set(0.85, sgy + 0.402, 2.316);
+    label.position.set(1.1, sgy + 0.402, 2.516);
     grp.add(label);
     return grp;
 }
 // 동산 벤치 — 흰 바랜 나무 2인 벤치 (앉기는 BEDS extras가 등록: gardenbench-0/1)
 function makeGardenBench() {
     const g = [];
-    for (const dz of [0.02, -0.095]) {   // 좌판 슬랫 2
-        const sl = new THREE.BoxGeometry(0.66, 0.042, 0.125);
+    for (const dz of [0.02, -0.095]) {   // 좌판 슬랫 2 — 0.95 와이드(주인: 가로로 길게)
+        const sl = new THREE.BoxGeometry(0.95, 0.042, 0.125);
         sl.translate(0, 0.205, dz);
         g.push(bakeGrad(sl, 0xdcc9a8, 0xb09468, { curve: 1.1 }));
     }
     for (const [yy, rz] of [[0.335, -0.14], [0.415, -0.16]]) {   // 등받이 슬랫 2 — 살짝 뒤로 기움
-        const bk = new THREE.BoxGeometry(0.66, 0.062, 0.034);
+        const bk = new THREE.BoxGeometry(0.95, 0.062, 0.034);
         bk.rotateX(-0.18);
         bk.translate(0, yy, rz);
         g.push(bakeGrad(bk, 0xdcc9a8, 0xb09468, { curve: 1.1 }));
     }
     for (const sx of [-1, 1]) {   // 옆 프레임 + 팔걸이
         const leg = new THREE.BoxGeometry(0.05, 0.21, 0.24);
-        leg.translate(sx * 0.3, 0.1, -0.02);
+        leg.translate(sx * 0.42, 0.1, -0.02);
         g.push(bakeGrad(leg, 0xb89a70, 0x8d7250, { curve: 1.1 }));
         const arm = new THREE.BoxGeometry(0.07, 0.034, 0.3);
-        arm.translate(sx * 0.3, 0.275, -0.02);
+        arm.translate(sx * 0.45, 0.275, -0.02);
         g.push(bakeGrad(arm, 0xd4bd94, 0xa98e62, { curve: 1.1 }));
     }
     const mesh = new THREE.Mesh(mergeGeometries(g, false), gradMat);
@@ -4539,7 +4523,7 @@ const fireflyTex = precipTexture((ctx) => {
 const fireflyClouds = [];
 for (let i = 0; i < 3; i++) {
     const pts = precipPoints(26, fireflyTex, 0.085, 0.02, 0.05, 0.55, 2.1, 1.6, 1.4);
-    if (i === 2) pts.position.set(-2.6, 0.35, -12.1);   // 🌸 병아리 동산 꽃언덕 — 밤의 생명감
+    if (i === 2) pts.position.set(-3.1, 0.38, -13.2);   // 🌸 병아리 동산 꽃언덕 — 밤의 생명감
     else pts.position.set(-2.6, 0, -2.9);   // 연못가
     pts.material.blending = THREE.AdditiveBlending;
     pts.material.color.set(0xd8ffa0);
@@ -7286,7 +7270,7 @@ for (const p of PROPS) {
         const cy = Math.cos(gbPr.rotY || 0), sy = Math.sin(gbPr.rotY || 0);
         const bw = (lx, lz) => ({ x: gbPr.x + lx * cy + lz * sy, z: gbPr.z - lx * sy + lz * cy });
         const baseY = terrainHeight(gbPr.x, gbPr.z);
-        [-0.16, 0.16].forEach((lx, i) => {
+        [-0.24, 0.24].forEach((lx, i) => {   // 와이드 벤치 — 두 자리도 넉넉히
             const w = bw(lx, 0.015);
             const ap = bw(lx, 0.62);
             BEDS.push({
