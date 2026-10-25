@@ -9411,7 +9411,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     if (!fishingAim) for (const p of pets) {
         if (raycaster.intersectObject(p.mover, true).length) {
             if (e.button !== 2 && e.pointerType !== 'touch') return;   // 마우스는 RIGHT-click 전용 (left = camera) · 터치는 탭이 곧 상호작용
-            if (p.bed && p.bed.mode === 'sit') { p.bedExit = true; return; }   // tap a sitter → gets up
+            // 앉은 펫 탭 = (기상이 아니라) 평소처럼 동작 메뉴 — 기상은 ✕/방향키/⌘가 담당 (주인 지정, 모바일 실측)
             if (p.pet.sleeping) { p.pet.sleeping = false; p.pet.autoSleeping = false; return; }
             showMenu(e.clientX, e.clientY, p);
             // Holding a drink/snack? Stack the 먹기 chooser right ABOVE the motion menu
