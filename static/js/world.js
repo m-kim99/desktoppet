@@ -3783,7 +3783,10 @@ function updateBffRings(delta) {
         s.box.lids[0].rotation.z = 1.35 - 0.4 * kk;
         s.box.lids[1].rotation.z = -(1.35 - 0.4 * kk);
         if (s.t > s.doneAt + 3.2) {
-            for (const q of [s.chick, s.puppy]) if (q !== possessed && q.ai.state === 'busy') releaseAI(q, 1.5);
+            for (const q of [s.chick, s.puppy]) {
+                if (q === possessed) releaseAI(q);   // 🎬 조종 복귀 — releaseAI가 'player'로 되돌린다 (빼먹으면 안무 중 영구 잠금 — 실측 버그)
+                else if (q.ai.state === 'busy') releaseAI(q, 1.5);
+            }
             ringScene = null;
         }
     }

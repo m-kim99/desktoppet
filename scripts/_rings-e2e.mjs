@@ -120,6 +120,15 @@ await page.evaluate(() => window.__worldDev.ringReplay());
 let rep = null, sawScene = false;
 for (let i = 0; i < 150; i++) { await page.waitForTimeout(500); rep = await page.evaluate(() => window.__worldDev.ringState()); if (rep && rep.scene && rep.sceneKind === 'replay') sawScene = true; if (sawScene && rep && !rep.scene) break; }
 check('R12 추억 재생 — 씬 완주 + 상태 불변', !!(sawScene && rep && !rep.scene && rep.chick && rep.puppy && !rep.stored.length), JSON.stringify(rep));
+// 🎮 조종 중 추억 재생 — 씬이 끝나면 조종('player')으로 복귀해야 한다 (안무 중 영구 잠금 버그 회귀 방지)
+await page.evaluate(() => window.__worldDev.possessGo('chick', -11.73, -6.46));
+await page.evaluate(() => window.__worldDev.ringReplay());
+let pr2 = null, saw2 = false;
+for (let i = 0; i < 150; i++) { await page.waitForTimeout(500); pr2 = await page.evaluate(() => window.__worldDev.ringState()); if (pr2 && pr2.scene) saw2 = true; if (saw2 && pr2 && !pr2.scene) break; }
+await page.waitForTimeout(800);
+pr2 = await page.evaluate(() => window.__worldDev.ringState());
+const chickRow = pr2 && pr2.pos.find((r) => r[0] === 'chick');
+check('R13 조종 중 리플레이 — 끝나면 조종 복귀', !!(saw2 && pr2 && !pr2.scene && chickRow && chickRow[3] === 'player'), JSON.stringify(pr2 && pr2.pos));
 check('R6 JS 에러 없음', errs.length === 0, errs[0] || '');
 await browser.close(); server.close();
 console.log(fails ? `===== ${fails} FAIL =====` : '===== ALL PASS =====');
