@@ -253,10 +253,10 @@ export function setGlbPetCharm(pet, id) {
     const kind = pet.wings && pet.wings.length ? 'chick' : 'puppy';
     // 둘 다 wrap 앵커(산타모자 문법) — 림 노드는 비균일 스케일이라 링이 찌그러진다(계측 2026-10-25).
     // 발찌는 풀에 가려 안 보였다(주인 피드백) → 병아리는 날개에 끼운 팔찌, 강아지는 볼에 얹은 반지.
-    const R = Math.min(pet.dims.x, pet.dims.z) * (kind === 'chick' ? 0.11 : 0.1);
+    const R = Math.min(pet.dims.x, pet.dims.z) * (kind === 'chick' ? 0.11 : 0.09);
     const group = makeBffRing(R, kind);
     if (kind === 'chick') {   // 날개 중간을 감싸는 팔찌 — 참이 날개 위에서 빼꼼 (wrap은 π 플립: 월드 +X = 로컬 −X)
-        group.position.set(-pet.dims.x * 0.52, pet.dims.y * 0.54, 0.01);
+        group.position.set(-pet.dims.x * 0.44, pet.dims.y * 0.52, 0.01);   // 날개 중간 — 끝(0.52)은 패들에서 떠 보였다(주인 피드백)
         group.rotation.y = Math.PI / 2;   // 구멍 축 = 날개 길이 방향
     } else {   // 볼에 기댄 반지 (주인 지정 자리) — 몸이 한 구라 수치 추측이 빗나가서, 눈 랜드마크에서 역산
         pet.wrap.updateWorldMatrix(true, true);
@@ -266,7 +266,7 @@ export function setGlbPetCharm(pet, id) {
             const L = (node) => pet.wrap.worldToLocal(new THREE.Vector3().setFromMatrixPosition(node.matrixWorld));
             const el = L(eyeL), er = L(eyeR);
             const side = er.clone().sub(el).normalize();            // 오른볼 방향
-            const cheek = er.clone().add(side.multiplyScalar(0.055)).add(new THREE.Vector3(0, -0.06, 0));
+            const cheek = er.clone().add(side.multiplyScalar(0.06)).add(new THREE.Vector3(0, -0.095, 0));   // 눈을 가리지 않게 한 뼘 아래(참 머리가 눈높이까지 올라오는 걸 감안 — 주인 피드백)
             const n = cheek.clone().setY(0).normalize();            // 머리 구의 바깥 법선(수평)
             cheek.add(n.clone().multiplyScalar(R * 0.3));           // 표면에서 반지 두께만큼 띄움
             group.position.copy(cheek);

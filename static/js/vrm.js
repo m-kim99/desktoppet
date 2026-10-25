@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { createGlbPetEntity, updateGlbPetEntity, disposeGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory, setGlbPetCharm } from './glb-pet-entity.js?v=4';
+import { createGlbPetEntity, updateGlbPetEntity, disposeGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory, setGlbPetCharm } from './glb-pet-entity.js?v=5';
 let isVRM1 = true;
 let currentMixer = null;
 let idleAction = null;

@@ -10,7 +10,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 // ⚠️ 모듈 임포트의 ?v= 쿼리 = 캐시 버스터. 워치독은 world.js만 ETag 감시하고, 임포트 모듈은
 // 브라우저 휴리스틱 캐시로 며칠씩 신선 취급돼 재접속으로도 안 갱신된다(의자 미표시 실측 —
 // 2026-10-23). 모듈을 수정하면 여기 v를 올릴 것. 서버 no-cache 헤더가 2차 방어.
-import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory, makeBffRing, setGlbPetCharm } from './glb-pet-entity.js?v=4';
+import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory, makeBffRing, setGlbPetCharm } from './glb-pet-entity.js?v=5';
 import { ISLAND_R, ISLANDS, BRIDGES, HILLS, HOUSE, FLAT_SPOTS, PROPS, FERRY_PIERS, FERRY_SEA_POINTS } from './world-layout.js?v=2';
 import { kitProp } from './world-kit.js?v=2';
 
@@ -687,7 +687,7 @@ controls.target.set(0, 0.35, 0);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;          // lower = silkier glide after a drag
 controls.rotateSpeed = 0.85;
-controls.minDistance = 2.2;
+controls.minDistance = 1.0;   // 2.2는 펫 얼굴·반지 감상엔 멀었다(주인 요청) — 확대 버튼·휠 공통 클램프
 controls.maxDistance = 15;
 controls.maxPolarAngle = Math.PI * 0.49;
 // Wheel zoom: OrbitControls dollies in hard steps per wheel tick, which feels stiff. Disable it and
