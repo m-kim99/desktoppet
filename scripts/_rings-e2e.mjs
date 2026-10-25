@@ -89,12 +89,22 @@ check('R5 리로드 영속 — 다시 착용·둥지는 빈 채', !!(re && re.ex
 // 🪺 보관 토글 — 착용 중 클릭 = 알 위 보관, 다시 클릭 = 재착용
 await page.evaluate(() => window.__worldDev.ringToggle());
 let stored = null;
-for (let i = 0; i < 16; i++) { await page.waitForTimeout(500); stored = await page.evaluate(() => window.__worldDev.ringState()); if (stored && stored.stored && !stored.stashing) break; }
-check('R7 보관 — 펫 벗고 알 위에 반지 2', !!(stored && stored.stored && !stored.chick && !stored.puppy && stored.stash === 2), JSON.stringify(stored));
+for (let i = 0; i < 16; i++) { await page.waitForTimeout(500); stored = await page.evaluate(() => window.__worldDev.ringState()); if (stored && stored.stored.length === 2 && !stored.stashing) break; }
+check('R7 전체 보관(빙의 없음) — 둘 벗고 알 위 2', !!(stored && stored.stored.length === 2 && !stored.chick && !stored.puppy && stored.stash === 2), JSON.stringify(stored));
 await page.evaluate(() => window.__worldDev.ringToggle());
 let worn2 = null;
-for (let i = 0; i < 16; i++) { await page.waitForTimeout(500); worn2 = await page.evaluate(() => window.__worldDev.ringState()); if (worn2 && !worn2.stored && !worn2.stashing && worn2.chick) break; }
-check('R8 재착용 — 알 비우고 양쪽 착용', !!(worn2 && !worn2.stored && worn2.chick && worn2.puppy && worn2.stash === 0), JSON.stringify(worn2));
+for (let i = 0; i < 16; i++) { await page.waitForTimeout(500); worn2 = await page.evaluate(() => window.__worldDev.ringState()); if (worn2 && !worn2.stored.length && !worn2.stashing && worn2.chick) break; }
+check('R8 전체 재착용 — 알 비우고 양쪽 착용', !!(worn2 && !worn2.stored.length && worn2.chick && worn2.puppy && worn2.stash === 0), JSON.stringify(worn2));
+// 🐥 펫 단위: 병아리로 빙의해 누르면 병아리 것만 보관·재착용 (주인 설계)
+await page.evaluate(() => window.__worldDev.possessGo('chick', -11.73, -6.46));
+await page.evaluate(() => window.__worldDev.ringToggle());
+let solo = null;
+for (let i = 0; i < 16; i++) { await page.waitForTimeout(500); solo = await page.evaluate(() => window.__worldDev.ringState()); if (solo && solo.stored.length === 1 && !solo.stashing) break; }
+check('R9 병아리 단독 보관 — 강아지는 착용 유지', !!(solo && solo.stored.length === 1 && solo.stored[0] === 'chick' && !solo.chick && solo.puppy && solo.stash === 1), JSON.stringify(solo));
+await page.evaluate(() => window.__worldDev.ringToggle());
+let solo2 = null;
+for (let i = 0; i < 16; i++) { await page.waitForTimeout(500); solo2 = await page.evaluate(() => window.__worldDev.ringState()); if (solo2 && !solo2.stored.length && !solo2.stashing && solo2.chick) break; }
+check('R10 병아리 단독 재착용', !!(solo2 && !solo2.stored.length && solo2.chick && solo2.puppy && solo2.stash === 0), JSON.stringify(solo2));
 check('R6 JS 에러 없음', errs.length === 0, errs[0] || '');
 await browser.close(); server.close();
 console.log(fails ? `===== ${fails} FAIL =====` : '===== ALL PASS =====');

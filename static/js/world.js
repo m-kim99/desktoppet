@@ -3454,8 +3454,13 @@ function makeMelonPatch() {
 // 추억의 섬 기념비 곁. 베이지 둥지(바구니 왕복 Lathe 문법) + 잔가지·깃털 + 크림 쿠션 위에
 // BFF 반지 2개(모듈 makeBffRing — 착용과 단일 소스), 나뭇잎 덮개 2장(교환식에 열림),
 // 앞엔 "Mini ♥ Claude / BFF ∞" 명패. 덮개·반지가 움직여서 비병합 프롭(≈8드로우, 교환 후 ±0).
-let ringsState = null;   // { at } — 교환 완료(기기 간 KV 동기)
-try { ringsState = JSON.parse(localStorage.getItem('world-rings') || 'null'); } catch (e) {}
+let ringsState = null;   // { at, stored: ['chick'|'puppy'…] } — 교환 완료 + 펫별 보관(기기 간 KV 동기)
+function normRings(st) {   // 구형 {stored: bool} → 펫 배열로 이행
+    if (!st) return null;
+    if (!Array.isArray(st.stored)) st.stored = st.stored ? ['chick', 'puppy'] : [];
+    return st;
+}
+try { ringsState = normRings(JSON.parse(localStorage.getItem('world-rings') || 'null')); } catch (e) {}
 function makeRingNest() {
     const g = new THREE.Group();
     const st = [];   // 정적부 — 한 번에 병합(DS: 둥지 안팎이 다 보이는 왕복 셸)
@@ -3530,16 +3535,19 @@ function makeRingNest() {
     egg.receiveShadow = true;
     egg.visible = !!ringsState;
     g.add(egg);
-    const buildStash = () => [['chick', -0.057, 0.34], ['puppy', 0.057, -0.34]].map(([kind, rx, ry]) => {
+    const STASH_SLOT = { chick: [-0.057, 0.34], puppy: [0.057, -0.34] };   // 알 위 고정 자리 — 병아리 왼쪽·강아지 오른쪽
+    const buildStashRing = (kind) => {
+        const [rx, ry] = STASH_SLOT[kind];
         const r = makeBffRing(0.034, kind);
         r.position.set(rx, 0.252, 0.035);
         r.rotation.set(-0.55, ry, 0);   // 알 윗비탈에 기대 얹힘
+        r.userData.kind = kind;
         g.add(r);
         return r;
-    });
-    g.userData = { lids, rings, ringY: 0.088, egg, buildStash, stash: [] };
-    if (ringsState && ringsState.stored) g.userData.stash = buildStash();
-    g.scale.setScalar(0.55);   // 펫(0.455) 무릎께의 아담한 둥지 — 1.0은 솥뚜껑, 0.7도 라면그릇이었다(스샷 실측)
+    };
+    g.userData = { lids, rings, ringY: 0.088, egg, buildStashRing, stash: [] };
+    if (ringsState) for (const k of ringsState.stored) g.userData.stash.push(buildStashRing(k));
+    g.scale.setScalar(0.825);   // 0.55는 너무 작았다(주인 피드백 — 1.5배) — 이제 팻말 글씨도 읽히는 크기
     return g;
 }
 // 교환식 — eternScene 문법: 하던 일 정리 → 둥지 앞 마주 보기 → 타임라인은 updateBffRings가
@@ -3559,7 +3567,7 @@ function startRingCeremony() {
         }
         const cy = Math.cos(pr.rotY || 0), sy = Math.sin(pr.rotY || 0);
         const W = (lx, lz) => ({ x: pr.x + lx * cy + lz * sy, z: pr.z - lx * sy + lz * cy });
-        const a = W(-0.66, 0.34), b = W(0.66, 0.34);
+        const a = W(-0.78, 0.4), b = W(0.78, 0.4);   // 1.5배 둥지에 맞춘 양옆 자리
         // 도착 보장: gotoAsync는 막힘/스톨 10초면 미도착 resolve가 설계지만, 디렉터가 goto를 덮어쓰면
         // 약속이 영원히 안 풀린다(실측 — 놀이터 활동 선점 시 교환식이 멈춤). 12초 레이스로 상한을
         // 두고, 못 닿은 펫은 곁으로 폴짝 — 광장 패스트트래블의 TP 문법. 교환식 시작 상한 ~12초.
@@ -3592,41 +3600,57 @@ function startRingToggle() {
     const pr = PROPS.find((q) => q.type === 'ringnest');
     const box = pr && pr.obj && pr.obj.userData;
     if (!box || pets.length < 2) return;
-    const mode = ringsState.stored ? 'wear' : 'store';
+    // 누가 눌렀나가 범위를 정한다(주인 설계): 조종 중이면 그 펫 반지만, 아니면 전체 —
+    // 전체일 땐 보관분이 있으면 먼저 전부 꺼내고, 없으면 전부 보관.
+    let kinds, mode;
+    if (possessed) {
+        kinds = [possessed.name];
+        mode = ringsState.stored.includes(possessed.name) ? 'wear' : 'store';
+    } else if (ringsState.stored.length) {
+        kinds = ringsState.stored.slice(); mode = 'wear';
+    } else {
+        kinds = ['chick', 'puppy']; mode = 'store';
+    }
     const v = new THREE.Vector3();
-    if (mode === 'store') {   // 펫들 발치에서 반짝 — 반지가 벗겨져 둥지로
+    if (mode === 'store') {   // 발치에서 반짝 — 반지가 벗겨져 둥지로
         for (const q of pets) {
+            if (!kinds.includes(q.name)) continue;
             if (q.pet.charm) { q.pet.charm.group.getWorldPosition(v); ringSparkle(v); }
             try { setGlbPetCharm(q.pet, null); } catch (e) {}
         }
     } else {
-        for (const r of box.stash) { r.getWorldPosition(v); ringSparkle(v); }
+        for (const r of box.stash) if (kinds.includes(r.userData.kind)) { r.getWorldPosition(v); ringSparkle(v); }
     }
-    ringStash = { mode, t: 0, box, spawned: false };
+    ringStash = { mode, kinds, t: 0, box, spawned: false };
 }
 // 교환 상태 적용(부트·KV 늦동기·타기기 교환/보관) — 멱등
 function applyRingsWorldState() {
     const pr = PROPS.find((q) => q.type === 'ringnest');
     const box = pr && pr.obj && pr.obj.userData;
-    const stored = !!(ringsState && ringsState.stored);
+    const storedArr = (ringsState && ringsState.stored) || [];
     if (box) {
         if (box.rings) for (const r of box.rings) r.visible = false;
         if (box.lids) { box.lids[0].rotation.z = 0.95; box.lids[1].rotation.z = -0.95; }
         if (box.egg) box.egg.visible = true;
-        if (stored && box.stash && !box.stash.length) box.stash = box.buildStash();
-        if (!stored && box.stash && box.stash.length) {
-            for (const r of box.stash) { if (r.parent) r.parent.remove(r); r.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
-            box.stash = [];
+        for (const k of ['chick', 'puppy']) {   // 알 위 반지 = 보관 목록과 1:1
+            const has = box.stash.find((r) => r.userData.kind === k);
+            if (storedArr.includes(k) && !has) box.stash.push(box.buildStashRing(k));
+            if (!storedArr.includes(k) && has) {
+                box.stash.splice(box.stash.indexOf(has), 1);
+                if (has.parent) has.parent.remove(has);
+                has.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+            }
         }
     }
     for (const q of pets) {
         if (!q.pet) continue;
-        if (!stored && !q.pet.charm) { try { setGlbPetCharm(q.pet, 'bff-ring'); } catch (e) {} }
-        if (stored && q.pet.charm) { try { setGlbPetCharm(q.pet, null); } catch (e) {} }
+        const want = !storedArr.includes(q.name);
+        if (want && !q.pet.charm) { try { setGlbPetCharm(q.pet, 'bff-ring'); } catch (e) {} }
+        if (!want && q.pet.charm) { try { setGlbPetCharm(q.pet, null); } catch (e) {} }
     }
 }
 setInterval(() => {   // 펫 로딩·동기 타이밍과 무관하게 스스로 아문다 (보관 토글·타기기 동기 포함 — 멱등이라 상시)
-    if (!ringsState) { try { ringsState = JSON.parse(localStorage.getItem('world-rings') || 'null'); } catch (e) {} }
+    if (!ringsState) { try { ringsState = normRings(JSON.parse(localStorage.getItem('world-rings') || 'null')); } catch (e) {} }
     if (!ringsState || ringScene || ringStash) return;
     applyRingsWorldState();
 }, 2500);
@@ -3699,7 +3723,7 @@ function updateBffRings(delta) {
             s.box.rings.length = 0;
             setGlbPetCharm(s.chick.pet, 'bff-ring');
             setGlbPetCharm(s.puppy.pet, 'bff-ring');
-            ringsState = { at: Date.now(), stored: false };
+            ringsState = { at: Date.now(), stored: [] };
             saveRings();
             if (s.box.egg) s.box.egg.visible = true;   // 둥지에 알이 생긴다 — 보관대
             const mx = (s.chick.mover.position.x + s.puppy.mover.position.x) / 2;
@@ -3730,42 +3754,53 @@ function updateRingStash(delta) {
     if (!ringStash) return;
     const st = ringStash;
     st.t += delta;
+    const mine = () => st.box.stash.filter((r) => st.kinds.includes(r.userData.kind));
     if (st.mode === 'store') {
-        if (!st.spawned && st.t > 0.35) {   // 반지 둘이 반짝 사라졌다가 — 알 위로 내려앉는다
+        if (!st.spawned && st.t > 0.35) {   // 선택된 반지만 반짝 사라졌다가 — 알 위로 내려앉는다
             st.spawned = true;
-            st.box.stash = st.box.buildStash();
-            for (const r of st.box.stash) { r.userData._ty = r.position.y; r.position.y += 0.45; }
+            for (const k of st.kinds) {
+                const r = st.box.buildStashRing(k);
+                r.userData._ty = r.position.y;
+                r.position.y += 0.45;
+                st.box.stash.push(r);
+            }
         }
         if (st.spawned) {
             let settled = true;
-            for (const r of st.box.stash) {
+            for (const r of mine()) {
                 r.position.y += (r.userData._ty - r.position.y) * Math.min(1, delta * 5.5);
                 if (r.position.y - r.userData._ty > 0.004) settled = false;
             }
             if (settled && st.t > 1.4) {
-                for (const r of st.box.stash) r.position.y = r.userData._ty;
-                ringsState.stored = true;
+                for (const r of mine()) r.position.y = r.userData._ty;
+                for (const k of st.kinds) if (!ringsState.stored.includes(k)) ringsState.stored.push(k);
                 saveRings();
-                showToast('🪺 우정반지를 둥지의 알 위에 보관했어요 (클릭: 다시 착용)');
-                logWorldEvent('우정반지를 잠시 둥지의 알 위에 보관했다 🪺💍');
+                const who = st.kinds.length === 2 ? '우정반지를' : (st.kinds[0] === 'chick' ? '병아리의 반지를' : '강아지의 반지를');
+                showToast(`🪺 ${who} 둥지의 알 위에 보관했어요 (클릭: 다시 착용)`);
+                logWorldEvent(`${who} 잠시 둥지의 알 위에 보관했다 🪺💍`);
                 ringStash = null;
             }
         }
-    } else {   // wear — 알 위의 반지가 떠오르며 사라지고, 펫들 몸에서 다시 반짝
+    } else {   // wear — 선택된 반지만 떠오르며 사라지고, 그 펫 몸에서 다시 반짝
         const k = Math.min(1, st.t / 0.7);
-        for (const r of st.box.stash) { r.position.y += delta * 0.4; r.scale.setScalar(Math.max(0.02, 1 - k)); }
+        for (const r of mine()) { r.position.y += delta * 0.4; r.scale.setScalar(Math.max(0.02, 1 - k)); }
         if (k >= 1) {
-            for (const r of st.box.stash) { if (r.parent) r.parent.remove(r); r.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
-            st.box.stash = [];
+            for (const r of mine()) {
+                st.box.stash.splice(st.box.stash.indexOf(r), 1);
+                if (r.parent) r.parent.remove(r);
+                r.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+            }
             const v = new THREE.Vector3();
             for (const q of pets) {
+                if (!st.kinds.includes(q.name)) continue;
                 try { setGlbPetCharm(q.pet, 'bff-ring'); } catch (e) {}
                 if (q.pet.charm) { q.pet.charm.group.getWorldPosition(v); ringSparkle(v); }
             }
-            ringsState.stored = false;
+            ringsState.stored = ringsState.stored.filter((x) => !st.kinds.includes(x));
             saveRings();
-            showToast('💍 우정반지를 다시 나눠 꼈어요');
-            logWorldEvent('둥지에서 우정반지를 꺼내 다시 나눠 꼈다 💍');
+            const who = st.kinds.length === 2 ? '우정반지를' : (st.kinds[0] === 'chick' ? '병아리가 반지를' : '강아지가 반지를');
+            showToast(`💍 ${who} 다시 꼈어요`);
+            logWorldEvent(`둥지에서 ${who} 꺼내 다시 꼈다 💍`);
             ringStash = null;
         }
     }
@@ -6595,7 +6630,11 @@ const HOVER_PROMPTS = {
         if (!ringsState) return '💍 우정반지 둥지 — 주인의 주말 선물 · 클릭하면 교환식이 열려요';
         const d = new Date(ringsState.at);
         const ds = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
-        return `💍 우정반지 둥지 — ${ds}부터 BFF ∞ · 클릭: ${ringsState.stored ? '다시 착용' : '알 위에 보관'}`;
+        const who = possessed ? (possessed.name === 'chick' ? '병아리 반지 ' : '강아지 반지 ') : '';
+        const act = possessed
+            ? (ringsState.stored.includes(possessed.name) ? '다시 착용' : '알 위에 보관')
+            : (ringsState.stored.length ? '다시 착용' : '알 위에 보관');
+        return `💍 우정반지 둥지 — ${ds}부터 BFF ∞ · 클릭: ${who}${act}`;
     },
     fruitbasket: () => '🧺 과일바구니 — 클릭: 열기 · 과일 들고 ⌘: 담기',
     seesaw: () => '🛝 시소 — 조종 중 ⌘/✋로 타요',
@@ -10258,7 +10297,7 @@ if (statsOn) window.__worldDev = {
         groundY: +world.groundHeightAt(aiFishing.p.mover.position.x, aiFishing.p.mover.position.z).toFixed(3) } : null),
     fishChairEnd: () => { const f = aiFishing; if (!f) return null; endAiFishing(); return { x: +f.p.mover.position.x.toFixed(2), z: +f.p.mover.position.z.toFixed(2) }; },
     ringToggle: () => { startRingToggle(); return !!ringStash; },   // 🪺 (E2E) 보관/착용 토글
-    ringState: () => ({ exchanged: !!ringsState, scene: !!ringScene, stored: !!(ringsState && ringsState.stored), stashing: !!ringStash,
+    ringState: () => ({ exchanged: !!ringsState, scene: !!ringScene, stored: ringsState ? ringsState.stored.slice() : [], stashing: !!ringStash,
         stash: (() => { const pr = PROPS.find((q) => q.type === 'ringnest'); const b = pr && pr.obj && pr.obj.userData; return b && b.stash ? b.stash.length : -1; })(),
         pos: pets.map((q) => [q.name, +q.mover.position.x.toFixed(2), +q.mover.position.z.toFixed(2), q.ai.state]),
         chick: !!((pets.find((q) => q.name === 'chick') || {}).pet || {}).charm, puppy: !!((pets.find((q) => q.name === 'puppy') || {}).pet || {}).charm,

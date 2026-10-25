@@ -775,9 +775,12 @@ async function loadGlbPet(url) {
 function applyBffRing() {
     try {
         const st = JSON.parse(localStorage.getItem('world-rings') || 'null');
-        const want = !!(st && !st.stored);   // 둥지에 보관 중이면 데탑 펫도 벗는다
-        if (glbPet && want && !glbPet.charm) setGlbPetCharm(glbPet, 'bff-ring');
-        if (glbPet && !want && glbPet.charm) setGlbPetCharm(glbPet, null);
+        if (!glbPet) return;
+        const kind = glbPet.wings && glbPet.wings.length ? 'chick' : 'puppy';
+        const storedArr = st ? (Array.isArray(st.stored) ? st.stored : (st.stored ? ['chick', 'puppy'] : [])) : null;
+        const want = !!(storedArr && !storedArr.includes(kind));   // 제 반지가 둥지에 보관 중이면 이 창의 펫도 벗는다
+        if (want && !glbPet.charm) setGlbPetCharm(glbPet, 'bff-ring');
+        if (!want && glbPet.charm) setGlbPetCharm(glbPet, null);
     } catch (e) {}
 }
 window.addEventListener('storage', (e) => { if (e.key === 'world-rings') applyBffRing(); });
