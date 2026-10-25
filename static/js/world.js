@@ -10175,6 +10175,7 @@ if (statsOn) statsEl.style.display = 'block';
 // (ageInput으로 마지막 입력 시각을 과거로 밀어 60초 대기 없이 15fps 티어 진입)을 재현할 때 쓰고,
 // scene은 draw call 브레이크다운 집계용, season은 계절 전환(베이크 훅·겨울 스킨) 자동 검증용이다.
 if (statsOn) window.__worldDev = {
+    camera, controls,   // 🎥 (E2E) 카메라 회전 진단
     toast: (m) => showToast(m),
     ageInput: (ms) => { lastInputMs = performance.now() - ms; },
     scene,
@@ -15626,6 +15627,7 @@ function doInteract() {
     }
     if (handHold) { releaseHandHold(); return; }
     if (tryGrabHand()) return;
+    if (possessed.bed) { if (possessed.bedPhase === 'lying') possessed.bedExit = true; return; }   // 🪑 앉은 채 ⌘ = 일어나기
     const bed = !possessed.bed && nearestFreeBed(possessed, 0.95);
     if (bed) { mountBed(possessed, bed); return; }
     if (digState && !digState.dug && !digDoing) {   // ⛏️ 보물: 반짝이는 자리 옆에서 ⌘ = 파기
@@ -15812,6 +15814,18 @@ function updatePlayer(delta) {
         return;
     }
     if (p.ai.state !== 'player') { releasePossession(); return; }   // held 등 — 진짜로 뺏긴 경우만 놓는다
+    if (p.bed && p.bedPhase) {   // 🪑 앉아/누워 있는 중 — 카메라는 자유, 이동키·⌘은 일어나기
+        const wantUp = heldKeys.size > 0 || (touchMove.active && touchMove.mag > 0.4);
+        if (wantUp && p.bedPhase === 'lying') p.bedExit = true;
+        const petName2 = p.name === 'chick' ? '병아리' : '강아지';
+        const IK = IS_TOUCH ? '✋' : 'Ctrl/⌘';
+        const MK = IS_TOUCH ? '조이스틱' : '방향키';
+        const RK = IS_TOUCH ? '✕' : 'Esc';
+        const bko = BED_KO[p.bed.id] || '자리';
+        const sHint = `🪑 ${petName2} ${bko}에 ${p.bed.mode === 'sit' ? '앉아' : '누워'} 있는 중 — ${MK}/${IK} 일어나기 · ${RK} 해제`;
+        if (controlHint.textContent !== sHint) controlHint.textContent = sHint;
+        return;
+    }
     if (seaHop) {
         // Climbing back up the cliff: a short arc from the water onto the rim.
         seaHop.t += delta;
@@ -16489,6 +16503,21 @@ function updatePhoneCall(delta) {
         const fromSpace = !!friend.poiWalk || !!(rocketRide && !rocketRide.empty && (rocketRide.p === friend || rocketRide.friend === friend));
         cancelPhoneCall();
         yankFriendFree(friend);
+        // 🌸 동산 벤치에서 걸었다 — 절친은 옆자리에 앉는다 (주인 지정). 빈 옆좌석이 있을 때만.
+        const seat = p.bed && p.bed.id && p.bed.id.startsWith('gardenbench')
+            ? BEDS.find((b) => b.id.startsWith('gardenbench') && !b.occupant) : null;
+        if (seat) {
+            friend.mover.position.set(seat.approach.x, world.groundHeightAt(seat.approach.x, seat.approach.z), seat.approach.z);
+            mountBed(friend, seat);
+            friend._meadowUntil = Date.now() + 180000 + Math.random() * 120000;   // 3~5분 뒤 스스로 일어남
+            const spr0 = glowSprite(0xfff1cf, 0.16, 0.9);
+            spr0.position.set(seat.approach.x, world.groundHeightAt(seat.approach.x, seat.approach.z) + friend.height * 0.6, seat.approach.z);
+            scene.add(spr0);
+            hugBurst.push({ spr: spr0, vx: 0, vy: 0.35, vz: 0, t: 0.4 });
+            petVoice(friend);
+            logWorldEvent('전화를 받고 달려온 절친이 동산 벤치 옆자리에 나란히 앉았다 📞🌸');
+            return;
+        }
         const h = m.rotation.y;
         const sx = m.position.x + Math.cos(h) * 0.42, sz = m.position.z - Math.sin(h) * 0.42;
         const sup = playerSupportY(friend, sx, sz);
@@ -26135,7 +26164,7 @@ function updateBeds(delta) {
             if (k >= 1) {
                 p.bedPhase = 'lying'; p.bedT = 0;
                 p.pet.sleeping = bed.mode !== 'sit' && bed.mode !== 'swing' && bed.mode !== 'seesaw';   // swings/seesaws sit awake
-                p.ai.state = 'busy';
+                p.ai.state = p === possessed ? 'player' : 'busy';   // 🎮 조종 펫은 앉아도 조종을 유지 — busy면 입력이 죽고 🎬 안내가 거짓이 된다(실측)
                 if (bed.mode === 'swing') { bed.angle = 0; bed.vel = 1.9; bed.mountedAt = Date.now(); bed.rideMs = 120000 + Math.random() * 60000; }  // first push, 한 판 = 2~3분
                 else if (bed.mode === 'seesaw') { bed.mountedAt = Date.now(); bed.rideMs = 120000 + Math.random() * 60000; bed.body.vel += -1.0 * bed.end; }  // dip the new rider's end
             }

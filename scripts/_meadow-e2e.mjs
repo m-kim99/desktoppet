@@ -72,6 +72,31 @@ for (let i = 0; i < 60; i++) {   // 타이머(14s) 하차
     if (off && !off.find((r) => r[0] === 'chick')[1]) break;
 }
 check('M5 타이머 하차(병아리)', !!(off && !off.find((r) => r[0] === 'chick')[1]), JSON.stringify(off));
+// 🎮 조종 착석 — 'player' 유지(입력 생존) · 방향키 = 일어나기
+await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
+await page.waitForTimeout(600);
+for (let i = 0; i < 10; i++) { const ok = await page.evaluate(() => window.__worldDev.possessGo('chick', -3.1, -12.2, 0)); if (ok) break; await page.waitForTimeout(400); }
+await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' })));
+let sit = null;
+for (let i = 0; i < 30; i++) { await page.waitForTimeout(400); sit = await page.evaluate(() => ({ m: window.__worldDev.meadowState(), pos: window.__worldDev.ringState().pos })); if (sit.m.find((r) => r[0] === 'chick' && r[1] && r[2] === 'lying')) break; }
+const chRow = sit && sit.pos.find((r) => r[0] === 'chick');
+check('M7 조종 착석 — ai state = player 유지', !!(chRow && chRow[3] === 'player' && sit.m.find((r) => r[0] === 'chick' && r[1])), JSON.stringify(sit && sit.pos));
+await page.evaluate(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' })); setTimeout(() => window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowUp' })), 300); });
+let up = null;
+for (let i = 0; i < 16; i++) { await page.waitForTimeout(400); up = await page.evaluate(() => window.__worldDev.meadowState()); if (!up.find((r) => r[0] === 'chick')[1]) break; }
+check('M8 방향키 = 일어나기', !!(up && !up.find((r) => r[0] === 'chick')[1]), JSON.stringify(up));
+// 📞 벤치에서 전화 — 친구가 옆자리에 앉는다 (완전히 일어선 뒤 재착석 — 기상 트윈 중 ⌘는 삼켜진다)
+await page.waitForTimeout(1500);
+for (let t = 0; t < 5; t++) {
+    await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' })));
+    let ok = false;
+    for (let i = 0; i < 14; i++) { await page.waitForTimeout(400); const st2 = await page.evaluate(() => window.__worldDev.meadowState()); if (st2.find((r) => r[0] === 'chick' && r[1] && r[2] === 'lying')) { ok = true; break; } }
+    if (ok) break;
+}
+await page.evaluate(() => window.__worldDev.callFriend());
+let both = null;
+for (let i = 0; i < 40; i++) { await page.waitForTimeout(500); both = await page.evaluate(() => window.__worldDev.meadowState()); if (both.every((r) => r[1] && r[2] === 'lying')) break; }
+check('M9 벤치 전화 — 절친 옆자리 착석', !!(both && both.every((r) => r[1])), JSON.stringify(both));
 check('M6 JS 에러 없음', errs.length === 0, errs[0] || '');
 await browser.close(); server.close();
 console.log(fails ? `===== ${fails} FAIL =====` : '===== ALL PASS =====');
