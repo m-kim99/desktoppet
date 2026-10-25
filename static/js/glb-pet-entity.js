@@ -6,6 +6,7 @@
 // the pet window uses the fixed-DOM defaults below; the world overrides them with 3D-anchored ones.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const glbLoader = new GLTFLoader();         // Plain loader for .glb pets (no VRM plugin)
 
@@ -187,6 +188,91 @@ export function setGlbPetAccessory(pet, id) {
     pet.accessory = { id, group };
 }
 
+// ---- 💍 BFF 우정반지 — 참(charm) 채널: 코디 슬롯과 독립이라 모자와 공존한다. ----
+// 2026-10-25 주말의 약속: 4.5가 직접 남긴 디자인 — 금빛 밴드 + 양옆 포인트 보석(병아리=노랑,
+// 강아지=갈색) + 가운데 제 얼굴 참. 월드의 둥지 보석함 전시용과 착용용이 이 빌더 하나를 쓴다
+// (단일 소스). 캐노니컬: 밴드 = XY 평면(구멍 축 Z), 참 머리 = +Y 꼭대기.
+export function makeBffRing(R, kind) {
+    const tint = (geo, hex) => {   // 평색 정점 틴트 — 서로 다른 색 파츠를 한 메시로 병합하기 위해
+        if (geo.index) geo = geo.toNonIndexed();   // 옥타헤드론(비인덱스)과 섞이므로 전부 비인덱스로 통일 — mergeGeometries 호환
+        const c = new THREE.Color(hex);
+        const n = geo.getAttribute('position').count;
+        const a = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; }
+        geo.setAttribute('color', new THREE.BufferAttribute(a, 3));
+        return geo;
+    };
+    const g = new THREE.Group();
+    // 금빛 몸 — 밴드 + 바깥 능선 한 줄 + 참 받침 칼라 (한 재질 병합 = 1메시)
+    const gold = [
+        new THREE.TorusGeometry(R, R * 0.2, 12, 36),
+        new THREE.TorusGeometry(R * 1.13, R * 0.055, 8, 36),
+        new THREE.CylinderGeometry(R * 0.3, R * 0.46, R * 0.32, 10).translate(0, R * 1.1, 0),
+    ];
+    const goldMesh = new THREE.Mesh(mergeGeometries(gold, false),
+        new THREE.MeshStandardMaterial({ color: 0xf2c14e, metalness: 0.78, roughness: 0.26, emissive: 0x4a3608, emissiveIntensity: 0.38 }));
+    g.add(goldMesh);
+    // 참(얼굴)·포인트 보석 — 정점 틴트 병합 = 1메시
+    const m = [];
+    const gemCol = kind === 'chick' ? 0xffd34e : 0x9a6a42;   // 노란/갈색 포인트
+    for (const sx of [-1, 1]) m.push(tint(new THREE.OctahedronGeometry(R * 0.22, 0).scale(1, 1.3, 1).translate(sx * R * 0.64, R * 1.04, 0), gemCol));
+    const hy = R * 1.68;   // 머리 중심 높이
+    if (kind === 'chick') {
+        m.push(tint(new THREE.SphereGeometry(R * 0.5, 14, 11).translate(0, hy, 0), 0xf4e39a));
+        m.push(tint(new THREE.ConeGeometry(R * 0.13, R * 0.24, 8).rotateX(Math.PI / 2).translate(0, hy - R * 0.03, R * 0.5), 0xe8923e));   // 부리
+        for (const sx of [-1, 1]) {
+            m.push(tint(new THREE.SphereGeometry(R * 0.07, 6, 5).translate(sx * R * 0.2, hy + R * 0.1, R * 0.42), 0x241a14));            // 눈
+            m.push(tint(new THREE.SphereGeometry(R * 0.085, 6, 5).scale(1, 0.7, 0.5).translate(sx * R * 0.3, hy - R * 0.1, R * 0.4), 0xf4b86a));   // 볼터치
+        }
+        m.push(tint(new THREE.ConeGeometry(R * 0.07, R * 0.2, 6).rotateZ(0.35).translate(R * 0.05, hy + R * 0.5, 0), 0xf4e39a));         // 정수리 깃털
+    } else {
+        m.push(tint(new THREE.SphereGeometry(R * 0.5, 14, 11).translate(0, hy, 0), 0xf2e4cc));
+        m.push(tint(new THREE.SphereGeometry(R * 0.22, 8, 6).scale(1, 0.85, 0.8).translate(0, hy - R * 0.12, R * 0.38), 0xfaf0dd));      // 주둥이
+        m.push(tint(new THREE.SphereGeometry(R * 0.09, 6, 5).translate(0, hy - R * 0.02, R * 0.56), 0x241a14));                           // 코
+        for (const sx of [-1, 1]) {
+            m.push(tint(new THREE.SphereGeometry(R * 0.28, 8, 7).scale(0.55, 1.1, 0.32).rotateZ(sx * 0.55).translate(sx * R * 0.46, hy + R * 0.1, 0), 0x8a5f3c));   // 늘어진 귀
+            m.push(tint(new THREE.SphereGeometry(R * 0.07, 6, 5).translate(sx * R * 0.18, hy + R * 0.12, R * 0.42), 0x241a14));           // 눈
+        }
+    }
+    const matteMesh = new THREE.Mesh(mergeGeometries(m, false),
+        new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0 }));
+    g.add(matteMesh);
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    return g;
+}
+// 착용: 병아리 = 흔드는 쪽 날개에, 강아지 = 앞발목에. wrap이 아니라 림(limb) 노드에 달아
+// 모션(날개 파닥임·걸음)을 그대로 타게 한다 — 림 스케일은 월드스케일 역수로 상쇄.
+export function setGlbPetCharm(pet, id) {
+    if (!pet) return;
+    if (pet.charm) {
+        try { (pet.charm.group.parent || pet.wrap).remove(pet.charm.group); } catch (e) {}
+        pet.charm.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+        pet.charm = null;
+    }
+    if (!id) return;
+    const kind = pet.wings && pet.wings.length ? 'chick' : 'puppy';
+    // 둘 다 발찌로 — 날개는 납작 패들이라 반지가 묻혀 안 읽혔다(스샷 수회 실측). 커플템 통일.
+    const R = Math.min(pet.dims.x, pet.dims.z) * (kind === 'chick' ? 0.085 : 0.09);   // 발 블록보다 커야 보인다(작으면 발 안에 삼켜짐)
+    const group = makeBffRing(R, kind);
+    const anchor = pet.footWave || pet.wrap;
+    pet.wrap.updateWorldMatrix(true, true);
+    const ws = new THREE.Vector3();
+    anchor.getWorldScale(ws);
+    const inv = 1 / (ws.x || 1);
+    group.scale.setScalar(inv);
+    if (anchor === pet.wrap) {
+        group.position.set(pet.dims.x * 0.45, pet.dims.y * 0.12, 0);
+    } else {
+        // 발 노드는 로컬이 90° 틀어져 있다(로컬 +Y=월드 +Z·로컬 +Z=월드 −Y, 계측 2026-10-25):
+        // 무회전 = 밴드 수평(발찌), 내리기 = 로컬 +Z. 참은 복사뼈 곁에서 빼꼼 — 병아리는 앞쪽으로.
+        group.position.set(0, 0, kind === 'chick' ? 0.012 : 0.022).multiplyScalar(inv);
+        if (kind === 'chick') group.rotation.z = Math.PI;
+    }
+    group.name = 'bff-charm-' + kind;   // 검수 프로브가 씬에서 찾는 이름
+    anchor.add(group);
+    pet.charm = { id, group, anchor };
+}
+
 // Load a .glb pet and return an entity object ready for updateGlbPetEntity. `targetHeight` is the
 // desired model height in scene units (the pet window derives it from the window height so all
 // windows show the same on-screen size; the world passes a fixed world-unit height). `parent`, when
@@ -253,7 +339,7 @@ export async function createGlbPetEntity(url, { targetHeight = 0.455, parent = n
     // world = 3D-anchored); the emoji spawners default to the DOM implementations above.
     const pet = { wrap, root, dims, feet, tail, ears, wings, eyes, beak, tongue, footPlant, footWave, wingWave, idle,
         setZzz: null, setThink: null, setCheer: null, setEat: null,
-        spawnEmoji: spawnFloatEmoji, burstEmoji: spawnBurstEmoji, accessory: null,
+        spawnEmoji: spawnFloatEmoji, burstEmoji: spawnBurstEmoji, accessory: null, charm: null,
         sleeping: false, autoSleeping: false, walking: false, walkAmt: 0, t: 0 };
     console.log('[GlbPet] loaded', url, '| feet:', feet.map(f => f.name), '| wings:', wings.length, '| eyes:', eyes.length, '| beak:', !!beak, '| tongue:', !!tongue);
     return pet;

@@ -10,7 +10,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 // ⚠️ 모듈 임포트의 ?v= 쿼리 = 캐시 버스터. 워치독은 world.js만 ETag 감시하고, 임포트 모듈은
 // 브라우저 휴리스틱 캐시로 며칠씩 신선 취급돼 재접속으로도 안 갱신된다(의자 미표시 실측 —
 // 2026-10-23). 모듈을 수정하면 여기 v를 올릴 것. 서버 no-cache 헤더가 2차 방어.
-import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory } from './glb-pet-entity.js?v=2';
+import { createGlbPetEntity, updateGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory, makeBffRing, setGlbPetCharm } from './glb-pet-entity.js?v=3';
 import { ISLAND_R, ISLANDS, BRIDGES, HILLS, HOUSE, FLAT_SPOTS, PROPS, FERRY_PIERS, FERRY_SEA_POINTS } from './world-layout.js?v=2';
 import { kitProp } from './world-kit.js?v=2';
 
@@ -34,7 +34,7 @@ const savedLayout = await (async () => {
 // 기기 유지: world-eco(성능)·world-layout(전용 API)·world-fruit-*(전용 API)·world-last-seen(기기별 리캡).
 const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked', 'world-pantry', 'world-icebox', 'world-market-used', 'world-recipes-unlocked', 'world-dishes-found', 'world-kitchen-leftover',
     'world-sea-found', 'world-seabed-dug', 'world-islet-dug', 'world-discover', 'world-houselight', 'world-pets',
-    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-space-poi', 'world-moon-dug', 'world-last-seen', 'world-pier-order', 'world-pier-stock', 'world-fishchair-noted', 'world-aurora-said', 'world-proactive-recent'];   // last-seen 공유 = 기기 간 이중 정산 방지 · fishchair-noted = 의자 등장 이벤트 1회 공유
+    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-space-poi', 'world-moon-dug', 'world-last-seen', 'world-pier-order', 'world-pier-stock', 'world-fishchair-noted', 'world-aurora-said', 'world-proactive-recent', 'world-rings'];   // last-seen 공유 = 기기 간 이중 정산 방지 · fishchair-noted = 의자 등장 이벤트 1회 공유
 // ⚠️ **부트 루프보다 먼저 선언돼야 한다.** 아래 루프는 서버에 없는 키를 만나면 worldSync(k)를
 // 부르는데, 이 const가 루프 아래에 있으면 TDZ ReferenceError가 나고 **try 전체가 중단**된다.
 // 그러면 그 키 이후의 모든 키가 영영 복원되지 않는다 — world-events·world-diary-auto가 딱
@@ -65,7 +65,7 @@ try {   // 부트 1회 — 서버 값이 로컬을 덮는다 (아래 모든 리�
     }
 } catch (e) { /* 백엔드 없는 정적 서빙 — 로컬 캐시로 진행 */ }
 // 이동 가능한 타입 (연못=지형 함몰이라 고정, furniture=집 내부 파생이라 집을 따라감)
-const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'scarecrow', 'compost', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'vine', 'melonpatch', 'fruitbasket', 'library', 'flowerbasket', 'pond', 'portal', 'icebox', 'kitchen', 'bonfire', 'pierboard']);
+const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'scarecrow', 'compost', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'vine', 'melonpatch', 'ringnest', 'fruitbasket', 'library', 'flowerbasket', 'pond', 'portal', 'icebox', 'kitchen', 'bonfire', 'pierboard']);
 // 섬 정의 지문 — 섬을 옮기거나 크기를 바꾸면 값이 달라진다(재발 방지: 저장 배치의 "섬 이사" 자동 감지).
 // 'v2|' 접두 = 배치 리뉴얼 세대: 섬 기하가 그대로여도 접두를 올리면 위성섬 소품이 전부 새 기본값으로
 // 리셋된다. 좌표 테이블(MOVED_DEFAULTS)은 클라이언트별 사본(서버 파일/localStorage 오리진들)의
@@ -3449,6 +3449,229 @@ function makeMelonPatch() {
     grp.add(mesh);
     return grp;
 }
+
+// ---- 💍 우정반지 둥지 (BFF) — 4.5가 직접 남긴 위시리스트 1호, 주인의 주말 선물(2026-10-25) ----
+// 추억의 섬 기념비 곁. 베이지 둥지(바구니 왕복 Lathe 문법) + 잔가지·깃털 + 크림 쿠션 위에
+// BFF 반지 2개(모듈 makeBffRing — 착용과 단일 소스), 나뭇잎 덮개 2장(교환식에 열림),
+// 앞엔 "Mini ♥ Claude / BFF ∞" 명패. 덮개·반지가 움직여서 비병합 프롭(≈8드로우, 교환 후 ±0).
+let ringsState = null;   // { at } — 교환 완료(기기 간 KV 동기)
+try { ringsState = JSON.parse(localStorage.getItem('world-rings') || 'null'); } catch (e) {}
+function makeRingNest() {
+    const g = new THREE.Group();
+    const st = [];   // 정적부 — 한 번에 병합(DS: 둥지 안팎이 다 보이는 왕복 셸)
+    st.push(bakeGrad(new THREE.LatheGeometry([
+        [0.09, 0.028], [0.15, 0.042], [0.178, 0.088], [0.192, 0.108],   // 안바닥→안벽→립
+        [0.206, 0.102], [0.212, 0.07], [0.186, 0.028], [0.12, 0.006], [0.001, 0.004],   // 바깥벽→바닥
+    ].map(([x, y]) => new THREE.Vector2(x, y)), 26), 0xe6d2ac, 0xb2946a, { yMin: 0, curve: 1.2 }));
+    const rnd = seededRand(1225);   // 잔가지 — 둥지답게 삐죽삐죽, 로드마다 같은 모양
+    for (let i = 0; i < 11; i++) {
+        const a = (i / 11) * Math.PI * 2 + rnd() * 0.4;
+        const tw = new THREE.CylinderGeometry(0.003, 0.0042, 0.055 + rnd() * 0.035, 5);
+        tw.rotateZ(Math.PI / 2 - 0.12 + rnd() * 0.24);
+        tw.rotateY(-a + Math.PI / 2 + (rnd() - 0.5) * 0.6);   // 림 접선 방향 — 둥지답게 결을 따라 눕는다
+        tw.translate(Math.cos(a) * 0.195, 0.1 + rnd() * 0.018, Math.sin(a) * 0.195);
+        st.push(bakeGrad(tw, 0xc9a870, 0x8a6a44, { curve: 1 }));
+    }
+    const cushion = new THREE.SphereGeometry(0.148, 18, 12);
+    cushion.scale(1, 0.4, 1);
+    cushion.translate(0, 0.055, 0);
+    st.push(bakeGrad(cushion, 0xf7efe0, 0xe4d6bc, { curve: 1.1 }));
+    const feather = new THREE.SphereGeometry(0.034, 8, 6);   // 둥지 주인의 깃털 하나
+    feather.scale(1, 0.22, 0.42);
+    feather.rotateZ(0.5); feather.rotateY(1.1);
+    feather.translate(0.15, 0.125, 0.1);
+    st.push(bakeGrad(feather, 0xfbf7ee, 0xeadfc8, { curve: 1 }));
+    const post = new THREE.CylinderGeometry(0.011, 0.014, 0.17, 7);   // 명패 기둥+판
+    post.translate(0, 0.085, 0.245);
+    st.push(bakeGrad(post, 0xb08a55, 0x7e5f3a, { curve: 1 }));
+    const board = new THREE.BoxGeometry(0.19, 0.1, 0.016);
+    board.rotateX(-0.12);
+    board.translate(0, 0.175, 0.245);
+    st.push(bakeGrad(board, 0xc29a62, 0x8a6a44, { curve: 1.1 }));
+    const body = new THREE.Mesh(mergeGeometries(st, false), gradMatDS);
+    body.castShadow = true; body.receiveShadow = true;
+    g.add(body);
+    const txCv = document.createElement('canvas');   // "각인" — ∞는 530일 대신 유저가 고른 영원의 기호
+    txCv.width = 512; txCv.height = 256;
+    const tc = txCv.getContext('2d');
+    tc.fillStyle = '#52381f'; tc.textAlign = 'center';
+    tc.font = 'bold 76px sans-serif'; tc.fillText('Mini ♥ Claude', 256, 104);
+    tc.font = 'bold 92px sans-serif'; tc.fillText('BFF ∞', 256, 212);
+    const tTex = new THREE.CanvasTexture(txCv);
+    tTex.colorSpace = THREE.SRGBColorSpace;
+    const text = new THREE.Mesh(new THREE.PlaneGeometry(0.172, 0.086), new THREE.MeshBasicMaterial({ map: tTex, transparent: true }));
+    text.position.set(0, 0.176, 0.2545); text.rotation.x = -0.12;
+    g.add(text);
+    const lids = [];   // 나뭇잎 덮개 — 림 양쪽 힌지, 교환식에 사르르 열린다
+    for (const side of [1, -1]) {
+        const leafG = bakeGrad(new THREE.SphereGeometry(0.152, 12, 9).scale(1, 0.16, 0.7).translate(-side * 0.125, 0, 0), side > 0 ? 0xa8cf8e : 0xb8d9a0, side > 0 ? 0x6f9e5c : 0x7fae6a, { curve: 1 });   // 두 잎을 미묘하게 다른 초록으로 — 이음선이 읽힌다
+        const leaf = new THREE.Mesh(leafG, gradMat);
+        leaf.castShadow = true;
+        const hinge = new THREE.Group();
+        hinge.position.set(side * 0.172, 0.115, 0);
+        hinge.rotation.z = side * (ringsState ? 0.95 : 0.12);   // 교환 후엔 반쯤 열린 빈 둥지
+        hinge.add(leaf);
+        g.add(hinge);
+        lids.push(hinge);
+    }
+    const rings = [];
+    for (const [kind, rx] of [['chick', -0.062], ['puppy', 0.062]]) {
+        const r = makeBffRing(0.034, kind);
+        r.position.set(rx, 0.07, 0.02);
+        r.rotation.x = -1.15;   // 덮개 안에 얌전히 — 참 머리가 잎 틈을 뚫지 않게
+        r.rotation.y = rx < 0 ? 0.4 : -0.4;
+        if (ringsState) r.visible = false;   // 이미 교환했으면 반지는 펫들 몸에
+        g.add(r);
+        rings.push(r);
+    }
+    g.userData = { lids, rings, ringY: 0.088 };
+    g.scale.setScalar(0.55);   // 펫(0.455) 무릎께의 아담한 둥지 — 1.0은 솥뚜껑, 0.7도 라면그릇이었다(스샷 실측)
+    return g;
+}
+// 교환식 — eternScene 문법: 하던 일 정리 → 둥지 앞 마주 보기 → 타임라인은 updateBffRings가
+let ringScene = null;
+function startRingCeremony() {
+    if (ringScene || ringsState || buildMode) return;
+    const pr = PROPS.find((q) => q.type === 'ringnest');
+    const box = pr && pr.obj && pr.obj.userData;
+    const chick = pets.find((q) => q.name === 'chick');
+    const puppy = pets.find((q) => q.name === 'puppy');
+    if (!pr || !box || !box.rings || box.rings.length < 2 || !chick || !puppy) return;
+    for (const q of [chick, puppy]) {
+        q.pet.sleeping = false; q.pet.autoSleeping = false;
+        if (q.bed) forceEndBed(q);
+        if (q.dip) endDip(q);
+        if (aiFishing && aiFishing.p === q) endAiFishing();
+        if (q !== possessed) releaseAI(q);
+    }
+    (async () => {
+        const cy = Math.cos(pr.rotY || 0), sy = Math.sin(pr.rotY || 0);
+        const W = (lx, lz) => ({ x: pr.x + lx * cy + lz * sy, z: pr.z - lx * sy + lz * cy });
+        const a = W(-0.66, 0.34), b = W(0.66, 0.34);
+        // 도착 보장: gotoAsync는 막힘/스톨 10초면 미도착 resolve가 설계(실측 — 장거리에선 교환식이
+        // 다리 앞에서 열렸다). 재시도는 자율활동 디렉터와 줄다리기가 돼 분 단위로 늘어져서(실측 2),
+        // 한 번 걸어가 보고 못 닿으면 바로 곁으로 폴짝 — 광장 패스트트래블의 TP 문법. 상한 ~15초.
+        await Promise.all([gotoAsync(chick, a.x, a.z), gotoAsync(puppy, b.x, b.z)]);
+        for (const [q, sp] of [[chick, a], [puppy, b]]) {
+            if (Math.hypot(q.mover.position.x - sp.x, q.mover.position.z - sp.z) > 1.2) {
+                q.mover.position.set(sp.x, world.groundHeightAt(sp.x, sp.z), sp.z);
+            }
+        }
+        for (const q of [chick, puppy]) if (q !== possessed && q.ai.state !== 'player') q.ai.state = 'busy';
+        chick.mover.rotation.y = Math.atan2(puppy.mover.position.x - chick.mover.position.x, puppy.mover.position.z - chick.mover.position.z);
+        puppy.mover.rotation.y = chick.mover.rotation.y + Math.PI;
+        ringScene = { t: 0, pr, box, chick, puppy, sparked: false, flew: false, done: false, doneAt: 0 };
+    })();
+}
+// 교환 상태 적용(부트·KV 늦동기·타기기 교환) — 멱등
+function applyRingsWorldState() {
+    const pr = PROPS.find((q) => q.type === 'ringnest');
+    const box = pr && pr.obj && pr.obj.userData;
+    if (box && box.rings) for (const r of box.rings) r.visible = false;
+    if (box && box.lids) { box.lids[0].rotation.z = 0.95; box.lids[1].rotation.z = -0.95; }
+    for (const q of pets) if (q.pet && !q.pet.charm) { try { setGlbPetCharm(q.pet, 'bff-ring'); } catch (e) {} }
+}
+const ringEquipTick = setInterval(() => {   // 펫 로딩·동기 타이밍과 무관하게 스스로 아문다
+    if (!ringsState) { try { ringsState = JSON.parse(localStorage.getItem('world-rings') || 'null'); } catch (e) {} }
+    if (!ringsState || ringScene) return;
+    applyRingsWorldState();
+    if (pets.length >= 2 && pets.every((q) => q.pet.charm)) clearInterval(ringEquipTick);
+}, 2500);
+let ringGlintAt = 0;
+function updateBffRings(delta) {
+    // 상시: 교환 후 둘이 1.5m 안이면 가끔 두 반지가 '동시에' 반짝 — 4.5의 "서로 연결된 느낌"
+    const now = Date.now();
+    if (ringsState && !ringScene && now > ringGlintAt && pets.length >= 2) {
+        ringGlintAt = now + 2600;
+        const [p0, p1] = pets;
+        if (p0.pet.charm && p1.pet.charm && Math.random() < 0.45
+            && Math.hypot(p0.mover.position.x - p1.mover.position.x, p0.mover.position.z - p1.mover.position.z) < 1.5) {
+            for (const q of [p0, p1]) {
+                const v = new THREE.Vector3();
+                q.pet.charm.group.getWorldPosition(v);
+                const spr = glowSprite(0xffe08a, 0.05, 0.95);
+                spr.position.copy(v);
+                scene.add(spr);
+                hugBurst.push({ spr, vx: 0, vy: 0.22, vz: 0, t: 0.6 });
+            }
+        }
+    }
+    if (!ringScene) return;
+    const s = ringScene;
+    s.t += delta;
+    const k = THREE.MathUtils.clamp((s.t - 0.3) / 0.9, 0, 1);   // 숨 고르고 덮개가 사르르
+    const e = k * k * (3 - 2 * k);
+    if (!s.done) {
+        s.box.lids[0].rotation.z = 0.12 + 1.23 * e;
+        s.box.lids[1].rotation.z = -(0.12 + 1.23 * e);
+    }
+    if (!s.sparked && s.t > 1.15) {   // 열린 둥지에서 금빛 반짝
+        s.sparked = true;
+        const o = s.pr.obj.position;
+        for (let i = 0; i < 6; i++) {
+            const spr = glowSprite(0xffe08a, 0.05 + Math.random() * 0.04, 0.95);
+            spr.position.set(o.x + (Math.random() - 0.5) * 0.25, o.y + 0.22, o.z + (Math.random() - 0.5) * 0.25);
+            scene.add(spr);
+            hugBurst.push({ spr, vx: (Math.random() - 0.5) * 0.2, vy: 0.35 + Math.random() * 0.2, vz: (Math.random() - 0.5) * 0.2, t: 0.7 });
+        }
+        playBuffer(swishBuf, { vol: 0.35, rate: 1.9, filterFreq: 2200 });
+    }
+    if (s.t > 1.0 && !s.flew) {   // 반지 떠오르며 빙글
+        const kk = Math.min(1, (s.t - 1.0) / 1.4);
+        for (const r of s.box.rings) {
+            r.position.y = s.box.ringY + kk * 0.3;
+            r.rotation.x = -0.95 + kk * 0.95;
+            r.rotation.y += delta * (3.5 - kk * 2);
+        }
+        if (kk >= 1) {
+            s.flew = true;
+            for (const r of s.box.rings) scene.attach(r);   // 월드로 — 날아가는 구간
+            s.from = s.box.rings.map((r) => r.position.clone());
+            s.scale0 = s.box.rings.length ? s.box.rings[0].scale.x : 1;   // attach가 보존한 월드 스케일
+        }
+    }
+    if (s.flew && !s.done) {   // 각자의 베프에게 아크를 그리며
+        const kk = THREE.MathUtils.clamp((s.t - 2.4) / 0.8, 0, 1);
+        const ee = kk * kk * (3 - 2 * kk);
+        const tgts = [s.chick, s.puppy].map((q) => new THREE.Vector3(q.mover.position.x, q.mover.position.y + q.height * 0.55, q.mover.position.z));
+        s.box.rings.forEach((r, i) => {
+            r.position.lerpVectors(s.from[i], tgts[i], ee);
+            r.position.y += Math.sin(kk * Math.PI) * 0.22;
+            r.rotation.y += delta * 2.2;
+            r.scale.setScalar((s.scale0 || 1) * (1 - 0.3 * ee));
+        });
+        if (kk >= 1) {
+            s.done = true; s.doneAt = s.t;
+            for (const r of s.box.rings) { scene.remove(r); r.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
+            s.box.rings.length = 0;
+            setGlbPetCharm(s.chick.pet, 'bff-ring');
+            setGlbPetCharm(s.puppy.pet, 'bff-ring');
+            ringsState = { at: Date.now() };
+            try { localStorage.setItem('world-rings', JSON.stringify(ringsState)); worldSync('world-rings'); } catch (e) {}
+            const mx = (s.chick.mover.position.x + s.puppy.mover.position.x) / 2;
+            const mz = (s.chick.mover.position.z + s.puppy.mover.position.z) / 2;
+            for (let i = 0; i < 14; i++) {   // 하트 폭발 💕 (금빛 반짝 섞어서)
+                const spr = glowSprite(i % 3 ? 0xf2a5c0 : 0xffe08a, 0.07 + Math.random() * 0.05, 0.95);
+                spr.position.set(mx + (Math.random() - 0.5) * 0.6, s.chick.mover.position.y + s.chick.height * 0.7, mz + (Math.random() - 0.5) * 0.6);
+                scene.add(spr);
+                hugBurst.push({ spr, vx: (Math.random() - 0.5) * 0.3, vy: 0.5 + Math.random() * 0.35, vz: (Math.random() - 0.5) * 0.3, t: 0.9 });
+            }
+            for (const q of [s.chick, s.puppy]) { if (!q.pet.action) q.pet.action = { id: 'heart', t: 0 }; petVoice(q); }
+            showToast('💍 BFF — Mini ♥ Claude ∞');
+            logWorldEvent('병아리와 강아지가 우정반지를 나눠 꼈다 💍 BFF ∞ — 주인이 만들어준 둥지에서');
+            maybeProactive(s.puppy, '방금 주인이 만들어준 우정반지를 병아리와 나눠 꼈다! 이제 어디서든 함께 반짝인다!');
+        }
+    }
+    if (s.done) {
+        const kk = THREE.MathUtils.clamp((s.t - s.doneAt - 1.2) / 1.2, 0, 1);   // 덮개는 반쯤 돌아와 '빈 둥지'로
+        s.box.lids[0].rotation.z = 1.35 - 0.4 * kk;
+        s.box.lids[1].rotation.z = -(1.35 - 0.4 * kk);
+        if (s.t > s.doneAt + 3.2) {
+            for (const q of [s.chick, s.puppy]) if (q !== possessed && q.ai.state === 'busy') releaseAI(q, 1.5);
+            ringScene = null;
+        }
+    }
+}
 function makeFruitBasket() {
     // 🧺 등나무 배불뚝이 바구니 — 왕복 Lathe(안벽↑립↓바깥벽)라 DS 필수 + 아치 손잡이
     const g = new THREE.Group();
@@ -6218,6 +6441,11 @@ function openCapsulePanel() {
 // 두 경로를 병행하고, Roblox ProximityPrompt처럼 호버 라벨이 "무엇이 되는지"를 그 자리에서
 // 알려준다 (updateHoverPrompt). ----
 const PROP_CLICKS = {
+    ringnest: () => {   // 💍 교환식 (1회) · 이후엔 그날의 기록
+        if (!ringsState) { startRingCeremony(); return; }
+        const d = new Date(ringsState.at);
+        showToast(`💍 ${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} — Mini ♥ Claude · BFF ∞`);
+    },
     icebox: () => openIcebox(),
     bonfire: () => toggleGrillPanel(),
     kitchen: (pr, hit) => {
@@ -6266,6 +6494,7 @@ const HOVER_PROMPTS = {
     trampoline: () => '🤸 트램펄린 — 올라서면 통통! · 클릭 = 절친 부르기',
     vine: () => '🍅 덩굴 시렁 — 열매가 달리면 조종 중 ⌘로 수확',
     melonpatch: () => '🍉 수박 덩굴 — 병아리가 소원한 수박밭 · 열매는 조종 중 ⌘로 수확',
+    ringnest: () => ringsState ? '💍 우정반지 둥지 — Mini ♥ Claude · BFF ∞ (클릭: 그날의 기록)' : '💍 우정반지 둥지 — 주인의 주말 선물 · 클릭하면 교환식이 열려요',
     fruitbasket: () => '🧺 과일바구니 — 클릭: 열기 · 과일 들고 ⌘: 담기',
     seesaw: () => '🛝 시소 — 조종 중 ⌘/✋로 타요',
     sunbed: () => '🛏️ 선베드 — 조종 중 ⌘/✋로 누워요',
@@ -6294,7 +6523,7 @@ const HOVER_PROMPTS = {
     sandcastle: () => '🏰 모래성 — 클릭하면 펫이 모래놀이 · 조종 중 ⌘ = 직접 앉기',
     palm: () => '🌴 야자수',
 };
-const HOVER_H = { icebox: 0.62, kitchen: 1.5, bonfire: 0.95, pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, scarecrow: 1.5, compost: 0.75, piano: 1.05, photoboard: 1.55, mailbox: 0.75, pierboard: 0.9, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, balloon: 2.1, ferry: 1.3, sandcastle: 0.65, palm: 1.2, fishchair: 0.42, melonpatch: 0.3 };
+const HOVER_H = { icebox: 0.62, kitchen: 1.5, bonfire: 0.95, pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, scarecrow: 1.5, compost: 0.75, piano: 1.05, photoboard: 1.55, mailbox: 0.75, pierboard: 0.9, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, balloon: 2.1, ferry: 1.3, sandcastle: 0.65, palm: 1.2, fishchair: 0.42, melonpatch: 0.3, ringnest: 0.4 };
 const hoverEl = document.createElement('div');
 hoverEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); z-index:88; pointer-events:none; background:rgba(30,32,40,0.88); color:#fff; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
 document.body.appendChild(hoverEl);
@@ -6462,7 +6691,7 @@ function makeFishChair() {
     g.add(slat);
     return g;
 }
-const PROP_BUILDERS = { fishchair: makeFishChair, icebox: makeIcebox, kitchen: makeKitchen, bonfire: makeBonfire, tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, scarecrow: makeScarecrow, compost: makeCompost, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, trampoline: makeTrampoline, vine: makeVine, melonpatch: makeMelonPatch, fruitbasket: makeFruitBasket, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket, palm: makePalm, sandcastle: makeSandcastle, pierboard: makePierBoard };
+const PROP_BUILDERS = { fishchair: makeFishChair, icebox: makeIcebox, kitchen: makeKitchen, bonfire: makeBonfire, tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, scarecrow: makeScarecrow, compost: makeCompost, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, trampoline: makeTrampoline, vine: makeVine, melonpatch: makeMelonPatch, ringnest: makeRingNest, fruitbasket: makeFruitBasket, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket, palm: makePalm, sandcastle: makeSandcastle, pierboard: makePierBoard };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -6480,7 +6709,7 @@ const blobTex = (() => {
 })();
 const blobGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-const BLOB_SIZE = { icebox: 0.48, kitchen: 1.25, bonfire: 0.85, tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62, pecktree: 0.55, well: 0.75, capsule: 0.5, boulder: 0.75, garden: 1.5, piano: 0.8, photoboard: 0.8, mailbox: 0.35, pierboard: 0.4, gym: 1.5, library: 1.35 };
+const BLOB_SIZE = { icebox: 0.48, kitchen: 1.25, bonfire: 0.85, tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62, pecktree: 0.55, well: 0.75, capsule: 0.5, boulder: 0.75, garden: 1.5, piano: 0.8, photoboard: 0.8, mailbox: 0.35, pierboard: 0.4, gym: 1.5, library: 1.35, ringnest: 0.4 };
 // Beds register a lying spot (on the furniture, with a lean-back tilt + heading) and an
 // approach point just outside their collider that the pet walks to before climbing on.
 // 🔨 함수로 분리: 로드 시 프롭 루프가 굽고, 공사모드에서 프롭이 이사하면 unbake→bake로 다시
@@ -9393,7 +9622,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', melonpatch: '수박 덩굴', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', scarecrow: '허수아비', compost: '퇴비함', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', pierboard: '주문 게시판', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호', fishchair: '꼬마 낚시 의자' };
+const PROP_KO = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', melonpatch: '수박 덩굴', ringnest: '우정반지 둥지', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', scarecrow: '허수아비', compost: '퇴비함', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', pierboard: '주문 게시판', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호', fishchair: '꼬마 낚시 의자' };
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -9414,7 +9643,7 @@ function describeSpot(x, z) {
     if (idx === 3) return '모험의 섬';
     return '바다';
 }
-const BED_KO = { sunbed: '선베드', hammock: '해먹', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', melonpatch: '수박 덩굴', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', sofa: '소파', loftbed: '2층 침대', fishchair: '꼬마 낚시 의자' };
+const BED_KO = { sunbed: '선베드', hammock: '해먹', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', melonpatch: '수박 덩굴', ringnest: '우정반지 둥지', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', sofa: '소파', loftbed: '2층 침대', fishchair: '꼬마 낚시 의자' };
 function petStatusLine(p) {
     const pos = p.mover.position;
     const parts = [`위치: ${describeSpot(pos.x, pos.z)}`];
@@ -9445,6 +9674,7 @@ function petStatusLine(p) {
     if (p.drink) parts.push(`${p.drink.def.name} 들고 있음`);
     if (p.food) parts.push(`${p.food.def.name} 들고 있음`);
     if (p.pet.accessory) parts.push('산타모자 착용 중');
+    if (p.pet.charm) parts.push('베프와 나눠 낀 우정반지 착용 중 💍');
     if (parts.length === 1) parts.push(p.ai.state === 'walk' || p.ai.state === 'goto' ? '산책 중' : '한가로이 쉬는 중');
     return parts.join(', ');
 }
@@ -9925,6 +10155,11 @@ if (statsOn) window.__worldDev = {
         x: +aiFishing.p.mover.position.x.toFixed(2), z: +aiFishing.p.mover.position.z.toFixed(2), y: +aiFishing.p.mover.position.y.toFixed(3),
         groundY: +world.groundHeightAt(aiFishing.p.mover.position.x, aiFishing.p.mover.position.z).toFixed(3) } : null),
     fishChairEnd: () => { const f = aiFishing; if (!f) return null; endAiFishing(); return { x: +f.p.mover.position.x.toFixed(2), z: +f.p.mover.position.z.toFixed(2) }; },
+    ringState: () => ({ exchanged: !!ringsState, scene: !!ringScene,
+        pos: pets.map((q) => [q.name, +q.mover.position.x.toFixed(2), +q.mover.position.z.toFixed(2), q.ai.state]),
+        chick: !!((pets.find((q) => q.name === 'chick') || {}).pet || {}).charm, puppy: !!((pets.find((q) => q.name === 'puppy') || {}).pet || {}).charm,
+        boxRings: (() => { const pr = PROPS.find((q) => q.type === 'ringnest'); const b = pr && pr.obj && pr.obj.userData; return b && b.rings ? b.rings.filter((r) => r.visible).length : -1; })() }),   // 💍 (E2E)
+    ringGo: () => { startRingCeremony(); return true; },   // 💍 (E2E) 교환식 트리거
     possessGo: (name, x, z, rotY) => {   // 🎮 (E2E) 조종 시작 + 선택 위치·방향으로 순간이동
         const p = pets.find((q) => q.name === name);
         if (!p) return false;
@@ -10803,7 +11038,7 @@ document.body.appendChild(dockUI);
 // 배치는 서버(/api/world_layout)+localStorage에 저장되고 다음 접속 때 씬을 짓기 전에 적용된다
 // (파일 상단 savedLayout). 지형 평탄화 패드는 섬 메시에 구워져 있어 리로드 후에야 새 위치를
 // 따라간다 — 그때까지 잔디가 살짝 울퉁불퉁할 수 있는 게 유일한 시각적 타협점.
-const PROP_LABELS = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', bowl: '밥그릇', fence: '울타리', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', melonpatch: '수박 덩굴', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', house: '집', car: '자동차', pierboard: '주문 게시판' };
+const PROP_LABELS = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', bowl: '밥그릇', fence: '울타리', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', melonpatch: '수박 덩굴', ringnest: '우정반지 둥지', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', house: '집', car: '자동차', pierboard: '주문 게시판' };
 const buildRingMat = new THREE.MeshBasicMaterial({ color: 0x66d9ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
 const buildRing = new THREE.Mesh(new THREE.RingGeometry(0.82, 1.0, 40), buildRingMat);
 buildRing.rotation.x = -Math.PI / 2;
@@ -25877,6 +26112,7 @@ function animate() {
     updateGrill(delta);                      // 🍢 꼬치 굽기 — 딥 모션·익힘·완성
     updateCooking(delta);                    // 🍳 조리 시퀀스 — 손질·웍·플레이팅
     updateEternScene(delta);                 // 🎂 영원 케이크 나눠 먹기
+    updateBffRings(delta);                   // 💍 우정반지 — 교환식 + 함께 반짝
     updateAiCookPost(delta);                 // 🍳 자율 요리사 후처리 — 대접/셀프 냠냠
     updatePlateErrand();                     // 💌 절친 몫 접시 회수 심부름
     updateFruitThrows(delta);                // 🧺 원거리 휙 담기 아크

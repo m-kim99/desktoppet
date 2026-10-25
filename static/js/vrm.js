@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { createGlbPetEntity, updateGlbPetEntity, disposeGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory } from './glb-pet-entity.js?v=2';
+import { createGlbPetEntity, updateGlbPetEntity, disposeGlbPetEntity, GLB_MOTIONS, GLB_ACCESSORIES, setGlbPetAccessory, setGlbPetCharm } from './glb-pet-entity.js?v=3';
 let isVRM1 = true;
 let currentMixer = null;
 let idleAction = null;
@@ -767,8 +767,15 @@ async function loadGlbPet(url) {
 
     glbPet = pet;
     glbPet.action = { id: 'wave', t: 0 };   // greet when the character appears / is summoned
+    applyBffRing();   // 💍 월드에서 우정반지를 교환했으면 데탑 창의 펫도 끼고 있다
     if (typeof hideModelSwitchingIndicator === 'function') { try { hideModelSwitchingIndicator(); } catch (e) {} }
 }
+// 💍 우정반지 동기 — 월드 창과 localStorage(world-rings)를 공유하므로, 교환 순간 storage
+// 이벤트로 이 창의 펫에도 실시간으로 끼워진다 (같은 오리진의 두 창 문법).
+function applyBffRing() {
+    try { if (glbPet && !glbPet.charm && localStorage.getItem('world-rings')) setGlbPetCharm(glbPet, 'bff-ring'); } catch (e) {}
+}
+window.addEventListener('storage', (e) => { if (e.key === 'world-rings') applyBffRing(); });
 
 // Play a motion. 'sleep' is a state (stays until the pet is clicked or starts walking); others are
 // timed one-shots that updateGlbPetEntity drives via glbPet.action.
