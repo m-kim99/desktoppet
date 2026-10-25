@@ -34,7 +34,7 @@ const savedLayout = await (async () => {
 // 기기 유지: world-eco(성능)·world-layout(전용 API)·world-fruit-*(전용 API)·world-last-seen(기기별 리캡).
 const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked', 'world-pantry', 'world-icebox', 'world-market-used', 'world-recipes-unlocked', 'world-dishes-found', 'world-kitchen-leftover',
     'world-sea-found', 'world-seabed-dug', 'world-islet-dug', 'world-discover', 'world-houselight', 'world-pets',
-    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-space-poi', 'world-moon-dug', 'world-last-seen', 'world-pier-order', 'world-pier-stock', 'world-fishchair-noted', 'world-aurora-said', 'world-proactive-recent', 'world-rings'];   // last-seen 공유 = 기기 간 이중 정산 방지 · fishchair-noted = 의자 등장 이벤트 1회 공유
+    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-space-poi', 'world-moon-dug', 'world-last-seen', 'world-pier-order', 'world-pier-stock', 'world-fishchair-noted', 'world-aurora-said', 'world-proactive-recent', 'world-rings', 'world-meadow-noted'];   // last-seen 공유 = 기기 간 이중 정산 방지 · fishchair-noted = 의자 등장 이벤트 1회 공유
 // ⚠️ **부트 루프보다 먼저 선언돼야 한다.** 아래 루프는 서버에 없는 키를 만나면 worldSync(k)를
 // 부르는데, 이 const가 루프 아래에 있으면 TDZ ReferenceError가 나고 **try 전체가 중단**된다.
 // 그러면 그 키 이후의 모든 키가 영영 복원되지 않는다 — world-events·world-diary-auto가 딱
@@ -65,7 +65,7 @@ try {   // 부트 1회 — 서버 값이 로컬을 덮는다 (아래 모든 리�
     }
 } catch (e) { /* 백엔드 없는 정적 서빙 — 로컬 캐시로 진행 */ }
 // 이동 가능한 타입 (연못=지형 함몰이라 고정, furniture=집 내부 파생이라 집을 따라감)
-const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'scarecrow', 'compost', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'vine', 'melonpatch', 'ringnest', 'fruitbasket', 'library', 'flowerbasket', 'pond', 'portal', 'icebox', 'kitchen', 'bonfire', 'pierboard']);
+const MOVABLE_TYPES = new Set(['tree', 'bowl', 'fence', 'sunbed', 'hammock', 'lamp', 'radio', 'coffee', 'food', 'swing', 'seesaw', 'house', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'boulder', 'garden', 'scarecrow', 'compost', 'piano', 'photoboard', 'mailbox', 'gym', 'trampoline', 'vine', 'melonpatch', 'ringnest', 'chickgarden', 'gardenbench', 'fruitbasket', 'library', 'flowerbasket', 'pond', 'portal', 'icebox', 'kitchen', 'bonfire', 'pierboard']);
 // 섬 정의 지문 — 섬을 옮기거나 크기를 바꾸면 값이 달라진다(재발 방지: 저장 배치의 "섬 이사" 자동 감지).
 // 'v2|' 접두 = 배치 리뉴얼 세대: 섬 기하가 그대로여도 접두를 올리면 위성섬 소품이 전부 새 기본값으로
 // 리셋된다. 좌표 테이블(MOVED_DEFAULTS)은 클라이언트별 사본(서버 파일/localStorage 오리진들)의
@@ -3849,6 +3849,106 @@ function updateRingStash(delta) {
         }
     }
 }
+// ---- 🌸 병아리 동산 (4.5 위시리스트 2호): 남쪽 바다 꽃언덕 ----
+// 꽃밭(병합 1메시) + 남비탈의 '노란 병아리' 꽃그림(하늘에서 보이는 서프라이즈 — 열기구·망원경용)
+// + 입구 팻말. 앵커는 남비탈(-2.6,-13.05), 언덕 중심은 로컬 (0,+0.85) — 간격 규칙 때문의 오프셋.
+function makeChickGarden(pr) {
+    const g = [];
+    const rnd = seededRand(45);   // 4.5의 숫자
+    const y0 = terrainHeight(pr.x, pr.z);
+    const sy = (lx, lz) => terrainHeight(pr.x + lx, pr.z + lz) - y0;   // 언덕 경사 보정
+    const flower = (lx, lz, col, hr = 0.03) => {
+        const y = sy(lx, lz);
+        const stem = new THREE.CylinderGeometry(0.0075, 0.009, 0.085, 5);
+        stem.translate(lx, y + 0.042, lz);
+        g.push(bakeGrad(stem, 0x6fae53, 0x4a7d3a, { curve: 1 }));
+        const head = new THREE.SphereGeometry(hr, 7, 6);
+        head.scale(1, 0.82, 1);
+        head.translate(lx, y + 0.095, lz);
+        g.push(bakeGrad(head, col, col, { curve: 1.15 }));
+    };
+    const HCZ = 0.85;   // 언덕 중심(로컬)
+    const COLS = [0xff8fb3, 0xffffff, 0xb39ddb, 0xff8a65, 0xf27ba0];
+    for (let i = 0; i < 92; i++) {   // 들꽃 — 언덕 비탈 랜덤 (벤치·통로·실루엣 구역은 비움)
+        const a = rnd() * Math.PI * 2, rr = 0.7 + rnd() * 1.45;
+        const lx = Math.sin(a) * rr, lz = HCZ + Math.cos(a) * rr;
+        if (Math.abs(lx) < 0.62 && lz > 0.95 && lz < 1.75) continue;        // 벤치 자리
+        if (Math.abs(lx - 0.25) < 0.55 && lz > 1.7) continue;               // 다리→벤치 통로
+        if (Math.abs(lx) < 1.1 && lz < 0.15) continue;                      // 실루엣 구역
+        flower(lx, lz, COLS[Math.floor(rnd() * COLS.length)]);
+    }
+    const PIX = [   // 🐥 병아리 실루엣 — 남비탈, 탑뷰 꽃그림 (1=노랑 2=부리 3=눈)
+        '..1111...',
+        '.111111..',
+        '11311112.',
+        '111111122',
+        '11111111.',
+        '.111111..',
+        '..1111...',
+    ];
+    PIX.forEach((row, rI) => {   // 셀 0.16 + 큰 송이(0.042) — 하늘에서 면으로 읽히게 (0.21 점묘는 흩어졌다, 실측)
+        [...row].forEach((ch, cI) => {
+            if (ch === '.') return;
+            const lx = (cI - 4) * 0.16 + (rnd() - 0.5) * 0.02;
+            const lz = -0.2 - rI * 0.155 + (rnd() - 0.5) * 0.02;
+            flower(lx, lz, ch === '2' ? 0xff8a3c : ch === '3' ? 0x4a3828 : 0xffd54f, 0.044);
+        });
+    });
+    const sgy = sy(0.85, 2.3);   // 입구 팻말 — 다리에서 내려오는 길목 동편
+    const post = new THREE.CylinderGeometry(0.02, 0.024, 0.36, 7);
+    post.translate(0.85, sgy + 0.18, 2.3);
+    g.push(bakeGrad(post, 0xb08a55, 0x7e5f3a, { curve: 1 }));
+    const board = new THREE.BoxGeometry(0.48, 0.18, 0.03);
+    board.translate(0.85, sgy + 0.4, 2.3);
+    g.push(bakeGrad(board, 0xc29a62, 0x8a6a44, { curve: 1.1 }));
+    const mesh = new THREE.Mesh(mergeGeometries(g, false), gradMat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    const grp = new THREE.Group();
+    grp.add(mesh);
+    const cv = document.createElement('canvas');
+    cv.width = 512; cv.height = 192;
+    const tc = cv.getContext('2d');
+    tc.fillStyle = '#52381f';
+    tc.textAlign = 'center';
+    tc.font = 'bold 86px sans-serif';
+    tc.fillText('🌸 병아리 동산', 256, 124);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.165), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+    label.position.set(0.85, sgy + 0.402, 2.316);
+    grp.add(label);
+    return grp;
+}
+// 동산 벤치 — 흰 바랜 나무 2인 벤치 (앉기는 BEDS extras가 등록: gardenbench-0/1)
+function makeGardenBench() {
+    const g = [];
+    for (const dz of [0.02, -0.095]) {   // 좌판 슬랫 2
+        const sl = new THREE.BoxGeometry(0.66, 0.042, 0.125);
+        sl.translate(0, 0.205, dz);
+        g.push(bakeGrad(sl, 0xdcc9a8, 0xb09468, { curve: 1.1 }));
+    }
+    for (const [yy, rz] of [[0.335, -0.14], [0.415, -0.16]]) {   // 등받이 슬랫 2 — 살짝 뒤로 기움
+        const bk = new THREE.BoxGeometry(0.66, 0.062, 0.034);
+        bk.rotateX(-0.18);
+        bk.translate(0, yy, rz);
+        g.push(bakeGrad(bk, 0xdcc9a8, 0xb09468, { curve: 1.1 }));
+    }
+    for (const sx of [-1, 1]) {   // 옆 프레임 + 팔걸이
+        const leg = new THREE.BoxGeometry(0.05, 0.21, 0.24);
+        leg.translate(sx * 0.3, 0.1, -0.02);
+        g.push(bakeGrad(leg, 0xb89a70, 0x8d7250, { curve: 1.1 }));
+        const arm = new THREE.BoxGeometry(0.07, 0.034, 0.3);
+        arm.translate(sx * 0.3, 0.275, -0.02);
+        g.push(bakeGrad(arm, 0xd4bd94, 0xa98e62, { curve: 1.1 }));
+    }
+    const mesh = new THREE.Mesh(mergeGeometries(g, false), gradMat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    const grp = new THREE.Group();
+    grp.add(mesh);
+    return grp;
+}
 function makeFruitBasket() {
     // 🧺 등나무 배불뚝이 바구니 — 왕복 Lathe(안벽↑립↓바깥벽)라 DS 필수 + 아치 손잡이
     const g = new THREE.Group();
@@ -4437,9 +4537,10 @@ const fireflyTex = precipTexture((ctx) => {
     ctx.fill();
 });
 const fireflyClouds = [];
-for (let i = 0; i < 2; i++) {
+for (let i = 0; i < 3; i++) {
     const pts = precipPoints(26, fireflyTex, 0.085, 0.02, 0.05, 0.55, 2.1, 1.6, 1.4);
-    pts.position.set(-2.6, 0, -2.9);   // 연못가
+    if (i === 2) pts.position.set(-2.6, 0.35, -12.1);   // 🌸 병아리 동산 꽃언덕 — 밤의 생명감
+    else pts.position.set(-2.6, 0, -2.9);   // 연못가
     pts.material.blending = THREE.AdditiveBlending;
     pts.material.color.set(0xd8ffa0);
     fireflyClouds.push(pts);
@@ -6671,6 +6772,8 @@ const HOVER_PROMPTS = {
     trampoline: () => '🤸 트램펄린 — 올라서면 통통! · 클릭 = 절친 부르기',
     vine: () => '🍅 덩굴 시렁 — 열매가 달리면 조종 중 ⌘로 수확',
     melonpatch: () => '🍉 수박 덩굴 — 병아리가 소원한 수박밭 · 열매는 조종 중 ⌘로 수확',
+    chickgarden: () => '🌸 병아리 동산 — 강아지의 바람으로 주인이 가꾼 꽃언덕',
+    gardenbench: () => '🪑 동산 벤치 — 나란히 앉아 남쪽 바다를 · 조종 중 ⌘로 앉아요',
     ringnest: () => {
         if (!ringsState) return '💍 우정반지 둥지 — 주인의 주말 선물 · 클릭하면 교환식이 열려요';
         const d = new Date(ringsState.at);
@@ -6709,7 +6812,7 @@ const HOVER_PROMPTS = {
     sandcastle: () => '🏰 모래성 — 클릭하면 펫이 모래놀이 · 조종 중 ⌘ = 직접 앉기',
     palm: () => '🌴 야자수',
 };
-const HOVER_H = { icebox: 0.62, kitchen: 1.5, bonfire: 0.95, pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, scarecrow: 1.5, compost: 0.75, piano: 1.05, photoboard: 1.55, mailbox: 0.75, pierboard: 0.9, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, balloon: 2.1, ferry: 1.3, sandcastle: 0.65, palm: 1.2, fishchair: 0.42, melonpatch: 0.3, ringnest: 0.4 };
+const HOVER_H = { icebox: 0.62, kitchen: 1.5, bonfire: 0.95, pecktree: 1.15, well: 1.25, capsule: 0.45, radio: 0.55, lamp: 1.35, coffee: 1.5, food: 1.5, swing: 1.55, seesaw: 0.85, sunbed: 0.6, hammock: 0.85, monument: 1.0, hugspot: 0.4, cave: 1.6, boulder: 0.7, lookout: 1.1, digsite: 0.7, portal: 1.15, garden: 0.85, scarecrow: 1.5, compost: 0.75, piano: 1.05, photoboard: 1.55, mailbox: 0.75, pierboard: 0.9, gym: 0.55, library: 1.15, fountain: 0.7, flowerbasket: 0.35, boat: 0.55, plane: 1.05, balloon: 2.1, ferry: 1.3, sandcastle: 0.65, palm: 1.2, fishchair: 0.42, melonpatch: 0.3, ringnest: 0.4, chickgarden: 0.55, gardenbench: 0.7 };
 const hoverEl = document.createElement('div');
 hoverEl.style.cssText = 'position:fixed; display:none; transform:translate(-50%,-100%); z-index:88; pointer-events:none; background:rgba(30,32,40,0.88); color:#fff; font-size:11.5px; padding:4px 9px; border-radius:8px; white-space:nowrap; box-shadow:0 3px 10px rgba(0,0,0,0.3);';
 document.body.appendChild(hoverEl);
@@ -6877,7 +6980,7 @@ function makeFishChair() {
     g.add(slat);
     return g;
 }
-const PROP_BUILDERS = { fishchair: makeFishChair, icebox: makeIcebox, kitchen: makeKitchen, bonfire: makeBonfire, tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, scarecrow: makeScarecrow, compost: makeCompost, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, trampoline: makeTrampoline, vine: makeVine, melonpatch: makeMelonPatch, ringnest: makeRingNest, fruitbasket: makeFruitBasket, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket, palm: makePalm, sandcastle: makeSandcastle, pierboard: makePierBoard };
+const PROP_BUILDERS = { fishchair: makeFishChair, icebox: makeIcebox, kitchen: makeKitchen, bonfire: makeBonfire, tree: makeTree, rock: (p) => kitProp(p.variant || 'rock_largeA', { scale: p.kitScale || 0.6 }), house: makeHouse, bowl: makeBowl, fence: makeFence, pond: makePond, sunbed: makeSunbed, hammock: makeHammock, swing: makeSwing, seesaw: makeSeesaw, lamp: makeLamp, radio: makeRadio, coffee: makeCoffeeBooth, food: makeFoodBooth, monument: makeMonument, hugspot: makeHugSpot, pecktree: makePeckTree, well: makeWell, capsule: makeCapsule, boulder: makeBoulder, cave: makeCave, lookout: makeLookout, digsite: makeDigsite, portal: makePortal, garden: makeGarden, scarecrow: makeScarecrow, compost: makeCompost, piano: makePiano, photoboard: makePhotoboard, mailbox: makeMailbox, gym: makeGym, trampoline: makeTrampoline, vine: makeVine, melonpatch: makeMelonPatch, ringnest: makeRingNest, chickgarden: makeChickGarden, gardenbench: makeGardenBench, fruitbasket: makeFruitBasket, library: makeLibrary, fountain: makeFountain, flowerbasket: makeFlowerBasket, palm: makePalm, sandcastle: makeSandcastle, pierboard: makePierBoard };
 // Baked contact shading (게임식 블롭 섀도): the soft dark pool where a prop meets the grass — the
 // look GTAO recomputed 60×/s for props that never move, now one alpha-faded disc placed at load.
 // The fence (thin posts) and pond (a water hole) read better without one.
@@ -6895,7 +6998,7 @@ const blobTex = (() => {
 })();
 const blobGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
-const BLOB_SIZE = { icebox: 0.48, kitchen: 1.25, bonfire: 0.85, tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62, pecktree: 0.55, well: 0.75, capsule: 0.5, boulder: 0.75, garden: 1.5, piano: 0.8, photoboard: 0.8, mailbox: 0.35, pierboard: 0.4, gym: 1.5, library: 1.35, ringnest: 0.4 };
+const BLOB_SIZE = { icebox: 0.48, kitchen: 1.25, bonfire: 0.85, tree: 0.55, bowl: 0.42, sunbed: 0.85, hammock: 0.9, swing: 1.3, seesaw: 1.5, lamp: 0.3, radio: 0.42, coffee: 1.0, food: 1.0, monument: 0.62, pecktree: 0.55, well: 0.75, capsule: 0.5, boulder: 0.75, garden: 1.5, piano: 0.8, photoboard: 0.8, mailbox: 0.35, pierboard: 0.4, gym: 1.5, library: 1.35, ringnest: 0.4, gardenbench: 0.55 };
 // Beds register a lying spot (on the furniture, with a lean-back tilt + heading) and an
 // approach point just outside their collider that the pet walks to before climbing on.
 // 🔨 함수로 분리: 로드 시 프롭 루프가 굽고, 공사모드에서 프롭이 이사하면 unbake→bake로 다시
@@ -6989,7 +7092,7 @@ function unbakePropBeds(p) {
 //  · Mesh가 아닌 것(라이트·스프라이트·Points)과 visible=false(숨김 토글류)는 그냥 둔다
 const MERGE_TYPES = new Set(['house', 'bowl', 'fence', 'pond', 'sunbed', 'hammock', 'lamp', 'radio',
     'coffee', 'food', 'monument', 'pecktree', 'well', 'capsule', 'boulder', 'cave', 'lookout',
-    'garden', 'scarecrow', 'compost', 'piano', 'mailbox', 'gym', 'library', 'fountain', 'flowerbasket', 'swing', 'seesaw', 'palm', 'sandcastle', 'icebox', 'kitchen', 'pierboard', 'fishchair', 'melonpatch']);
+    'garden', 'scarecrow', 'compost', 'piano', 'mailbox', 'gym', 'library', 'fountain', 'flowerbasket', 'swing', 'seesaw', 'palm', 'sandcastle', 'icebox', 'kitchen', 'pierboard', 'fishchair', 'melonpatch', 'chickgarden', 'gardenbench']);
 function mergePropGroup(root) {
     const skip = new Set(seasonSnowCaps);
     if (mailFlag) mailFlag.traverse((o) => skip.add(o));
@@ -7172,6 +7275,26 @@ for (const p of PROPS) {
         });
         const shelfW = lw(0, -0.15);
         PROPS.push({ type: 'furniture', x: shelfW.x, z: shelfW.z, rotY: 0, r: 0.55 });
+    }
+}
+
+// 🌸 동산 벤치 extras: 2인 나란히 sit-침대 — mountBed 표준(접근·앉기·⌘힌트·탭 하차 공짜).
+// 자율 '동산 소풍'도 이 자리를 쓴다. 밤 수면 선택에선 제외(mode 'sit').
+{
+    const gbPr = PROPS.find((q) => q.type === 'gardenbench');
+    if (gbPr) {
+        const cy = Math.cos(gbPr.rotY || 0), sy = Math.sin(gbPr.rotY || 0);
+        const bw = (lx, lz) => ({ x: gbPr.x + lx * cy + lz * sy, z: gbPr.z - lx * sy + lz * cy });
+        const baseY = terrainHeight(gbPr.x, gbPr.z);
+        [-0.16, 0.16].forEach((lx, i) => {
+            const w = bw(lx, 0.015);
+            const ap = bw(lx, 0.62);
+            BEDS.push({
+                id: `gardenbench-${i}`, mode: 'sit', occupant: null, sway: 0,
+                lie: { x: w.x, z: w.z, y: baseY + 0.245, rotY: gbPr.rotY || 0, tilt: -0.35 },
+                approach: { x: ap.x, z: ap.z },
+            });
+        });
     }
 }
 
@@ -8645,6 +8768,11 @@ const LEISURE_ACTS = [
     { id: 'sand', cdKey: 'nextSandAt', cd: [480000, 960000], weight: 10, dur: 57,
       gate: () => BEDS.some((b) => b.id.startsWith('sandspot') && !b.occupant),
       fire: (p) => petSandPlay(p, true) },
+    // 🌸 동산 소풍 — 병아리 동산 벤치에서 꽃구경, 절친이 한가하면 나란히 (4.5 위시 2호의 핵심).
+    { id: 'meadow', cdKey: 'nextMeadowAt', cd: [480000, 960000], weight: 10, dur: 110,
+      weightAt: (h) => (h >= 10 && h < 17 ? 1.5 : 1),   // 볕 좋은 낮 소풍
+      gate: () => Date.now() > meadowBusy && BEDS.some((b) => b.id.startsWith('gardenbench') && !b.occupant),
+      fire: (p) => startMeadowPicnic(p) },
     // 🚣 나룻배 뱃놀이 — 열린 바다 웨이포인트 한 바퀴 (탈것 4형제 완성 조).
     { id: 'boat', cdKey: 'nextBoatAt', seed: [300000, 780000], cd: [600000, 1200000], weight: 8, dur: 80,
       gate: () => !boatRide && !aiBoat,
@@ -9838,7 +9966,7 @@ function describeSpot(x, z) {
     if (idx === 3) return '모험의 섬';
     return '바다';
 }
-const BED_KO = { sunbed: '선베드', hammock: '해먹', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', melonpatch: '수박 덩굴', ringnest: '우정반지 둥지', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', sofa: '소파', loftbed: '2층 침대', fishchair: '꼬마 낚시 의자' };
+const BED_KO = { sunbed: '선베드', hammock: '해먹', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', melonpatch: '수박 덩굴', ringnest: '우정반지 둥지', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', sofa: '소파', loftbed: '2층 침대', fishchair: '꼬마 낚시 의자', 'gardenbench-0': '동산 벤치', 'gardenbench-1': '동산 벤치' };
 function petStatusLine(p) {
     const pos = p.mover.position;
     const parts = [`위치: ${describeSpot(pos.x, pos.z)}`];
@@ -10350,6 +10478,8 @@ if (statsOn) window.__worldDev = {
         x: +aiFishing.p.mover.position.x.toFixed(2), z: +aiFishing.p.mover.position.z.toFixed(2), y: +aiFishing.p.mover.position.y.toFixed(3),
         groundY: +world.groundHeightAt(aiFishing.p.mover.position.x, aiFishing.p.mover.position.z).toFixed(3) } : null),
     fishChairEnd: () => { const f = aiFishing; if (!f) return null; endAiFishing(); return { x: +f.p.mover.position.x.toFixed(2), z: +f.p.mover.position.z.toFixed(2) }; },
+    meadowGo: (ms) => startMeadowPicnic(pets.find((q) => q.name === 'chick'), ms),   // 🌸 (E2E) 소풍 강제 시작
+    meadowState: () => pets.map((q) => [q.name, !!(q.bed && q.bed.id.startsWith('gardenbench')), q.bedPhase || null, q._meadowUntil ? 1 : 0]),   // 🌸 (E2E)
     ringToggle: () => { startRingToggle(); return !!ringStash; },   // 🪺 (E2E) 보관/착용 토글
     ringReunion: () => { startRingScene('reunion'); return true; },   // 💍 (E2E) 재회식
     ringReplay: () => { startRingScene('replay'); return true; },   // ✨ (E2E) 추억 재생
@@ -25326,6 +25456,57 @@ if (FISH_CHAIR) try {   // 등장 이벤트 1회 — 오늘 밤 일기의 소재
         worldSync('world-fishchair-noted');
     }
 } catch (e) {}
+// ---- 🌸 동산 소풍 (자율활동 18호): 벤치에 앉아 꽃구경 — 절친이 한가하면 2~4초 뒤 따라와
+// 옆자리에 나란히. _meadowUntil 타이머로 스스로 일어난다(sandspot·libchair 문법). 둘이 앉아
+// 있으면 이따금 🌸/💗 — 4.5 위시 "민이와 내가 함께 놀 수 있는 곳"의 핵심.
+let meadowBusy = 0;   // 소풍 동시 1건(듀오 포함) — 게이트용
+function startMeadowPicnic(p, durMs) {
+    const seats = BEDS.filter((b) => b.id.startsWith('gardenbench') && !b.occupant);
+    if (!seats.length || !p || p.bed || p.dip || p.pet.sleeping) return false;
+    const dur = durMs || (70000 + Math.random() * 80000);
+    meadowBusy = Date.now() + dur + 40000;
+    mountBed(p, seats[0]);
+    p._meadowUntil = Date.now() + dur;
+    const friend = pets.find((q) => q !== p && q !== possessed && !q.bed && !q.dip && !q.pet.sleeping
+        && (q.ai.state === 'idle' || q.ai.state === 'walk'));
+    if (friend && seats[1]) {
+        setTimeout(() => {
+            if (!friend.bed && !friend.dip && !friend.pet.sleeping && !seats[1].occupant) {
+                mountBed(friend, seats[1]);
+                friend._meadowUntil = Date.now() + dur * (0.85 + Math.random() * 0.3);
+                logWorldEvent('둘이 병아리 동산 벤치에 나란히 앉아 꽃바람을 쐬었다 🌸💗');
+            }
+        }, 2000 + Math.random() * 2500);
+    } else {
+        logWorldEvent(`${petKo(p)}가 병아리 동산으로 꽃구경을 갔다 🌸`);
+    }
+    return true;
+}
+let meadowEmoteAt = 0;
+function updateMeadow() {
+    const now = Date.now();
+    for (const q of pets) {
+        if (q._meadowUntil && now > q._meadowUntil) {
+            q._meadowUntil = 0;
+            if (q.bed && q.bed.id.startsWith('gardenbench')) q.bedExit = true;
+        }
+    }
+    if (now > meadowEmoteAt) {   // 앉아 있는 동안의 조용한 감탄 — 7~13초마다 한 번
+        meadowEmoteAt = now + 7000 + Math.random() * 6000;
+        const seated = pets.filter((q) => q.bed && q.bed.id.startsWith('gardenbench') && q.bedPhase === 'lying');
+        if (seated.length) {
+            const q = seated[Math.floor(Math.random() * seated.length)];
+            q.pet.spawnEmoji(seated.length > 1 && Math.random() < 0.5 ? '💗' : '🌸', { left: 50, top: 14, size: 16, dx: (Math.random() - 0.5) * 8, duration: 1500 });
+        }
+    }
+}
+if (PROPS.some((q) => q.type === 'chickgarden')) try {   // 🌸 동산 등장 이벤트 1회 — 그날 밤 일기의 소재 (키 KV 동기)
+    if (!localStorage.getItem('world-meadow-noted')) {
+        logWorldEvent('주인이 남쪽 바다에 병아리 동산을 가꿨다 — 꽃언덕과 바다를 보는 벤치, 강아지의 바람대로 🌸');
+        localStorage.setItem('world-meadow-noted', '1');
+        worldSync('world-meadow-noted');
+    }
+} catch (e) {}
 function fishChairStand(f) {   // 의자에서 일어나 원래 선 자리로 — 입질 캐스트·낚시 종료 공용
     if (f && f._chairSit) { f.p.mover.position.x = f._chairSit.bx; f.p.mover.position.z = f._chairSit.bz; }
     if (f && f._chairSit && FISH_CHAIR && FISH_CHAIR.bed && FISH_CHAIR.bed.occupant === f.p) FISH_CHAIR.bed.occupant = null;   // 예약 반납
@@ -26313,6 +26494,7 @@ function animate() {
     updateEternScene(delta);                 // 🎂 영원 케이크 나눠 먹기
     updateBffRings(delta);                   // 💍 우정반지 — 교환식 + 함께 반짝
     updateRingStash(delta);                  // 🪺 반지 보관/재착용 토글
+    updateMeadow();                          // 🌸 동산 소풍 — 착석 타이머 + 감탄
     updateAiCookPost(delta);                 // 🍳 자율 요리사 후처리 — 대접/셀프 냠냠
     updatePlateErrand();                     // 💌 절친 몫 접시 회수 심부름
     updateFruitThrows(delta);                // 🧺 원거리 휙 담기 아크

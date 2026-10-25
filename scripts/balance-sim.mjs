@@ -83,6 +83,7 @@ const ACTS = [
     { id: 'library',ko: '독서',     chainP: () => 0,     weight: 8,   cd: [600, 1200],  seed: null,       weightAt: (h) => (h >= 19 ? 2 : 1), dur: (r) => 120 + r() * 120 },
     { id: 'treat',  ko: '부스간식', chainP: () => 0,     weight: 12,  cd: [480, 900],   seed: null,       lock: 'treat',   weightAt: (h) => ((h >= 7 && h < 10) || (h >= 14 && h < 17) ? 1.3 : 1), dur: (r) => 70 + r() * 40 },
     { id: 'sand',   ko: '모래놀이', chainP: () => 0,     weight: 10,  cd: [480, 960],   seed: null,       dur: (r) => 40 + r() * 35 },   // 자리 2개 — 락 없음 (40~75초, world.js _sandUntil과 동기)
+    { id: 'meadow', ko: '동산소풍', chainP: () => 0,     weight: 10,  cd: [480, 960],   seed: null,       weightAt: (h) => (h >= 10 && h < 17 ? 1.5 : 1), dur: (r) => 70 + r() * 80 },   // 🌸 병아리 동산 벤치 — 자리 2(듀오), world.js startMeadowPicnic과 동기
     { id: 'boat',   ko: '뱃놀이',   chainP: () => 0,     weight: 8,   cd: [600, 1200],  seed: [300, 780], lock: 'boat',    dur: (r) => 55 + r() * 50 },
     { id: 'radio',  ko: '라디오',   chainP: () => 0,     weight: 8,   cd: [600, 1200],  seed: null,       lock: 'radio',   dur: (r) => 25 + r() * 30 },
     { id: 'cook',   ko: '요리',     chainP: () => 0,     weight: 10,  cd: [600, 1200],  seed: null,       lock: 'cook',    weightAt: (h) => ((h >= 11 && h < 12) || (h >= 17 && h < 18) ? 1.3 : 1), dur: (r) => 90 + r() * 60 },   // 재고 게이트는 미모델(주석)
@@ -320,6 +321,7 @@ if (ARG.day) {
         swing:    (p) => `${p}가 그네를 타고 바람을 갈랐다`,
         gym:      (p) => `${p}가 스트레칭으로 몸을 쭉쭉 풀었다 🤸`,
         library:  (p) => `${p}가 도서관에서 그림책을 뒤적였다 📖`,
+        meadow:   (p) => `${p}가 병아리 동산 벤치에 앉아 꽃바람을 쐬었다 🌸`,
         treat:    (p) => `${p}가 간식 부스 앞을 서성이다 간식을 먹었다 🍡`,
         sand:     (p) => `${p}가 모래섬에서 모래를 쌓으며 놀았다 🏖️`,
         boat:     (p) => `${p}가 나룻배를 타고 천천히 노를 저었다 🚣`,

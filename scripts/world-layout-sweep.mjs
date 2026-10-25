@@ -100,7 +100,7 @@ for (const p of ALL) {
 }
 
 console.log('== ⑤ 섬 간격 + 다리 기하 ==');
-const names = ['본섬', 'NE', 'SW', 'SE', '모래', '농장'];
+const names = ['본섬', 'NE', 'SW', 'SE', '모래', '농장', '동산'];
 for (let i = 0; i < ISLANDS.length; i++) for (let j = i + 1; j < ISLANDS.length; j++) {
     const a = ISLANDS[i], b = ISLANDS[j];
     const gap = Math.hypot(a.x - b.x, a.z - b.z) - a.r - b.r;

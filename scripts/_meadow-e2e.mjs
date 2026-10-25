@@ -1,0 +1,78 @@
+// 🌸 동산 소풍 E2E — 본섬→새 다리 도보→벤치 착석(듀오)→타이머 하차 (정적 서버)
+import http from 'http'; import fs from 'fs'; import path from 'path';
+import { fileURLToPath } from 'url';
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const PORT = 8928; const OUT = process.argv[2] || '/tmp/meadow.png';
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.glb': 'application/octet-stream' };
+const server = http.createServer((req, res) => {
+    const url = decodeURIComponent(req.url.split('?')[0]);
+    const base = url.startsWith('/vrm/') ? ROOT : path.join(ROOT, 'static');
+    const fp = path.normalize(path.join(base, url));
+    if (!fp.startsWith(base) || !fs.existsSync(fp) || !fs.statSync(fp).isFile()) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(fp)] || 'application/octet-stream' });
+    fs.createReadStream(fp).pipe(res);
+});
+await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
+const { chromium } = await import('playwright');
+const browser = await chromium.launch({ headless: true, args: ['--use-angle=metal'] });
+const page = await (await browser.newContext({ viewport: { width: 1100, height: 700 } })).newPage();
+let fails = 0;
+const check = (n, ok, det = '') => { if (!ok) fails++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${n}${det ? ' — ' + det : ''}`); };
+const errs = [];
+page.on('pageerror', (e) => errs.push(String(e.message)));
+await page.goto(`http://127.0.0.1:${PORT}/world.html?weather=clear&hour=12&stats=1`, { waitUntil: 'load' });
+await page.waitForTimeout(9000);
+// 결정화: 강아지를 동산에 한가하게 세워둔다 (자율활동이 선점했으면 합류 게이트가 막는 건 설계)
+await page.evaluate(() => window.__worldDev.possessGo('puppy', -2.0, -10.9));
+await page.waitForTimeout(400);
+await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
+await page.waitForTimeout(900);
+const go = await page.evaluate(() => window.__worldDev.meadowGo(14000));
+check('M1 소풍 시작(강제)', go === true, String(go));
+let st = null;
+for (let i = 0; i < 300; i++) {   // 본섬→동산 다리 도보 — 넉넉히 2분
+    await page.waitForTimeout(400);
+    st = await page.evaluate(() => window.__worldDev.meadowState());
+    if (st && st.find((r) => r[0] === 'chick' && r[1] && r[2] === 'lying')) break;
+}
+check('M2 병아리 — 다리 건너 벤치 착석', !!(st && st.find((r) => r[0] === 'chick' && r[1] && r[2] === 'lying')), JSON.stringify(st));
+const pos = await page.evaluate(() => window.__worldDev.ringState().pos);
+const cp = pos.find((r) => r[0] === 'chick');
+check('M3 착석 좌표 = 동산 벤치', !!cp && Math.hypot(cp[1] + 2.6, cp[2] + 11.75) < 0.6, JSON.stringify(pos));
+let duo = null;
+for (let i = 0; i < 60; i++) {   // 절친 합류(한가했다면)
+    await page.waitForTimeout(400);
+    duo = await page.evaluate(() => window.__worldDev.meadowState());
+    if (duo && duo.every((r) => r[1])) break;
+}
+check('M4 절친 합류 — 나란히 착석', !!(duo && duo.every((r) => r[1])), JSON.stringify(duo));
+// 📸 나란히 앉은 순간
+const shots = await page.evaluate(async () => {
+    const THREE = await import('/libs/three/build/three.module.js');
+    const dev = window.__worldDev;
+    const dl = new THREE.DirectionalLight(0xfff4e0, 2.2); dl.position.set(4, 7, 3); dev.scene.add(dl); dev.scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+    const cv = document.createElement('canvas'); cv.width = 700; cv.height = 700;
+    const r = new THREE.WebGLRenderer({ canvas: cv, antialias: true }); r.setPixelRatio(1); r.setSize(700, 700, false);
+    if ('outputColorSpace' in r) r.outputColorSpace = THREE.SRGBColorSpace;
+    r.toneMapping = THREE.ACESFilmicToneMapping;
+    const cam = new THREE.PerspectiveCamera(32, 1, 0.01, 200);
+    const out = [];
+    for (const [ox, oy, oz] of [[0, 1.5, -2.2], [1.6, 1.2, -1.2]]) {
+        cam.position.set(-2.6 + ox, 0.72 + oy, -11.75 + oz);
+        cam.lookAt(-2.6, 1.0, -11.75);
+        r.render(dev.scene, cam); out.push(cv.toDataURL('image/png'));
+    }
+    r.dispose(); return out;
+});
+shots.forEach((d, i) => fs.writeFileSync(OUT.replace('.png', `-${i}.png`), Buffer.from(d.split(',')[1], 'base64')));
+let off = null;
+for (let i = 0; i < 60; i++) {   // 타이머(14s) 하차
+    await page.waitForTimeout(500);
+    off = await page.evaluate(() => window.__worldDev.meadowState());
+    if (off && !off.find((r) => r[0] === 'chick')[1]) break;
+}
+check('M5 타이머 하차(병아리)', !!(off && !off.find((r) => r[0] === 'chick')[1]), JSON.stringify(off));
+check('M6 JS 에러 없음', errs.length === 0, errs[0] || '');
+await browser.close(); server.close();
+console.log(fails ? `===== ${fails} FAIL =====` : '===== ALL PASS =====');
+process.exit(fails ? 1 : 0);
