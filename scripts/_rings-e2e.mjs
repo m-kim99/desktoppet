@@ -120,6 +120,14 @@ await page.evaluate(() => window.__worldDev.ringReplay());
 let rep = null, sawScene = false;
 for (let i = 0; i < 150; i++) { await page.waitForTimeout(500); rep = await page.evaluate(() => window.__worldDev.ringState()); if (rep && rep.scene && rep.sceneKind === 'replay') sawScene = true; if (sawScene && rep && !rep.scene) break; }
 check('R12 추억 재생 — 씬 완주 + 상태 불변', !!(sawScene && rep && !rep.scene && rep.chick && rep.puppy && !rep.stored.length), JSON.stringify(rep));
+// ✨ 보관 중 추억 재생 — 끝나면 보관분까지 둘 다 착용하고 끝난다 (주인 지정)
+await page.evaluate(() => window.__worldDev.ringToggle());   // 둘 다 보관
+let sb = null;
+for (let i = 0; i < 16; i++) { await page.waitForTimeout(500); sb = await page.evaluate(() => window.__worldDev.ringState()); if (sb && sb.stored.length === 2 && !sb.stashing) break; }
+await page.evaluate(() => window.__worldDev.ringReplay());
+let rp3 = null, saw3 = false;
+for (let i = 0; i < 150; i++) { await page.waitForTimeout(500); rp3 = await page.evaluate(() => window.__worldDev.ringState()); if (rp3 && rp3.scene) saw3 = true; if (saw3 && rp3 && !rp3.scene) break; }
+check('R12b 보관 중 리플레이 — 끝엔 둘 다 착용', !!(saw3 && rp3 && !rp3.scene && rp3.chick && rp3.puppy && !rp3.stored.length && rp3.stash === 0), JSON.stringify(rp3));
 // 🎮 조종 중 추억 재생 — 씬이 끝나면 조종('player')으로 복귀해야 한다 (안무 중 영구 잠금 버그 회귀 방지)
 await page.evaluate(() => window.__worldDev.possessGo('chick', -11.73, -6.46));
 await page.evaluate(() => window.__worldDev.ringReplay());

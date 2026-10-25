@@ -3741,8 +3741,11 @@ function updateBffRings(delta) {
             s.done = true; s.doneAt = s.t;
             for (const r of s.rings) { scene.remove(r); r.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
             const v2 = new THREE.Vector3();
-            if (s.kind === 'replay') {   // 상태 불변 — 펫 몸의 반지가 반짝 화답하고, 보관분은 제자리로
-                for (const r of s.box.stash) r.visible = true;
+            if (s.kind === 'replay') {   // 추억의 끝도 그날처럼 — 보관 중이던 반지까지 둘 다 착용하고 끝난다(주인 지정)
+                for (const r of s.box.stash) { if (r.parent) r.parent.remove(r); r.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
+                s.box.stash.length = 0;
+                for (const q of [s.chick, s.puppy]) if (!q.pet.charm) { try { setGlbPetCharm(q.pet, 'bff-ring'); } catch (e) {} }
+                if (ringsState.stored.length) { ringsState.stored = []; saveRings(); }
                 for (const q of [s.chick, s.puppy]) if (q.pet.charm) { q.pet.charm.group.getWorldPosition(v2); ringSparkle(v2); }
             } else {
                 if (s.kind === 'exchange') s.box.rings.length = 0;
