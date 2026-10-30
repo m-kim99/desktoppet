@@ -10932,7 +10932,25 @@ function renderDiary() {
                 hint.textContent = '아침 6시에 펫들이 댓글을 달러 와요 💬';
                 diaryBody.appendChild(hint);
             }
-        } else diaryBody.textContent = '이 날은 일기를 안 썼어요.';
+        } else {
+            let draft = '';
+            try { draft = localStorage.getItem('world-owner-draft-' + diaryDate) || ''; } catch (e) {}
+            if (draft.trim()) {   // 🛟 전송되지 못한 그날의 글 — 임시저장이 품고 있었다 (10/28·29 유실 복구용)
+                const note = document.createElement('div');
+                note.style.cssText = 'opacity:0.75; font-size:12px; margin-bottom:8px;';
+                note.textContent = '🛟 이 날 쓰다가 저장되지 못한 글이 남아 있어요:';
+                diaryBody.appendChild(note);
+                const txt = document.createElement('div');
+                txt.style.whiteSpace = 'pre-wrap';
+                txt.textContent = draft;
+                diaryBody.appendChild(txt);
+                const btn = document.createElement('button');
+                btn.textContent = '💾 이 글을 그날 일기로 저장';
+                btn.style.cssText = 'margin-top:10px; padding:7px 14px; border:none; border-radius:9px; background:#ffd54f; color:#2a2416; font-weight:700; font-size:12.5px; cursor:pointer;';
+                btn.onclick = () => saveOwnerDiary(diaryDate, draft);
+                diaryBody.appendChild(btn);
+            } else diaryBody.textContent = '이 날은 일기를 안 썼어요.';
+        }
         diaryWriteBtn.textContent = o && o.text && ownerToday ? '💾 고쳐 쓰기 (아침 6시까지)' : '💾 저장';
         const canSave = !diaryBusy && ownerToday;
         diaryWriteBtn.disabled = !canSave;
@@ -10953,28 +10971,51 @@ diaryNext.onclick = () => { const d = diaryDates(); const i = d.indexOf(diaryDat
 diaryTabChick.onclick = () => { diaryPet = 'chick'; renderDiary(); };
 diaryTabPuppy.onclick = () => { diaryPet = 'puppy'; renderDiary(); };
 diaryTabOwner.onclick = () => { diaryPet = 'owner'; if (diaryDate === localDateStr() && ownerDiaryDate() !== diaryDate) diaryDate = ownerDiaryDate(); renderDiary(); };   // 새벽엔 '어젯밤 일기'가 열려 있는 날짜
-async function saveOwnerDiary() {
-    const text = diaryOwnerTa.value.trim();
+// 📔 저장 확인 모달 — 토스트는 놓치기 쉬워 저장 실패를 못 알아챘다(10/28·29 일기 유실 실측).
+// 성공/실패 모두 닫기 버튼이 있는 모달로 또렷하게.
+const diaryDialog = document.createElement('div');
+diaryDialog.style.cssText = 'display:none; position:fixed; left:50%; top:42%; transform:translate(-50%,-50%); z-index:260; background:rgba(30,32,40,0.96); color:#fff; padding:18px 22px 14px; border-radius:14px; box-shadow:0 10px 34px rgba(0,0,0,0.45); font-family:sans-serif; font-size:13.5px; line-height:20px; text-align:center; max-width:78vw; white-space:pre-wrap;';
+const diaryDialogMsg = document.createElement('div');
+const diaryDialogBtn = document.createElement('button');
+diaryDialogBtn.textContent = '닫기';
+diaryDialogBtn.style.cssText = 'margin-top:12px; padding:7px 26px; border:none; border-radius:9px; background:#ffd54f; color:#2a2416; font-weight:700; font-size:13px; cursor:pointer;';
+diaryDialogBtn.onclick = () => { diaryDialog.style.display = 'none'; };
+diaryDialog.appendChild(diaryDialogMsg);
+diaryDialog.appendChild(diaryDialogBtn);
+document.body.appendChild(diaryDialog);
+function showDiaryDialog(msg) { diaryDialogMsg.textContent = msg; diaryDialog.style.display = 'block'; }
+async function saveOwnerDiary(dateArg, textArg) {   // 인자 없으면 에디터의 오늘 일기, 있으면 과거 날짜 draft 복구
+    const d = dateArg || diaryDate;
+    const text = (textArg !== undefined ? textArg : diaryOwnerTa.value).trim();
     if (!text) { showToast('✍️ 내용을 한 줄이라도 적어주세요'); return; }
     diaryBusy = true;
     renderDiary();
-    try {
-        const res = await fetch('/api/world_diary_owner', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ date: diaryDate, text }),
-        });
-        if (!res.ok) throw new Error(await res.text());
-        (diaryData[diaryDate] = diaryData[diaryDate] || {}).owner = await res.json();
-        try { localStorage.removeItem('world-owner-draft-' + diaryDate); } catch (e) {}
-        showToast('📔 일기를 저장했어요 — 다음 아침 6시에 펫들이 읽고 댓글을 달아요');
-        logWorldEvent('주인이 오늘의 일기를 썼다 ✍️');
-    } catch (e) {
-        console.error('[World] owner diary save failed', e);
-        showToast('📔 저장에 실패했어요 — 잠시 후 다시');
-    } finally {
-        diaryBusy = false;
-        renderDiary();
+    let lastErr = null;
+    for (let tr = 0; tr < 2; tr++) {   // 순단 1회는 스스로 재시도
+        try {
+            const res = await fetch('/api/world_diary_owner', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date: d, text }),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            (diaryData[d] = diaryData[d] || {}).owner = await res.json();
+            try { localStorage.removeItem('world-owner-draft-' + d); } catch (e) {}
+            logWorldEvent('주인이 일기를 썼다 ✍️');
+            lastErr = null;
+            break;
+        } catch (e) {
+            lastErr = e;
+            await new Promise((r) => setTimeout(r, 1400));
+        }
+    }
+    diaryBusy = false;
+    renderDiary();
+    if (lastErr) {
+        console.error('[World] owner diary save failed', lastErr);
+        showDiaryDialog('⚠️ 저장에 실패했어요\n쓴 글은 임시저장으로 남아 있어요.\n연결을 확인하고 💾를 다시 눌러주세요.');
+    } else {
+        showDiaryDialog('📔 저장되었습니다\n다음 아침 6시에 펫들이 읽고 댓글을 달아요 💬');
     }
 }
 async function fetchDiary() {
