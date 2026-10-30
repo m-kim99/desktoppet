@@ -9891,25 +9891,21 @@ function recentEventsText() {
 // 🗣️ 곁에서 엿듣기 (리빙월드 방식): 사적 대화는 비공개지만, 대화할 때 다른 펫이 근처에 있으면
 // 그 요지가 그 펫 기억에 잠깐 남아 나중에 자연스럽게 안다는 듯 언급할 수 있다. 멀리 있으면 못 들으니 모른다.
 const OVERHEAR_R = 3.5;                    // 이 거리 안이면 "곁에" — 같은 구역 정도
-const OVERHEAR_WINDOW = 40 * 60000;        // 40분 지나면 잊는다(휘발성 관찰)
 function petDist(a, b) { return Math.hypot(a.mover.position.x - b.mover.position.x, a.mover.position.z - b.mover.position.z); }
+// 엿듣기 영속화(스몰빌 관찰 모델): 곁에서 들은 대화를 서버 기억(observed)으로 — 휘발(40분) 대신
+// 영구 보존·요약 전 참고 주입은 서버가 담당. ⚠️ 끼어들어 말하는 것(거들기)은 별개로 여전히
+// 확률(35%)·곁 조건 — 아는 것과 나서는 것은 다르다 (주인 확인 사항).
 function recordOverheard(speaker, userText, reply) {
     const clip = (s) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > 50 ? s.slice(0, 50) + '…' : s; };
     for (const b of pets) {
         if (b === speaker || b.pet.sleeping) continue;
-        if (petDist(b, speaker) > OVERHEAR_R) continue;   // 곁에 있어야 들린다
-        (b.overheard = b.overheard || []).push({ t: Date.now(), text: `주인이 ${petKo(speaker)}에게 "${clip(userText)}"라고 하니 ${petKo(speaker)}가 "${clip(reply)}"라고 답했다` });
-        while (b.overheard.length > 4) b.overheard.shift();
+        if (petDist(b, speaker) > OVERHEAR_R) continue;   // 곁에 있어야 '기억'에 남는다
+        fetch('/api/world_chat_observe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pet: b.name, text: `주인이 ${petKo(speaker)}에게 "${clip(userText)}"라고 하니 ${petKo(speaker)}가 "${clip(reply)}"라고 답했다` }),
+        }).catch(() => {});
     }
-}
-function overheardText(pet) {
-    const now = Date.now();
-    const rows = (pet.overheard || []).filter((o) => now - o.t < OVERHEAR_WINDOW);
-    if (!rows.length) return '';
-    return '\n\n[방금 곁에서 들은 것 — 참고만, 아는 척은 자연스럽게]\n' + rows.map((o) => {
-        const min = Math.round((now - o.t) / 60000);
-        return `- (${min < 1 ? '방금' : min + '분 전'}) ${o.text}`;
-    }).join('\n');
 }
 // 그림일기용: 해당 날짜(기본 오늘)의 이벤트를 시각과 함께 전부 — 밤을 넘긴 이월 작성은 어제로 부른다.
 function dayEventsText(d = new Date()) {
@@ -15249,7 +15245,7 @@ async function requestWorldChat(pet, text) {
                 pet: pet.name,
                 text,
                 snapshot: buildWorldSnapshot(pet),
-                events: recentEventsText() + overheardText(pet),
+                events: recentEventsText(),   // 엿듣기·상대 대화 주입은 서버가 담당(observed + 상시 공유 10턴)
             }),
         });
         if (res.ok) reply = (await res.json()).reply;

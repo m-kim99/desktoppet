@@ -11036,7 +11036,7 @@ async def world_client_log(request: Request):
 # may carry inline action tags (<motion=..> <goto=..> <mount=..> <drink=..> <snack=..> <hat=..>)
 # which the world parses, strips from the bubble and executes. Personas + the action spec live
 # here so the world stays a thin client; the LLM is whatever main model the app is configured for.
-WORLD_CHAT_DIR = os.path.join(USER_DATA_DIR, "world_chat")
+WORLD_CHAT_DIR = os.path.join(os.environ.get("WORLD_DATA_DIR") or USER_DATA_DIR, "world_chat")   # 샌드박스(WORLD_DATA_DIR)가 채팅 기억도 격리 — E2E가 실기억을 오염시킨 실측(10/30) 재발 방지
 WORLD_CHAT_SEND = 30          # 요약을 접은 뒤 원문으로 남겨두는 최근 메시지 수(프롬프트 원문 하한)
 WORLD_CHAT_KEEP = 48          # 미요약 원문이 이만큼 쌓이면 오래된 쪽을 요약에 '덧쌓는다' — 원문은 삭제 안 함
 
@@ -11150,10 +11150,11 @@ def _world_chat_load(pet: str) -> dict:
     data = _world_read_json(_world_chat_file(pet))
     try:
         if isinstance(data, dict) and isinstance(data.get("history"), list):
-            return {"history": data["history"], "summary": str(data.get("summary", "")), "summary_upto": int(data.get("summary_upto", 0))}
+            obs = data.get("observed") if isinstance(data.get("observed"), list) else []
+            return {"history": data["history"], "summary": str(data.get("summary", "")), "summary_upto": int(data.get("summary_upto", 0)), "observed": obs}
     except Exception:
         pass
-    return {"history": [], "summary": "", "summary_upto": 0}
+    return {"history": [], "summary": "", "summary_upto": 0, "observed": []}
 
 
 def _world_chat_save(pet: str, store: dict):
@@ -11250,6 +11251,20 @@ async def world_chat(request: Request):
         messages = [{"role": "system", "content": system_prompt}]
         if store["summary"]:
             messages.append({"role": "system", "content": f"[지난 대화에서 기억하는 것]\n{store['summary']}"})
+        obs = [o for o in store.get("observed", []) if isinstance(o, dict) and o.get("text")][-8:]
+        if obs:   # 곁에서 들은 것의 영구 기억 (엿듣기 영속화 — 스몰빌 관찰 모델)
+            messages.append({"role": "system", "content": "[곁에서 보고 들은 것들 — 네 발화가 아니다. 아는 척은 자연스럽게]\n" + "\n".join(f"- {str(o['text'])[:240]}" for o in obs)})
+        other = "puppy" if pet == "chick" else "chick"
+        oko = "강아지" if other == "puppy" else "병아리"
+        shared = []
+        for m in _world_chat_load(other)["history"][-24:]:   # 상시 공유 — 상대 펫의 최근 원문 10턴 (주인 지정)
+            c = str(m.get("content", "")).strip()
+            if not c or (m.get("role") == "user" and c.startswith("(")):
+                continue   # 연출 지시문 제외 — 주인이 실제로 친 말이 아니다
+            shared.append(("주인" if m.get("role") == "user" else oko) + ": " + c[:160])
+        shared = shared[-10:]
+        if shared:
+            messages.append({"role": "system", "content": f"[주인과 {oko}의 최근 대화 — 같은 월드라 너도 들었다. 네 말이 아니니 말투를 흉내 내거나 대신 답하지 말 것]\n" + "\n".join(shared)})
         vstart = max(store.get("summary_upto", 0), len(store["history"]) - WORLD_CHAT_KEEP)   # 요약이 커버 못 하는 원문부터(요약 지연·실패 시 최근 KEEP개로 상한)
         messages.extend({"role": m["role"], "content": m.get("content", "")} for m in store["history"][vstart:])   # t(타임스탬프) 등 부가 키는 빼고 role/content만 LLM에 보낸다
         situation = f"[현재 상황]\n{snapshot}" if snapshot else "[현재 상황]\n(정보 없음)"
@@ -11426,6 +11441,24 @@ def _world_diary_store_pet(date: str, pet: str, entry: dict, overwrite: bool = T
     diary.setdefault(date, {})[pet] = entry
     _world_diary_save(diary)
     return entry
+
+
+@app.post("/api/world_chat_observe")
+async def world_chat_observe(request: Request):
+    """곁에서 들은 대화를 펫의 영구 관찰 기억(observed)에 남긴다 — 엿듣기 영속화 (클라 recordOverheard가 호출)."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse({"error": "bad json"}, status_code=400)
+    pet = data.get("pet")
+    text = str(data.get("text") or "").strip()[:240]
+    if pet not in ("chick", "puppy") or not text:
+        return JSONResponse({"error": "pet/text required"}, status_code=400)
+    store = _world_chat_load(pet)
+    store["observed"] = (store.get("observed") or []) + [{"t": int(time.time() * 1000), "text": text}]
+    store["observed"] = store["observed"][-40:]   # 상한 — 몇 주치 관찰이면 충분, 파일 비대 방지
+    _world_chat_save(pet, store)
+    return {"ok": True, "count": len(store["observed"])}
 
 
 @app.get("/api/world_chat_log")
