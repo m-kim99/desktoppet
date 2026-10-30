@@ -10885,26 +10885,48 @@ diaryOwnerTa.style.cssText = 'width:100%; box-sizing:border-box; min-height:96px
 function ownerDraftsAll() {
     let m = {};
     try { m = JSON.parse(localStorage.getItem('world-owner-drafts') || '{}') || {}; } catch (e) {}
-    try {   // 레거시 per-date 키 이행 — 한 번 보이면 맵으로 흡수
+    try {   // 레거시 per-date 키 이행 — 흡수 즉시 '저장+서버 푸시'까지. ⚠️지우기만 하고 저장을 안 하면
+        let migrated = false;   // 읽기 렌더 한 번에 초안이 증발한다(10/30 버그 — 다행히 발화 전 수리).
         for (let i = localStorage.length - 1; i >= 0; i--) {
             const k = localStorage.key(i);
             if (k && k.startsWith('world-owner-draft-')) {
                 const dt = k.slice('world-owner-draft-'.length);
                 if (!m[dt] && localStorage.getItem(k)) m[dt] = localStorage.getItem(k);
                 localStorage.removeItem(k);
+                migrated = true;
             }
+        }
+        if (migrated) {
+            localStorage.setItem('world-owner-drafts', JSON.stringify(m));
+            schedOwnerDraftPush(null);
         }
     } catch (e) {}
     return m;
 }
 let ownerDraftSyncT = null;
+function schedOwnerDraftPush(changedDt) {   // 날짜 단위 병합 푸시 — 통맵 last-writer-wins가 다른 기기의 날짜를 지우는 사고 방지
+    clearTimeout(ownerDraftSyncT);
+    ownerDraftSyncT = setTimeout(async () => {
+        let merged = {};
+        try { merged = JSON.parse(localStorage.getItem('world-owner-drafts') || '{}') || {}; } catch (e) {}
+        try {
+            const r = await fetch('/api/world_kv', { signal: AbortSignal.timeout(4000) });
+            const server = JSON.parse(((((await r.json()).kv || {})['world-owner-drafts']) || '{}')) || {};
+            const local = merged;
+            merged = { ...server, ...local };                                   // 같은 날짜는 이 기기(방금 쓴 쪽)가 이김
+            if (changedDt && !local[changedDt]) delete merged[changedDt];       // 삭제 전파는 '이번에 만진 날짜'만
+            try { localStorage.setItem('world-owner-drafts', JSON.stringify(merged)); } catch (e) {}
+        } catch (e) { /* 백엔드 없음 — 로컬 값 그대로 푸시 시도 */ }
+        fetch('/api/world_kv', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: 'world-owner-drafts', value: JSON.stringify(merged) }) }).catch(() => {});
+    }, 1200);
+}
 function setOwnerDraft(dt, text) {
     try {
         const m = ownerDraftsAll();
         if (text && text.trim()) m[dt] = text; else delete m[dt];
         localStorage.setItem('world-owner-drafts', JSON.stringify(m));
-        clearTimeout(ownerDraftSyncT);
-        ownerDraftSyncT = setTimeout(() => worldSync('world-owner-drafts'), 2000);   // 타자 멈추고 2초 뒤 서버로
+        schedOwnerDraftPush(dt);
     } catch (e) {}
 }
 diaryOwnerTa.addEventListener('input', () => setOwnerDraft(diaryDate, diaryOwnerTa.value));
