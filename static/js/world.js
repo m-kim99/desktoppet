@@ -10821,26 +10821,26 @@ function pushChatLog(who, text) {
         localStorage.setItem(CHAT_LOG_KEY, JSON.stringify(arr));
     } catch (e) {}
 }
-try {   // 재실행 후 이전 화면 로그 복원
+try {   // 재실행 복원 — 로컬 캐시로 즉시 그려두고, 서버 원본(전 기기 통합 타임라인)으로 재구성.
+    // 대화의 정본은 서버 히스토리(모든 기기의 채팅이 거쳐 간다) — 컴·폰 사파리·PWA가 각자
+    // origin별 스크롤백만 들고 갈라져 보였다(주인 리포트). 부팅마다 서버 기준으로 합친다.
     const arr = JSON.parse(localStorage.getItem(CHAT_LOG_KEY) || '[]');
     for (const m of arr) renderChatRow(m.who, m.text);
-    if (!arr.length) {
-        // 빈 스크롤백(새 기기·주소 변경·저장소 초기화) = 서버 원본에서 하이드레이션. 스크롤백은
-        // origin별 localStorage라 폰 주소 교체(9/17)로 증발했던 실측의 근본 수리 — 기억은 서버가 정본.
-        fetch('/api/world_chat_log').then((r) => (r.ok ? r.json() : null)).then((d) => {
-            if (!d || !Array.isArray(d.log) || !d.log.length) return;
-            try { if (JSON.parse(localStorage.getItem(CHAT_LOG_KEY) || '[]').length) return; } catch (e) {}   // 그새 새 대화가 저장됐으면 양보
-            const rows = [];
-            for (const m of d.log) {
-                const text = String(m.text || '').replace(/<[a-z]+=[^>]*>/gi, '').replace(/[ \t]+/g, ' ').trim();   // 액션 태그 제거
-                if (!text) continue;
-                if (m.role === 'user' && /^\s*\(/.test(text)) continue;   // 선제대화 트리거(괄호 지시문) — 주인이 실제로 친 말이 아니라 화면엔 안 올린다 (라이브 스크롤백과 동일 규칙)
-                rows.push({ who: m.role === 'user' ? '주인' : (m.pet === 'chick' ? '병아리' : '강아지'), text });
-            }
-            for (const m of rows.slice(-CHAT_LOG_CAP)) renderChatRow(m.who, m.text);
-            try { localStorage.setItem(CHAT_LOG_KEY, JSON.stringify(rows.slice(-CHAT_LOG_CAP))); } catch (e) {}
-        }).catch(() => {});
-    }
+    fetch('/api/world_chat_log').then((r) => (r.ok ? r.json() : null)).then((d) => {
+        if (!d || !Array.isArray(d.log) || !d.log.length) return;   // 서버 무응답/빈 로그 = 로컬 캐시 그대로 (폴백)
+        const rows = [];
+        for (const m of d.log) {
+            const text = String(m.text || '').replace(/<[a-z]+=[^>]*>/gi, '').replace(/[ \t]+/g, ' ').trim();   // 액션 태그 제거
+            if (!text) continue;
+            if (m.role === 'user' && /^\s*\(/.test(text)) continue;   // 선제대화 트리거(괄호 지시문) — 주인이 실제로 친 말이 아니라 화면엔 안 올린다 (라이브 스크롤백과 동일 규칙)
+            rows.push({ who: m.role === 'user' ? '주인' : (m.pet === 'chick' ? '병아리' : '강아지'), text });
+        }
+        const uni = rows.slice(-CHAT_LOG_CAP);
+        if (!uni.length) return;
+        chatLogBody.textContent = '';
+        for (const m of uni) renderChatRow(m.who, m.text);
+        try { localStorage.setItem(CHAT_LOG_KEY, JSON.stringify(uni)); } catch (e) {}
+    }).catch(() => {});
 } catch (e) {}
 function setChatLog(open) {   // ▲ 채팅바 토글의 단일 진입점 — 삼각형 방향도 여기서 동기
     chatLogPanel.style.display = open ? 'flex' : 'none';
