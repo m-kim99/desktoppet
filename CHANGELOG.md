@@ -5,6 +5,16 @@ Patch notes go here — newest on top.
 
 ## 미출시
 
+### Added (🗄️ 일일 오프머신 백업 — iCloud)
+- 질문 "최초의 챗부터 백업되나?"의 답: **채팅 원문은 설계상 전량 보존**(WORLD_CHAT_KEEP은
+  프롬프트용 요약 경계일 뿐 "원문은 삭제 안 함" — world_chat/{pet}.json, 현재 병아리 116·강아지
+  166턴) + 모든 world 파일에 쓰기 시점 .bak/.snap 이중화가 이미 있었다. **빈틈은 전부 같은
+  디스크라는 것** — 기기 유실엔 무방비.
+- 신설: `scripts/backup-world.sh` + launchd `com.byeongari.world-backup` — 매일 11:30(+로그인
+  시) 개인 데이터 전부(Application Support/super-agent-party 통째 + 리포 config/world_*.json)를
+  **iCloud Drive/병아리월드-백업/**에 tar.gz(약 1.6MB)로, 하루 1개·60개 보관. 로그
+  /tmp/byeongari-backup.log. 1호 백업 생성·내용물(일기·채팅·위시) 검증 완료.
+
 ### Changed (💬 월드 채팅 스크롤백 통합)
 - 컴·폰 사파리·폰 PWA가 각자 다른 대화 기록을 보여줬다(주인 리포트) — 대화의 정본은 서버
   히스토리(모든 기기의 채팅이 거쳐 감)인데, 스크롤백 하이드레이션이 "비어 있을 때만"이라
