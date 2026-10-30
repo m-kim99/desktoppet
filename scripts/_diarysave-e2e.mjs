@@ -16,7 +16,7 @@ await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
 const { chromium } = await import('playwright');
 const browser = await chromium.launch({ headless: true, args: ['--use-angle=metal'] });
 const ctx = await browser.newContext({ viewport: { width: 1100, height: 700 } });
-await ctx.addInitScript(() => { try { localStorage.setItem('world-owner-draft-2026-10-28', '유실 복구 테스트 글이에요'); } catch (e) {} });
+await ctx.addInitScript(() => { try { localStorage.setItem('world-owner-drafts', JSON.stringify({'2026-10-28': '유실 복구 테스트 글이에요'})); } catch (e) {} });
 const page = await ctx.newPage();
 let fails = 0;
 const check = (n, ok, det = '') => { if (!ok) fails++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${n}${det ? ' — ' + det : ''}`); };
@@ -40,7 +40,7 @@ const d1 = await page.evaluate(() => {
 check('D1 저장 실패 모달 + 닫기 버튼', !!(d1 && d1.text.includes('실패') && d1.close), JSON.stringify(d1));
 await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent === '닫기'); if (b) b.click(); });
 // D2: 임시저장 생존 (실패했으니 draft 유지)
-const draftKept = await page.evaluate(() => (localStorage.getItem('world-owner-draft-' + new Date(Date.now() - 6 * 3600000).toLocaleDateString('sv-SE')) || '').includes('테스트') || Object.keys(localStorage).some((k) => k.startsWith('world-owner-draft-') && (localStorage.getItem(k) || '').includes('저장 실패 경로')));
+const draftKept = await page.evaluate(() => (localStorage.getItem('world-owner-drafts') || '').includes('저장 실패 경로'));
 check('D2 실패 시 임시저장 유지', draftKept, '');
 // D3: 잠긴 과거 날짜(10/28)의 draft 복구 UI
 await page.evaluate(() => window.__worldDev.diaryOpen('2026-10-28'));

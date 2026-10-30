@@ -34,7 +34,7 @@ const savedLayout = await (async () => {
 // 기기 유지: world-eco(성능)·world-layout(전용 API)·world-fruit-*(전용 API)·world-last-seen(기기별 리캡).
 const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked', 'world-pantry', 'world-icebox', 'world-market-used', 'world-recipes-unlocked', 'world-dishes-found', 'world-kitchen-leftover',
     'world-sea-found', 'world-seabed-dug', 'world-islet-dug', 'world-discover', 'world-houselight', 'world-pets',
-    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-space-poi', 'world-moon-dug', 'world-last-seen', 'world-pier-order', 'world-pier-stock', 'world-fishchair-noted', 'world-aurora-said', 'world-proactive-recent', 'world-rings', 'world-meadow-noted'];   // last-seen 공유 = 기기 간 이중 정산 방지 · fishchair-noted = 의자 등장 이벤트 1회 공유
+    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-space-poi', 'world-moon-dug', 'world-last-seen', 'world-pier-order', 'world-pier-stock', 'world-fishchair-noted', 'world-aurora-said', 'world-proactive-recent', 'world-rings', 'world-meadow-noted', 'world-owner-drafts'];   // last-seen 공유 = 기기 간 이중 정산 방지 · fishchair-noted = 의자 등장 이벤트 1회 공유
 // ⚠️ **부트 루프보다 먼저 선언돼야 한다.** 아래 루프는 서버에 없는 키를 만나면 worldSync(k)를
 // 부르는데, 이 const가 루프 아래에 있으면 TDZ ReferenceError가 나고 **try 전체가 중단**된다.
 // 그러면 그 키 이후의 모든 키가 영영 복원되지 않는다 — world-events·world-diary-auto가 딱
@@ -10883,7 +10883,34 @@ const diaryOwnerTa = document.createElement('textarea');
 diaryOwnerTa.id = 'world-owner-ta';
 diaryOwnerTa.placeholder = '오늘 하루는 어땠나요?\n(아침 6시까지 쓰고 고칠 수 있어요 — 6시가 되면 펫들이 읽고 댓글을 달아요)';
 diaryOwnerTa.style.cssText = 'width:100%; box-sizing:border-box; min-height:96px; border:none; background:transparent; color:#4a3f30; font:inherit; line-height:23px; resize:vertical; outline:none;';
-diaryOwnerTa.addEventListener('input', () => { try { localStorage.setItem('world-owner-draft-' + diaryDate, diaryOwnerTa.value); } catch (e) {} });
+// ✍️ 임시저장 v2 — 단일 JSON 키(world-owner-drafts)로 모아 KV 동기: 기기·주소·앱컨테이너가
+// 갈라져도 서버가 품는다 (10/28·29 유실 때 per-origin localStorage 칸막이에 막힌 교훈).
+function ownerDraftsAll() {
+    let m = {};
+    try { m = JSON.parse(localStorage.getItem('world-owner-drafts') || '{}') || {}; } catch (e) {}
+    try {   // 레거시 per-date 키 이행 — 한 번 보이면 맵으로 흡수
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith('world-owner-draft-')) {
+                const dt = k.slice('world-owner-draft-'.length);
+                if (!m[dt] && localStorage.getItem(k)) m[dt] = localStorage.getItem(k);
+                localStorage.removeItem(k);
+            }
+        }
+    } catch (e) {}
+    return m;
+}
+let ownerDraftSyncT = null;
+function setOwnerDraft(dt, text) {
+    try {
+        const m = ownerDraftsAll();
+        if (text && text.trim()) m[dt] = text; else delete m[dt];
+        localStorage.setItem('world-owner-drafts', JSON.stringify(m));
+        clearTimeout(ownerDraftSyncT);
+        ownerDraftSyncT = setTimeout(() => worldSync('world-owner-drafts'), 2000);   // 타자 멈추고 2초 뒤 서버로
+    } catch (e) {}
+}
+diaryOwnerTa.addEventListener('input', () => setOwnerDraft(diaryDate, diaryOwnerTa.value));
 diaryOwnerTa.addEventListener('pointerdown', (e) => e.stopPropagation());
 const diaryWriteBtn = document.createElement('button');
 diaryWriteBtn.style.cssText = 'flex:1; border:none; border-radius:8px; background:#e8b04b; color:#3d2f18; font-weight:700; font-size:12.5px; padding:7px 0; cursor:pointer;';
@@ -10912,8 +10939,7 @@ function renderDiary() {
         const ownerToday = diaryDate === ownerDiaryDate();
         diaryBody.textContent = '';
         if (ownerToday) {
-            let draft = '';
-            try { draft = localStorage.getItem('world-owner-draft-' + diaryDate) || ''; } catch (e) {}
+            const draft = ownerDraftsAll()[diaryDate] || '';
             diaryOwnerTa.value = (o && o.text) || draft;
             diaryBody.appendChild(diaryOwnerTa);
         } else if (o && o.text) {
@@ -10933,9 +10959,8 @@ function renderDiary() {
                 diaryBody.appendChild(hint);
             }
         } else {
-            let draft = '';
-            try { draft = localStorage.getItem('world-owner-draft-' + diaryDate) || ''; } catch (e) {}
-            if (draft.trim()) {   // 🛟 전송되지 못한 그날의 글 — 임시저장이 품고 있었다 (10/28·29 유실 복구용)
+            const draft = ownerDraftsAll()[diaryDate] || '';
+            if (draft.trim()) {   // 🛟 전송되지 못한 그날의 글 — 임시저장(서버 동기)이 품고 있었다
                 const note = document.createElement('div');
                 note.style.cssText = 'opacity:0.75; font-size:12px; margin-bottom:8px;';
                 note.textContent = '🛟 이 날 쓰다가 저장되지 못한 글이 남아 있어요:';
@@ -11001,7 +11026,7 @@ async function saveOwnerDiary(dateArg, textArg) {   // 인자 없으면 에디�
             });
             if (!res.ok) throw new Error(await res.text());
             (diaryData[d] = diaryData[d] || {}).owner = await res.json();
-            try { localStorage.removeItem('world-owner-draft-' + d); } catch (e) {}
+            setOwnerDraft(d, '');   // 성공 — 임시저장 비우고 동기
             logWorldEvent('주인이 일기를 썼다 ✍️');
             lastErr = null;
             break;
