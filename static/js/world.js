@@ -34,7 +34,7 @@ const savedLayout = await (async () => {
 // 기기 유지: world-eco(성능)·world-layout(전용 API)·world-fruit-*(전용 API)·world-last-seen(기기별 리캡).
 const WORLD_SYNC_KEYS = ['world-shells', 'world-treasure', 'world-seafood', 'world-fishdex', 'world-acc-unlocked', 'world-pantry', 'world-icebox', 'world-market-used', 'world-recipes-unlocked', 'world-dishes-found', 'world-kitchen-leftover',
     'world-sea-found', 'world-seabed-dug', 'world-islet-dug', 'world-discover', 'world-houselight', 'world-pets',
-    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-space-poi', 'world-moon-dug', 'world-last-seen', 'world-pier-order', 'world-pier-stock', 'world-fishchair-noted', 'world-aurora-said', 'world-proactive-recent', 'world-rings', 'world-meadow-noted', 'world-owner-drafts'];   // last-seen 공유 = 기기 간 이중 정산 방지 · fishchair-noted = 의자 등장 이벤트 1회 공유
+    'world-season', 'worldLampBrightness', 'world-events', 'world-diary-auto', 'world-mail-read', 'world-space-poi', 'world-moon-dug', 'world-last-seen', 'world-pier-order', 'world-pier-stock', 'world-fishchair-noted', 'world-aurora-said', 'world-proactive-recent', 'world-rings', 'world-meadow-noted', 'world-owner-drafts', 'world-pet-aliases'];   // last-seen 공유 = 기기 간 이중 정산 방지 · fishchair-noted = 의자 등장 이벤트 1회 공유
 // ⚠️ **부트 루프보다 먼저 선언돼야 한다.** 아래 루프는 서버에 없는 키를 만나면 worldSync(k)를
 // 부르는데, 이 const가 루프 아래에 있으면 TDZ ReferenceError가 나고 **try 전체가 중단**된다.
 // 그러면 그 키 이후의 모든 키가 영영 복원되지 않는다 — world-events·world-diary-auto가 딱
@@ -10463,6 +10463,7 @@ if (statsOn) window.__worldDev = {
         x: +aiFishing.p.mover.position.x.toFixed(2), z: +aiFishing.p.mover.position.z.toFixed(2), y: +aiFishing.p.mover.position.y.toFixed(3),
         groundY: +world.groundHeightAt(aiFishing.p.mover.position.x, aiFishing.p.mover.position.z).toFixed(3) } : null),
     fishChairEnd: () => { const f = aiFishing; if (!f) return null; endAiFishing(); return { x: +f.p.mover.position.x.toFixed(2), z: +f.p.mover.position.z.toFixed(2) }; },
+    routePet: (t) => { const p = pickResponder(t); return p ? p.name : null; },   // 🏷️ (E2E) 별명 라우팅 단위검사
     meadowGo: (ms) => startMeadowPicnic(pets.find((q) => q.name === 'chick'), ms),   // 🌸 (E2E) 소풍 강제 시작
     meadowState: () => pets.map((q) => [q.name, !!(q.bed && q.bed.id.startsWith('gardenbench')), q.bedPhase || null, q._meadowUntil ? 1 : 0]),   // 🌸 (E2E)
     ringToggle: () => { startRingToggle(); return !!ringStash; },   // 🪺 (E2E) 보관/착용 토글
@@ -15020,9 +15021,30 @@ renderer.domElement.addEventListener('contextmenu', (e) => {
     e.preventDefault();
 });
 
+// 🏷️ 별명 사전 — 라우팅 전용 데이터(모델 추론 아님). 기본값 + KV(world-pet-aliases)의 추가분 병합.
+// '멍뭉이' 오배달 실측(10/30) 후 데이터화: 새 애칭이 생기면 여기(또는 KV)에 한 줄. 등록은 명시적 —
+// 자동 학습이 없어서 엉뚱한 단어가 스스로 들어올 일은 없다. 양쪽에 겹치는 별명은 병아리 우선 + 경고.
+const PET_ALIASES = {
+    chick: ['병아리', '삐약', '삐아기', '아기닭', '예쁜새', 'chick'],
+    puppy: ['강아지', '멍멍', '멍뭉', '댕댕', '댕이', 'puppy'],
+};
+function petAliasList(kind) {
+    let extra = [];
+    try { extra = (JSON.parse(localStorage.getItem('world-pet-aliases') || '{}') || {})[kind] || []; } catch (e) {}
+    return [...PET_ALIASES[kind], ...extra].filter((a) => a && typeof a === 'string');
+}
+function petAliasRe(kind) {
+    const esc = (a) => a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(petAliasList(kind).map(esc).join('|'), 'i');
+}
+{   // 겹침 경고 — 같은 별명이 두 펫에 있으면 병아리 우선이 돼 강아지 호출이 삼켜진다
+    const c = new Set(petAliasList('chick').map((a) => a.toLowerCase()));
+    const dup = petAliasList('puppy').filter((a) => c.has(a.toLowerCase()));
+    if (dup.length) console.warn('[World] 펫 별명 겹침 — 병아리 우선 처리됨:', dup);
+}
 function pickResponder(text) {
-    if (/병아리|삐약|chick/i.test(text)) return pets.find((p) => p.name === 'chick') || pets[0] || null;
-    if (/강아지|멍멍|댕댕|puppy/i.test(text)) return pets.find((p) => p.name === 'puppy') || pets[0] || null;
+    if (petAliasRe('chick').test(text)) return pets.find((p) => p.name === 'chick') || pets[0] || null;
+    if (petAliasRe('puppy').test(text)) return pets.find((p) => p.name === 'puppy') || pets[0] || null;
     // 이름을 안 부르면 직전 대화 상대가 이어받는다 (대화 연속성) — 첫 대화만 병아리.
     return responder || pets.find((p) => p.name === 'chick') || pets[0] || null;
 }
@@ -15255,7 +15277,7 @@ async function requestWorldChat(pet, text) {
 function maybeFriendChime(first, ownerText, firstSpeech) {
     const friend = pets.find((q) => q !== first);
     if (!friend || friend.pet.sleeping) return;
-    const bothNamed = /병아리|삐약|chick/i.test(ownerText) && /강아지|멍멍|댕댕|puppy/i.test(ownerText);
+    const bothNamed = petAliasRe('chick').test(ownerText) && petAliasRe('puppy').test(ownerText);   // 별명 사전과 단일 소스
     const groupCall = /얘들아|애들아|둘\s*다|너희|같이|모두/.test(ownerText);
     // 이름을 콕 집어 부른 게 아니면(=지나가듯 거들기), 곁에 있을 때만 35%로 반응한다 — 멀리 떨어져 있으면 못 들었으니 안 거든다
     if (!(bothNamed || groupCall) && (petDist(first, friend) > OVERHEAR_R || Math.random() > 0.35)) return;
