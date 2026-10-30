@@ -10997,6 +10997,7 @@ async function saveOwnerDiary(dateArg, textArg) {   // 인자 없으면 에디�
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ date: d, text }),
+                signal: AbortSignal.timeout(8000),   // 모바일 순단에서 '영원히 저장 중' 침묵 방지 — 끊기면 재시도→모달로 드러난다
             });
             if (!res.ok) throw new Error(await res.text());
             (diaryData[d] = diaryData[d] || {}).owner = await res.json();

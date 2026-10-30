@@ -30,7 +30,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*a, directory=ROOT, **kw)
 
     def log_message(self, fmt, *args):
-        sys.stderr.write("%s %s\n" % (self.address_string(), fmt % args))
+        import datetime
+        ts = datetime.datetime.now().strftime("%m-%d %H:%M:%S")   # 10/28 일기 유실 조사 때 타임스탬프가 없어 원인 시각을 못 좁혔다
+        sys.stderr.write("%s %s %s\n" % (ts, self.address_string(), fmt % args))
 
     def _proxied(self):
         return self.path.startswith(PROXY)
