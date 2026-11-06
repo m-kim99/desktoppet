@@ -3516,6 +3516,7 @@ function makeRingNest() {
         const hinge = new THREE.Group();
         hinge.position.set(side * 0.172, 0.115, 0);
         hinge.rotation.z = side * (ringsState ? 0.95 : 0.12);   // 교환 후엔 반쯤 열린 빈 둥지
+        hinge.userData.noBake = true;   // 교환식에 열리는 힌지 — 병합 금지
         hinge.add(leaf);
         g.add(hinge);
         lids.push(hinge);
@@ -3526,6 +3527,7 @@ function makeRingNest() {
         r.position.set(rx, 0.07, 0.02);
         r.rotation.x = -1.15;   // 덮개 안에 얌전히 — 참 머리가 잎 틈을 뚫지 않게
         r.rotation.y = rx < 0 ? 0.4 : -0.4;
+        r.userData.noBake = true;   // 교환식에 떠오르는 반지 — 병합 금지
         if (ringsState) r.visible = false;   // 이미 교환했으면 반지는 펫들 몸에
         g.add(r);
         rings.push(r);
@@ -3535,6 +3537,7 @@ function makeRingNest() {
     egg.castShadow = true;
     egg.receiveShadow = true;
     egg.visible = !!ringsState;
+    egg.userData.noBake = true;   // 보관 상태 따라 나타나는 알 — 병합 금지
     g.add(egg);
     const STASH_SLOT = { chick: [-0.057, 0.34], puppy: [0.057, -0.34] };   // 알 위 고정 자리 — 병아리 왼쪽·강아지 오른쪽
     const buildStashRing = (kind) => {
@@ -3543,6 +3546,7 @@ function makeRingNest() {
         r.position.set(rx, 0.252, 0.035);
         r.rotation.set(-0.55, ry, 0);   // 알 윗비탈에 기대 얹힘
         r.userData.kind = kind;
+        r.userData.noBake = true;   // 보관/착용 토글 대상 — 병합 금지
         g.add(r);
         return r;
     };
@@ -3978,6 +3982,7 @@ function makeTrampoline() {
     }
     const mat = GM(new THREE.CylinderGeometry(0.66, 0.68, 0.05, 26), 0x8fc2e2, 0x5f8fb2);
     mat.position.y = 0.225;
+    mat.userData.noBake = true;   // 바운스 스쿼시 애니 대상 — 병합 금지
     g.userData.mat = mat;
     g.add(mat);
     return g;
@@ -4664,6 +4669,7 @@ function makePhotoboard() {
         const col = i % 3, row = Math.floor(i / 3);
         const ph = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.255), new THREE.MeshBasicMaterial({ color: 0xf5efe2 }));
         ph.position.set(-0.38 + col * 0.38, 1.05 - row * 0.3, 0.045);
+        ph.userData.noBake = true;   // 스크린샷 텍스처가 런타임에 갈아끼워진다 — 병합 금지
         ph.rotation.z = (Math.random() - 0.5) * 0.12;
         g.add(ph);
         const pin = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 6), M(0xe64a3c));
@@ -7076,7 +7082,8 @@ function unbakePropBeds(p) {
 //  · Mesh가 아닌 것(라이트·스프라이트·Points)과 visible=false(숨김 토글류)는 그냥 둔다
 const MERGE_TYPES = new Set(['house', 'bowl', 'fence', 'pond', 'sunbed', 'hammock', 'lamp', 'radio',
     'coffee', 'food', 'monument', 'pecktree', 'well', 'capsule', 'boulder', 'cave', 'lookout',
-    'garden', 'scarecrow', 'compost', 'piano', 'mailbox', 'gym', 'library', 'fountain', 'flowerbasket', 'swing', 'seesaw', 'palm', 'sandcastle', 'icebox', 'kitchen', 'pierboard', 'fishchair', 'melonpatch', 'chickgarden', 'gardenbench']);
+    'garden', 'scarecrow', 'compost', 'piano', 'mailbox', 'gym', 'library', 'fountain', 'flowerbasket', 'swing', 'seesaw', 'palm', 'sandcastle', 'icebox', 'kitchen', 'pierboard', 'fishchair', 'melonpatch', 'chickgarden', 'gardenbench',
+    'bonfire', 'hugspot', 'digsite', 'vine', 'ringnest', 'fruitbasket', 'trampoline', 'photoboard', 'portal']);   // 베이크 2차(드로우 감사로 발굴된 누락 9종) — 동적 부위는 userData.noBake로 옵트아웃
 function mergePropGroup(root) {
     const skip = new Set(seasonSnowCaps);
     if (mailFlag) mailFlag.traverse((o) => skip.add(o));
@@ -7087,6 +7094,7 @@ function mergePropGroup(root) {
     // matrixWorld를 그대로 구우면 루트 자체 변환(복층집 HOUSE_K 스케일!)이 지오에 박힌 채 루트
     // 스케일을 또 받아 이중 적용된다 (골조만 1.44×로 떠 보이던 원인). 일반 프롭은 루트=identity라 무변화.
     const rootInv = root.matrixWorld.clone().invert();
+    root.traverse((o) => { if (o.userData && o.userData.noBake) o.traverse((q) => skip.add(q)); });   // 동적 부위(애니·상태 토글) 옵트아웃 — 병합하면 유령이 남는다
     const buckets = new Map();      // 재질 인스턴스 + attribute 시그니처 → 메시 목록
     root.traverse((o) => {
         if (!o.isMesh || !o.visible || skip.has(o)) return;
@@ -7151,7 +7159,7 @@ function worldBake() {
         // plotIdx/keyIdx 노드의 서브트리 전체 제외 — 텃밭 작물 비주얼(plotIdx 그룹의 자식,
         // 자기 자신엔 태그 없음)이 재베이크에 병합·숨김되면 수확해도 "구운 유령"이 남는다.
         p.obj.traverse((o) => {
-            if (o.userData && (o.userData.plotIdx != null || o.userData.keyIdx != null)) o.traverse((q) => skip.add(q));
+            if (o.userData && (o.userData.plotIdx != null || o.userData.keyIdx != null || o.userData.noBake)) o.traverse((q) => skip.add(q));
         });
         p.obj.updateMatrixWorld(true);
         p.obj.traverse(collect);
