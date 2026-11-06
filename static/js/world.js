@@ -9936,7 +9936,7 @@ function localDateStr(d = new Date()) {
 }
 
 // Spot naming (P1 스냅샷): where is (x,z), in pet-understandable Korean?
-const PROP_KO = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', melonpatch: '수박 덩굴', ringnest: '우정반지 둥지', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', scarecrow: '허수아비', compost: '퇴비함', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', pierboard: '주문 게시판', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호', fishchair: '꼬마 낚시 의자' };
+const PROP_KO = { icebox: '아이스박스', kitchen: '주방', bonfire: '모닥불', tree: '나무', house: '집', bowl: '밥그릇', fence: '울타리', pond: '연못', sunbed: '선베드', hammock: '해먹', lamp: '가로등', radio: '라디오', coffee: '커피 부스', food: '간식 부스', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', melonpatch: '수박 덩굴', ringnest: '우정반지 둥지', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', monument: '베프 기념비', hugspot: '포옹 포인트', pecktree: '쪼아쪼아 나무', well: '소원 우물', capsule: '타임캡슐', boulder: '바위', cave: '동굴', lookout: '전망대', digsite: '보물 모래밭', portal: '워프 포탈', garden: '텃밭', scarecrow: '허수아비', compost: '퇴비함', piano: '피아노', photoboard: '사진 게시판', mailbox: '우편함', pierboard: '주문 게시판', gym: '운동 공간', library: '도서관', fountain: '분수', flowerbasket: '꽃바구니', palm: '야자수', sandcastle: '모래성', boat: '보트', plane: '경비행기', balloon: '열기구', ferry: '통통호', fishchair: '꼬마 낚시 의자', chickgarden: '병아리 꽃밭', gardenbench: '동산 벤치', car: '빨간 스포츠카', sub: '노랑호 잠수정' };   // 카탈로그 E2E가 잡은 이름표 공백 4종
 function describeSpot(x, z) {
     const hf = houseFloorY(x, z);
     if (hf !== null) return hf > HOUSE.floorY + 0.3 ? '집 2층' : '집 안';
@@ -9952,10 +9952,28 @@ function describeSpot(x, z) {
     if (Math.hypot(x, z) < 1.8) return '중앙 광장';
     const idx = islandOf(x, z);
     if (idx === 0) return '본섬 풀밭';
-    if (idx === 1) return '북동섬 놀이터';
-    if (idx === 2) return '추억의 섬';
-    if (idx === 3) return '모험의 섬';
-    return '바다';
+    return ISLAND_KO[idx] || '바다';   // 섬 이름표 단일 소스 — 동산·모래섬·농장섬도 '바다'가 아니다
+}
+// 🗺️ 월드 카탈로그 — 펫 프롬프트용 "지금 월드에 실제로 있는 것들" 자동 목록. 세계 설명(서버 로어)은
+// 서사만 맡고, 사물은 여기서 데이터(PROPS×PROP_KO×섬)로 뽑는다 — 새 소품은 등록만 하면 애들이 안다.
+const ISLAND_KO = ['본섬', '놀이터섬(북동)', '추억의 섬(남서)', '모험의 섬(남동)', '휴양지 모래섬(남, 다리 없음)', '농장 섬(서)', '병아리 동산(남서 바다 꽃언덕)'];
+const CATALOG_SKIP = new Set(['fence', 'rock', 'furniture', 'boulder', 'lamp']);   // 배경 잡동사니는 목록 소음
+const WORLD_FEATURES = [   // 소품이 아닌 시스템·탈것 — 새 시스템을 만들면 여기 한 줄 (E2E가 전송을 검증)
+    '탈것: 빨간 스포츠카·보트·경비행기·열기구(자동 투어)·통통호 페리(섬 순환)·로켓 별똥호(꼬마 달·우주정거장 착륙, 망원경)·노랑호 잠수정(해저 탐험)',
+    '놀이·일: 낚시(꼬마 낚시 의자, 어종 도감)·요리(주방·레시피·장터 주문·모닥불 꼬치)·과일 수확(나무·덩굴·수박, 과일바구니)·꽃심기·보물찾기·숨바꼭질',
+    '추억: 우정반지(둥지에서 교환·착용·보관)·타임캡슐·우편함 편지·사진 게시판·매일 밤 그림일기와 주인 일기 댓글',
+    '가을·겨울 밤엔 침대에서 잠들면 전용 이불이 덮인다(병아리=노랑 별무늬, 강아지=갈색 체크) — 주인이 직접 덮어주기도 하고, 흘러내리면 절친이 다시 덮어준다',
+];
+function worldCatalogText() {
+    const by = new Map();
+    for (const p of PROPS) {
+        if (CATALOG_SKIP.has(p.type)) continue;
+        const isl = ISLAND_KO[islandOf(p.x, p.z)] || '바다 위';
+        if (!by.has(isl)) by.set(isl, new Set());
+        by.get(isl).add(PROP_KO[p.type] || p.type);
+    }
+    const lines = [...ISLAND_KO, '바다 위'].filter((k) => by.has(k)).map((k) => `${k}: ${[...by.get(k)].join(', ')}`);
+    return lines.concat(WORLD_FEATURES).join('\n');
 }
 const BED_KO = { sunbed: '선베드', hammock: '해먹', swing: '그네', seesaw: '시소', trampoline: '트램펄린', vine: '덩굴 시렁', melonpatch: '수박 덩굴', ringnest: '우정반지 둥지', fruitbasket: '과일바구니', pond: '연못', portal: '텔레포트', sofa: '소파', loftbed: '2층 침대', fishchair: '꼬마 낚시 의자', 'gardenbench-0': '동산 벤치', 'gardenbench-1': '동산 벤치' };
 function petStatusLine(p) {
@@ -10190,6 +10208,7 @@ if (statsOn) window.__worldDev = {
     // 펫 몸통의 화면 좌표 — 스모크의 우클릭 프로브가 격자 스캔(위치 랜덤) 대신 정확히 조준한다
     petScreenXY: () => pets.map((p) => { const a = fxPoint(p, 50, 45); return { x: Math.round(a.x), y: Math.round(a.y) }; }),
     petWorldPos: () => pets.map((p) => ({ n: p.name, x: +p.mover.position.x.toFixed(2), y: +p.mover.position.y.toFixed(2), z: +p.mover.position.z.toFixed(2) })),   // (E2E) 접사 카메라용
+    catalog: () => worldCatalogText(),   // 🗺️ (E2E) 펫 프롬프트 카탈로그
     petAxes: () => pets.map((p) => {   // (E2E) 무버 로컬 축의 월드 방향 — 눕기 자세 프레임 실측용
         const o = new THREE.Vector3(), v = new THREE.Vector3();
         p.mover.updateMatrixWorld(true);
@@ -15304,6 +15323,7 @@ async function requestWorldChat(pet, text) {
                 text,
                 snapshot: buildWorldSnapshot(pet),
                 events: recentEventsText(),   // 엿듣기·상대 대화 주입은 서버가 담당(observed + 상시 공유 10턴)
+                catalog: worldCatalogText(),  // 🗺️ 지금 월드에 실제로 있는 것들 — 데이터에서 자동 생성
             }),
         });
         if (res.ok) reply = (await res.json()).reply;
