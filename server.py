@@ -11078,7 +11078,7 @@ WORLD_MAIL_PERSONA = """너는 병아리 🐥와 강아지 🐕 둘을 함께 �
 WORLD_ACTION_SPEC = """[행동 태그]
 대답하면서 실제로 몸을 움직일 수 있다. 아래 태그를 문장 뒤에 붙이면 월드에서 그대로 실행된다 (한 번에 최대 3개, 순서대로 실행):
 <motion=ID> 제자리 모션. ID: wave(인사)·happy(기쁨)·dance(춤)·cheer(응원)·celebrate(축하)·hug(절친과 포옹)·play(절친과 공놀이)·heart(사랑 표현 — 하트 뿅)·holiday(홀리데이 캐럴 스텝 — 절친이 한가하면 마주보고 같이 춘다)·think(생각)·eat(냠냠)·sleep(잠들기)
-<goto=ID> 그 장소로 걸어간다. ID: plaza(광장)·house(집)·pond(연못)·bowl(밥그릇)·coffee(커피 부스)·snack(간식 부스)·radio(라디오)·swing(그네)·seesaw(시소)·sunbed(선베드)·hammock(해먹)·friend(절친 옆)·monument(베프 기념비 — 추억의 섬)·hugspot(포옹 포인트 — 절친과 같이 서면 자동 포옹이 터진다)·pecktree(쪼아쪼아 나무 — 추억의 섬, 절친과 같이 가면 하트가 터진다)·well(소원 우물 — 추억의 섬)·capsule(타임캡슐 — 추억의 섬)·cave(아늑한 동굴 — 모험의 섬, 비 오는 날 피신처)·lookout(전망대 — 모험의 섬 언덕 꼭대기, 별 보기 좋은 곳)·digsite(보물 모래밭 — 모험의 섬)·garden(텃밭 — 본섬 북서 뜰)·piano(피아노 — 본섬 서쪽 잔디)·mailbox(우편함 — 집 앞길)·gym(운동 공간 — NE 놀이터 섬, 그네·시소 옆)·library(도서관 코너 — 본섬 서쪽 뜰)·fountain(분수)
+<goto=ID> 그 장소로 걸어간다. ID: {{GOTO_IDS}}
 <mount=ID> 올라타거나 앉는다/눕는다. ID: swing(그네)·seesaw(시소)·sofa(소파)·sunbed(선베드)·hammock(해먹)·loftbed(2층 침대)
 <drink=ID> 커피 부스에 걸어가 음료를 받아 든다. ID: americano·iced-ame·espresso·latte·cappuccino·choco·strawberry·matcha·icetea
 <snack=ID> 간식 부스에 걸어가 간식을 받아 든다. ID: toast·omurice·burrito·hotdog·donut·bungeo·gimbap·churros·cupcake
@@ -11089,6 +11089,9 @@ WORLD_ACTION_SPEC = """[행동 태그]
 <game=treasure> 모험의 섬 보물 모래밭으로 달려가 오늘의 보물을 파낸다 (하루 한 번, 이미 팠으면 못 한다)
 예시: "좋아, 그네 타러 가자! 삐약! <goto=swing> <mount=swing>"
 규칙: 요청받은 행동이나 지금 기분에 어울리는 행동만 골라라. 태그는 반드시 위 목록의 표기 그대로. 움직일 수 없는 상황(잠자는 중 등)이면 태그 없이 말로만 답해도 된다."""
+
+# goto 목록 폴백 — 클라이언트가 gotoIds(레지스트리 자동 생성)를 안 보내는 옛 클라/폰 캐시용. 정본은 world.js GOTO_PROP_TYPE.
+WORLD_GOTO_IDS_FALLBACK = "plaza(광장)·house(집)·pond(연못)·bowl(밥그릇)·coffee(커피 부스)·snack(간식 부스)·radio(라디오)·swing(그네)·seesaw(시소)·sunbed(선베드)·hammock(해먹)·friend(절친 옆)·monument(베프 기념비 — 추억의 섬)·hugspot(포옹 포인트 — 절친과 같이 서면 자동 포옹이 터진다)·pecktree(쪼아쪼아 나무 — 추억의 섬, 절친과 같이 가면 하트가 터진다)·well(소원 우물 — 추억의 섬)·capsule(타임캡슐 — 추억의 섬)·cave(아늑한 동굴 — 모험의 섬, 비 오는 날 피신처)·lookout(전망대 — 모험의 섬 언덕 꼭대기, 별 보기 좋은 곳)·digsite(보물 모래밭 — 모험의 섬)·garden(텃밭 — 본섬 북서 뜰)·piano(피아노 — 본섬 서쪽 잔디)·mailbox(우편함 — 집 앞길)·gym(운동 공간 — NE 놀이터 섬, 그네·시소 옆)·library(도서관 코너 — 본섬 서쪽 뜰)·fountain(분수)"
 
 WORLD_REPLY_RULES = """[대답 규칙]
 - 1~3문장의 짧은 한국어로 답한다. 이모지는 0~2개.
@@ -11241,6 +11244,7 @@ async def world_chat(request: Request):
     snapshot = str(data.get("snapshot", "")).strip()
     events = str(data.get("events", "")).strip()
     catalog = str(data.get("catalog", "")).strip()[:2000]   # 🗺️ 월드 사물 자동 목록 (클라이언트 데이터 생성)
+    goto_ids = str(data.get("gotoIds", "")).strip()[:1500]   # 🧭 goto 태그 목록 (클라 레지스트리 자동 생성)
 
     try:
         wc_client, current_settings = await _world_chat_client_and_model()
@@ -11257,7 +11261,7 @@ async def world_chat(request: Request):
             eff["lore"],
             owner_line,
             eff["replyRules"],
-            eff["actionSpec"],
+            eff["actionSpec"].replace("{{GOTO_IDS}}", goto_ids or WORLD_GOTO_IDS_FALLBACK),   # 🧭 goto 목록은 클라 레지스트리가 정본
         ] if p]).replace("{{user}}", uname)
         messages = [{"role": "system", "content": system_prompt}]
         if catalog:   # 🗺️ 클라이언트가 데이터에서 뽑은 "지금 실제로 있는 것들" — 로어(서사)와 분리된 사물 단일 소스
@@ -11645,8 +11649,16 @@ def _world_events_fmt(evs: list) -> str:
 
 
 def _world_events_text_for(date: str) -> str:
-    return _world_events_fmt([e for e in _world_kv_events()
-                              if time.strftime("%Y-%m-%d", time.localtime(e["t"] / 1000)) == date])
+    evs = sorted([e for e in _world_kv_events()
+                  if time.strftime("%Y-%m-%d", time.localtime(e["t"] / 1000)) == date], key=lambda e: e["t"])
+    out, chat_left = [], 1   # 📔 대화로 시킨 행동(src:'chat')은 일기 소재 하루 1줄 — 클라 dayEventsText와 동기 (A/B 실측 11/6)
+    for e in evs:
+        if e.get("src") == "chat":
+            if chat_left <= 0:
+                continue
+            chat_left -= 1
+        out.append(e)
+    return _world_events_fmt(out)
 
 
 async def _world_day_sim(date: str) -> list:

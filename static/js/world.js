@@ -9883,7 +9883,7 @@ try {
 } catch (e) {}
 function petKo(p) { return p.name === 'chick' ? '병아리' : '강아지'; }
 function logWorldEvent(text) {
-    worldEvents.push({ t: Date.now(), text });
+    worldEvents.push(chatScriptDepth > 0 ? { t: Date.now(), text, src: 'chat' } : { t: Date.now(), text });   // src:'chat' = 주인이 대화로 시킨 행동의 흔적
     if (worldEvents.length > 120) worldEvents.splice(0, worldEvents.length - 120);   // 하루치 — 그림일기가 먹는다
     try { localStorage.setItem('world-events', JSON.stringify(worldEvents)); worldSync('world-events'); } catch (e) {}
 }
@@ -9923,8 +9923,10 @@ function dayEventsText(d = new Date()) {
     const dayStart = new Date(d);
     dayStart.setHours(0, 0, 0, 0);
     const dayEnd = dayStart.getTime() + 86400000;
+    let chatLeft = 1;   // 📔 대화로 시킨 행동(src:'chat')은 일기 소재 하루 1줄 — 주인 사건이 일기 주인공이 되던 A/B 실측(11/6). 서버 _world_events_text_for와 동기
     return worldEvents
         .filter((e) => e.t >= dayStart.getTime() && e.t < dayEnd)
+        .filter((e) => e.src !== 'chat' || chatLeft-- > 0)
         .map((e) => {
             const d = new Date(e.t);
             return `- ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} ${e.text}`;
@@ -10209,6 +10211,24 @@ if (statsOn) window.__worldDev = {
     petScreenXY: () => pets.map((p) => { const a = fxPoint(p, 50, 45); return { x: Math.round(a.x), y: Math.round(a.y) }; }),
     petWorldPos: () => pets.map((p) => ({ n: p.name, x: +p.mover.position.x.toFixed(2), y: +p.mover.position.y.toFixed(2), z: +p.mover.position.z.toFixed(2) })),   // (E2E) 접사 카메라용
     catalog: () => worldCatalogText(),   // 🗺️ (E2E) 펫 프롬프트 카탈로그
+    gotoIds: () => gotoIdsText(),        // 🧭 (E2E) goto 설명문 목록
+    gotoSpot: (name, id) => { const p = pets.find((q) => q.name === name); return p ? resolveGotoSpot(p, id) : null; },
+    say: (name, text) => {   // 🧪 (E2E) 가짜 답장 주입 — 실제 파서·실행기 경로 그대로
+        const p = pets.find((q) => q.name === name);
+        if (!p) return null;
+        const { actions } = parseWorldReply(text);
+        if (actions.length) runWorldActions(p, actions);
+        return actions;
+    },
+    islandAt: (name) => { const p = pets.find((q) => q.name === name); return p ? islandOf(p.mover.position.x, p.mover.position.z) : null; },
+    petAI: (name) => {   // 🧪 (E2E) 행동 진단 — 상태·점유물·목표
+        const p = pets.find((q) => q.name === name);
+        if (!p) return null;
+        const ai = p.ai || {};
+        return { state: ai.state, target: ai.target ? [+ai.target.x.toFixed(2), +ai.target.z.toFixed(2)] : null, onArrive: !!ai.onArrive, bed: p.bed ? p.bed.id : null, dip: !!p.dip, tramp: !!p.tramp, held: !!p.heldBy, x: +p.mover.position.x.toFixed(2), z: +p.mover.position.z.toFixed(2), sleeping: !!p.pet.sleeping, action: p.pet.action ? p.pet.action.id : null };
+    },
+    dayEvents: () => dayEventsText(),
+    eventsRaw: (n = 12) => worldEvents.slice(-n),
     petAxes: () => pets.map((p) => {   // (E2E) 무버 로컬 축의 월드 방향 — 눕기 자세 프레임 실측용
         const o = new THREE.Vector3(), v = new THREE.Vector3();
         p.mover.updateMatrixWorld(true);
@@ -15125,10 +15145,35 @@ function pickResponder(text) {
 // ---- P2 액션 태그: the reply may carry <motion=..> <goto=..> <mount=..> <drink=..> <snack=..>
 // <hat=..> tags. They are whitelisted against what actually exists in the world, capped at 4,
 // stripped from the bubble text and run strictly in order by runWorldActions below. ----
+// 🧭 goto 태그 레지스트리 — id → 소품 타입. 서버 태그 설명문의 goto 목록은 gotoIdsText()가 여기서 자동 생성해
+// 채팅마다 동봉한다(C0: 설명문·실행기 드리프트 종식). 새 장소 = 이 테이블 한 줄(+PROP_KO 이름표). 월드에 없는
+// 소품·다리 없는 섬(모래섬)의 소품은 목록과 실행 양쪽에서 자동 제외된다.
+const GOTO_PROP_TYPE = { pond: 'pond', bowl: 'bowl', coffee: 'coffee', snack: 'food', radio: 'radio', swing: 'swing', seesaw: 'seesaw', sunbed: 'sunbed', hammock: 'hammock', monument: 'monument', hugspot: 'hugspot', pecktree: 'pecktree', well: 'well', capsule: 'capsule', cave: 'cave', lookout: 'lookout', digsite: 'digsite', garden: 'garden', piano: 'piano', mailbox: 'mailbox', gym: 'gym', library: 'library', fountain: 'fountain', flowerbasket: 'flowerbasket',
+    gardenbench: 'gardenbench', chickgarden: 'chickgarden', ringnest: 'ringnest', fishchair: 'fishchair', trampoline: 'trampoline', portal: 'portal', melonpatch: 'melonpatch', vine: 'vine', fruitbasket: 'fruitbasket', photoboard: 'photoboard', kitchen: 'kitchen', icebox: 'icebox', pierboard: 'pierboard', scarecrow: 'scarecrow', bonfire: 'bonfire', palm: 'palm', sandcastle: 'sandcastle' };   // C1(11/6) 확장분
+const GOTO_HINT = { hugspot: '절친과 같이 서면 자동 포옹이 터진다', pecktree: '절친과 같이 가면 하트가 터진다', cave: '비 오는 날 피신처', lookout: '언덕 꼭대기, 별 보기 좋은 곳', mailbox: '집 앞길',
+    gardenbench: '둘이 나란히 앉는 벤치', chickgarden: '꽃밭', ringnest: '우정반지 둥지', fishchair: '낚시 자리', pierboard: '선착장 옆 주문 게시판', portal: '들어서면 반대편 포탈로', melonpatch: '수박이 자란다', vine: '토마토·가지 시렁', kitchen: '요리하는 곳', icebox: '잡은 물고기 보관' };
+function gotoReachable(type) {   // 월드에 있고, 걸어서 갈 수 있는(다리 있는 섬) 소품만
+    const prop = PROPS.find((q) => q.type === type);
+    if (!prop) return null;
+    const isl = islandOf(prop.x, prop.z);
+    if (isl > 0 && !BRIDGES[isl - 1]) return null;   // 모래섬 — 보트·수영으로만, 걸어서는 못 간다
+    return { prop, isl };
+}
+function gotoIdsText() {
+    const out = ['plaza(광장)', 'house(집)', 'friend(절친 옆)'];
+    for (const [id, type] of Object.entries(GOTO_PROP_TYPE)) {
+        const r = gotoReachable(type);
+        if (!r) continue;
+        const where = r.isl > 0 ? ' — ' + ISLAND_KO[r.isl].replace(/\(.*\)/, '') : '';
+        const hint = GOTO_HINT[id] ? (where ? ', ' : ' — ') + GOTO_HINT[id] : '';
+        out.push(`${id}(${PROP_KO[type] || type}${where}${hint})`);
+    }
+    return out.join('·');
+}
 const ACTION_RE = /<\s*(motion|goto|mount|drink|snack|hat|swim|drive|game)\s*[=:]\s*([a-z0-9-]+)\s*\/?\s*>/gi;
 const ACTION_IDS = {
     motion: new Set(GLB_MOTIONS.map((m) => m.id)),
-    goto: new Set(['plaza', 'house', 'pond', 'bowl', 'coffee', 'snack', 'radio', 'swing', 'seesaw', 'sunbed', 'hammock', 'friend', 'monument', 'hugspot', 'pecktree', 'well', 'capsule', 'cave', 'lookout', 'digsite', 'garden', 'piano', 'mailbox', 'gym', 'library', 'fountain', 'flowerbasket']),
+    goto: new Set(['plaza', 'house', 'friend', ...Object.keys(GOTO_PROP_TYPE)]),   // 레지스트리에서 파생 — 수기 복사본이 새 id를 버리던 드리프트(11/6 실측) 종식
     mount: new Set(['swing', 'seesaw', 'sofa', 'sunbed', 'hammock', 'loftbed']),
     drink: new Set(DRINKS.map((d) => d.id)),
     snack: new Set(FOODS.map((f) => f.id)),
@@ -15175,7 +15220,6 @@ async function freeForScript(p) {
     p.pet.sleeping = false;
     p.pet.autoSleeping = false;
 }
-const GOTO_PROP_TYPE = { pond: 'pond', bowl: 'bowl', coffee: 'coffee', snack: 'food', radio: 'radio', swing: 'swing', seesaw: 'seesaw', sunbed: 'sunbed', hammock: 'hammock', monument: 'monument', hugspot: 'hugspot', pecktree: 'pecktree', well: 'well', capsule: 'capsule', cave: 'cave', lookout: 'lookout', digsite: 'digsite', garden: 'garden', piano: 'piano', mailbox: 'mailbox', gym: 'gym', library: 'library', fountain: 'fountain', flowerbasket: 'flowerbasket' };
 function resolveGotoSpot(p, id) {
     if (id === 'plaza') return { x: 0.4, z: 0.4 };
     if (id === 'house') { const w = houseWorld(0, 1.3); return { x: w.x, z: w.z }; }
@@ -15183,8 +15227,9 @@ function resolveGotoSpot(p, id) {
         const q = pets.find((o) => o !== p);
         return q ? { x: q.mover.position.x + 0.45, z: q.mover.position.z } : null;
     }
-    const prop = PROPS.find((q) => q.type === GOTO_PROP_TYPE[id]);
-    if (!prop) return null;
+    const r = GOTO_PROP_TYPE[id] ? gotoReachable(GOTO_PROP_TYPE[id]) : null;
+    if (!r) return null;   // 없는 소품·모래섬(다리 없음)은 말로만 — 바다로 걸어 들어가지 않는다
+    const prop = r.prop;
     const dx = p.mover.position.x - prop.x, dz = p.mover.position.z - prop.z;
     const d = Math.hypot(dx, dz) || 1;
     const k = (prop.r + 0.4) / d;
@@ -15206,7 +15251,9 @@ async function actGoto(p, id, gen) {
     if (!spot) return;
     await freeForScript(p);
     if (gen !== scriptGen || p === possessed) return;
-    await Promise.race([gotoAsync(p, spot.x, spot.z), sleepMs(25000)]);
+    const dist = Math.hypot(spot.x - p.mover.position.x, spot.z - p.mover.position.z);
+    const cap = Math.min(120000, 8000 + (dist / (p.speed || 0.35)) * 1000 * 1.6);   // 거리 비례 상한(다리 우회 1.6배) — 고정 25s는 먼 섬(동산·농장섬)에서 걷기를 중간에 끊었다(C1 실측)
+    await Promise.race([gotoAsync(p, spot.x, spot.z), sleepMs(cap)]);
 }
 // <drive=car>: 차 옆까지 걸어가 올라타고, updateAutoDrive가 잠깐 몰다가 스스로 내린다.
 async function actDrive(p, gen) {
@@ -15224,8 +15271,11 @@ async function actDrive(p, gen) {
     logWorldEvent(`${petKo(p)}가 스포츠카 드라이브를 시작했다`);
     await waitFor(() => !carDrive || !carDrive.auto, 30000);
 }
+let chatScriptDepth = 0;   // 태그 행동 실행 중 — 이 동안 남는 이벤트는 src:'chat' (일기 소재 하루 1줄 쿼터의 근거)
 async function runWorldActions(p, actions) {
     const gen = ++scriptGen;
+    chatScriptDepth++;
+    try {
     for (const a of actions) {
         if (gen !== scriptGen) return;                            // superseded by a newer script
         const moves = a.kind !== 'motion' && a.kind !== 'hat';
@@ -15294,6 +15344,7 @@ async function runWorldActions(p, actions) {
     }
     if (gen === scriptGen && !p.pet.action && !p.pet.sleeping && !p.bed && !p.dip && p !== possessed
         && (p.ai.state === 'goto' || p.ai.state === 'busy')) releaseAI(p, 1);
+    } finally { chatScriptDepth--; }
 }
 
 async function sendWorldChat() {
@@ -15324,6 +15375,7 @@ async function requestWorldChat(pet, text) {
                 snapshot: buildWorldSnapshot(pet),
                 events: recentEventsText(),   // 엿듣기·상대 대화 주입은 서버가 담당(observed + 상시 공유 10턴)
                 catalog: worldCatalogText(),  // 🗺️ 지금 월드에 실제로 있는 것들 — 데이터에서 자동 생성
+                gotoIds: gotoIdsText(),       // 🧭 goto 태그 목록 — 레지스트리에서 자동 생성(서버 설명문의 {{GOTO_IDS}})
             }),
         });
         if (res.ok) reply = (await res.json()).reply;
