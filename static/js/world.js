@@ -8620,6 +8620,7 @@ for (const def of PETS) {
         }
         if (!restored) pet.action = { id: 'wave', t: 0 };   // 첫 이사 인사 — 이어하기엔 하던 대로 조용히
         wireWorldFx(entry);
+        attachBlanket(entry);   // 🛌 전용 이불 — 가을·겨울 밤에만 모습을 드러낸다
         pets.push(entry);
     }).catch(e => console.error('[World] pet load failed', def.url, e));
 }
@@ -9420,7 +9421,10 @@ renderer.domElement.addEventListener('pointerup', (e) => {
         if (raycaster.intersectObject(p.mover, true).length) {
             if (e.button !== 2 && e.pointerType !== 'touch') return;   // 마우스는 RIGHT-click 전용 (left = camera) · 터치는 탭이 곧 상호작용
             // 앉은 펫 탭 = (기상이 아니라) 평소처럼 동작 메뉴 — 기상은 ✕/방향키/⌘가 담당 (주인 지정, 모바일 실측)
-            if (p.pet.sleeping) { p.pet.sleeping = false; p.pet.autoSleeping = false; return; }
+            if (p.pet.sleeping) {
+                if (ownerTuckBlanket(p)) return;   // 🛌 이불이 필요하면 깨우는 대신 덮어준다 (하트 잠꼬대)
+                p.pet.sleeping = false; p.pet.autoSleeping = false; return;
+            }
             showMenu(e.clientX, e.clientY, p);
             // Holding a drink/snack? Stack the 먹기 chooser right ABOVE the motion menu
             // (same left edge), so neither panel sits on top of the pet.
@@ -10186,6 +10190,31 @@ if (statsOn) window.__worldDev = {
     season: (id) => setManualSeason(id),
     // 펫 몸통의 화면 좌표 — 스모크의 우클릭 프로브가 격자 스캔(위치 랜덤) 대신 정확히 조준한다
     petScreenXY: () => pets.map((p) => { const a = fxPoint(p, 50, 45); return { x: Math.round(a.x), y: Math.round(a.y) }; }),
+    petWorldPos: () => pets.map((p) => ({ n: p.name, x: +p.mover.position.x.toFixed(2), y: +p.mover.position.y.toFixed(2), z: +p.mover.position.z.toFixed(2) })),   // (E2E) 접사 카메라용
+    petAxes: () => pets.map((p) => {   // (E2E) 무버 로컬 축의 월드 방향 — 눕기 자세 프레임 실측용
+        const o = new THREE.Vector3(), v = new THREE.Vector3();
+        p.mover.updateMatrixWorld(true);
+        p.mover.getWorldPosition(o);
+        const ax = {};
+        for (const [nm, u] of [['x', [1, 0, 0]], ['y', [0, 1, 0]], ['z', [0, 0, 1]]]) {
+            v.set(...u).applyQuaternion(p.mover.getWorldQuaternion(new THREE.Quaternion()));
+            ax[nm] = [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2)];
+        }
+        return { n: p.name, rot: [+p.mover.rotation.x.toFixed(2), +p.mover.rotation.y.toFixed(2), +p.mover.rotation.z.toFixed(2)], order: p.mover.rotation.order, ax };
+    }),
+    blanketState: () => pets.map((p) => ({ n: p.name, st: p.blanket ? p.blanket.state : null, t: +(p.blanket ? p.blanket.t : 0).toFixed(2),
+        bed: p.bed ? p.bed.id : null, phase: p.bedPhase || null, sleeping: !!p.pet.sleeping })),   // 🛌 (E2E)
+    blanketForce: (name, act) => {   // 🛌 (E2E) auto=즉시 자동덮임 · slip=흘러내림(재덮기 1분 보류) · retuck=절친 호출 · tap=주인 탭 경로 · wake=기상
+        const p = pets.find((q) => q.name === name);
+        const bl = p && p.blanket;
+        if (!bl) return false;
+        if (act === 'auto') bl.autoAt = Date.now() - 1;
+        else if (act === 'slip') { if (bl.state === 'on') { bl.state = 'slipped'; bl.slippedNight = true; bl.retuckAt = Date.now() + 60000; } }
+        else if (act === 'retuck') bl.retuckAt = Date.now() - 1;
+        else if (act === 'tap') return ownerTuckBlanket(p);
+        else if (act === 'wake') { p.pet.sleeping = false; p.pet.autoSleeping = false; }
+        return true;
+    },
     fishMake: (id) => {   // 어종 메시 배선 검증 — 종별 목표 체장·드로우·삼각 (카툰 9종 / 구 빌더 4종)
         const sp = FISH_SPECIES.find((q) => q.id === id);
         if (!sp) return null;
@@ -26403,6 +26432,167 @@ function updateAutoSleep() {
     }
 }
 
+// ---- 🛌 이불: 가을·겨울 밤, 침대에서 잠든 펫을 전용 이불이 덮는다. 잠들고 40초 뒤 발치에서
+// 스르륵 자동으로 올라오고(그 전에 주인이 잠든 아이를 탭하면 직접 덮어주기 — 잠꼬대 하트),
+// 밤중에 가끔 흘러내리면 곁에서 자던 절친이 일어나 다시 덮어주고 제 침대로 돌아간다.
+// 조형: 펫당 1드로우(정점 페인트 병합) — 펫은 베이크 대상이 아니라 noBake 불필요, 숨김=0드로우.
+const BLANKET = { autoDelayMs: 40000, slipChancePerSec: 1 / 420, retuckDelayMs: 12000 };
+function buildBlanketGeo(kind, W, L) {
+    const TH = 0.013;
+    const parts = [];
+    const add = (geo, top, bottom, x = 0, y = 0, z = 0, rotY = 0) => {
+        const g = geo.toNonIndexed();
+        if (rotY) g.rotateY(rotY);
+        g.translate(x, y, z);
+        parts.push(bakeGrad(g, top, bottom, { curve: 1 }));
+    };
+    if (kind === 'chick') {   // 💛 노랑 바탕 + 크림 별 — 모서리에 M 스티치
+        add(new RoundedBoxGeometry(W, TH, L, 2, 0.006), 0xffd95e, 0xd9a73c);
+        add(new RoundedBoxGeometry(W * 0.96, TH * 1.25, L * 0.17, 2, 0.006), 0xfff1c4, 0xe8cf96, 0, 0.004, -L * 0.40);   // 접힌 깃 (머리쪽)
+        const starAt = [[-0.3, -0.12], [0.22, -0.2], [-0.08, 0.06], [0.3, 0.14], [-0.26, 0.3], [0.08, 0.34]];
+        for (const [ux, uz] of starAt)
+            add(new THREE.BoxGeometry(0.021, 0.004, 0.021), 0xfff6da, 0xf4e2b0, ux * W, TH * 0.5 + 0.002, uz * L * 0.5 + L * 0.06, Math.PI / 4);
+        for (const [dx, dz, w, d] of [[-0.012, 0, 0.004, 0.03], [0.012, 0, 0.004, 0.03], [-0.005, -0.008, 0.004, 0.016], [0.005, -0.008, 0.004, 0.016]])
+            add(new THREE.BoxGeometry(w, 0.004, d), 0xff8fa8, 0xe2718c, W * 0.34 + dx, TH * 0.5 + 0.002, L * 0.34 + dz);   // 'M'
+    } else {   // 🤎 갈색 체크 — 모서리에 C 스티치
+        add(new RoundedBoxGeometry(W, TH, L, 2, 0.006), 0x9c6a44, 0x74492c);
+        add(new RoundedBoxGeometry(W * 0.96, TH * 1.25, L * 0.17, 2, 0.006), 0xf4e6cf, 0xd9c5a4, 0, 0.004, -L * 0.40);
+        for (const ux of [-0.3, 0, 0.3])
+            add(new THREE.BoxGeometry(0.028, 0.003, L * 0.92), 0xb5835c, 0x96643c, ux * W, TH * 0.5 + 0.0015, L * 0.04);
+        for (const uz of [-0.18, 0.1, 0.38])
+            add(new THREE.BoxGeometry(W * 0.94, 0.003, 0.028), 0xb5835c, 0x96643c, 0, TH * 0.5 + 0.0018, uz * L * 0.5 + L * 0.04);
+        for (const [dx, dz, w, d] of [[-0.011, 0, 0.004, 0.026], [0, -0.011, 0.022, 0.004], [0, 0.011, 0.022, 0.004]])
+            add(new THREE.BoxGeometry(w, 0.004, d), 0xf0d9a8, 0xd4b87e, W * 0.34 + dx, TH * 0.5 + 0.002, L * 0.34 + dz);   // 'C'
+    }
+    const geo = mergeGeometries(parts, false);
+    const pos = geo.attributes.position;   // 몸 위에 걸치는 돔 드레이프 — 가운데가 봉긋, 좌우 끝이 흘러내린다
+    const domeH = W * 0.15;
+    for (let i = 0; i < pos.count; i++) {
+        const u = pos.getX(i) / (W * 0.5);
+        pos.setY(i, pos.getY(i) + domeH * (1 - u * u));
+    }
+    geo.computeVertexNormals();
+    return geo;
+}
+// 핏 테이블 — 침대 lie(월드) 기준: up=배 위 높이, along=머리 방향 중심 오프셋, slide=발치→제자리 거리
+// ⚠️ 무버 자식으로 달면 안 된다: XYZ 오일러라 눕기 자세의 "배 위" 로컬축이 침대 방향마다 달라진다(실측
+// — 병아리 -x·강아지 +x). 그래서 이불은 씬 직속으로 두고 매 프레임 lie 프레임에서 월드 배치한다.
+const BLANKET_FIT = {
+    chick: { W: 0.34, L: 0.28, up: 0.225, along: 0.0, slide: 0.18 },
+    puppy: { W: 0.38, L: 0.30, up: 0.23, along: -0.05, slide: 0.20 },
+};
+const BLANKET_BED_YAW = { sunbed: -Math.PI / 2 };   // lie.rotY가 몸축과 어긋난 침대 보정 (스샷 실측)
+function attachBlanket(p) {
+    const fit = BLANKET_FIT[p.name] || BLANKET_FIT.chick;
+    const g = new THREE.Group();
+    g.rotation.order = 'YXZ';   // 요(헤딩) 먼저, 그 다음 눕기 경사 — 무버의 XYZ 함정 회피
+    const mesh = new THREE.Mesh(buildBlanketGeo(p.name, fit.W, fit.L), gradMat);
+    mesh.castShadow = true;
+    mesh.rotation.y = Math.PI;   // 깃(슬래브 -z)→ +z(머리=헤딩) 쪽 — 스샷 실측으로 확정한 방향
+    g.add(mesh);
+    g.visible = false;
+    scene.add(g);
+    p.blanket = { g, fit, state: 'off', t: 0, slipT: 0, autoAt: 0, retuckAt: 0, slippedNight: false };
+}
+let blanketScene = false;   // 절친 재덮기 1회 가드
+function blanketWanted(p) {
+    return (season === 'autumn' || season === 'winter') && isSleepTime(currentHour())
+        && p.pet.sleeping && p.bed && p.bedPhase === 'lying' && p.bed.mode !== 'sit';
+}
+function blanketTuck(p, by) {
+    const bl = p.blanket;
+    if (!bl || bl.state === 'on' || bl.state === 'sliding') return false;
+    bl.state = 'sliding';
+    bl.t = Math.min(bl.t, 0.55);
+    bl.autoAt = 0; bl.retuckAt = 0;
+    if (by === 'owner') {
+        heartBurstAt(p);
+        p.pet.spawnEmoji('💤', { left: 50, top: 14, size: 18, duration: 1400 });
+        logWorldEvent(`주인이 잠든 ${petKo(p)}에게 이불을 덮어주었다 🛌💕`);
+    } else if (by) {
+        logWorldEvent(`${petKo(by)}가 흘러내린 ${petKo(p)}의 이불을 다시 덮어주고 제 자리로 돌아갔다 💤`);
+    } else {
+        try {   // 계절 첫 이불만 일기 소재로 — 매일 밤의 자동 덮임은 조용히 (오로라 소음 교훈)
+            const k = `blanket:${season}`;
+            if (localStorage.getItem('world-blanket-first') !== k) {
+                localStorage.setItem('world-blanket-first', k);
+                logWorldEvent(`${SEASONS[season].ko}밤이 쌀쌀해서 아이들이 첫 이불을 덮었다 🛏️`);
+            }
+        } catch (e) {}
+    }
+    return true;
+}
+function ownerTuckBlanket(p) {   // 잠든 펫 탭 — 이불이 필요한 상황이면 깨우는 대신 덮어준다
+    const bl = p.blanket;
+    if (!bl || !blanketWanted(p)) return false;
+    if (bl.state === 'on' || bl.state === 'sliding') return false;
+    return blanketTuck(p, 'owner');
+}
+async function tryFriendRetuck(p) {
+    const f = pets.find((q) => q !== p && q !== possessed && q.pet.sleeping && q.bed && q.bedPhase === 'lying');
+    if (!f || blanketScene || buildMode || p.blanket.state !== 'slipped') return;   // 못 가면 주인 탭/아침이 수습
+    blanketScene = true;
+    try {
+        const myBed = f.bed;
+        f.pet.sleeping = false; f.pet.autoSleeping = false;
+        dismountBed(f);
+        const until = (cond, ms) => new Promise((res) => {
+            const t0 = Date.now();
+            const iv = setInterval(() => { if (cond() || Date.now() - t0 > ms) { clearInterval(iv); res(); } }, 120);
+        });
+        await until(() => !f.bed, 6000);
+        if (f.bed || f === possessed) return;
+        await Promise.race([gotoAsync(f, p.bed.approach.x, p.bed.approach.z), new Promise((r) => setTimeout(r, 12000))]);   // 디렉터가 약속을 덮으면 영원히 안 풀린다 — 레이스 필수
+        if (p.blanket.state === 'slipped' && blanketWanted(p)) blanketTuck(p, f);
+        await new Promise((r) => setTimeout(r, 1600));
+        if (!f.bed && f !== possessed && f.ai.state !== 'player') await mountBed(f, (myBed && !myBed.occupant ? myBed : freeBedFor(f)) || myBed);
+    } catch (e) {} finally { blanketScene = false; }
+}
+function updateBlankets(delta) {
+    for (const p of pets) {
+        const bl = p.blanket;
+        if (!bl) continue;
+        const want = blanketWanted(p);
+        if (want && bl.state === 'off') {
+            if (!bl.autoAt) bl.autoAt = Date.now() + BLANKET.autoDelayMs;
+            else if (Date.now() >= bl.autoAt) blanketTuck(p, null);
+        }
+        if (!want) {
+            bl.autoAt = 0;
+            if (bl.state === 'on' || bl.state === 'sliding' || bl.state === 'slipped') bl.state = 'folding';
+            if (!isSleepTime(currentHour())) bl.slippedNight = false;   // 새 밤 준비
+        }
+        if (bl.state === 'sliding') { bl.t = Math.min(1, bl.t + delta / 1.1); if (bl.t >= 1) bl.state = 'on'; }
+        else if (bl.state === 'folding') { bl.t = Math.max(0, bl.t - delta / 0.8); if (bl.t <= 0) { bl.state = 'off'; } }
+        if (bl.state === 'on' && want && !bl.slippedNight && Math.random() < delta * BLANKET.slipChancePerSec) {
+            bl.state = 'slipped'; bl.slippedNight = true;
+            bl.retuckAt = Date.now() + BLANKET.retuckDelayMs;   // 잠시 그대로 — 곧 절친이 눈치챈다
+        }
+        if (bl.state === 'slipped' && bl.retuckAt && Date.now() >= bl.retuckAt) { bl.retuckAt = 0; tryFriendRetuck(p); }
+        bl.slipT = THREE.MathUtils.clamp(bl.slipT + (bl.state === 'slipped' ? delta : -delta) / 0.7, 0, 1);
+        const vis = bl.t > 0.001;
+        bl.g.visible = vis;
+        if (!vis) continue;
+        const lie = p.bed && p.bed.lie;
+        if (!lie) continue;   // 깨어나 침대가 사라진 채 개키는 중 — 마지막 자리에서 접힌다
+        const e = bl.t * bl.t * (3 - 2 * bl.t), s = bl.slipT;
+        const fit = bl.fit;
+        const incl = Math.PI / 2 + lie.tilt;                    // 0=수평 — 몸이 기대 누운 경사
+        const yaw = lie.rotY + (BLANKET_BED_YAW[p.bed.id] || 0);
+        const fx = Math.sin(yaw), fz = Math.cos(yaw);           // 몸축(머리) 방향 — 스샷 실측: 머리=+헤딩
+        const ax = fx * Math.cos(incl), ay = Math.sin(incl), az = fz * Math.cos(incl);   // 몸 비탈을 따라 머리 쪽으로 오르는 방향
+        const along = fit.along - (1 - e) * fit.slide - s * 0.06;   // 발치에서 스르륵 → 제자리 (흘러내림은 아래로)
+        const sideX = fz, sideZ = -fx;                           // 옆구리 방향 — 흘러내림 오프셋
+        bl.g.position.set(
+            lie.x + ax * along + sideX * s * 0.09,
+            lie.y + fit.up + ay * along - s * 0.05,
+            lie.z + az * along + sideZ * s * 0.09,
+        );
+        bl.g.rotation.set(-incl, yaw, s * 0.42);   // -: 머리(깃=+z) 쪽 끝이 비탈을 따라 들린다
+        bl.g.scale.set(1, 1, Math.max(0.3, e));
+    }
+}
+
 // ---- 밥때 (meal times): at 8시·12시·18시 the pets trot to the food bowl, each picking a random
 // free spot around it, face the bowl and have a couple of helpings with the shared Eat motion,
 // then wander off. A serving lasts 30 minutes and each pet eats once per serving. Meals can be
@@ -26648,6 +26838,7 @@ function animate() {
     updateHeartFx(delta);
     updateFestiveFx(delta);
     updateAutoSleep();
+    updateBlankets(delta);                   // 🛌 가을·겨울 밤 이불 — 자동 덮임·흘러내림·절친 재덮기
     updateMeals();
     updateCrumbs(delta);
     updateSelectRing();
