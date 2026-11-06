@@ -5,6 +5,14 @@ Patch notes go here — newest on top.
 
 ## 미출시
 
+### Fixed (🚑 이불 출시 직후 펫 로드 실패 — 전원 굳음·조종/시점 불능)
+- 펫 생성 `.then` 콜백에서 `attachBlanket`이 뒤쪽 `const BLANKET_FIT`를 참조 → 모듈 최상위
+  await 사이에 GLB 로드가 먼저 끝나면 **TDZ ReferenceError → 펫 등록 자체가 실패**(라이브 실측:
+  `[World] pet load failed … Cannot access 'BLANKET_FIT' before initialization`). 샌드박스 E2E는
+  로드 타이밍이 달라 통과했고, 콘솔 에러는 pageerror 감시에 안 잡힌다 — 라이브 백엔드 부팅
+  프로브로 재현·확정. 수리: 생성 콜백 부착 제거, `updateBlankets`가 첫 프레임에 지연 부착.
+  규칙: **펫 생성 콜백은 모듈 평가 중에도 발화한다 — 뒤쪽 const를 만지는 작업은 프레임 루프로.**
+
 ### Added (🛌 가을·겨울 이불 — 자동 덮임·주인 덮어주기·절친 재덮기)
 - **전용 이불 2채**(펫당 1드로우, 정점 페인트 병합): 병아리=노랑+크림 별 6개+분홍 M 스티치,
   강아지=갈색 체크+크림 C 스티치, 둘 다 머리쪽 접힌 깃 + 돔 드레이프(몸을 감싸는 곡면).

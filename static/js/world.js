@@ -8619,8 +8619,7 @@ for (const def of PETS) {
             }
         }
         if (!restored) pet.action = { id: 'wave', t: 0 };   // 첫 이사 인사 — 이어하기엔 하던 대로 조용히
-        wireWorldFx(entry);
-        attachBlanket(entry);   // 🛌 전용 이불 — 가을·겨울 밤에만 모습을 드러낸다
+        wireWorldFx(entry);   // (🛌 이불은 updateBlankets가 첫 프레임에 지연 부착 — 이 콜백은 모듈 평가 중에도 발화해 뒤쪽 const가 TDZ였다, 11/6 실측)
         pets.push(entry);
     }).catch(e => console.error('[World] pet load failed', def.url, e));
 }
@@ -26550,8 +26549,8 @@ async function tryFriendRetuck(p) {
 }
 function updateBlankets(delta) {
     for (const p of pets) {
+        if (!p.blanket) attachBlanket(p);   // 지연 부착 — 프레임 루프는 모듈 평가 완료 뒤라 상수 TDZ가 없다
         const bl = p.blanket;
-        if (!bl) continue;
         const want = blanketWanted(p);
         if (want && bl.state === 'off') {
             if (!bl.autoAt) bl.autoAt = Date.now() + BLANKET.autoDelayMs;
