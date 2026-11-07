@@ -1,7 +1,7 @@
-// 검수 랩 페이지 에러만 뽑는다 — 조형 코드를 고친 뒤 첫 확인용.
+// Extracts only the review lab page errors — first check after editing model code.
 //   node scripts/sealab-err.mjs
-// 랩이 안 뜨면(sealab: false) 대개 world.js의 문법/중복 선언 에러다. 렌더 스크립트가
-// "Cannot read properties of undefined (reading 'cellOf')"로 죽으면 먼저 이걸 돌린다.
+// If the lab does not come up (sealab: false), it is usually a syntax / duplicate declaration error in world.js. When the render script
+// dies with "Cannot read properties of undefined (reading 'cellOf')", run this first.
 const { chromium } = await import('playwright');
 const b = await chromium.launch({ headless: true, args: ['--use-angle=metal'] });
 const pg = await b.newPage({ viewport: { width: 800, height: 600 } });

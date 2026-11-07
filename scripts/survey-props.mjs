@@ -1,7 +1,7 @@
-// 월드 프롭 전수 컨택시트 — 타입별 대표 1개를 3/4 뷰로 격자에 담는다 + 광각 4장.
+// Contact sheet of all world props — one representative per type in 3/4 view on a grid + 4 wide-angle shots.
 //   node scripts/survey-props.mjs <outDir>
-// 프레임은 world-layout-sweep.mjs의 VIS(시각 풋프린트) 표로 프롭 루트를 식별해 자동 계산한다.
-// 저퀄 프롭을 훑어 고칠 대상을 고를 때 쓴다. 개별 정밀 검수는 survey-prop-detail.mjs.
+// Framing is computed automatically by identifying prop roots via the VIS (visual footprint) table of world-layout-sweep.mjs.
+// Use it to skim low-quality props and pick what to fix. For detailed per-prop review use survey-prop-detail.mjs.
 //   node scripts/_survey-sheet.mjs <outDir>
 import http from 'http'; import fs from 'fs'; import path from 'path';
 const REPO = '/Users/mini/Downloads/super-agent-party-main';
@@ -19,14 +19,14 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
 
 const { PROPS } = await import(`${REPO}/static/js/world-layout.js`);
-// 타입별 대표 1개 (같은 타입 여러 개면 첫 번째) + 나무/야자/바위는 2개까지
+// One representative per type (the first if there are several of the same type) + up to 2 for trees/palms/rocks
 const seen = {}; const targets = [];
 for (const p of PROPS) {
     seen[p.type] = (seen[p.type] || 0) + 1;
     const cap = ({ tree: 2, palm: 2, boulder: 2, lamp: 1, vine: 1, portal: 2 })[p.type] ?? 1;
     if (seen[p.type] <= cap) targets.push({ type: p.type, n: seen[p.type], x: p.x, z: p.z, rotY: p.rotY || 0 });
 }
-// 탈것·특수 스폿 (PROPS 밖)
+// Vehicles · special spots (outside PROPS)
 targets.push({ type: 'car', n: 1, x: 2.5, z: -1.15, rotY: 0 }, { type: 'boat', n: 1, x: 2.4, z: 6.95, rotY: -0.4 },
     { type: 'plane', n: 1, x: -3.2, z: 10.05, rotY: 3.14 }, { type: 'balloon', n: 1, x: 14.0, z: 7.25, rotY: 0 },
     { type: 'ferry', n: 1, x: 0.94, z: 7.77, rotY: 0 }, { type: 'rocketpad', n: 1, x: 2, z: -9.5, rotY: 0 });
@@ -39,11 +39,11 @@ pg.on('console', (m) => { if (m.type() === 'error' && !/404|favicon|\/api\/|ws|s
 await pg.goto(`http://127.0.0.1:${PORT}/world.html?stats=1&hour=13&weather=clear`, { waitUntil: 'load' });
 await pg.waitForTimeout(9000);
 
-// 조종 펫을 집에서 멀리 보내 지붕 컷어웨이(근접 투명)를 풀고 굳힌다
+// Send the controlled pet far from the house to release the roof cutaway (proximity transparency) and let it settle
 await pg.evaluate(() => window.__worldDev.tp(-10.7, -4.7));
 await pg.waitForTimeout(2500);
 
-// ---- 광각 오버뷰 4방위 ----
+// ---- Wide-angle overview, 4 directions ----
 const wide = await pg.evaluate(async () => {
     const THREE = await import('/libs/three/build/three.module.js');
     const dev = window.__worldDev;
@@ -63,7 +63,7 @@ const wide = await pg.evaluate(async () => {
     ];
     for (const [label, cx, cy, cz, tx, ty, tz] of views) {
         const fog = dev.scene.fog;
-        if (label.includes('군도')) dev.scene.fog = null;   // 거리 포그가 군도 전경을 하얗게 지운다
+        if (label.includes('군도')) dev.scene.fog = null;   // Distance fog washes the archipelago panorama out to white
         cam.position.set(cx, cy, cz); cam.lookAt(tx, ty, tz);
         r.render(dev.scene, cam);
         dev.scene.fog = fog;
@@ -75,7 +75,7 @@ const wide = await pg.evaluate(async () => {
 wide.forEach((w, i) => fs.writeFileSync(path.join(OUT, `wide-${i}.png`), Buffer.from(w.png.split(',')[1], 'base64')));
 console.log('wide:', wide.map((w) => w.label).join(' / '));
 
-// ---- 타입별 근접 컨택시트 ----
+// ---- Per-type close-up contact sheet ----
 const sheets = await pg.evaluate(async (targets) => {
     const THREE = await import('/libs/three/build/three.module.js');
     const dev = window.__worldDev;
@@ -86,7 +86,7 @@ const sheets = await pg.evaluate(async (targets) => {
     if ('outputColorSpace' in r) r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping;
     const cam = new THREE.PerspectiveCamera(32, 1, 0.01, 300);
-    // 프롭 루트 찾기: 빌드 루프가 obj.position = (p.x, terrainHeight, p.z)로 놓으므로 좌표가 지문이다
+    // Finding prop roots: the build loop sets obj.position = (p.x, terrainHeight, p.z), so the coordinates are the fingerprint
     const roots = [];
     dev.scene.traverse((o) => { if (o.parent && o.children.length) roots.push(o); });
     const boxOf = (t) => {
@@ -97,7 +97,7 @@ const sheets = await pg.evaluate(async (targets) => {
             const b = new THREE.Box3().setFromObject(o);
             if (b.isEmpty()) continue;
             const s = b.getSize(new THREE.Vector3());
-            if (s.y < 0.02 && s.x > 0.25) continue;      // 그림자 블롭 데칼 제외
+            if (s.y < 0.02 && s.x > 0.25) continue;      // Exclude shadow blob decals
             box.union(b); found++;
         }
         return found ? box : null;
@@ -119,7 +119,7 @@ const sheets = await pg.evaluate(async (targets) => {
         const ctr = box ? box.getCenter(new THREE.Vector3()) : new THREE.Vector3(t.x, gy + 0.4, t.z);
         const span = Math.max(size.x, size.z, size.y);
         const dist = Math.min(9, Math.max(1.1, span * 1.9));
-        const ang = (t.rotY || 0) + Math.PI * 0.8;   // 정면에서 살짝 비틀어 3/4 뷰
+        const ang = (t.rotY || 0) + Math.PI * 0.8;   // Twist slightly off the front for a 3/4 view
         cam.position.set(ctr.x + Math.sin(ang) * dist, ctr.y + dist * 0.42, ctr.z + Math.cos(ang) * dist);
         cam.lookAt(ctr.x, ctr.y, ctr.z);
         r.render(dev.scene, cam);

@@ -684,7 +684,7 @@ const app = Vue.createApp({
   },
   async mounted() {
     try {
-      // 💾 월드 백업 워치독 — 시작 직후 1회 + 6시간마다 배지 갱신 (실패는 메서드가 삼킨다)
+      // 💾 World backup watchdog — once right after start + badge refresh every 6 hours (failures are swallowed by the method)
       setTimeout(() => { this.checkWorldBackupStatus && this.checkWorldBackupStatus(); }, 6000);
       setInterval(() => { this.checkWorldBackupStatus && this.checkWorldBackupStatus(); }, 6 * 3600000);
       // Only register global shortcuts in the Electron environment

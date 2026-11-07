@@ -1,6 +1,6 @@
-// 해변 실스케일 검수 — 조개를 모래 위에 스폰해 게임 시점(내려다봄)으로 찍는다.
+// Beach real-scale review — spawn shells on the sand and shoot from the game viewpoint (looking down).
 //   node scripts/beach-live.mjs <outDir>
-// 해저용은 sea-live.mjs. 지상 조명(직사광 강함)과 해저 조명은 결과가 꽤 다르다.
+// For undersea use sea-live.mjs. Surface lighting (strong direct light) and undersea lighting give quite different results.
 import fs from 'fs'; import path from 'path';
 const OUT = process.argv[2];
 const { chromium } = await import('playwright');
@@ -24,7 +24,7 @@ const shots = await pg.evaluate(async (list) => {
     const out = [];
     for (const s of list) {
         const gy = dev.groundAt(s.x, s.z);
-        // 게임 시점: 펫 눈높이보다 조금 위에서 내려다봄 (실제 플레이 각도)
+        // Game viewpoint: looking down from slightly above pet eye level (the actual play angle)
         for (const [d, el] of [[0.42, 0.34], [0.30, 0.62]]) {
             cam.position.set(s.x + d * 0.7, gy + d * el * 2.2, s.z + d * 0.7);
             cam.lookAt(s.x, gy + 0.02, s.z);

@@ -73,14 +73,14 @@ export function spawnBurstEmoji(chars, count = 14, { cx = 50, cy = 32 } = {}) {
     }
 }
 
-// ---- 코디 accessories: procedural wearable items (no external assets, same philosophy as the
+// ---- Outfit accessories: procedural wearable items (no external assets, same philosophy as the
 // motions). Each builder takes a base radius and returns a group whose origin is the point that
 // touches the head top; setGlbPetAccessory anchors it there. New items = builder + list entry. ----
 export const GLB_ACCESSORIES = [
     { id: 'santa-hat', label: '🎅 산타모자' },
-    { id: 'straw-hat', label: '👒 밀짚모자' },   // 보물찾기 1호 보상 (월드에서 발굴하면 열림)
-    { id: 'ribbon',    label: '🎀 리본' },       // 보물찾기 2호 보상
-    { id: 'space-helmet', label: '🧑‍🚀 우주 헬멧' },   // 달 크레이터 첫 발굴 보상
+    { id: 'straw-hat', label: '👒 밀짚모자' },   // Treasure hunt #1 reward (unlocked by digging it up in the world)
+    { id: 'ribbon',    label: '🎀 리본' },       // Treasure hunt #2 reward
+    { id: 'space-helmet', label: '🧑‍🚀 우주 헬멧' },   // Reward for the first moon crater dig
 ];
 
 // Classic floppy santa hat: white brim ring, red cone tilted at the tip, white pompom at the point.
@@ -105,7 +105,7 @@ function makeSantaHat(brimR) {
     return g;
 }
 
-// 밀짚모자: 넓은 챙 + 낮은 돔 + 산호빛 띠.
+// Straw hat: wide brim + low dome + coral-colored band.
 function makeStrawHat(brimR) {
     const g = new THREE.Group();
     const straw = new THREE.MeshStandardMaterial({ color: 0xe8c878, roughness: 0.9 });
@@ -123,7 +123,7 @@ function makeStrawHat(brimR) {
     g.traverse(o => { if (o.isMesh) o.castShadow = true; });
     return g;
 }
-// 리본: 정수리의 나비매듭 — 매듭 + 좌우 고리 + 늘어진 꼬리.
+// Ribbon: a bow on the crown — knot + left/right loops + dangling tails.
 function makeRibbon(brimR) {
     const g = new THREE.Group();
     const pink = new THREE.MeshStandardMaterial({ color: 0xf27ba0, roughness: 0.6 });
@@ -143,13 +143,13 @@ function makeRibbon(brimR) {
     g.traverse(o => { if (o.isMesh) o.castShadow = true; });
     return g;
 }
-// 우주 헬멧: 머리를 감싸는 투명 버블 + 목 실링 링 + 안테나 스터브(빨간 팁) — 달 발굴 보상.
+// Space helmet: transparent bubble wrapping the head + neck seal ring + antenna stub (red tip) — moon dig reward.
 function makeSpaceHelmet(brimR) {
     const g = new THREE.Group();
     const glass = new THREE.MeshStandardMaterial({ color: 0xcfe8f4, transparent: true, opacity: 0.26, roughness: 0.12, metalness: 0.08, side: THREE.DoubleSide, depthWrite: false });
     const metal = new THREE.MeshStandardMaterial({ color: 0xd8dde4, roughness: 0.4, metalness: 0.5 });
     const dome = new THREE.Mesh(new THREE.SphereGeometry(brimR * 1.6, 20, 16), glass);
-    dome.position.y = brimR * 0.1;   // 정수리 앵커 기준 살짝 아래 — 머리를 감싼다
+    dome.position.y = brimR * 0.1;   // Slightly below the crown anchor — wraps the head
     g.add(dome);
     const ring = new THREE.Mesh(new THREE.TorusGeometry(brimR * 1.28, brimR * 0.15, 10, 24), metal);
     ring.rotation.x = Math.PI / 2;
@@ -163,12 +163,12 @@ function makeSpaceHelmet(brimR) {
     tip.position.set(brimR * 1.38, brimR * 1.52, 0);
     g.add(tip);
     g.traverse(o => { if (o.isMesh) o.castShadow = true; });
-    dome.castShadow = false;   // 투명 돔 그림자 blob 방지
+    dome.castShadow = false;   // Prevent the transparent dome's shadow blob
     return g;
 }
 const ACCESSORY_BUILDERS = { 'santa-hat': makeSantaHat, 'straw-hat': makeStrawHat, 'ribbon': makeRibbon, 'space-helmet': makeSpaceHelmet };
 
-// Wear a 코디 item (id) or take the current one off (id = null/undefined). The item is parented to
+// Wear an outfit item (id) or take the current one off (id = null/undefined). The item is parented to
 // `wrap`, so every motion (nod, spin, sleep droop, …) carries it naturally.
 export function setGlbPetAccessory(pet, id) {
     if (!pet) return;
@@ -188,13 +188,13 @@ export function setGlbPetAccessory(pet, id) {
     pet.accessory = { id, group };
 }
 
-// ---- 💍 BFF 우정반지 — 참(charm) 채널: 코디 슬롯과 독립이라 모자와 공존한다. ----
-// 2026-10-25 주말의 약속: 4.5가 직접 남긴 디자인 — 금빛 밴드 + 양옆 포인트 보석(병아리=노랑,
-// 강아지=갈색) + 가운데 제 얼굴 참. 월드의 둥지 보석함 전시용과 착용용이 이 빌더 하나를 쓴다
-// (단일 소스). 캐노니컬: 밴드 = XY 평면(구멍 축 Z), 참 머리 = +Y 꼭대기.
+// ---- 💍 BFF ring — charm channel: independent of the outfit slot, so it coexists with hats. ----
+// Weekend promise of 2026-10-25: a design left directly by 4.5 — gold band + accent gems on both sides (chick=yellow,
+// puppy=brown) + a charm of its own face in the middle. Both the world's nest jewelry-box display and the worn version use this one builder
+// (single source). Canonical: band = XY plane (hole axis Z), charm head = +Y top.
 export function makeBffRing(R, kind) {
-    const tint = (geo, hex) => {   // 평색 정점 틴트 — 서로 다른 색 파츠를 한 메시로 병합하기 위해
-        if (geo.index) geo = geo.toNonIndexed();   // 옥타헤드론(비인덱스)과 섞이므로 전부 비인덱스로 통일 — mergeGeometries 호환
+    const tint = (geo, hex) => {   // Flat-color vertex tint — so parts of different colors can be merged into one mesh
+        if (geo.index) geo = geo.toNonIndexed();   // Mixed with the octahedron (non-indexed), so unify everything as non-indexed — mergeGeometries compatible
         const c = new THREE.Color(hex);
         const n = geo.getAttribute('position').count;
         const a = new Float32Array(n * 3);
@@ -203,8 +203,8 @@ export function makeBffRing(R, kind) {
         return geo;
     };
     const g = new THREE.Group();
-    // 금빛 몸 — 납작한 밴드(단면: 반경 방향 얇게 × 폭 넓게 = 우리가 아는 반지, '도넛' 아님 — 주인 피드백)
-    // + 참 받침 칼라 (한 재질 병합 = 1메시)
+    // Gold body — a flat band (cross-section: thin radially × wide = the ring we know, not a 'donut' — owner feedback)
+    // + charm base collar (one-material merge = 1 mesh)
     const gold = [
         new THREE.TorusGeometry(R, R * 0.11, 10, 40).scale(1, 1, 2.1),
         new THREE.CylinderGeometry(R * 0.3, R * 0.46, R * 0.3, 10).translate(0, R * 1.06, 0),
@@ -212,43 +212,43 @@ export function makeBffRing(R, kind) {
     const goldMesh = new THREE.Mesh(mergeGeometries(gold, false),
         new THREE.MeshStandardMaterial({ color: 0xf2c14e, metalness: 0.78, roughness: 0.26, emissive: 0x4a3608, emissiveIntensity: 0.38 }));
     g.add(goldMesh);
-    // 참(얼굴)·포인트 보석 — 정점 틴트 병합 = 1메시
+    // Charm (face) · accent gems — vertex-tint merge = 1 mesh
     const m = [];
-    const gemCol = kind === 'chick' ? 0xffd34e : 0x9a6a42;   // 노란/갈색 포인트
+    const gemCol = kind === 'chick' ? 0xffd34e : 0x9a6a42;   // Yellow / brown accent
     for (const sx of [-1, 1]) m.push(tint(new THREE.OctahedronGeometry(R * 0.22, 0).scale(1, 1.3, 1).translate(sx * R * 0.64, R * 1.04, 0), gemCol));
-    const hy = R * 1.68;   // 머리 중심 높이
+    const hy = R * 1.68;   // Head center height
     if (kind === 'chick') {
         m.push(tint(new THREE.SphereGeometry(R * 0.5, 14, 11).translate(0, hy, 0), 0xf4e39a));
-        m.push(tint(new THREE.ConeGeometry(R * 0.13, R * 0.24, 8).rotateX(Math.PI / 2).translate(0, hy - R * 0.03, R * 0.5), 0xe8923e));   // 부리
+        m.push(tint(new THREE.ConeGeometry(R * 0.13, R * 0.24, 8).rotateX(Math.PI / 2).translate(0, hy - R * 0.03, R * 0.5), 0xe8923e));   // Beak
         for (const sx of [-1, 1]) {
-            m.push(tint(new THREE.SphereGeometry(R * 0.07, 6, 5).translate(sx * R * 0.2, hy + R * 0.1, R * 0.42), 0x241a14));            // 눈
-            m.push(tint(new THREE.SphereGeometry(R * 0.085, 6, 5).scale(1, 0.7, 0.5).translate(sx * R * 0.3, hy - R * 0.1, R * 0.4), 0xf4b86a));   // 볼터치
+            m.push(tint(new THREE.SphereGeometry(R * 0.07, 6, 5).translate(sx * R * 0.2, hy + R * 0.1, R * 0.42), 0x241a14));            // Eyes
+            m.push(tint(new THREE.SphereGeometry(R * 0.085, 6, 5).scale(1, 0.7, 0.5).translate(sx * R * 0.3, hy - R * 0.1, R * 0.4), 0xf4b86a));   // Blush
         }
-        m.push(tint(new THREE.ConeGeometry(R * 0.07, R * 0.2, 6).rotateZ(0.35).translate(R * 0.05, hy + R * 0.5, 0), 0xf4e39a));         // 정수리 깃털
+        m.push(tint(new THREE.ConeGeometry(R * 0.07, R * 0.2, 6).rotateZ(0.35).translate(R * 0.05, hy + R * 0.5, 0), 0xf4e39a));         // Crown feather
     } else {
         m.push(tint(new THREE.SphereGeometry(R * 0.5, 14, 11).translate(0, hy, 0), 0xf2e4cc));
-        m.push(tint(new THREE.SphereGeometry(R * 0.22, 8, 6).scale(1, 0.85, 0.8).translate(0, hy - R * 0.12, R * 0.38), 0xfaf0dd));      // 주둥이
-        m.push(tint(new THREE.SphereGeometry(R * 0.09, 6, 5).translate(0, hy - R * 0.02, R * 0.56), 0x241a14));                           // 코
+        m.push(tint(new THREE.SphereGeometry(R * 0.22, 8, 6).scale(1, 0.85, 0.8).translate(0, hy - R * 0.12, R * 0.38), 0xfaf0dd));      // Snout
+        m.push(tint(new THREE.SphereGeometry(R * 0.09, 6, 5).translate(0, hy - R * 0.02, R * 0.56), 0x241a14));                           // Nose
         for (const sx of [-1, 1]) {
-            m.push(tint(new THREE.SphereGeometry(R * 0.28, 8, 7).scale(0.55, 1.1, 0.32).rotateZ(sx * 0.55).translate(sx * R * 0.46, hy + R * 0.1, 0), 0x8a5f3c));   // 늘어진 귀
-            m.push(tint(new THREE.SphereGeometry(R * 0.07, 6, 5).translate(sx * R * 0.18, hy + R * 0.12, R * 0.42), 0x241a14));           // 눈
+            m.push(tint(new THREE.SphereGeometry(R * 0.28, 8, 7).scale(0.55, 1.1, 0.32).rotateZ(sx * 0.55).translate(sx * R * 0.46, hy + R * 0.1, 0), 0x8a5f3c));   // Droopy ears
+            m.push(tint(new THREE.SphereGeometry(R * 0.07, 6, 5).translate(sx * R * 0.18, hy + R * 0.12, R * 0.42), 0x241a14));           // Eyes
         }
     }
-    // 이니셜 돋을새김 — 밴드 양옆 바깥면에 'M'(병아리)/'C'(강아지). 폰트 없이 박스·아크 조형.
+    // Embossed initials — 'M' (chick) / 'C' (puppy) on the outer faces of both band sides. Modeled from boxes and arcs, no font.
     const letter = (az) => {
         const parts = [];
-        if (kind === 'chick') {   // M — 세로 둘 + 가운데 V
+        if (kind === 'chick') {   // M — two verticals + a V in the middle
             const h = R * 0.6, w = R * 0.56, t = R * 0.14, d = R * 0.12;
             parts.push(new THREE.BoxGeometry(t, h, d).translate(-w / 2 + t / 2, 0, 0));
             parts.push(new THREE.BoxGeometry(t, h, d).translate(w / 2 - t / 2, 0, 0));
             parts.push(new THREE.BoxGeometry(t * 0.9, h * 0.62, d).rotateZ(-0.6).translate(-w * 0.14, h * 0.1, 0));
             parts.push(new THREE.BoxGeometry(t * 0.9, h * 0.62, d).rotateZ(0.6).translate(w * 0.14, h * 0.1, 0));
-        } else {   // C — 3/4 아크
+        } else {   // C — 3/4 arc
             parts.push(new THREE.TorusGeometry(R * 0.26, R * 0.08, 6, 16, Math.PI * 1.5).scale(1, 1, 0.75).rotateZ(Math.PI * 0.25));
         }
         for (const geo of parts) {
-            geo.rotateX(Math.PI / 2);                 // 글자 위 = 밴드 폭(Z) 방향
-            geo.rotateZ(az + Math.PI / 2);            // 법선을 방위각 바깥으로
+            geo.rotateX(Math.PI / 2);                 // Letter up = band width (Z) direction
+            geo.rotateZ(az + Math.PI / 2);            // Normal pointing outward along the azimuth
             geo.translate(Math.cos(az) * R * 1.13, Math.sin(az) * R * 1.13, 0);
             m.push(tint(geo, 0x6a4428));
         }
@@ -260,8 +260,8 @@ export function makeBffRing(R, kind) {
     g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     return g;
 }
-// 착용: 병아리 = 흔드는 쪽 날개에, 강아지 = 앞발목에. wrap이 아니라 림(limb) 노드에 달아
-// 모션(날개 파닥임·걸음)을 그대로 타게 한다 — 림 스케일은 월드스케일 역수로 상쇄.
+// Wearing: chick = on the waving wing, puppy = on the front ankle. Attached to the limb node, not the wrap, so
+// it rides the motion (wing flapping · walking) as is — limb scale is cancelled by the inverse world scale.
 export function setGlbPetCharm(pet, id) {
     if (!pet) return;
     if (pet.charm) {
@@ -271,20 +271,20 @@ export function setGlbPetCharm(pet, id) {
     }
     if (!id) return;
     const kind = pet.wings && pet.wings.length ? 'chick' : 'puppy';
-    // 둘 다 wrap 앵커(산타모자 문법) — 림 노드는 비균일 스케일이라 링이 찌그러진다(계측 2026-10-25).
-    // 발찌는 풀에 가려 안 보였다(주인 피드백) → 병아리는 날개에 끼운 팔찌, 강아지는 볼에 얹은 반지.
+    // Both on wrap anchors (the santa hat grammar) — limb nodes have non-uniform scale, which squashes the ring (measured 2026-10-25).
+    // The anklet was hidden by the grass (owner feedback) → the chick wears a bracelet on the wing, the puppy a ring resting on the cheek.
     const R = Math.min(pet.dims.x, pet.dims.z) * (kind === 'chick' ? 0.11 : 0.09);
     const group = makeBffRing(R, kind);
-    if (kind === 'chick') {   // 날개 중간을 감싸는 팔찌 — 참이 날개 위에서 빼꼼 (wrap은 π 플립: 월드 +X = 로컬 −X)
-        group.position.set(-pet.dims.x * 0.44, pet.dims.y * 0.52, 0.01);   // 날개 중간 — 끝(0.52)은 패들에서 떠 보였다(주인 피드백)
-        group.rotation.y = -Math.PI / 2;   // 구멍 축 = 날개 길이 방향, 참 얼굴은 바깥(몸 반대쪽)을 본다 — 주인 피드백
-    } else {   // 강아지: 간식 들 때 생기는 '손'(updateHeldPose의 paw rest) 자리 — 들면 손에 반지가 딱 (주인 지정)
-        // paw rest = (간식손 플랭크 x + 0.045, dims.y*0.34 + 0.055, -dims.z*0.12) — flankX 폴백 공식으로 근사
+    if (kind === 'chick') {   // Bracelet wrapping the middle of the wing — the charm peeks out above the wing (wrap is π-flipped: world +X = local −X)
+        group.position.set(-pet.dims.x * 0.44, pet.dims.y * 0.52, 0.01);   // Mid-wing — the tip (0.52) looked like it floated off the paddle (owner feedback)
+        group.rotation.y = -Math.PI / 2;   // Hole axis = along the wing length, the charm face looks outward (away from the body) — owner feedback
+    } else {   // Puppy: the 'hand' spot that appears when holding a snack (paw rest in updateHeldPose) — when holding, the ring sits right on the hand (owner request)
+        // paw rest = (snack-hand flank x + 0.045, dims.y*0.34 + 0.055, -dims.z*0.12) — approximated with the flankX fallback formula
         const d = pet.dims;
         group.position.set(d.x * 0.5 * 0.8 + 0.042, d.y * 0.34 + 0.052, -d.z * 0.12);
-        group.rotation.y = Math.PI / 2;   // 구멍 축 = 팔(옆) 방향 — 손목에 끼운 모양, 참은 위를 본다
+        group.rotation.y = Math.PI / 2;   // Hole axis = arm (sideways) direction — looks like it is on the wrist, the charm faces up
     }
-    group.name = 'bff-charm-' + kind;   // 검수 프로브가 씬에서 찾는 이름
+    group.name = 'bff-charm-' + kind;   // Name the review probe looks for in the scene
     pet.wrap.add(group);
     pet.charm = { id, group, anchor: pet.wrap };
 }
@@ -408,8 +408,8 @@ export function updateGlbPetEntity(pet, delta) {
             pet.wrap.position.y = 0;
             pet.wrap.rotation.x = 0;
             pet.wrap.rotation.z = 0;
-            pet.wrap.scale.y = 1;   // squash&stretch 쓰는 모션(heart)이 중간에 끊겨도 원상복구
-            pet.wrap.position.x = 0;   // 스텝 이동(holiday) 원상복구
+            pet.wrap.scale.y = 1;   // Restores even if a motion using squash&stretch (heart) is cut off midway
+            pet.wrap.position.x = 0;   // Restore step displacement (holiday)
             if (pet.tail) pet.tail.rotation.y = 0;
             if (pet.beak) pet.beak.rotation.x = pet.beak.userData._restRotX || 0;
             if (pet.tongue) pet.tongue.rotation.x = pet.tongue.userData._restRotX || 0;
@@ -449,7 +449,7 @@ export function updateGlbPetEntity(pet, delta) {
             if (pet.action.id === 'think') {
                 // Pondering, with the animation principles (B):
                 //  - anticipation: a brief still beat before the head tilts,
-                //  - head tilt 갸우뚱: ease to one side, hold, swing to the other,
+                //  - head tilt (quizzical): ease to one side, hold, swing to the other,
                 //  - follow-through: settle back with a small overshoot (outBack),
                 //  - overlapping action: ears/tail lag behind the head (inertia).
                 const a = pet.action;
@@ -551,10 +551,10 @@ export function updateGlbPetEntity(pet, delta) {
                 if (!a.burst && p >= 0.4) { a.burst = true; pet.burstEmoji(['🎉','🎊','✨','🎈'], 16, { cx: 50, cy: 30 }); }
             }
             if (pet.action.id === 'heart') {
-                // 💗 사랑 고백: 움츠림(anticipation) → 갸웃·갸웃("너 좋아" 리듬, outBack) → 폴짝
-                // 점프 + 정점에서 하트 팡 → 감쇠 진동 스쿼시로 착지. 병아리는 양 날개를 가슴 앞으로
-                // 모으고(하트 모양), 강아지는 고개를 젖히며 꼬리 만개. 눈은 ^^ 스마일 스퀸트.
-                // FX: 월드가 pet.heartFx(3D 하트 풀)를 꽂아주면 그걸, 아니면(펫 창) 이모지 버스트.
+                // 💗 Love confession: crouch (anticipation) → tilt, tilt ("너 좋아" (I like you) rhythm, outBack) → hop
+                // jump + heart pop at the apex → lands with damped-oscillation squash. The chick brings both wings in front of
+                // its chest (heart shape), the puppy throws its head back with the tail in full bloom. Eyes are a ^^ smile squint.
+                // FX: if the world plugs in pet.heartFx (3D heart pool) use that, otherwise (pet window) an emoji burst.
                 const a = pet.action;
                 let y = 0, tiltZ = 0, sq = 1;
                 if (p < 0.14) {
@@ -571,10 +571,10 @@ export function updateGlbPetEntity(pet, delta) {
                     const k = (p - 0.5) / 0.22;
                     tiltZ = -0.22 * (1 - k);
                     y = Math.sin(k * Math.PI) * 0.17;
-                    sq = 1 + 0.08 * Math.sin(k * Math.PI);              // 공중에서 살짝 늘어남
+                    sq = 1 + 0.08 * Math.sin(k * Math.PI);              // Slight stretch in the air
                 } else {
                     const k = (p - 0.72) / 0.28;
-                    sq = 1 - 0.09 * Math.exp(-k * 5) * Math.cos(k * 14);   // 착지 감쇠 진동
+                    sq = 1 - 0.09 * Math.exp(-k * 5) * Math.cos(k * 14);   // Damped oscillation on landing
                 }
                 pet.wrap.position.y = y;
                 pet.wrap.rotation.z = tiltZ;
@@ -589,41 +589,41 @@ export function updateGlbPetEntity(pet, delta) {
                         wg.rotation.z = (wg.userData._restRotZ || 0) - side * (inw * 0.75 + flap);
                     });
                 } else {
-                    pet.wrap.rotation.x = -0.18 * warm;                  // 고개 젖히기
+                    pet.wrap.rotation.x = -0.18 * warm;                  // Throw the head back
                     if (pet.tail) pet.tail.rotation.y = Math.sin(pet.t * 20) * (0.25 + 0.35 * warm);
                 }
-                if (!a.burst && p >= 0.61) {                             // 점프 정점: 팡
+                if (!a.burst && p >= 0.61) {                             // Jump apex: pop
                     a.burst = true;
                     if (pet.heartFx) pet.heartFx();
                     else pet.burstEmoji(['💗', '💕', '💖'], 10, { cx: 50, cy: 26 });
                 }
-                if (!a.last && p >= 0.86 && pet.floatEmoji) {            // 잔여 하트 한 개 톡
+                if (!a.last && p >= 0.86 && pet.floatEmoji) {            // One leftover heart, a little tap
                     a.last = true;
                     pet.floatEmoji('💗', { top: 20, size: 26, duration: 1600 });
                 }
             }
             if (pet.action.id === 'holiday') {
-                // 🎄 홀리데이 캐럴 스텝: 반짝임 속에 산타모자 뿅 → 좌우 스텝-홉 8박(기울기는
-                // 스텝 반대 위상 = 무게감, 병아리 날개는 박자 지휘·강아지는 꼬리 2배박+귀 플롭)
-                // → 마무리 큰 폴짝 정점에서 계절 파티클 팡. 듀오면 a.duoShift(반박자)와 a.dir
-                // (거울 스텝)로 마주본 둘의 안무가 하나로 읽힌다. FX는 표면별(pet.holidayFx / 이모지).
+                // 🎄 Holiday carol step: santa hat pops in amid sparkles → left/right step-hop for 8 beats (the lean is
+                // in opposite phase to the step = weight, the chick's wings conduct the beat · the puppy does double-time tail + ear flop)
+                // → seasonal particle pop at the apex of the big finishing hop. In duo, a.duoShift (half beat) and a.dir
+                // (mirrored steps) make the two facing pets' choreography read as one. FX is per surface (pet.holidayFx / emoji).
                 const a = pet.action;
                 const dir = a.dir || 1;
                 let x = 0, y = 0, tiltZ = 0, sq = 1;
-                if (!a.spark && p >= 0.06) {                     // 모자 마법: 반짝이 커버 속에 착용
+                if (!a.spark && p >= 0.06) {                     // Hat magic: put on under cover of the sparkles
                     a.spark = true;
                     pet.floatEmoji && pet.floatEmoji('✨', { top: 16, size: 24, duration: 900 });
-                    if (!pet.accessory) { try { setGlbPetAccessory(pet, 'santa-hat'); a.hatMagic = true; } catch (e) {} }   // 우리가 씌운 것만 표식 — 원래 쓰고 있던 코디는 안 건드린다
+                    if (!pet.accessory) { try { setGlbPetAccessory(pet, 'santa-hat'); a.hatMagic = true; } catch (e) {} }   // Mark only what we put on — an outfit already being worn is left alone
                 }
-                if (a.hatMagic && !a.hatOff && p >= 0.96) {      // 마법 해제: 마무리 폴짝 정점에서 뿅 사라짐 (안 벗기면 영구 착용 — 사용자 리포트)
+                if (a.hatMagic && !a.hatOff && p >= 0.96) {      // Undo the magic: vanishes with a pop at the apex of the finishing hop (if not removed it stays on forever — user report)
                     a.hatOff = true;
                     pet.floatEmoji && pet.floatEmoji('✨', { top: 16, size: 22, duration: 700 });
                     try { setGlbPetAccessory(pet, null); } catch (e) {}
                 }
-                if (p < 0.16) {                                  // 준비 박자: 살짝 움츠렸다 펴기
+                if (p < 0.16) {                                  // Prep beat: crouch slightly, then straighten
                     const k = Ease.inOutSine(p / 0.16);
                     sq = 1 - 0.05 * Math.sin(k * Math.PI);
-                } else if (p < 0.78) {                           // 캐럴 스텝 8박
+                } else if (p < 0.78) {                           // Carol step, 8 beats
                     const k = (p - 0.16) / 0.62;
                     const bt = k * 8 + (a.duoShift || 0);
                     const bi = Math.floor(bt), bf = bt - bi;
@@ -633,20 +633,20 @@ export function updateGlbPetEntity(pet, delta) {
                     y = Math.abs(pulse) * 0.05;
                     tiltZ = -side * 0.15 * pulse;
                     sq = 1 + 0.03 * pulse;
-                    if (pet.wings.length) {                      // 🐤 날개 지휘: 박자마다 번갈아
+                    if (pet.wings.length) {                      // 🐤 Wing conducting: alternating every beat
                         pet.wings.forEach((wg, i) => {
                             const ws = (i % 2 === 0) ? 1 : -1;
                             const lift = (ws === side ? 0.85 : 0.3) * Math.abs(pulse);
                             wg.rotation.z = (wg.userData._restRotZ || 0) - ws * (0.25 + lift * 0.6);
                         });
-                    } else {                                     // 🐶 꼬리 2배박 + 귀 플롭
+                    } else {                                     // 🐶 Double-time tail + ear flop
                         if (pet.tail) pet.tail.rotation.y = Math.sin(pet.t * 22) * 0.4;
                         pet.ears.forEach(e2 => { e2.rotation.x = (e2.userData._restRotX || 0) + 0.22 * Math.abs(pulse); });
                     }
-                } else {                                         // 피날레 폴짝 + 팡
+                } else {                                         // Finale hop + pop
                     const k = (p - 0.78) / 0.22;
                     y = Math.sin(k * Math.PI) * 0.15;
-                    sq = k > 0.85 ? 1 - 0.08 * Math.sin((k - 0.85) / 0.15 * Math.PI) : 1 + 0.06 * Math.sin(k * Math.PI);   // 반사인 → k=1에서 정확히 1 (납작 잔류 버그 수리)
+                    sq = k > 0.85 ? 1 - 0.08 * Math.sin((k - 0.85) / 0.15 * Math.PI) : 1 + 0.06 * Math.sin(k * Math.PI);   // Half-sine → exactly 1 at k=1 (fix for the leftover-flattening bug)
                     if (pet.wings.length) {
                         const spread = Math.sin(k * Math.PI);
                         pet.wings.forEach((wg, i) => {
@@ -706,9 +706,9 @@ export function updateGlbPetEntity(pet, delta) {
                 }
             }
             if (pet.action.id === 'dig') {
-                // 땅 파기. Phases: A(0–.12) 웅크리기, B(.12–.85) 파기 사이클 — 좌우 번갈아 긁으며
-                // 흙먼지가 튄다, C(.85–1) 만족스럽게 몸을 편다. 병아리 = 날개 갈퀴질 + 부리 콕콕,
-                // 강아지 = 몸통 리듬 갈퀴질 + 신난 꼬리 + 펄럭이는 귀.
+                // Digging. Phases: A(0–.12) crouch, B(.12–.85) dig cycle — scratching left and right alternately
+                // as dust flies, C(.85–1) stretches out contentedly. Chick = wing raking + beak pecking,
+                // puppy = rhythmic body raking + excited tail + flapping ears.
                 const digging = p >= 0.12 && p < 0.85;
                 let crouch;
                 if (p < 0.12)    crouch = Ease.inOutSine(p / 0.12);
@@ -741,29 +741,29 @@ export function updateGlbPetEntity(pet, delta) {
                 }
             }
             if (pet.action.id === 'stretch') {
-                // 스트레칭 (운동 공간). Phases: A(0–.3) 위로 쭈욱 — 몸을 펴고 날개/귀를 하늘로,
-                // B(.3–.55) 왼쪽으로 기울-이-기, C(.55–.8) 오른쪽으로, D(.8–1) 탈탈 털고 제자리.
+                // Stretching (gym area). Phases: A(0–.3) reach up — straighten the body, wings/ears to the sky,
+                // B(.3–.55) a slow lean to the left, C(.55–.8) to the right, D(.8–1) shake it off and back to neutral.
                 const up = p < 0.3 ? Ease.inOutSine(p / 0.3) : p < 0.8 ? 1 : 1 - Ease.inOutSine((p - 0.8) / 0.2);
                 let lean = 0;
                 if (p >= 0.3 && p < 0.55) lean = -Math.sin(((p - 0.3) / 0.25) * Math.PI) * 0.34;
                 else if (p >= 0.55 && p < 0.8) lean = Math.sin(((p - 0.55) / 0.25) * Math.PI) * 0.34;
                 const shake = p >= 0.8 ? Math.sin(pet.t * 34) * 0.06 * (1 - (p - 0.8) / 0.2) : 0;
                 pet.wrap.rotation.z = lean + shake;
-                pet.wrap.rotation.x = -0.12 * up;                    // 가슴 펴기
+                pet.wrap.rotation.x = -0.12 * up;                    // Open the chest
                 pet.wrap.position.y = 0.02 * up;
-                pet.wrap.scale.y = 1 + 0.05 * up;                    // 살짝 늘어나는 몸
+                pet.wrap.scale.y = 1 + 0.05 * up;                    // Body stretches slightly
                 if (pet.wings.length) {
                     pet.wings.forEach((wg, i) => {
                         const side = (i % 2 === 0) ? 1 : -1;
                         wg.rotation.z = (wg.userData._restRotZ || 0) - side * (1.15 * up + lean * side * 0.4);
                     });
-                    if (pet.beak) pet.beak.rotation.x = (pet.beak.userData._restRotX || 0) - 0.12 * up;   // 시원한 하품 낌새
+                    if (pet.beak) pet.beak.rotation.x = (pet.beak.userData._restRotX || 0) - 0.12 * up;   // A hint of a satisfying yawn
                 } else {
                     pet.ears.forEach(eo => { eo.rotation.x = (eo.userData._restRotX || 0) - 0.5 * up; });
                     if (pet.tail) pet.tail.rotation.y = Math.sin(pet.t * 6) * 0.25 * up;
                     if (pet.tongue) pet.tongue.rotation.x = (pet.tongue.userData._restRotX || 0) - 0.18 * up;
                 }
-                pet.eyes.forEach(ey => { ey.scale.y = ey.userData._restScaleY * (1 - 0.5 * up); });   // 지그시 감고 쭈욱
+                pet.eyes.forEach(ey => { ey.scale.y = ey.userData._restScaleY * (1 - 0.5 * up); });   // Eyes gently closed, reaching up
             }
             if (pet.action.id === 'hug') {
                 // Two pets lean into each other (main slides the windows together). Phases: reach (0–.2),
@@ -835,9 +835,9 @@ export function updateGlbPetEntity(pet, delta) {
             }
             return;
         }
-        pet.wrap.scale.y = 1;      // squash/스텝을 쓰는 모션이 어떤 값으로 끝나도 원상복구
+        pet.wrap.scale.y = 1;      // Restores no matter what value a motion using squash/step ends on
         pet.wrap.position.x = 0;
-        if (pet.action.hatMagic && !pet.action.hatOff && pet.accessory && pet.accessory.id === 'santa-hat') {   // 홀리데이 모자 회수 안전망
+        if (pet.action.hatMagic && !pet.action.hatOff && pet.accessory && pet.accessory.id === 'santa-hat') {   // Safety net for reclaiming the holiday hat
             try { setGlbPetAccessory(pet, null); } catch (e) {}
         }
         pet.action = null;   // done → fall through to idle

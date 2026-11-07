@@ -1,4 +1,4 @@
-// 푸드 랩 헤드리스 샷 — world.html?foodlab 을 띄워 9종 온전 모델 격자를 PNG로.
+// Food lab headless shot — open world.html?foodlab and capture the grid of 9 intact models as PNG.
 import http from 'http'; import fs from 'fs'; import path from 'path'; import { fileURLToPath } from 'url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', '..');
 const REPO = '/Users/mini/Downloads/super-agent-party-main';
@@ -24,7 +24,7 @@ const r = await page.evaluate(() => {
     const L = window.__foodlab; if (!L) return 'no __foodlab';
     L.controls.target.set(2.3, 18.8, 0); L.camera.position.set(2.3, 18.8, 8.4); L.controls.update();
     L.renderer.render(L.scene, L.camera);
-    // 병합 실패(보이지 않는 음식) 감지: foodlab이 scene에 추가한 Mesh 수 (9×3=27 기대)
+    // Detect merge failure (invisible food): number of Meshes foodlab added to the scene (expect 9×3=27)
     let meshes = 0; L.scene.traverse((o) => { if (o.isMesh && o.geometry && o.position.y > 15) meshes++; });
     return 'visible food meshes(y>15)=' + meshes + ' (expect 27)';
 });

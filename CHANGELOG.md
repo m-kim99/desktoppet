@@ -5,6 +5,17 @@ Patch notes go here — newest on top.
 
 ## 미출시
 
+### Docs (🌐 코드 주석 영문화 — 46개 파일, 5,467개 주석)
+- 한글 주석·독스트링을 전부 영어로 번역(JS/MJS 42개 + Python 3개 + index.html HTML 주석 6개). 원문은 git 이력에
+  남으므로 별도 백업 없음(주인 지정). 추출은 파서 기반 — JS는 acorn `onComment`, Python은 tokenize(COMMENT)+ast
+  (독스트링) — 이라 문자열 안의 `//`·한글 UI 문구·펫 대사·LLM 프롬프트는 구조적으로 대상이 아니다. 로케일
+  (`ko-KR.js`)·디자인 스펙 HTML·CHANGELOG·PATCHING-GUIDE 같은 문서는 범위 밖.
+- 게임 내 문구·사용자 리포트를 인용한 주석 50곳은 한글 원문 + 영어 설명 병기로 유지(예: `'하선' (disembark)`).
+- **무변경 증명**: HEAD 대비 JS 42개 파일의 주석 제외 토큰열 동일(변경 0), Python AST(독스트링 제외) 동일.
+  스모크 15/15 + 행동·이불·반지 E2E ALL PASS. 함정 기록: 파이썬 문자 오프셋을 JS(UTF-16)로 치환하면 아스트랄
+  이모지마다 어긋난다 — 치환기의 원문 일치 검사가 153건을 건너뛰어 사고 없이 잡았고 파이썬 치환기로 재적용.
+
+
 ### Docs (📘 README 영문화)
 - `README.md`를 영어로 전면 번역(구조 1:1, 상단에 한국어판 링크). 기존 한글 원문은 `README_KO.md`로 백업
   (README_JA/ZH 관례). 영문판은 낡은 수치만 현재 값으로 갱신 — world.js 28,687→30,287줄, 포크 이후 변경

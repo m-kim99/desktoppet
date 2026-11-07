@@ -5153,13 +5153,13 @@ let vue_methods = {
     t(key) {
       return this.translations[this.currentLanguage][key] || this.translations[this.currentLanguage]['en-US'] || key;
     },
-    // 🐾 바로가기: 월드 펫 성격 다이얼로그를 열고 편집 버퍼를 프리필.
+    // 🐾 Shortcut: open the world pet personality dialog and prefill the edit buffer.
     openWorldPersonaDialog() {
       this.showWorldPersonaDialog = true;
       this.loadWorldPersona();
     },
-    // 🌏 편집 버퍼(worldEdit)에 현재 유효 텍스트를 채우고 기본값(정규화 비교용)을 받아둔다.
-    // worldConfig(저장되는 오버라이드)는 여기서 건드리지 않음 — 열기만 해도 굳던 문제 방지.
+    // 🌏 Fill the edit buffer (worldEdit) with the currently effective text and fetch the defaults (for normalized comparison).
+    // worldConfig (the saved override) is not touched here — prevents the bug where merely opening the dialog froze the value.
     async loadWorldPersona() {
       try {
         const r = await fetch('/api/world_persona');
@@ -5168,9 +5168,9 @@ let vue_methods = {
         this.worldPersonaDefaults = data.defaults || {};
         const eff = data.effective || {};
         for (const k of Object.keys(eff)) this.worldEdit[k] = eff[k];
-      } catch (e) { /* 백엔드 없으면 편집 버퍼 비어있음 */ }
+      } catch (e) { /* No backend: edit buffer stays empty */ }
     },
-    // 편집 박스가 바뀔 때: 기본값과 같으면 오버라이드를 비우고(=서버 상수 사용), 다르면 오버라이드로 저장.
+    // When the edit box changes: if equal to the default, clear the override (= use server constant); otherwise save as override.
     saveWorldPersona() {
       for (const k of Object.keys(this.worldEdit)) {
         const v = (this.worldEdit[k] || '');
@@ -5179,8 +5179,8 @@ let vue_methods = {
       }
       this.autoSaveSettings();
     },
-    // 💾 백업 워치독 — 마지막 자동 백업이 2일 넘게 없으면 홈 카드에 조용한 배지 (토스트 금지 원칙).
-    // 상태를 못 읽으면(백엔드 다운 등) 배지를 지운다 — 배지는 확실할 때만 말한다.
+    // 💾 Backup watchdog — if no auto backup for over 2 days, show a quiet badge on the home card (no-toast principle).
+    // If the status can't be read (backend down, etc.), clear the badge — the badge only speaks when certain.
     async checkWorldBackupStatus() {
       try {
         const res = await fetch('/api/world_backup_status');
@@ -5193,15 +5193,15 @@ let vue_methods = {
         }
       } catch (e) { this.worldBackupStale = null; }
     },
-    // 💾 월드 데이터(배치·일기·소원·꽃·과일·펫 대화기억 등)를 zip 하나로 내려받는다 — 맥 교체·재설치 대비.
+    // 💾 Download world data (layout, diary, wishes, flowers, fruit, pet conversation memory, etc.) as one zip — for Mac replacement / reinstall.
     worldBackup() {
       const a = document.createElement('a');
-      a.href = '/api/world_backup';   // Content-Disposition: attachment → 창 이탈 없이 다운로드
+      a.href = '/api/world_backup';   // Content-Disposition: attachment → download without leaving the window
       document.body.appendChild(a);
       a.click();
       a.remove();
     },
-    // 📥 백업 zip을 골라 복원한다. 파일 입력을 즉석에서 만들어 POST.
+    // 📥 Pick a backup zip and restore it. Creates a file input on the fly and POSTs.
     worldRestore() {
       const input = document.createElement('input');
       input.type = 'file';
@@ -5220,7 +5220,7 @@ let vue_methods = {
       };
       input.click();
     },
-    // VRM 데스크톱 펫 소환/숨김 전역 단축키를 (재)등록. 설정 변경 시에도 호출.
+    // (Re)register the global shortcut for summoning/hiding the VRM desktop pet. Also called on settings change.
     async applyVrmVisibilityShortcuts() {
       if (!this.isElectron || !window.electronAPI?.registerVrmShowShortcut) return;
       const showKey = (this.VRMConfig && this.VRMConfig.showPetHotkey) || 'F14';
@@ -10453,7 +10453,7 @@ stopTTSActivities() {
       name: '',
       windowWidth: 540,
       windowHeight: 960,
-      selectedModelId: 'chick', // 기본 펫: 병아리 (앨리스·밥 제거됨)
+      selectedModelId: 'chick', // Default pet: chick (Alice/Bob removed)
       selectedMotionIds: [],
     };
     this.showAddAppearanceDialog = true;

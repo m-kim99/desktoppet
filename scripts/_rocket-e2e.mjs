@@ -1,5 +1,5 @@
-// 🚀 별똥호 E2E — 탑승→카운트다운→발사→우주→역추진 착륙 전 구간 헤드리스 검증 + 스크린샷.
-// world-smoke 하네스 축소판. 임시 스크립트 (커밋 후 유지 여부는 선택).
+// 🚀 Byeolttong rocket E2E — headless verification of the full run: board→countdown→launch→space→retro-burn landing + screenshots.
+// Scaled-down version of the world-smoke harness. Temporary script (keeping it after commit is optional).
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
@@ -33,9 +33,9 @@ await page.waitForTimeout(9000);
 const st = () => page.evaluate(() => window.__worldDev.rocketState());
 const log = (tag, o) => console.log(tag.padEnd(10), JSON.stringify(o));
 
-// 1) 병아리 빙의 → 패드로 tp → 탑승
+// 1) Possess the chick → tp to the pad → board
 await page.evaluate(() => {
-    [...document.querySelectorAll('[title]')].find((b) => (b.title || '').includes('병아리 조종하기')).click();   // 독 버튼은 div — 서랍이 닫혀 있어도 프로그램 click은 onclick을 태운다
+    [...document.querySelectorAll('[title]')].find((b) => (b.title || '').includes('병아리 조종하기')).click();   // Dock buttons are divs — a programmatic click fires onclick even with the drawer closed
 });
 await page.waitForTimeout(600);
 await page.evaluate(() => { window.__worldDev.tp(2, -9.5); });
@@ -49,12 +49,12 @@ await page.waitForTimeout(400);
 log('boarded', await st());
 await page.screenshot({ path: path.join(SHOT, 'rk1-countdown.png') });
 
-// 2) 발사까지 대기 (count 5s + ignite 1.15s)
+// 2) Wait for launch (count 5s + ignite 1.15s)
 await page.waitForTimeout(6600);
 log('liftoff', await st());
 await page.screenshot({ path: path.join(SHOT, 'rk2-liftoff.png') });
 
-// 3) 우주 진입 폴링 (상승 ~4s)
+// 3) Poll for entering space (ascent ~4s)
 let s = null;
 for (let i = 0; i < 30; i++) {
     await page.waitForTimeout(500);
@@ -62,17 +62,17 @@ for (let i = 0; i < 30; i++) {
     if (s.mode === 'space') break;
 }
 log('space', s);
-await page.waitForTimeout(2500);   // spaceF 만개 + 별 뜨는 시간
+await page.waitForTimeout(2500);   // Time for spaceF to fully bloom + stars to appear
 log('spaceMid', await st());
 await page.screenshot({ path: path.join(SHOT, 'rk3-space.png') });
 
-// 4) 궤도 반 바퀴 지점 한 컷 더 (약 29초)
+// 4) One more shot at the half-orbit point (about 29s)
 await page.waitForTimeout(27000);
 log('halfLap', await st());
 await page.screenshot({ path: path.join(SHOT, 'rk4-space-half.png') });
 
-// 5) 착륙까지 폴링 (남은 궤도 ~29s + 하강 ~12s)
-for (let i = 0; i < 300; i++) {   // 랜덤 코스(플라이바이 포함)라 최대 ~150s
+// 5) Poll until landing (remaining orbit ~29s + descent ~12s)
+for (let i = 0; i < 300; i++) {   // Random course (incl. flyby), so up to ~150s
     await page.waitForTimeout(500);
     s = await st();
     if (s.mode === 'parked' && !s.riding) break;
@@ -81,12 +81,12 @@ log('landed', s);
 await page.waitForTimeout(800);
 await page.screenshot({ path: path.join(SHOT, 'rk5-landed.png') });
 
-// 6) 판정
+// 6) Verdict
 const who = await page.evaluate(() => window.__worldDev.who());
 const ctrl = await page.evaluate(() => window.__worldDev.ctrl());
 console.log('possessed:', who, JSON.stringify(ctrl));
 console.log('errors:', errs.length ? errs : 'none');
-const pass = s && s.mode === 'parked' && !s.riding && errs.length === 0;   // lap 고정 어서션 폐기 — 코스가 랜덤
+const pass = s && s.mode === 'parked' && !s.riding && errs.length === 0;   // Fixed-lap assertion dropped — the course is random
 console.log(pass ? '===== ROCKET E2E PASS =====' : '===== ROCKET E2E FAIL =====');
 await browser.close();
 server.close();

@@ -52,7 +52,7 @@ document.body.classList.add(isElectron ? 'electron' : 'web');
 const renderer = new THREE.WebGLRenderer();
 // Add performance-optimization settings
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(Math.max(1, window.devicePixelRatio || 1), 2));   // cap 2x — 3x 패널에서도 레티나 이상은 낭비 (발열)
+renderer.setPixelRatio(Math.min(Math.max(1, window.devicePixelRatio || 1), 2));   // cap 2x — even on 3x panels, anything beyond retina is waste (heat)
 renderer.setClearColor(0x00000000, 0);
 renderer.xr.enabled = true;
 // Use fetch to query the value of /cur_language
@@ -91,7 +91,7 @@ async function fetchVRMConfig() {
             name: 'default',
             enabledExpressions: false,
             enabledMotions: false,
-            selectedModelId: 'chick', // 기본 펫: 병아리 (앨리스·밥 제거됨)
+            selectedModelId: 'chick', // Default pet: chick (Alice and Bob removed)
             defaultModels: [], // Store the default models
             userModels: [],     // Store user-uploaded models
             defaultMotions: [], // Store the default motions
@@ -243,8 +243,8 @@ const light = new THREE.DirectionalLight( 0xffffff, 1.4 );  // key light (was 2.
 light.position.set( 1, 2.5, 2 ).normalize();   // broad top-front key light; y nudged slightly down (was 3) to lift the under-eye/mouth shadow
 light.castShadow = true;                       // Key
 light.shadow.mapSize.set( 2048, 2048 );        // Precision
-light.shadow.radius = 8;                        // PCFSoft 블러 — 월드처럼 경계 흐린 은은한 그림자(얼굴 자기그림자 완화)
-light.shadow.bias  = -0.0003;                   // 소프트 섀도 섀도우 액네 방지
+light.shadow.radius = 8;                        // PCFSoft blur — soft shadows with blurred edges like the world (eases facial self-shadowing)
+light.shadow.bias  = -0.0003;                   // Soft shadow, prevents shadow acne
 
 // Make the shadow camera cover the area near the character (tune to your scene size)
 const camSize = 4;
@@ -309,17 +309,17 @@ const lookAtTarget = new THREE.Object3D();
 camera.add( lookAtTarget );
 
 // Add ambient light to soften the overall look
-const ambientLight = new THREE.AmbientLight( 0xffffff, 0.7 );  // 채움광 — 그림자를 옅고 은은하게(0.55→0.7, 월드 hemi 톤에 맞춤)
+const ambientLight = new THREE.AmbientLight( 0xffffff, 0.7 );  // Fill light — makes shadows lighter and softer (0.55→0.7, matched to the world's hemi tone)
 scene.add( ambientLight );
 
 // gltf and vrm
 let currentVrm = undefined;
 let glbPet = null;                          // Non-VRM .glb "pet" model (no humanoid rig / morphs)
-let currentGlbUrl = null;                   // 현재 로드된 .glb 펫 URL — 캐릭터 전환 시 갱신(채팅 라우팅용; vrmPath const는 초기값이라 stale)
+let currentGlbUrl = null;                   // URL of the currently loaded .glb pet — updated on character switch (for chat routing; the vrmPath const is the initial value and goes stale)
 let currentVrmWrapper = new THREE.Group(); // New: a group used to wrap the VRM
 scene.add(currentVrmWrapper);              // New: add it to the scene from the start
 
-let idleAnimationManager = null;   // VRM 유휴 애니 시스템 잔재 — 항상 null (가드 참조용, P3에서 정리)
+let idleAnimationManager = null;   // Remnant of the VRM idle animation system — always null (referenced by guards, to be cleaned up in P3)
 
 function stopChunkAnimation(chunkId) {
     const chunkState = chunkAnimations.get(chunkId);
@@ -413,7 +413,7 @@ function startChunkAnimation(chunkId, chunkState) {
     }
 
     function animateChunk() {
-        vrmWake();   // 말하는 동안(립싱크 재생 중)은 60fps 유지
+        vrmWake();   // Keep 60fps while speaking (lip sync playing)
         const currentState = chunkAnimations.get(chunkId);
         if (!currentState || !currentState.isPlaying) {
             // Zero it out when stopped
@@ -595,7 +595,7 @@ async function startLipSyncForChunk(data) {
 
         // 9. Animation loop (the core algorithm)
         function animateChunk() {
-            vrmWake();   // 말하는 동안(립싱크 재생 중)은 60fps 유지
+            vrmWake();   // Keep 60fps while speaking (lip sync playing)
             const currentState = chunkAnimations.get(chunkId);
             if (!currentState || !currentState.isPlaying) {
                 if (currentVrm && currentVrm.expressionManager) {
@@ -696,7 +696,7 @@ async function loadGlbPet(url) {
     // Clear any existing VRM/GLB so only one pet is active
     if (currentVrm) { try { currentVrmWrapper.remove(currentVrm.scene); } catch (e) {} currentVrm = undefined; }
     disposeGlbPet();
-    currentGlbUrl = url;   // 전환 후에도 현재 펫(병아리/강아지)을 정확히 알 수 있게
+    currentGlbUrl = url;   // So the current pet (chick/puppy) is known precisely even after a switch
 
     // On-screen size scales with the window's pixel height (fixed camera FOV), so the same model
     // looks bigger in a taller window. Normalize against a reference height so the main pet and a
@@ -704,8 +704,8 @@ async function loadGlbPet(url) {
     const baseTargetH = 0.455;     // look at the reference height
     const REF_WIN_H = 726;         // friend window height — match everyone to this on-screen size
     const winH = window.innerHeight || REF_WIN_H;
-    // 데탑 펫 크기: 강아지는 원래 크기 유지(×1.0), 병아리는 그 90%(×0.9)로 둔다. 월드 비율(0.8)로 하면
-    // 병아리가 너무 작아서, 데탑에서만 살짝 크게 잡은 사용자 선호값 — 병아리:강아지 = 0.9. (world.js/월드와 별개.)
+    // Desktop pet size: the puppy keeps its original size (×1.0), the chick is set to 90% of that (×0.9). With the world ratio (0.8)
+    // the chick is too small, so this is the user-preferred value, slightly larger on desktop only — chick:puppy = 0.9. (Separate from world.js/the world.)
     const ratio = /chick/i.test(url) ? 0.9 : 1;
     const pet = await createGlbPetEntity(url, { targetHeight: baseTargetH * ratio * REF_WIN_H / winH, parent: currentVrmWrapper });
 
@@ -737,7 +737,7 @@ async function loadGlbPet(url) {
     }
     pet.setThink = (on) => { thinkEl.style.opacity = on ? '0.95' : '0'; };
 
-    // "파이팅!" cheer text shown while the cheer motion plays (no bubble; color randomized each play).
+    // "파이팅!" (Go for it!) cheer text shown while the cheer motion plays (no bubble; color randomized each play).
     let cheerEl = document.getElementById('glb-cheer');
     if (!cheerEl) {
         cheerEl = document.createElement('div');
@@ -767,18 +767,18 @@ async function loadGlbPet(url) {
 
     glbPet = pet;
     glbPet.action = { id: 'wave', t: 0 };   // greet when the character appears / is summoned
-    applyBffRing();   // 💍 월드에서 우정반지를 교환했으면 데탑 창의 펫도 끼고 있다
+    applyBffRing();   // 💍 If the BFF rings were exchanged in the world, the desktop window's pet wears one too
     if (typeof hideModelSwitchingIndicator === 'function') { try { hideModelSwitchingIndicator(); } catch (e) {} }
 }
-// 💍 우정반지 동기 — 월드 창과 localStorage(world-rings)를 공유하므로, 교환 순간 storage
-// 이벤트로 이 창의 펫에도 실시간으로 끼워진다 (같은 오리진의 두 창 문법).
+// 💍 BFF ring sync — shares localStorage (world-rings) with the world window, so at the moment of exchange the storage
+// event puts it on this window's pet in real time too (the two-windows-same-origin grammar).
 function applyBffRing() {
     try {
         const st = JSON.parse(localStorage.getItem('world-rings') || 'null');
         if (!glbPet) return;
         const kind = glbPet.wings && glbPet.wings.length ? 'chick' : 'puppy';
         const storedArr = st ? (Array.isArray(st.stored) ? st.stored : (st.stored ? ['chick', 'puppy'] : [])) : null;
-        const want = !!(storedArr && !storedArr.includes(kind));   // 제 반지가 둥지에 보관 중이면 이 창의 펫도 벗는다
+        const want = !!(storedArr && !storedArr.includes(kind));   // If its ring is stored in the nest, this window's pet takes it off too
         if (want && !glbPet.charm) setGlbPetCharm(glbPet, 'bff-ring');
         if (!want && glbPet.charm) setGlbPetCharm(glbPet, null);
     } catch (e) {}
@@ -857,7 +857,7 @@ if (window.electronAPI && window.electronAPI.onVrmPlayCue) {
         glbPet.action.cueT = 0;
     });
 }
-// 메인 펫이 캐릭터를 바꾸면 이 친구 창은 '반대' 펫으로 따라 전환한다 (메인은 무시).
+// When the main pet switches character, this friend window follows by switching to the 'opposite' pet (main ignores this).
 if (window.electronAPI && window.electronAPI.onVrmFriendFollow) {
     window.electronAPI.onVrmFriendFollow(({ modelId } = {}) => {
         if (!modelId || windowName === 'default') return;
@@ -1001,26 +1001,26 @@ function adjustSubtitleSize() {
 const clock = new THREE.Clock();
 clock.start();
 
-// ♡ 프레임 페이싱 (world.js와 같은 원칙): 데스크톱 펫 창은 하루 종일 떠 있는데, rAF를 그대로
-// 두면 ProMotion 패널에서 120fps로 돈다. 활동 중(포인터·모션 재생·말하기·XR)에만 60fps,
-// 활동 직후 idle은 30fps, 30초 넘게 조용하면 15fps — 작은 창의 숨쉬기·깜빡임은 15fps로도
-// 충분히 읽히고, 하루 종일 떠 있는 창이라 이 바닥값이 상시 발열을 결정한다.
+// ♡ Frame pacing (same principle as world.js): the desktop pet window stays up all day, and left as is,
+// rAF runs at 120fps on ProMotion panels. 60fps only while active (pointer · motion playback · speaking · XR),
+// idle right after activity is 30fps, quiet for over 30s is 15fps — the small window's breathing and blinking read
+// fine even at 15fps, and since the window is up all day this floor decides the constant heat.
 let vrmLastFrameMs = 0;
 let vrmLastActiveMs = performance.now();
-let vrmLastBusyMs = performance.now();   // vrmActive가 마지막으로 참이었던 시각 — 15fps 티어 판정
+let vrmLastBusyMs = performance.now();   // Time vrmActive was last true — for the 15fps tier decision
 function vrmWake() { vrmLastActiveMs = performance.now(); }
 for (const ev of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart']) {
     window.addEventListener(ev, vrmWake, { passive: true, capture: true });
 }
 function vrmActive() {
-    if (renderer.xr.isPresenting || isRenderMode) return true;   // XR·파노라마 캡처는 항상 풀 페이스
-    if (glbPet && glbPet.action) return true;                    // GLB 펫 모션 재생 중 (춤·인사…)
-    return performance.now() - vrmLastActiveMs < 4000;           // 입력·말하기 후 4초의 여운
+    if (renderer.xr.isPresenting || isRenderMode) return true;   // XR and panorama capture always run at full pace
+    if (glbPet && glbPet.action) return true;                    // GLB pet motion playing (dance · greeting …)
+    return performance.now() - vrmLastActiveMs < 4000;           // 4s afterglow after input / speaking
 }
 function vrmFrameIntervalMs() {
     const now = performance.now();
     if (vrmActive()) { vrmLastBusyMs = now; return 15.5; }
-    return now - vrmLastBusyMs > 30000 ? 65 : 31;   // 65 < 8.3×8=66.4 / 16.7×4=66.7 — 페이싱 균일
+    return now - vrmLastBusyMs > 30000 ? 65 : 31;   // 65 < 8.3×8=66.4 / 16.7×4=66.7 — uniform pacing
 }
 let currentLookYaw = 0;   // Left/right yaw (Y axis)
 let currentLookPitch = 0; // Up/down pitch (X axis)
@@ -1031,8 +1031,8 @@ let debugSphere, debugCamera, debugControls;
 function animate() {
     requestAnimationFrame(animate);
 
-    // 60/30/15fps 게이트 — 스킵한 시간은 다음 프레임 delta에 흡수되고, clamp가 오래 멈춘 뒤의
-    // 물리 폭주를 막는다 (기존엔 클램프 없이도 매 프레임이라 문제가 없었을 뿐).
+    // 60/30/15fps gate — skipped time is absorbed into the next frame's delta, and the clamp prevents physics
+    // blow-up after a long pause (previously it was every frame, so it was fine even without a clamp).
     const nowMs = performance.now();
     if (nowMs - vrmLastFrameMs < vrmFrameIntervalMs()) return;
     vrmLastFrameMs = nowMs;
@@ -1040,8 +1040,8 @@ function animate() {
     const deltaTime = Math.min(clock.getDelta(), 0.1);
     updatePointerLockMovement(deltaTime);
     const shouldSkipModelUpdate = isModelHiddenByHover && isAutoHideEnabled;
-    // 호버 자동 숨김 중엔 캔버스가 CSS opacity 0 — 보이지 않는 프레임은 그리지도 않는다.
-    // (렌더 모드·XR은 화면 밖 소비자가 있으니 예외.)
+    // During hover auto-hide the canvas is at CSS opacity 0 — invisible frames are not even drawn.
+    // (Render mode and XR are exceptions, since they have off-screen consumers.)
     if (shouldSkipModelUpdate && !isRenderMode && !renderer.xr.isPresenting) return;
 
     if (glbPet && !shouldSkipModelUpdate) updateGlbPetEntity(glbPet, deltaTime);
@@ -1490,10 +1490,10 @@ function setupTextInteraction() {
     async function sendTextInputMessage() {
         const text = textInputField.value.trim();
         if (!text) return;
-        // 데스크톱 GLB 펫(병아리/강아지)은 월드의 그 펫 두뇌(world_chat)로 직접 답한다 — TTS·메인앱
-        // 중계 없이 자기 성격·기억으로 답하고 말풍선에 띄운다. 월드 장면이 없으니 '데스크톱 컨텍스트'를 준다.
-        // (기억은 월드와 공유: pet 키가 곧 스토어 키. 나중에 분리하려면 이 키만 갈면 됨.)
-        const petUrl = currentGlbUrl || vrmPath;   // 캐릭터 전환 반영(메인이 강아지일 수도 있음)
+        // Desktop GLB pets (chick/puppy) answer directly with that pet's world brain (world_chat) — no TTS or main-app
+        // relay; they answer with their own personality and memory and show it in a speech bubble. With no world scene, a 'desktop context' is given.
+        // (Memory is shared with the world: the pet key is the store key. To split later, just swap this key.)
+        const petUrl = currentGlbUrl || vrmPath;   // Reflect character switch (main may be the puppy)
         const isGlbPet = !!glbPet && /chick|puppy/i.test(petUrl);
         if (isGlbPet) {
             textInputField.value = '';
@@ -1505,7 +1505,7 @@ function setupTextInteraction() {
                 if (!msg) return;
                 renderSubtitleUI(msg);
                 if (subtitleElement) subtitleElement.style.opacity = '1';
-                vrmLastSpeakTs = Date.now();   // 혼잣말(idle talk)이 바로 덮어쓰지 않게 활동으로 기록
+                vrmLastSpeakTs = Date.now();   // Record as activity so idle talk does not overwrite it right away
                 clearTimeout(textReplyHideTimer);
                 textReplyHideTimer = setTimeout(() => { if (subtitleElement) subtitleElement.style.opacity = '0'; }, Math.min(14000, 4000 + msg.length * 90));
             };
@@ -1515,14 +1515,14 @@ function setupTextInteraction() {
                     body: JSON.stringify({ pet: petName, text, snapshot: deskCtx, events: '' }),
                 });
                 if (!res.ok) throw new Error(String(res.status));
-                const reply = String((await res.json()).reply || '').replace(/<[^>]+>/g, '').trim();   // 월드 행동 태그 제거 후 표시
+                const reply = String((await res.json()).reply || '').replace(/<[^>]+>/g, '').trim();   // Display after stripping world action tags
                 showBubble(reply || '…');
             } catch (e) {
                 showBubble('으엥, 대답이 안 나와… 메인 모델 설정을 확인해줘 💦');
             }
             return;
         }
-        // (VRM 아바타 등) 기존 경로: 메인 앱 채팅 파이프라인에 위임
+        // (VRM avatars, etc.) existing path: delegate to the main app chat pipeline
         if (pttMainWs && pttMainWs.readyState === WebSocket.OPEN) {
             pttMainWs.send(JSON.stringify({ type: "set_user_input", data: { text: text } }));
             setTimeout(() => {
@@ -2474,8 +2474,8 @@ function addcontrolPanel() {
                     const res = await fetch('/get_default_vrm_models');
                     const models = ((await res.json()).models) || [];
                     if (models.length === 0) return;
-                    // 현재(전환 반영) 메인 펫 기준으로 '다른' 펫을 친구로 소환 — 영속 selectedModelId는
-                    // 프론트 전환을 안 반영해 stale(메인=강아지인데 또 강아지 소환하던 버그).
+                    // Summon the 'other' pet as friend relative to the current (post-switch) main pet — the persisted selectedModelId
+                    // does not reflect frontend switches and goes stale (bug where main=puppy summoned another puppy).
                     const curId = /puppy/i.test(currentGlbUrl || '') ? 'puppy' : 'chick';
                     const friend = models.find(m => m.id !== curId) || models[0];
                     await window.electronAPI.summonFriend({ modelId: friend.id });
@@ -2533,7 +2533,7 @@ function addcontrolPanel() {
                 item.addEventListener('click', (e) => { e.stopPropagation(); playGlbMotion(m.id); closeMotionMenu(); });
                 motionMenu.appendChild(item);
             });
-            // 코디 items after the motions (divider above the first): click toggles wear/remove.
+            // Outfit items after the motions (divider above the first): click toggles wear/remove.
             GLB_ACCESSORIES.forEach((a, i) => {
                 const worn = !!(glbPet && glbPet.accessory && glbPet.accessory.id === a.id);
                 const item = document.createElement('div');
@@ -2833,7 +2833,7 @@ if (windowName === 'default') {
             item.addEventListener('click', (e) => { e.stopPropagation(); playGlbMotion(m.id); fCloseMenu(); });
             fMenu.appendChild(item);
         });
-        // 코디 items after the motions (divider above the first): click toggles wear/remove.
+        // Outfit items after the motions (divider above the first): click toggles wear/remove.
         GLB_ACCESSORIES.forEach((a, i) => {
             const worn = !!(glbPet && glbPet.accessory && glbPet.accessory.id === a.id);
             const item = document.createElement('div');
@@ -2857,7 +2857,7 @@ if (windowName === 'default') {
     document.addEventListener('pointerdown', (e) => { if (fMenuOpen && !fMotion.contains(e.target) && !fMenu.contains(e.target)) fCloseMenu(); });
 
     // --- chat button: talk to THIS friend (its own text input; sendTextInputMessage routes to
-    // world_chat with this window's pet = 강아지). 메인 펫과 대칭이 되도록 친구도 채팅 버튼을 가진다.
+    // world_chat with this window's pet = puppy). The friend gets a chat button too, for symmetry with the main pet.
     const fChat = document.createElement('div');
     fChat.innerHTML = '<i class="fas fa-keyboard"></i>';
     fChat.style.cssText = `
@@ -2868,7 +2868,7 @@ if (windowName === 'default') {
         opacity: 0; pointer-events: none; transition: opacity 0.2s;
     `;
     try { t('EnableTextInput').then(v => { if (v) fChat.title = v; }).catch(() => {}); } catch (e) {}
-    setupTextInteraction();   // 친구 창 전용 입력창 생성 (+ sendTextInputMessage = world_chat 직결, pet=이 창 모델)
+    setupTextInteraction();   // Create the friend-window-only input box (+ sendTextInputMessage = wired straight to world_chat, pet=this window's model)
     const fInput = document.getElementById('text-input-container');
     const fField = document.getElementById('text-input-field');
     let fChatOpen = false;
@@ -2880,7 +2880,7 @@ if (windowName === 'default') {
         fInput.style.transform = open ? 'translateX(-50%) translateY(0)' : 'translateX(-50%) translateY(20px)';
         if (open && fField) setTimeout(() => { try { fField.focus(); } catch (e) {} }, 50);
     };
-    // 마우스 통과 잠금 상태에서도 입력창을 쓸 수 있게 (메인 창과 동일 처리)
+    // Keep the input box usable even in mouse-passthrough lock state (same handling as the main window)
     if (fInput && fField) {
         fInput.addEventListener('mouseenter', () => { if (isMouseLocked && window.electronAPI) window.electronAPI.setIgnoreMouseEvents(false); });
         fInput.addEventListener('mouseleave', () => { if (isMouseLocked && window.electronAPI && document.activeElement !== fField) window.electronAPI.setIgnoreMouseEvents(true, { forward: true }); });
@@ -3675,7 +3675,7 @@ async function switchToModel(index,isRefresh = false) {
     
     currentModelIndex = newIndex;
     const selectedModel = allModels[currentModelIndex];
-    // 메인 펫이 바뀌면 소환된 친구를 '반대' 펫으로 따라 바꾼다 — 둘은 항상 다른 펫(병아리↔강아지). 메인만 구동.
+    // When the main pet changes, switch the summoned friend to the 'opposite' pet — the two are always different pets (chick↔puppy). Only the main one drives this.
     if (windowName === 'default' && window.electronAPI && typeof window.electronAPI.vrmFriendFollow === 'function') {
         const comp = allModels.find(m => m.id !== selectedModel.id);
         if (comp) { try { window.electronAPI.vrmFriendFollow(comp.id); } catch (e) {} }

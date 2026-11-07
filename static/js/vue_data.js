@@ -62,7 +62,7 @@ if (isElectron) {
   const protocol = window.location.protocol;
   const backendURL = `${window.location.protocol}//${window.location.host}`;
 let vue_data = {
-    worldBackupStale: null,   // 💾 백업 워치독 배지 문구 (null = 배지 없음)
+    worldBackupStale: null,   // 💾 Backup watchdog badge text (null = no badge)
     isMac: false,
     isWindows: false,
     partyURL:`${window.location.protocol}//${window.location.host}`,
@@ -839,7 +839,7 @@ let vue_data = {
     vrmPollTimer: null, // New
     VRMConfig: {
       name: 'default',
-      selectedModelId: 'chick', // 기본 펫: 병아리 (앨리스·밥 제거됨)
+      selectedModelId: 'chick', // Default pet: chick (Alice/Bob removed)
       windowWidth: 540,
       windowHeight: 960,
       defaultModels: [], // Store the default models
@@ -858,22 +858,22 @@ let vue_data = {
       wanderInterval: 90,       // Base wander interval in seconds (jittered at runtime)
       wanderRange: 250,         // Max wander distance in pixels per move
     },
-    // 🌏 월드 펫 페르소나/시스템 지시.
-    // worldConfig = 실제 저장되는 "오버라이드"만 (빈 문자열 = 서버 기본값 사용).
-    // worldEdit   = 편집 박스에 보이는 값(오버라이드 or 기본값 프리필). 저장 시 기본값과 같으면
-    //               worldConfig에 ''로 넣어(오버라이드 없음) 서버 상수 변경을 계속 따라가게 한다.
+    // 🌏 World pet persona / system instructions.
+    // worldConfig = only the "override" that actually gets saved (empty string = use server default).
+    // worldEdit   = the value shown in the edit box (override or default prefill). On save, if it equals the default,
+    //               store '' in worldConfig (no override) so server constant changes keep being followed.
     worldConfig: {
       chickPersona: '', puppyPersona: '', lore: '', replyRules: '', actionSpec: '', mailPersona: '',
     },
     worldEdit: {
       chickPersona: '', puppyPersona: '', lore: '', replyRules: '', actionSpec: '', mailPersona: '',
     },
-    worldPersonaDefaults: {},   // 서버 순수 기본값 (정규화 비교용)
+    worldPersonaDefaults: {},   // Pure server defaults (for normalized comparison)
     newAppearanceConfig: {
       name: '',
       windowWidth: 540,
       windowHeight: 960,
-      selectedModelId: 'chick', // 기본 펫: 병아리 (앨리스·밥 제거됨)
+      selectedModelId: 'chick', // Default pet: chick (Alice/Bob removed)
       selectedMotionIds: [],
     },
     showAddAppearanceDialog: false,
@@ -1885,7 +1885,7 @@ main();`,
     isReadPaused: false, 
     currentReadAudio: null,
     showLogDialog: false,
-    showWorldPersonaDialog: false,   // 🐾 월드 펫 성격·시스템 지시 다이얼로그
+    showWorldPersonaDialog: false,   // 🐾 World pet personality / system instruction dialog
     logContent: '', // Log content
     systemVoices: [],        // Stores the voice list fetched from the backend
     isLoadingSystemVoices: false, // Loading state

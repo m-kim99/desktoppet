@@ -1,4 +1,4 @@
-// 📔 일기 저장 UX E2E — 실패 모달(닫기 버튼) + 잠긴 날짜 draft 복구 (정적 서버 = POST 실패 환경)
+// 📔 Diary save UX E2E — failure modal (close button) + draft recovery for a locked date (static server = POST-failure environment)
 import http from 'http'; import fs from 'fs'; import path from 'path';
 import { fileURLToPath } from 'url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -24,7 +24,7 @@ const errs = [];
 page.on('pageerror', (e) => errs.push(String(e.message)));
 await page.goto(`http://127.0.0.1:${PORT}/world.html?weather=clear&hour=12&stats=1`, { waitUntil: 'load' });
 await page.waitForTimeout(9000);
-// D1: 오늘 일기 저장 실패 → 닫기 버튼 있는 모달
+// D1: saving today's diary fails → modal with a close button
 await page.evaluate(() => window.__worldDev.diaryOpen());
 await page.evaluate(() => {
     const ta = [...document.querySelectorAll('textarea')].find((t) => t.offsetParent !== null);
@@ -32,17 +32,17 @@ await page.evaluate(() => {
     const btn = [...document.querySelectorAll('button')].find((b) => b.offsetParent !== null && b.textContent.trim().startsWith('💾'));
     if (btn) btn.click();
 });
-await page.waitForTimeout(4500);   // 재시도 1회(1.4s) 포함
+await page.waitForTimeout(4500);   // Includes 1 retry (1.4s)
 const d1 = await page.evaluate(() => {
     const dlg = [...document.querySelectorAll('div')].find((el) => el.style.zIndex === '260' && el.style.display !== 'none');
     return dlg ? { text: dlg.textContent.slice(0, 40), close: !!([...dlg.querySelectorAll('button')].find((b) => b.textContent === '닫기')) } : null;
 });
 check('D1 저장 실패 모달 + 닫기 버튼', !!(d1 && d1.text.includes('실패') && d1.close), JSON.stringify(d1));
 await page.evaluate(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent === '닫기'); if (b) b.click(); });
-// D2: 임시저장 생존 (실패했으니 draft 유지)
+// D2: autosave survives (save failed, so the draft is kept)
 const draftKept = await page.evaluate(() => (localStorage.getItem('world-owner-drafts') || '').includes('저장 실패 경로'));
 check('D2 실패 시 임시저장 유지', draftKept, '');
-// D3: 잠긴 과거 날짜(10/28)의 draft 복구 UI
+// D3: draft recovery UI for a locked past date (10/28)
 await page.evaluate(() => window.__worldDev.diaryOpen('2026-10-28'));
 await page.waitForTimeout(400);
 const d3 = await page.evaluate(() => {

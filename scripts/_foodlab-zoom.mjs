@@ -1,4 +1,4 @@
-// 특정 음식 확대 샷 — 오므라이스(케첩)·삼각김밥(김 wrap) 근접 확인용.
+// Close-up of specific foods — for checking omurice (ketchup) and onigiri (seaweed wrap) up close.
 import http from 'http'; import fs from 'fs'; import path from 'path';
 const REPO = '/Users/mini/Downloads/super-agent-party-main';
 const SP = '/private/tmp/claude-501/-Users-mini-Downloads-super-agent-party-main/0572baa5-322f-44b8-9b23-885f11fdafa9/scratchpad';
@@ -18,7 +18,7 @@ const browser = await chromium.launch({ headless: true, args: ['--use-angle=meta
 const page = await browser.newPage({ viewport: { width: 700, height: 560 }, deviceScaleFactor: 2 });
 await page.goto(`http://127.0.0.1:${PORT}/world.html?foodlab=1`, { waitUntil: 'load' });
 await page.waitForTimeout(2800);
-// foodlab 좌표: col x=[-3.4,0,3.4], row y=[20.6,18.4,16.2]
+// foodlab coords: col x=[-3.4,0,3.4], row y=[20.6,18.4,16.2]
 const shots = [
     { name: 'toast',   tx: 0, ty: 21.2, cz: 3.0, cy: 21.5 },
     { name: 'gimbap',  tx: 4.6, ty: 19.95, cz: 3.0, cy: 20.3 },

@@ -1,6 +1,6 @@
-// 🪑 의자 조종 앉기 + 선제대화 반복 금지 E2E (정적 서버 — /api 전부 404라 실데이터·LLM 무오염,
-// 채팅만 라우트 스텁). 페이지 A: sit-침대 등록·⌘앉기·높이·착석 중 자율낚시 가드.
-// 페이지 C: 자율 착석 예약 중 강아지 ⌘앉기 차단. 페이지 B: 복귀 인사 → 금지 목록 저장 → 재접 시 주입.
+// 🪑 Chair sit-while-controlling + no-repeat proactive-chat E2E (static server — every /api is 404, so no real-data / LLM contamination,
+// only chat is route-stubbed). Page A: sit-bed registration · ⌘ sit · height · autonomous fishing guard while seated.
+// Page C: puppy ⌘ sit blocked while an autonomous seat reservation is pending. Page B: welcome-back greeting → save the ban list → inject it on reconnect.
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
@@ -21,10 +21,10 @@ const { chromium } = await import('playwright');
 const browser = await chromium.launch({ headless: true, args: ['--use-angle=metal'] });
 let fails = 0;
 const check = (n, ok, det = '') => { if (!ok) fails++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${n}${det ? ' — ' + det : ''}`); };
-const CHAIR = { x: -1.9, z: 5.35, rotY: -0.341 };   // world-layout.js의 현재 배치
+const CHAIR = { x: -1.9, z: 5.35, rotY: -0.341 };   // Current layout in world-layout.js
 const AP = { x: CHAIR.x + Math.cos(CHAIR.rotY) * 0.6, z: CHAIR.z - Math.sin(CHAIR.rotY) * 0.6 };
 
-// ---------- 페이지 A: sit-침대 등록 + 조종 ⌘앉기 ----------
+// ---------- Page A: sit-bed registration + ⌘ sit while controlling ----------
 {
     const page = await (await browser.newContext({ viewport: { width: 1100, height: 700 } })).newPage();
     const errs = [];
@@ -37,25 +37,25 @@ const AP = { x: CHAIR.x + Math.cos(CHAIR.rotY) * 0.6, z: CHAIR.z - Math.sin(CHAI
     check('A2 병아리 조종 + 의자 곁 이동', pos === true, String(pos));
     await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' })));
     let st = null;
-    for (let i = 0; i < 20; i++) {   // 접근 → 마운트 → 착석까지 대기
+    for (let i = 0; i < 20; i++) {   // Wait for approach → mount → seated
         await page.waitForTimeout(500);
         st = await page.evaluate(() => window.__worldDev.chairBedState());
         if (st && st.phase === 'lying') break;
     }
     check('A3 ⌘ 앉기 → 착석 완료', !!st && st.occ === 'chick' && st.phase === 'lying', JSON.stringify(st));
     check('A4 좌석 높이 = lie.y(±0.03)', !!st && st.y !== null && Math.abs(st.y - st.lieY) < 0.03, st && `y=${st.y} lieY=${st.lieY}`);
-    await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));   // 조종 해제 — 앉은 채 유지돼야 한다
+    await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));   // Release control — must stay seated
     await page.waitForTimeout(1200);
     st = await page.evaluate(() => window.__worldDev.chairBedState());
     check('A5 해제 후에도 좌석 높이 유지(합체 금지)', !!st && st.occ === 'chick' && st.y !== null && Math.abs(st.y - st.lieY) < 0.03, JSON.stringify(st));
-    // ⚠️ fishChairGo 훅은 첫 줄에서 병아리를 지면으로 텔레포트시킨다(검사 오염) — 높이 검증 뒤에만 부를 것
+    // ⚠️ the fishChairGo hook teleports the chick to the ground on its first line (contaminates the check) — call it only after the height assertion
     const go2 = await page.evaluate(() => window.__worldDev.fishChairGo());
     check('A6 착석 중 자율 낚시 거부(bed 가드)', go2 === false, String(go2));
     check('A7 JS 에러 없음', errs.length === 0, errs[0] || '');
     await page.context().close();
 }
 
-// ---------- 페이지 C: 자율 착석 예약 ↔ 조종 앉기 상호 배타 ----------
+// ---------- Page C: autonomous seat reservation ↔ controlled sit are mutually exclusive ----------
 {
     const page = await (await browser.newContext({ viewport: { width: 1100, height: 700 } })).newPage();
     const errs = [];
@@ -63,7 +63,7 @@ const AP = { x: CHAIR.x + Math.cos(CHAIR.rotY) * 0.6, z: CHAIR.z - Math.sin(CHAI
     await page.goto(`http://127.0.0.1:${PORT}/world.html?weather=clear&hour=14&stats=1`, { waitUntil: 'load' });
     await page.waitForTimeout(9000);
     let go = false;
-    for (let i = 0; i < 15 && !go; i++) {   // 선행 자율활동(낚시·물놀이 등)이 병아리를 점유했으면 풀릴 때까지 재시도
+    for (let i = 0; i < 15 && !go; i++) {   // If a prior autonomous activity (fishing, swimming, etc.) holds the chick, retry until it is released
         go = await page.evaluate(() => { if (window.__worldDev.fishChairState()) window.__worldDev.fishChairEnd(); return window.__worldDev.fishChairGo(); });
         if (!go) await page.waitForTimeout(2000);
     }
@@ -92,7 +92,7 @@ const AP = { x: CHAIR.x + Math.cos(CHAIR.rotY) * 0.6, z: CHAIR.z - Math.sin(CHAI
     await page.context().close();
 }
 
-// ---------- 페이지 B: 복귀 인사(재시도 포함 경로) + 반복 금지 목록 왕복 ----------
+// ---------- Page B: welcome-back greeting (path incl. retries) + no-repeat list round trip ----------
 {
     const ctx = await browser.newContext({ viewport: { width: 1100, height: 700 } });
     await ctx.addInitScript(() => {
@@ -107,18 +107,18 @@ const AP = { x: CHAIR.x + Math.cos(CHAIR.rotY) * 0.6, z: CHAIR.z - Math.sin(CHAI
         route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ reply: '멍! 오늘도 와줘서 반가워!' }) });
     });
     await page.goto(`http://127.0.0.1:${PORT}/world.html?weather=clear&hour=14&stats=1`, { waitUntil: 'load' });
-    await page.evaluate(() => window.dispatchEvent(new Event('focus')));   // headless는 hasFocus=false — winFocused 보정
-    for (let i = 0; i < 30 && chatBodies.length < 1; i++) await page.waitForTimeout(2000);   // +12초 발사(+재시도 20초 간격 2회까지 커버)
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));   // headless has hasFocus=false — patch winFocused
+    for (let i = 0; i < 30 && chatBodies.length < 1; i++) await page.waitForTimeout(2000);   // Fires at +12s (+ covers up to 2 retries at 20s intervals)
     check('B1 복귀 인사 발사', chatBodies.length >= 1 && chatBodies[0].includes('오랜만에'), `calls=${chatBodies.length}`);
     check('B2 첫 인사엔 금지 목록 없음', chatBodies.length >= 1 && !chatBodies[0].includes('최근에 네가 먼저 건넸던 말'), '');
     let rec = null;
-    for (let i = 0; i < 10; i++) {   // 응답 스트림 완료 후 저장까지 폴링
+    for (let i = 0; i < 10; i++) {   // Poll until saved after the response stream completes
         await page.waitForTimeout(500);
         rec = await page.evaluate(() => localStorage.getItem('world-proactive-recent'));
         if (rec && rec.includes('반가워')) break;
     }
     check('B3 응답이 금지 목록에 저장', !!rec && rec.includes('멍! 오늘도 와줘서 반가워!'), rec || 'null');
-    // 재접: last-seen을 다시 과거로 → 두 번째 인사엔 금지 목록이 주입돼야 한다
+    // Reconnect: push last-seen back into the past → the second greeting must have the ban list injected
     await page.evaluate(() => localStorage.setItem('world-last-seen', String(Date.now() - 4 * 3600000)));
     const n1 = chatBodies.length;
     await page.reload({ waitUntil: 'load' });

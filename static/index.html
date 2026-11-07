@@ -507,7 +507,7 @@ function updateElement(el, rawMarkdown, formatFn) {
         v-show="isMobile && sidebarVisible"
         @click="sidebarVisible = false"></div>
 
-    <!-- 🌏 월드 펫 성격·시스템 지시 다이얼로그 (툴바 🐾 버튼으로 열림) -->
+    <!-- 🌏 World pet persona / system-instruction dialog (opened by the 🐾 toolbar button) -->
     <el-dialog append-to-body
       v-model="showWorldPersonaDialog"
       :title="t('worldPetSettings')"
@@ -518,7 +518,7 @@ function updateElement(el, rawMarkdown, formatFn) {
         {{ t('worldPetSettingsHint') }}
       </div>
       <el-form label-position="top">
-        <!-- 🙋 사용자 이름 — {{user}}에 들어가는 값. 맨 위에 배치. -->
+        <!-- 🙋 User name — the value substituted for {{user}}. Placed at the top. -->
         <el-form-item :label="t('userNameConfig')">
           <el-input v-model="memorySettings.userName" :placeholder="t('userNamePlaceholder')" @input="autoSaveSettings" clearable />
         </el-form-item>
@@ -917,7 +917,7 @@ function updateElement(el, rawMarkdown, formatFn) {
 
 
 
-            <!-- 🐾 월드 펫 성격·시스템 지시 -->
+            <!-- 🐾 World pet persona / system instructions -->
             <div class="guide-card" @click="openWorldPersonaDialog">
               <div class="card-icon gold"><i class="fa-solid fa-paw"></i></div>
               <div class="card-info">
@@ -925,7 +925,7 @@ function updateElement(el, rawMarkdown, formatFn) {
               </div>
             </div>
 
-            <!-- 💾 월드 데이터 백업 -->
+            <!-- 💾 World data backup -->
             <div class="guide-card" @click="worldBackup">
               <div class="card-icon blue"><i class="fa-solid fa-download"></i></div>
               <div class="card-info">
@@ -934,7 +934,7 @@ function updateElement(el, rawMarkdown, formatFn) {
               </div>
             </div>
 
-            <!-- 📥 월드 데이터 복원 -->
+            <!-- 📥 World data restore -->
             <div class="guide-card" @click="worldRestore">
               <div class="card-icon green"><i class="fa-solid fa-upload"></i></div>
               <div class="card-info">
@@ -12769,7 +12769,7 @@ function updateElement(el, rawMarkdown, formatFn) {
                               </div>
                             </el-form-item>
 
-                            <!-- 🌏 월드 펫 페르소나·시스템 지시 (거의 안 바뀌므로 접이식, 기본 접힘) -->
+                            <!-- 🌏 World pet persona / system instructions (rarely changes, so collapsible and collapsed by default) -->
                             <el-form-item class="form-item-align">
                               <el-collapse class="full-width-input" @change="(v) => { if (v && v.length) loadWorldPersona(); }">
                                 <el-collapse-item :title="t('worldPetSettings')" name="world">

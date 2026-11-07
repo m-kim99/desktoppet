@@ -240,17 +240,17 @@ class AsyncClaudeAsOpenAI:
                 # Anthropic base_url to it — callers (e.g. world_chat) default base_url to
                 # https://api.anthropic.com/v1, which would otherwise break SigV4 routing.
                 if model.startswith("bedrock/"):
-                    # 리전은 공급자 설정의 URL 칸에서 받는다 — "ap-northeast-2" 같은 리전
-                    # 문자열이든 https://bedrock-runtime.ap-northeast-2.amazonaws.com 전체
-                    # URL이든 인식. 없으면 litellm의 env 폴백(AWS_REGION 등)에 맡긴다.
+                    # The region comes from the URL field of the provider settings — either a region string like "ap-northeast-2"
+                    # or the full URL https://bedrock-runtime.ap-northeast-2.amazonaws.com
+                    # is recognized. If absent, defer to litellm's env fallback (AWS_REGION etc.).
                     if self._parent.base_url:
                         m_region = re.search(r"([a-z]{2}(?:-[a-z]+)+-\d)", self._parent.base_url)
                         if m_region:
                             completion_kwargs["aws_region_name"] = m_region.group(1)
-                    # 인증: UI의 API Key 칸 = Bedrock API 키(bearer). litellm 1.72.6+는
-                    # api_key를 bearer로 그대로 쓰고(위에서 이미 전달), 경로가 갈리는 구버전을
-                    # 위해 표준 env(AWS_BEARER_TOKEN_BEDROCK)도 세팅해 둔다 — 단, IAM
-                    # 액세스 키(SigV4)를 env로 쓰는 사용자는 건드리지 않는다.
+                    # Auth: the UI's API Key field = Bedrock API key (bearer). litellm 1.72.6+
+                    # uses api_key directly as the bearer (already passed above); for older versions whose path differs
+                    # we also set the standard env (AWS_BEARER_TOKEN_BEDROCK) — but users who use IAM
+                    # access keys (SigV4) via env are left untouched.
                     if self._parent.api_key and not os.environ.get("AWS_ACCESS_KEY_ID"):
                         os.environ["AWS_BEARER_TOKEN_BEDROCK"] = self._parent.api_key
                 elif self._parent.base_url:

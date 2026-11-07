@@ -1,6 +1,6 @@
-// 카툰 아틀라스(2048×1024 · 256² 셀 32칸)를 PNG로 덤프 — 텍스처가 의도대로 구워졌는지 확인.
+// Dump the cartoon atlas (2048×1024 · 32 cells of 256²) as PNG — check the texture baked as intended.
 //   node scripts/atlas-dump.mjs <outDir>        → <outDir>/atlas.png
-// 셀 i는 (i%8, i/8|0) 칸. 조형이 이상할 때 "텍스처 탓인지 조형 탓인지"를 가르는 첫 단추다.
+// Cell i is slot (i%8, i/8|0). When a model looks off, this is the first step to tell "texture problem or modeling problem".
 import fs from 'fs'; import path from 'path';
 const OUT = process.argv[2];
 const { chromium } = await import('playwright');

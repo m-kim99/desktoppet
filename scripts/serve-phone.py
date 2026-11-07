@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""폰에서 월드 보기용 서버 — static/은 직접 서빙하고, 백엔드 경로는 3456으로 프록시한다.
+"""Server for viewing the world on the phone — serves static/ directly and proxies backend paths to 3456.
 
-왜 프록시가 필요한가: 월드는 일기·채팅·KV를 전부 **상대경로 `/api/*`**로 부른다. 정적 서버만
-띄우면 그 호출이 전부 404가 되어 폰에서 일기가 빈 채로 뜬다(채팅은 localStorage 스크롤백이
-남아 있어 되는 것처럼 보일 뿐이다). 앱 백엔드(3456)는 `networkVisible` 설정이 꺼져 있으면
-127.0.0.1에만 바인딩되므로 폰이 직접 칠 수도 없다 → 이 서버가 중계한다.
+Why a proxy is needed: the world calls diary, chat and KV all via **relative paths `/api/*`**. With only a
+static server those calls all 404 and the diary shows up empty on the phone (chat only looks like it works
+because the localStorage scrollback remains). The app backend (3456) binds only to 127.0.0.1 when the
+`networkVisible` setting is off, so the phone can't hit it directly either → this server relays.
 
-⚠️ ThreadingHTTPServer 필수. 단일스레드면 끊긴 keep-alive 연결 하나에 전체가 막혀서,
-   맥에선 되는데 폰만 안 붙는 '먹통'이 된다(실측).
+⚠️ ThreadingHTTPServer is required. Single-threaded, one dropped keep-alive connection blocks everything,
+   giving a 'frozen' state where the Mac works but only the phone won't connect (measured).
 """
 import http.server
 import os
@@ -18,7 +18,7 @@ import urllib.request
 PORT = int(os.environ.get("PHONE_PORT", "8765"))
 BACKEND = os.environ.get("PHONE_BACKEND", "http://127.0.0.1:3456")
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "static")
-# 백엔드가 mount한 경로들 (server.py의 app.mount 목록과 동기)
+# Paths mounted by the backend (kept in sync with the app.mount list in server.py)
 PROXY = ("/api/", "/vrm/", "/uploaded_files/", "/screenshots/", "/tool_temp/", "/ext/", "/ws")
 HOP = {"host", "connection", "content-length", "transfer-encoding", "accept-encoding", "keep-alive"}
 
@@ -31,7 +31,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         import datetime
-        ts = datetime.datetime.now().strftime("%m-%d %H:%M:%S")   # 10/28 일기 유실 조사 때 타임스탬프가 없어 원인 시각을 못 좁혔다
+        ts = datetime.datetime.now().strftime("%m-%d %H:%M:%S")   # During the 10/28 diary-loss investigation, missing timestamps meant the time of the cause couldn't be narrowed down
         sys.stderr.write("%s %s %s\n" % (ts, self.address_string(), fmt % args))
 
     def _proxied(self):
@@ -60,7 +60,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(data)
 
     def end_headers(self):
-        # JS/HTML은 휴리스틱 캐시 금지 — 매번 ETag 재검증(구버전 모듈이 폰에 며칠 남는 실측 버그 방지)
+        # No heuristic caching for JS/HTML — ETag revalidation every time (prevents the measured bug of stale modules lingering on the phone for days)
         if getattr(self, "path", "").split("?")[0].endswith((".js", ".html")):
             self.send_header("Cache-Control", "no-cache")
         super().end_headers()

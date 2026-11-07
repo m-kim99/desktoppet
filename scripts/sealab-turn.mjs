@@ -1,8 +1,8 @@
-// 검수 랩(?sealab=1) 항목 하나를 8방위로 촬영 — 조형 리뷰의 기본 도구.
+// Shoots one review lab (?sealab=1) entry from 8 directions — the basic tool for model review.
 //   node scripts/sealab-turn.mjs <outDir> <id> [dist]
-//   id = 어종/조개/해산물 셀 키 (oyster · starfish · seacuke · wakame · scallop …)
-//   dist: 작은 것 1.0~1.2 · 큰 것 1.5~1.7. 너무 가까우면 프레임을 넘긴다.
-// ⚠️ 정적 서버가 127.0.0.1:8765에 떠 있어야 한다 (scripts/_preview-server.mjs 또는 앱).
+//   id = fish / shell / seafood cell key (oyster · starfish · seacuke · wakame · scallop …)
+//   dist: small ones 1.0~1.2 · large ones 1.5~1.7. Too close and it overflows the frame.
+// ⚠️ A static server must be running at 127.0.0.1:8765 (scripts/_preview-server.mjs or the app).
 import path from 'path';
 const DIR = process.argv[2], ID = process.argv[3], D = Number(process.argv[4] || 1.7);
 const { chromium } = await import('playwright');

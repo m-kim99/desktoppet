@@ -1015,7 +1015,7 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
     }
     summonVrmPetRef = summonVrmPet;   // expose to the tray menu (top-level scope)
 
-    // Pet world (월드): one normal, resizable window with the diorama scene the pets live in.
+    // Pet world (the world): one normal, resizable window with the diorama scene the pets live in.
     // Single instance — opening it again focuses the existing window. Background throttling stays
     // on (Electron default) so the render loop pauses while the window is hidden/minimized.
     let worldWindow = null;
@@ -1195,7 +1195,7 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
       }
       if (duoBusy) return { ok: false, busy: true };
       duoBusy = true;
-      const { dir, A0, B0, targetA, targetB } = duoFormation(me, partner, me.getBounds().width * 0.92); // 나란히 (포옹보다 넓게)
+      const { dir, A0, B0, targetA, targetB } = duoFormation(me, partner, me.getBounds().width * 0.92); // Side by side (wider than the hug)
       wanderingWindows.add(me); wanderingWindows.add(partner);
       try {
         await Promise.all([tweenBounds(me, A0, targetA, 500), tweenBounds(partner, B0, targetB, 500)]);  // approach first
@@ -1212,7 +1212,7 @@ ipcMain.handle('upload-to-workspace', async (event, { targetDirPath, sourceFileP
     });
 
     // Friend-follow: when the main pet switches character, tell the summoned friend to switch to the
-    // complement so the two are always the different pets (병아리↔강아지). One-directional (main → friend).
+    // complement so the two are always the different pets (chick↔puppy). One-directional (main → friend).
     ipcMain.handle('vrm-friend-follow', async (e, modelId) => {
       const me = BrowserWindow.fromWebContents(e.sender);
       if (!me || me.isDestroyed() || !modelId) return { ok: false };

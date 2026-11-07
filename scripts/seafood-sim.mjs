@@ -1,20 +1,20 @@
-// 해저 채집 다양성 게이트 — world.js 심해 스폰 규칙(4슬롯 버퍼·존 풀·서식지·중복 보호·동일종
-// ≤2)을 미러링해 "20분 산책 세션"을 N회 돌리고 승인 기준 4항목을 판정한다.
+// Undersea foraging diversity gate — mirrors the world.js deep-sea spawn rules (4-slot buffer · zone pools · habitats · duplicate protection ·
+// same species ≤2), runs a "20-minute walk session" N times and judges the 4 acceptance criteria.
 //
-//   node scripts/seafood-sim.mjs                 # 패치 후(현행) 판정
-//   node scripts/seafood-sim.mjs --mode both     # 패치 전/후 나란히
-//   옵션: --runs 400 --seed 42
+//   node scripts/seafood-sim.mjs                 # post-patch (current) verdict
+//   node scripts/seafood-sim.mjs --mode both     # pre/post patch side by side
+//   options: --runs 400 --seed 42
 //
-// 승인 기준 (사용자 합의):
-//   ① 20분 산책(첫 세션)에서 기대 조우 ≥ 6종   ② 도감 8/8 완주 기대 ≤ 5세션
-//   ③ 동일종 3연속 픽업 ≤ 5%                    ④ 열수구 곁 1위 = 새우, 켈프 곁 1위 = 미역
+// Acceptance criteria (agreed with the user):
+//   ① expected encounters in a 20-min walk (first session) ≥ 6 species   ② expected codex 8/8 completion ≤ 5 sessions
+//   ③ same species picked up 3 in a row ≤ 5%                    ④ top-1 near the hydrothermal vent = shrimp, top-1 near kelp = wakame
 //
-// 모델 가정 (world.js 정적 분석 — 실측 아님):
-// - 픽업 8초당 1회 × 20분 = 세션당 150픽업. 스폰 틱 2.6초라 버퍼(4슬롯)는 픽업 사이에 다시 찬다.
-// - 산책 컨텍스트 블록 45~90초, 분포: 심해 평지 70% · 켈프 숲 15% · 열수구 10% · 난파선 3% ·
-//   근해 링 2% — 링(섬 반경+5m 띠)은 입수 직후 몇 초 만에 통과하는 동선이라 사실상 스치기만
-//   한다. 실플레이 리포트("near 4종 거의 못 봄")를 재현하는 값 = 이 시뮬의 캘리브레이션 근거.
-// - 도감(counts)은 세션 간 누적 — 중복 보호(미등록 ×2.5)가 세션이 갈수록 자연 감쇠.
+// Model assumptions (static analysis of world.js — not measured):
+// - One pickup per 8s × 20 min = 150 pickups per session. Spawn tick is 2.6s, so the buffer (4 slots) refills between pickups.
+// - Walk context blocks of 45~90s, distribution: deep-sea plain 70% · kelp forest 15% · hydrothermal vent 10% · shipwreck 3% ·
+//   nearshore ring 2% — the ring (island radius + 5m band) is passed within seconds of entering the water, so it is effectively
+//   only brushed past. Values that reproduce the real-play report ("barely saw the 4 near species") = this sim's calibration basis.
+// - The codex (counts) accumulates across sessions — duplicate protection (unregistered ×2.5) decays naturally as sessions go on.
 
 const ARG = Object.fromEntries(process.argv.slice(2).flatMap((a, i, all) => {
     if (!a.startsWith('--')) return [];
@@ -35,7 +35,7 @@ function rng(seed) {
     };
 }
 
-// world.js SEAFOOD와 동기 (id·zone·w)
+// In sync with world.js SEAFOOD (id · zone · w)
 const SEAFOOD = [
     { id: 'wakame',   ko: '미역',     zone: 'near', w: 30 },
     { id: 'starfish', ko: '불가사리', zone: 'near', w: 26 },
@@ -60,16 +60,16 @@ function spawnPick(r, ctx, counts, live, after) {
     if (after) {
         if (ctx.id === 'kelp') pool = pool.concat(SEAFOOD.filter((t) => t.id === 'wakame' || t.id === 'seasquirt'));
         if (ctx.id === 'wreck') pool = pool.concat(SEAFOOD.filter((t) => t.id === 'oyster'));
-        pool = pool.filter((t) => live.filter((x) => x === t.id).length < 2);   // 화면 내 동일종 ≤2
+        pool = pool.filter((t) => live.filter((x) => x === t.id).length < 2);   // Same species on screen ≤2
         if (!pool.length) pool = SEAFOOD.filter((t) => t.zone === ctx.zone);
     }
     const wOf = (t) => {
         let w = t.w;
-        if (ctx.id === 'vent' && t.id === 'shrimp') w = 70;                     // 전/후 공통 (기존 기능)
+        if (ctx.id === 'vent' && t.id === 'shrimp') w = 70;                     // Common to pre/post (existing feature)
         if (after && ctx.id === 'kelp' && t.id === 'wakame') w = 50;
         if (after && ctx.id === 'kelp' && t.id === 'seasquirt') w = 25;
         if (after && ctx.id === 'wreck' && t.id === 'oyster') w = 45;
-        return w * (after && !counts[t.id] ? 2.5 : 1);                          // 중복 보호 (후에만)
+        return w * (after && !counts[t.id] ? 2.5 : 1);                          // Duplicate protection (post only)
     };
     const total = pool.reduce((q, t) => q + wOf(t), 0);
     let x = r() * total, type = pool[0];
@@ -89,13 +89,13 @@ function simulate(after) {
             const startSeen = seen.size;
             let live = [], ctx = CONTEXTS[0], ctxLeft = 0, s1 = null, s2 = null;
             for (let t = 0; t < SESSION_SEC; t += PICK_SEC) {
-                if (ctxLeft <= 0) {   // 산책 컨텍스트 블록 전환
+                if (ctxLeft <= 0) {   // Walk context block switch
                     let x = r();
                     ctx = CONTEXTS.find((c) => (x -= c.share) <= 0) || CONTEXTS[0];
                     ctxLeft = BLOCK_SEC[0] + r() * (BLOCK_SEC[1] - BLOCK_SEC[0]);
                 }
                 ctxLeft -= PICK_SEC;
-                while (live.length < 4) live.push(spawnPick(r, ctx, counts, live, after));   // 버퍼 리필 (스폰 틱이 더 빠름)
+                while (live.length < 4) live.push(spawnPick(r, ctx, counts, live, after));   // Buffer refill (spawn tick is faster)
                 const pick = live.splice(Math.floor(r() * live.length), 1)[0];
                 counts[pick] = (counts[pick] || 0) + 1;
                 seen.add(pick);

@@ -1,4 +1,4 @@
-// 츄러스 3단계(0/1/2입) 확대 샷 — 베어문 단면이 위로 오는지 검수용.
+// Churro 3-stage (0/1/2 bites) close-up — to check that the bitten cross-section faces up.
 import http from 'http'; import fs from 'fs'; import path from 'path';
 const REPO = '/Users/mini/Downloads/super-agent-party-main';
 const OUT = process.argv[2] || '/tmp/food-churros.png';
@@ -19,7 +19,7 @@ const page = await browser.newPage({ viewport: { width: 700, height: 560 }, devi
 const errs = []; page.on('pageerror', (e) => errs.push(String(e)));
 await page.goto(`http://127.0.0.1:${PORT}/world.html?foodlab=1`, { waitUntil: 'load' });
 await page.waitForTimeout(2800);
-// foodlab 좌표: 츄러스 i=7 → x=4.6 열, y=21.2-2*1.25=18.7 행
+// foodlab coords: churro i=7 → column x=4.6, row y=21.2-2*1.25=18.7
 const [ty = 19.15, cy = 19.4, cz = 3.2] = process.argv.slice(3).map(Number);
 await page.evaluate(([ty, cy, cz]) => {
     const L = window.__foodlab;

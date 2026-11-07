@@ -1,4 +1,4 @@
-// 🍉 수확 E2E: 조종 ⌘ 흔들기 → 낙과(통수박) → 줍기(1/4통) → 바구니 — 정적 서버(무오염)
+// 🍉 Harvest E2E: controlled ⌘ shake → fallen fruit (whole watermelon) → pick up (1/4 piece) → basket — static server (no contamination)
 import http from 'http'; import fs from 'fs'; import path from 'path';
 import { fileURLToPath } from 'url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -22,13 +22,13 @@ const errs = [];
 page.on('pageerror', (e) => errs.push(String(e.message)));
 await page.goto(`http://127.0.0.1:${PORT}/world.html?weather=clear&hour=14&stats=1`, { waitUntil: 'load' });
 await page.waitForTimeout(9000);
-// 수박밭 곁으로 빙의 — 패치(-10.05,4.25)에서 1m (수확 반경 안, 낙과 줍기 반경 밖→안)
+// Possess next to the watermelon patch — 1m from the patch (-10.05,4.25) (inside the harvest radius, outside→inside the pickup radius)
 await page.evaluate(() => window.__worldDev.possessGo('chick', -10.05, 5.1));
-await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' })));   // ⌘ 수확(흔들기)
-await page.waitForTimeout(3500);   // 웍블 → 낙과 → 정착
+await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' })));   // ⌘ harvest (shake)
+await page.waitForTimeout(3500);   // Wobble → fruit drops → settles
 const g1 = await page.evaluate(() => JSON.parse(localStorage.getItem('world-fruit-ground') || '[]').filter((f) => f.t === 'watermelon').length);
 check('H1 흔들기 → 통수박 낙과', g1 >= 1, `ground=${g1}`);
-// 낙과 곁으로 이동 후 ⌘ 줍기 → 손에 1/4통 (랜덤 간식 선물이 손을 선점했으면 먼저 비운다 — E2E 결정화)
+// Move next to the fallen fruit, then ⌘ pick up → 1/4 piece in hand (if a random snack gift already occupies the hand, empty it first — E2E determinism)
 for (let k = 0; k < 6; k++) {
     const h0 = await page.evaluate(() => window.__worldDev.heldOf('chick'));
     if (!h0 || h0.food === null) break;
@@ -40,9 +40,9 @@ await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { ke
 await page.waitForTimeout(1000);
 const held = await page.evaluate(() => window.__worldDev.heldOf('chick'));
 check('H2 줍기 → 손에 수박(1/4통)', !!held && held.food === '수박' && held.bites === 0, JSON.stringify(held));
-// ⌘ 냠냠 3입 완식
-// ⌘ 냠냠 1회 = 1입(시퀀스 ~1.95s, 진행 중 호출은 무시) — 완식 판정은 이벤트 로그로.
-// 절친의 랜덤 간식 선물이 손을 바꿔치기할 수 있어, 수박이 아니게 되면 다시 들려준다(결정화).
+// ⌘ nom-nom, 3 bites to finish
+// One ⌘ nom-nom = 1 bite (sequence ~1.95s, calls while in progress are ignored) — judge completion via the event log.
+// The bestie's random snack gift can swap what is in hand, so if it is no longer watermelon, hand it back (determinism).
 let gone = false;
 for (let k = 0; k < 10 && !gone; k++) {
     const h = await page.evaluate(() => window.__worldDev.heldOf('chick'));

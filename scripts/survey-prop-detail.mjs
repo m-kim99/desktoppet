@@ -1,7 +1,7 @@
-// 지정 프롭만 3각도 접사 — survey-props.mjs로 고른 대상을 자세히 본다.
+// 3-angle close-up of specified props only — a closer look at targets picked with survey-props.mjs.
 //   node scripts/survey-prop-detail.mjs <outDir> "garden,library,piano"
-//   type:n 으로 같은 타입의 n번째 지정 가능 (예: portal:2)
-// 3번째 칸은 눈높이 — 두께 0인 판·떠 있는 부품은 여기서만 드러난다.
+//   type:n selects the n-th of the same type (e.g. portal:2)
+// The 3rd frame is eye level — zero-thickness planes and floating parts show up only here.
 import http from 'http'; import fs from 'fs'; import path from 'path';
 const REPO = '/Users/mini/Downloads/super-agent-party-main';
 const OUT = process.argv[2] || '/tmp';
@@ -40,13 +40,13 @@ await pg.waitForTimeout(9000);
 await pg.evaluate(() => window.__worldDev.tp(-10.7, -4.7));
 await pg.waitForTimeout(2000);
 
-const VIS = { garden: 1.0, coffee: 0.62, food: 0.62, library: 0.8, piano: 0.5, fountain: 0.72, photoboard: 0.45, fence: 0.72, hammock: 0.8, swing: 0.62, seesaw: 0.7, gym: 1.05, trampoline: 0.77, vine: 0.32, fruitbasket: 0.26, pecktree: 0.6, well: 0.62, capsule: 0.4, monument: 0.5, cave: 1.0, lookout: 1.0, sunbed: 0.55, palm: 0.5, sandcastle: 0.45, tree: 0.5, boulder: 0.55, house: 2.4, pond: 0.95, mailbox: 0.22, radio: 0.3, bowl: 0.3, lamp: 0.2, flowerbasket: 0.25, hugspot: 0.3, digsite: 0.7, portal: 0.45, car: 0.72, boat: 0.6, plane: 0.75, balloon: 0.8, ferry: 0.95, rocketpad: 2.05, bonfire: 0.42, kitchen: 0.62, icebox: 0.3, scarecrow: 0.28, compost: 0.32 };   // world-layout-sweep.mjs와 같은 표 — 프롭 루트 식별의 기대 크기
+const VIS = { garden: 1.0, coffee: 0.62, food: 0.62, library: 0.8, piano: 0.5, fountain: 0.72, photoboard: 0.45, fence: 0.72, hammock: 0.8, swing: 0.62, seesaw: 0.7, gym: 1.05, trampoline: 0.77, vine: 0.32, fruitbasket: 0.26, pecktree: 0.6, well: 0.62, capsule: 0.4, monument: 0.5, cave: 1.0, lookout: 1.0, sunbed: 0.55, palm: 0.5, sandcastle: 0.45, tree: 0.5, boulder: 0.55, house: 2.4, pond: 0.95, mailbox: 0.22, radio: 0.3, bowl: 0.3, lamp: 0.2, flowerbasket: 0.25, hugspot: 0.3, digsite: 0.7, portal: 0.45, car: 0.72, boat: 0.6, plane: 0.75, balloon: 0.8, ferry: 0.95, rocketpad: 2.05, bonfire: 0.42, kitchen: 0.62, icebox: 0.3, scarecrow: 0.28, compost: 0.32 };   // Same table as world-layout-sweep.mjs — expected size for identifying prop roots
 for (const t of targets) t.expect = (VIS[t.type] ?? 0.4) * 2;
 
 const res = await pg.evaluate(async (targets) => {
     const THREE = await import('/libs/three/build/three.module.js');
     const dev = window.__worldDev;
-    // 지붕 컷어웨이 강제 해제 — 근접 투명은 기능이지만 검수 샷에선 실루엣을 지운다
+    // Force the roof cutaway off — proximity transparency is a feature, but it erases the silhouette in review shots
     dev.scene.traverse((o) => {
         if (o.isMesh && o.userData && o.userData.roofFade && o.material) { o.material.opacity = 1; o.material.transparent = false; }
     });
@@ -59,9 +59,9 @@ const res = await pg.evaluate(async (targets) => {
     const cam = new THREE.PerspectiveCamera(32, 1, 0.01, 300);
     const roots = [];
     dev.scene.traverse((o) => { if (o.parent && o.children.length) roots.push(o); });
-    // 프롭 루트 = 좌표가 지문(빌드 루프가 obj.position에 p.x/p.z를 심는다). 원점(광장 중앙) 같은
-    // 곳은 바다·포장·씬까지 같은 좌표로 걸리므로, 레이아웃 스윕의 시각 풋프린트(2×VIS)에
-    // 가장 가까운 박스를 고른다 — '가장 큰 것'은 광장 포장을, '가장 작은 것'은 부품을 집는다.
+    // Prop root = the coordinates are the fingerprint (the build loop plants p.x/p.z into obj.position). Spots like the origin (plaza center)
+    // also match the sea, paving and even the scene at the same coordinates, so pick the box closest to the layout sweep's
+    // visual footprint (2×VIS) — 'the largest' grabs the plaza paving, 'the smallest' grabs a sub-part.
     const boxOf = (t, expect) => {
         let best = null, bestErr = 1e9;
         for (const o of roots) {
@@ -70,8 +70,8 @@ const res = await pg.evaluate(async (targets) => {
             const bb = new THREE.Box3().setFromObject(o);
             if (bb.isEmpty()) continue;
             const s = bb.getSize(new THREE.Vector3());
-            if (s.x > 7 || s.z > 7 || s.y > 7) continue;   // 바다·지면·돔 같은 거대 노드 배제
-            if (s.y < 0.02 && s.x > 0.25) continue;        // 그림자 블롭 데칼 배제
+            if (s.x > 7 || s.z > 7 || s.y > 7) continue;   // Exclude huge nodes like the sea, ground and dome
+            if (s.y < 0.02 && s.x > 0.25) continue;        // Exclude shadow blob decals
             const err = Math.abs(Math.max(s.x, s.z) - expect);
             if (err < bestErr) { bestErr = err; best = bb; }
         }
@@ -88,7 +88,7 @@ const res = await pg.evaluate(async (targets) => {
             sctx.fillStyle = '#11151a'; sctx.fillRect(0, 0, sheet.width, sheet.height);
             sheets.push(sheet);
         }
-        const live = dev.prop(`${t.type}-${t.n}`);      // 공사모드로 이사했을 수 있다 — 실좌표 우선
+        const live = dev.prop(`${t.type}-${t.n}`);      // May have been moved in construction mode — actual coordinates take priority
         if (live) { t.x = live.x; t.z = live.z; }
         const gy = dev.groundAt(t.x, t.z);
         const box = boxOf(t, t.expect);
@@ -100,7 +100,7 @@ const res = await pg.evaluate(async (targets) => {
         const row = i % ROWS;
         [0.0, 0.66, 1.33].forEach((k, c) => {
             const ang = (t.rotY || 0) + Math.PI * (0.15 + k);
-            const el = c === 2 ? 0.12 : 0.4;                 // 3번째는 눈높이 (실루엣 확인)
+            const el = c === 2 ? 0.12 : 0.4;                 // The 3rd is eye level (silhouette check)
             cam.position.set(ctr.x + Math.sin(ang) * dist, ctr.y + dist * el, ctr.z + Math.cos(ang) * dist);
             cam.lookAt(ctr.x, ctr.y, ctr.z);
             r.render(dev.scene, cam);

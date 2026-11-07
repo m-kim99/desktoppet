@@ -1,4 +1,4 @@
-// 장화 통↔발 이음매 접사 — 랩 카메라를 이음매에 직접 맞춘다
+// Boot shaft↔foot seam close-up — aim the lab camera directly at the seam
 import fs from 'fs'; import path from 'path';
 const OUT = process.argv[2];
 const { chromium } = await import('playwright');
@@ -14,7 +14,7 @@ const shots = await pg.evaluate(async () => {
     for (const o of L.scene.children) if (o !== holder) o.visible = false;
     const box = new THREE.Box3().setFromObject(holder);
     const sz = box.getSize(new THREE.Vector3()), mn = box.min;
-    // 이음매 ≈ 발 위·통 아래 = 전체 높이의 30% 지점
+    // Seam ≈ above the foot, below the shaft = 30% of total height
     const c = new THREE.Vector3(box.min.x + sz.x * 0.5, mn.y + sz.y * 0.30, box.min.z + sz.z * 0.5);
     const d = Math.max(sz.x, sz.z) * 1.25;
     const out = [];

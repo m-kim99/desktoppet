@@ -1,4 +1,4 @@
-// 🛌 이불 E2E — 겨울밤 자동 덮임 · 주인 탭 덮어주기 · 흘러내림→절친 재덮기 · 기상 개킴 · 여름 가드
+// 🛌 Blanket E2E — auto-cover on winter nights · owner tap tucks in · slipped off→bestie re-covers · folded on wake-up · summer guard
 import http from 'http'; import fs from 'fs'; import path from 'path';
 import { fileURLToPath } from 'url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -34,33 +34,33 @@ const page = await browser.newPage({ viewport: { width: 1100, height: 700 } });
 page.on('pageerror', (e) => errs.push(String(e.message)));
 await page.goto(`http://127.0.0.1:${PORT}/world.html?season=winter&hour=23&weather=clear&stats=1`, { waitUntil: 'load' });
 await page.waitForTimeout(9000);
-// 취침 대기 — 22시 로직이 침대로 보낸다
+// Wait for bedtime — the 22:00 logic sends them to bed
 let s = await waitSt(page, (s) => s.length === 2 && s.every((q) => q.sleeping && q.bed && q.phase === 'lying'), 60000);
 check('B0 겨울밤 둘 다 침대 취침', s.every((q) => q.sleeping && q.phase === 'lying'), JSON.stringify(s));
-// B1 자동 덮임 (40초 대기 대신 강제 트리거)
+// B1 auto-cover (forced trigger instead of waiting 40s)
 await force(page, 'chick', 'auto'); await force(page, 'puppy', 'auto');
 s = await waitSt(page, (s) => s.every((q) => q.st === 'on'), 6000);
 check('B1 자동 덮임 — 둘 다 on', s.every((q) => q.st === 'on'), JSON.stringify(s));
-// B2 주인 탭 — 흘러내린 이불을 깨우지 않고 덮어준다
+// B2 owner tap — tucks the slipped blanket back without waking the pet
 await force(page, 'chick', 'slip');
 const tapOk = await force(page, 'chick', 'tap');
 s = await waitSt(page, (s) => s.find((q) => q.n === 'chick').st === 'on', 5000);
 const c2 = s.find((q) => q.n === 'chick');
 check('B2 주인 탭 덮어주기 — 기상 없이 on 복귀', tapOk === true && c2.st === 'on' && c2.sleeping, JSON.stringify(c2));
-// B3 흘러내림 → 절친 재덮기 (병아리가 일어나 강아지 이불을 덮어주고 제 침대로)
+// B3 slipped off → bestie re-covers (the chick gets up, tucks the puppy's blanket, returns to its own bed)
 await force(page, 'puppy', 'slip'); await force(page, 'puppy', 'retuck');
 s = await waitSt(page, (s) => s.find((q) => q.n === 'puppy').st === 'on', 55000);
 check('B3a 절친 재덮기 — 강아지 이불 on', s.find((q) => q.n === 'puppy').st === 'on', JSON.stringify(s));
 s = await waitSt(page, (s) => { const c = s.find((q) => q.n === 'chick'); return c.sleeping && c.bed && c.phase === 'lying'; }, 55000);
 const c3 = s.find((q) => q.n === 'chick');
 check('B3b 재덮기 후 병아리 제 침대 복귀·재취침', c3.sleeping && !!c3.bed && c3.phase === 'lying', JSON.stringify(c3));
-// B4 기상 = 개킴
+// B4 wake-up = folded
 await force(page, 'chick', 'wake');
 s = await waitSt(page, (s) => s.find((q) => q.n === 'chick').st === 'off', 5000);
 check('B4 기상 시 이불 개킴(off)', s.find((q) => q.n === 'chick').st === 'off', JSON.stringify(s.find((q) => q.n === 'chick')));
 await page.close();
 
-// B5 여름 가드 — 자동 트리거를 당겨도 이불이 안 나온다
+// B5 summer guard — no blanket appears even when the auto trigger is pulled early
 const pg2 = await browser.newPage({ viewport: { width: 1100, height: 700 } });
 pg2.on('pageerror', (e) => errs.push(String(e.message)));
 await pg2.goto(`http://127.0.0.1:${PORT}/world.html?season=summer&hour=23&weather=clear&stats=1`, { waitUntil: 'load' });

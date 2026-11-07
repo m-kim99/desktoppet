@@ -1,5 +1,5 @@
-// 🔬 드로우 감사 v2 — 보이는 드로어블 전수 + 좌표→소품 귀속: 병합 누락 버킷을 "어느 타입이 몇 장
-//    먹는지"로 보고한다. 베이크 2차의 타깃 선정용 (읽기 전용 프로브).
+// 🔬 Draw audit v2 — every visible drawable + coordinate→prop attribution: reports the unmerged bucket as "which type
+//    eats how many draws". For picking targets of the 2nd bake pass (read-only probe).
 import http from 'http'; import fs from 'fs'; import path from 'path';
 import { fileURLToPath } from 'url';
 import { PROPS, ISLANDS, HOUSE } from '../static/js/world-layout.js';
@@ -72,7 +72,7 @@ const savings = new Map();
 for (const [, v] of buckets) {
     if (v.length < 2) continue;
     const types = [...new Set(v.map(attr))];
-    if (types.some((t) => t === '🐾펫')) continue;   // 펫은 병합 금지
+    if (types.some((t) => t === '🐾펫')) continue;   // Pets must not be merged
     const label = types.slice(0, 4).join('+');
     savings.set(label, (savings.get(label) || 0) + v.length - 1);
 }

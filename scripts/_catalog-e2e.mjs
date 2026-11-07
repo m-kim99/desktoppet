@@ -1,9 +1,9 @@
-// 🗺️ 월드 카탈로그 E2E — 데이터 생성 목록에 섬·주요 사물·시스템이 들어가고, 실제 채팅 요청에 실려 가는지
+// 🗺️ World catalog E2E — do islands, key objects and systems make it into the generated data list, and does it ride along in the real chat request
 import http from 'http'; import fs from 'fs'; import path from 'path';
 import { fileURLToPath } from 'url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 8933;
-const OUT = process.argv[2] || '';   // 카탈로그 원문 덤프 경로(선택)
+const OUT = process.argv[2] || '';   // Path to dump the raw catalog (optional)
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.glb': 'application/octet-stream' };
 const server = http.createServer((req, res) => {
     const url = decodeURIComponent(req.url.split('?')[0]);
@@ -34,7 +34,7 @@ const must = ['본섬', '놀이터섬', '추억의 섬', '모험의 섬', '휴�
 const missing = must.filter((k) => !cat.includes(k));
 check('C1 카탈로그에 섬 7개·주요 사물·시스템', missing.length === 0, missing.length ? '누락: ' + missing.join(',') : `${cat.length}자`);
 check('C2 잡동사니 제외(울타리·바위)', !/울타리|바위/.test(cat), '');
-// 실제 채팅 전송 경로 — 입력창에 쓰고 보내기
+// Real chat send path — type into the input box and send
 await page.evaluate(() => {
     const ta = [...document.querySelectorAll('input,textarea')].find((t) => /펫에게/.test(t.placeholder || ''));
     ta.value = '안녕'; ta.dispatchEvent(new Event('input', { bubbles: true }));

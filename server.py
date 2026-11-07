@@ -16,7 +16,7 @@ import shortuuid
 os.environ["MEM0_TELEMETRY"] = "False"
 parser = argparse.ArgumentParser(description="Run the ASGI application server.")
 parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
-parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "3456")))   # Railway 등 PaaS는 PORT env를 주입한다
+parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "3456")))   # PaaS like Railway inject the PORT env
 args, _ = parser.parse_known_args()
 
 HOST = args.host
@@ -675,7 +675,7 @@ async def lifespan(app: FastAPI):
     from tzlocal import get_localzone
     
     asyncio.create_task(clean_temp_files_task())
-    asyncio.create_task(_world_diary_daemon())   # 🌙 일기 데몬 — 월드 창 없이도 매일 일기·아침 댓글 (하단 월드 블록)
+    asyncio.create_task(_world_diary_daemon())   # 🌙 Diary daemon — daily diary and morning comments even without the world window (world block below)
     
     # Run the time-consuming operations in parallel
     init_db_task = init_db()
@@ -875,9 +875,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# 공개망 배포용 토큰 게이트: SAP_AUTH_TOKEN 이 설정돼 있을 때만 켜진다(로컬/Electron은 무동작).
-# http·websocket 둘 다 막고, /health 만 열어둔다. 첫 접속은 아무 URL 뒤에 ?token=... 을 붙이면
-# 쿠키(90일)를 심어줘서 이후 요청·WS 핸드셰이크가 자동 통과한다.
+# Token gate for public-network deployment: enabled only when SAP_AUTH_TOKEN is set (no-op for local/Electron).
+# Blocks both http and websocket, leaving only /health open. On first access, appending ?token=... to any URL
+# plants a cookie (90 days) so later requests and WS handshakes pass automatically.
 _SAP_TOKEN = os.environ.get("SAP_AUTH_TOKEN", "").strip()
 if _SAP_TOKEN:
     class _AuthGate:
@@ -896,7 +896,7 @@ if _SAP_TOKEN:
                     return await send({"type": "websocket.close", "code": 4401})
                 return await send_401(send)
             if query_ok and not cookie_ok and scope["type"] == "http":
-                async def send_with_cookie(message):   # ?token= 통과 시 응답에 쿠키를 심는다
+                async def send_with_cookie(message):   # plant the cookie in the response when ?token= passes
                     if message["type"] == "http.response.start":
                         message.setdefault("headers", []).append(
                             (b"set-cookie", f"sap_token={_SAP_TOKEN}; Path=/; Max-Age=7776000; HttpOnly; SameSite=Lax".encode("latin1")))
@@ -936,9 +936,9 @@ async def cors_options_workaround(request: Request, call_next):
             }
         )
     resp = await call_next(request)
-    # JS/HTML은 휴리스틱 캐시 금지: ESM 임포트 모듈(world-layout.js 등)은 버전 워치독 범위 밖이라
-    # 브라우저가 캐시를 며칠씩 신선 취급하면 재접속해도 구버전이 로드된다(2026-10-23 실측).
-    # no-cache = 매번 ETag 재검증(변경 없으면 304라 전송 비용 없음).
+    # No heuristic caching for JS/HTML: ESM-imported modules (world-layout.js etc.) are outside the version watchdog's scope, so
+    # if the browser treats the cache as fresh for days, the old version loads even on reconnect (measured 2026-10-23).
+    # no-cache = ETag revalidation every time (304 if unchanged, so no transfer cost).
     if request.url.path.endswith((".js", ".html")):
         resp.headers.setdefault("Cache-Control", "no-cache")
     return resp
@@ -10701,7 +10701,7 @@ mcp = FastApiMCP(
 
 mcp.mount()
 
-# ---- Pet world (월드) helpers: radio playlist + screenshot saving ----
+# ---- Pet world helpers: radio playlist + screenshot saving ----
 WORLD_MUSIC_DIR = os.path.join(base_path, "static", "music")
 WORLD_SHOT_DIR = os.path.join(base_path, "screenshots")
 
@@ -10726,12 +10726,12 @@ async def world_save_screenshot(request: Request):
         f.write(base64.b64decode(b64))
     return {"ok": True, "file": name}
 
-# 🔨 월드 공사모드 배치 저장 — 폰/데스크톱 어느 기기에서 사물을 옮겨도 같은 배치를 보도록
-# 서버 파일 하나(config/world_layout.json)에 둔다. 클라이언트는 시작 시 GET, 이동할 때 POST.
-# 월드 개인 데이터는 USER_DATA_DIR/world 에 산다 — 레포 폴더(config/)는 패키징 앱에선 읽기
-# 전용이고 Docker/Railway에선 재배포마다 초기화되기 때문. 예전 위치의 파일은 처음 접근할 때
-# 한 번 복사해와서 기존 로컬 데이터가 그대로 이어진다.
-WORLD_DATA_DIR = os.environ.get("WORLD_DATA_DIR") or os.path.join(USER_DATA_DIR, "world")   # env 오버라이드는 샌드박스 E2E용
+# 🔨 World construction-mode layout save — so moving objects on either phone or desktop shows the same layout,
+# kept in a single server file (config/world_layout.json). The client GETs on startup, POSTs on move.
+# World personal data lives in USER_DATA_DIR/world — the repo folder (config/) is read-only in the packaged app
+# and gets reset on every redeploy on Docker/Railway. Files at the old location are copied over once
+# on first access so existing local data carries over intact.
+WORLD_DATA_DIR = os.environ.get("WORLD_DATA_DIR") or os.path.join(USER_DATA_DIR, "world")   # the env override is for sandbox E2E
 def _world_file(name):
     os.makedirs(WORLD_DATA_DIR, exist_ok=True)
     new = os.path.join(WORLD_DATA_DIR, name)
@@ -10746,12 +10746,12 @@ def _world_file(name):
 
 
 def _world_read_json(path: str):
-    """world 파일 공용 리더 — 3단: ① 본 파일 ② 실패 시 .corrupt로 격리 후 .bak ③ 최신 .snap.
-    격리가 없으면: 손상 파일 → 로더가 빈 기본값 반환 → 다음 저장이 그 빈 값을 덮어써서
-    이전 기록 전체가 조용히 사라진다(일기·대화 기억이 이 패턴의 사정권이었다). 폴백이 없으면:
-    격리는 되지만 사용자는 빈 일기장을 보게 되고 복구는 수동 병합이다 → .bak(직전 정상본),
-    그것도 없으면 일일 스냅샷 중 최신을 읽어 **최대 저장 1회 분량 손실**로 자동 복구한다.
-    폴백 데이터는 다음 정상 저장 때 본 파일로 굳는다(리더는 파일을 만들지 않는다)."""
+    """Shared reader for world files — 3 tiers: ① the main file ② on failure, quarantine as .corrupt then .bak ③ the latest .snap.
+    Without quarantine: corrupt file → loader returns empty defaults → the next save overwrites with that empty value
+    and the entire previous record silently disappears (diary and chat memory were in this pattern's blast radius). Without fallback:
+    it's quarantined but the user sees an empty diary and recovery is a manual merge → .bak (last good copy),
+    and if that's missing too, read the latest daily snapshot to auto-recover with **at most one save's worth of loss**.
+    Fallback data solidifies into the main file on the next normal save (the reader never creates files)."""
     def _try(p):
         try:
             with open(p, "r", encoding="utf-8") as f:
@@ -10795,15 +10795,15 @@ def _world_read_json(path: str):
 
 
 def _world_write_json(path: str, obj, indent=1):
-    """world 파일 공용 라이터 — ① tmp에 쓰고 fsync ② 기존 파일을 .bak으로 복사 ③ 하루 첫
-    쓰기라면 .snap-YYYYMMDD로도 복사(= 어제의 최종본, 7세대 보관) ④ os.replace 원자 교체.
+    """Shared writer for world files — ① write to tmp and fsync ② copy the existing file to .bak ③ if it's the day's first
+    write, also copy to .snap-YYYYMMDD (= yesterday's final copy, 7 generations kept) ④ os.replace atomic swap.
 
-    왜 두 겹인가: 예전의 open(w) 직접 쓰기는 truncate가 먼저라 쓰는 도중 죽으면(전원·디스크 풀)
-    파일이 잘렸다 → 원자 교체가 막는다. 그런데 .bak 1세대만으로는 **연속 쓰기 사고**를 못 막는다
-    — KV는 900ms 디바운스로 여러 키가 잇달아 저장되므로, 잘못된 값이 들어온 뒤 두 번째 쓰기에서
-    .bak까지 오염본으로 회전한다(2026-08-09 world-events 소실 실사고). 일일 스냅샷은 그날 첫
-    쓰기 직전 상태를 붙잡아 두므로 "어제까지의 일기·대화 기억"은 무슨 일이 있어도 남는다.
-    손상 파일은 리더가 이미 .corrupt로 격리했으므로 .bak/.snap은 항상 정상본만 담는다."""
+    Why two layers: the old direct open(w) write truncates first, so dying mid-write (power loss, disk full)
+    truncated the file → the atomic swap prevents that. But a single .bak generation can't stop a **consecutive-write accident**
+    — KV saves several keys back-to-back with a 900ms debounce, so after a bad value comes in, the second write
+    rotates even .bak into the corrupted copy (2026-08-09 world-events loss, real incident). The daily snapshot captures the state
+    right before the day's first write, so "diary and chat memory up to yesterday" survives no matter what.
+    Corrupt files were already quarantined as .corrupt by the reader, so .bak/.snap always hold only good copies."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
@@ -10827,9 +10827,9 @@ def _world_write_json(path: str, obj, indent=1):
         except Exception:
             pass
         try:
-            # 수축 가드 — 새 내용이 기존의 30% 미만으로 줄면(기존 ≥ 2KB) 사고 가능성이 높다
-            # (2026-08-09 world-events 52건 → 1건 실사고). 거부하면 정당한 축소(링버퍼 트림)까지
-            # 막으므로, 저장은 그대로 하되 **덮이기 직전본을 즉시 보존**해 되돌릴 수 있게 한다.
+            # Shrink guard — if the new content shrinks below 30% of the old (old ≥ 2KB), an accident is likely
+            # (2026-08-09 real incident: world-events 52 → 1 entries). Rejecting would also block legitimate shrinks (ring-buffer trims),
+            # so save as usual but **immediately preserve the about-to-be-overwritten copy** so it can be rolled back.
             oldsz, newsz = os.path.getsize(path), os.path.getsize(tmp)
             if oldsz >= 2048 and newsz < oldsz * 0.3:
                 sk = f"{path}.snap-shrink-{time.strftime('%Y%m%d-%H%M%S')}"
@@ -10845,7 +10845,7 @@ def _world_write_json(path: str, obj, indent=1):
             pass
     os.replace(tmp, path)
     try:
-        dfd = os.open(os.path.dirname(path) or ".", os.O_RDONLY)   # rename까지 디스크 안착 (디렉터리 fsync)
+        dfd = os.open(os.path.dirname(path) or ".", os.O_RDONLY)   # settle the rename to disk too (directory fsync)
         try:
             os.fsync(dfd)
         finally:
@@ -10867,15 +10867,15 @@ async def world_set_layout(request: Request):
     layout = data.get("layout")
     if not isinstance(layout, dict):
         return {"ok": False}
-    # 빈/무지문 레이아웃 거부 — 구버전 캐시 창이 {}를 쏘아 실배치를 덮은 사고(2026-07-17) 재발 방지.
-    # 정상 저장은 항상 소품 수십 키 + _sig 지문을 동봉한다 (전부 원위치도 좌표를 다 적는 풀 저장).
+    # Reject empty/unsigned layouts — prevents a repeat of the incident (2026-07-17) where a stale cached window fired {} and overwrote the real layout.
+    # A normal save always includes dozens of prop keys + the _sig fingerprint (even all-at-default is a full save writing every coordinate).
     if len([k for k in layout.keys() if not k.startswith("_")]) < 5 or "_sig" not in layout:
         return {"ok": False, "reason": "empty-or-unsigned layout rejected"}
     _world_write_json(WORLD_LAYOUT_FILE, layout, indent=2)
     return {"ok": True}
 
-# 💾 월드 백업/복원 — 되돌릴 수 없는 개인 데이터(배치·일기·소원·캡슐·텃밭·별자리·우편·꽃 +
-# 펫별 대화 기억)를 zip 하나로. 맥 교체·재설치 대비용. 복원은 경로 검증 후 그대로 풀어놓는다.
+# 💾 World backup/restore — irreplaceable personal data (layout, diary, wishes, capsules, garden plot, constellations, mail, flowers +
+# per-pet chat memory) in one zip. For Mac replacement/reinstall. Restore validates paths then unpacks as-is.
 _BACKUP_DIRS = {"world": WORLD_DATA_DIR, "world_chat": os.path.join(USER_DATA_DIR, "world_chat")}
 
 def _world_backup_zip_bytes() -> bytes:
@@ -10892,15 +10892,15 @@ def _world_backup_zip_bytes() -> bytes:
     return buf.getvalue()
 
 
-# 자동 백업 폴더 — 디스크 사망(매트릭스 ④)의 방어는 오프머신 사본뿐이다. ~/Documents는 맥에서
-# iCloud 동기 대상인 경우가 많아 사실상 오프머신이 된다. 없으면(서버·리눅스) userData 안으로.
+# Auto-backup folder — the only defense against disk death (matrix ④) is an off-machine copy. ~/Documents on a Mac
+# is often iCloud-synced, making it effectively off-machine. If absent (server/Linux), fall back inside userData.
 _doc = os.path.join(os.path.expanduser("~"), "Documents")
 WORLD_AUTOBACKUP_DIR = os.path.join(_doc if os.path.isdir(_doc) else USER_DATA_DIR, "DesktopPet-Backups")
 
 
 def _world_auto_backup(tag: str = "") -> str | None:
-    """zip 스냅샷 1개 생성 — 부팅 시 하루 1회(tag 없음, 같은 날짜면 스킵) + 복원 직전(tag 지정).
-    14세대 보관. 실패해도 앱을 막지 않는다(백업은 부가 기능, 본 기능의 인질이 아니다)."""
+    """Create one zip snapshot — once a day at boot (no tag, skipped if same date) + right before a restore (tag given).
+    14 generations kept. Failure never blocks the app (backup is an extra, not a hostage of core features)."""
     try:
         os.makedirs(WORLD_AUTOBACKUP_DIR, exist_ok=True)
         day = time.strftime("%Y%m%d")
@@ -10913,15 +10913,15 @@ def _world_auto_backup(tag: str = "") -> str | None:
         with open(tmp, "wb") as f:
             f.write(data)
         os.replace(tmp, dest)
-        # 보관 정책: 최근 14개(일간) + 월별 최초 zip 36개월(장기). 14세대만 두면 "몇 년 뒤에
-        # 몇 달 전 상태로 돌아가고 싶다"가 불가능하다 — 서서히 진행되는 손상(로직 버그류)은
-        # 14일이 지나면 모든 백업에 전염되기 때문. 월간 보관본이 그 지평을 3년으로 늘린다.
+        # Retention policy: latest 14 (daily) + first zip of each month for 36 months (long-term). With only 14 generations, "years later
+        # I want to go back to a state from months ago" is impossible — slowly progressing corruption (logic bugs)
+        # infects every backup after 14 days. The monthly keeps extend that horizon to 3 years.
         zips = sorted(x for x in os.listdir(WORLD_AUTOBACKUP_DIR) if x.startswith("pet-world-backup-") and x.endswith(".zip"))
         first_of_month = {}
         for x in zips:
             m = re.match(r"^pet-world-backup-(\d{6})", x)
             if m and m.group(1) not in first_of_month:
-                first_of_month[m.group(1)] = x   # 정렬순 첫 zip = 그 달의 최초본 (1일에 안 켜도 동작)
+                first_of_month[m.group(1)] = x   # first zip in sort order = that month's earliest copy (works even if not launched on the 1st)
         keep = set(sorted(first_of_month.values())[-36:]) | set(zips[-14:])
         for x in zips:
             if x not in keep:
@@ -10935,8 +10935,8 @@ def _world_auto_backup(tag: str = "") -> str | None:
 
 @app.get("/api/world_backup_status")
 async def world_backup_status():
-    """홈 대시보드 배지용 — 최신 자동 백업의 나이. 배지는 조용한 감시자: 폴더 접근 실패도
-    '백업 없음'으로 정직하게 돌려준다 (그래야 죽은 백업이 눈에 띈다)."""
+    """For the home dashboard badge — age of the latest auto backup. The badge is a quiet watchdog: even a folder access failure
+    is honestly returned as '백업 없음' (no backup) (that's how a dead backup gets noticed)."""
     try:
         zips = sorted(x for x in os.listdir(WORLD_AUTOBACKUP_DIR)
                       if x.startswith("pet-world-backup-") and x.endswith(".zip")) if os.path.isdir(WORLD_AUTOBACKUP_DIR) else []
@@ -10959,26 +10959,26 @@ async def world_backup_import(request: Request):
     import io, zipfile
     body = await request.body()
     restored, skipped = 0, 0
-    _world_auto_backup(tag="prerestore")   # 복원 자체를 되돌릴 수 있게 — 직전 상태를 먼저 zip
+    _world_auto_backup(tag="prerestore")   # so the restore itself can be rolled back — zip the current state first
     try:
         with zipfile.ZipFile(io.BytesIO(body)) as z:
             for info in z.infolist():
                 parts = info.filename.split("/", 1)
                 if len(parts) != 2 or parts[0] not in _BACKUP_DIRS:
                     continue
-                fn = os.path.basename(parts[1])                    # 경로 조작 차단
+                fn = os.path.basename(parts[1])                    # block path manipulation
                 if not fn.endswith(".json"):
                     continue
                 raw = z.read(info)
                 try:
-                    json.loads(raw.decode("utf-8"))               # 깨진 백업을 그대로 심지 않는다
+                    json.loads(raw.decode("utf-8"))               # don't plant a broken backup as-is
                 except Exception:
                     skipped += 1
                     continue
                 d = _BACKUP_DIRS[parts[0]]
                 os.makedirs(d, exist_ok=True)
                 fp = os.path.join(d, fn)
-                tmp = fp + ".tmp"                                  # 복원도 원자 교체 — 도중 크래시에 안전
+                tmp = fp + ".tmp"                                  # restore is also an atomic swap — safe against mid-way crashes
                 with open(tmp, "wb") as f:
                     f.write(raw)
                 os.replace(tmp, fp)
@@ -10987,13 +10987,13 @@ async def world_backup_import(request: Request):
         return JSONResponse({"error": "zip 파일이 아니에요"}, status_code=400)
     return {"ok": True, "restored": restored, "skipped": skipped}
 
-_world_auto_backup()   # 부팅 시 하루 1회 — 스케줄러 불필요(앱을 켤 때마다 검사)
+_world_auto_backup()   # once a day at boot — no scheduler needed (checked every time the app launches)
 
 
 def _world_auto_backup_tick():
-    """앱을 며칠씩 켜두면 부팅 검사만으론 백업이 낡는다 — 1시간마다 재검. _world_auto_backup은
-    오늘 zip이 있으면 즉시 반환하는 멱등 함수라 비용이 없고, 자체 try/except라 실패해도 조용하다.
-    데몬 타이머: 앱 종료를 붙잡지 않는다."""
+    """If the app stays up for days, the boot check alone lets backups go stale — recheck hourly. _world_auto_backup is
+    idempotent, returning immediately if today's zip exists, so it costs nothing, and has its own try/except so failure is quiet.
+    Daemon timer: doesn't hold up app shutdown."""
     try:
         _world_auto_backup()
     finally:
@@ -11008,8 +11008,8 @@ _wb_t0 = _wb_threading.Timer(3600, _world_auto_backup_tick)
 _wb_t0.daemon = True
 _wb_t0.start()
 
-# ⚠️ 클라이언트 오류 수집 — 폰에선 콘솔이 안 보이니 월드가 오류를 여기로 보낸다. 200KB 넘으면
-# 절반을 잘라 무한 증식을 막는다.
+# ⚠️ Client error collection — the console isn't visible on the phone, so the world sends errors here. Over 200KB,
+# trim half to prevent unbounded growth.
 WORLD_ERRLOG_FILE = os.path.join(WORLD_DATA_DIR, "client-errors.log")
 
 @app.post("/api/world_log")
@@ -11030,15 +11030,15 @@ async def world_client_log(request: Request):
         pass
     return {"ok": True}
 
-# ---- 월드 채팅 (P1/P2): a dedicated LLM session for the pet world, fully separate from the main
+# ---- World chat (P1/P2): a dedicated LLM session for the pet world, fully separate from the main
 # chat pipeline. Per-pet history + a rolling summary live in USER_DATA_DIR/world_chat/{pet}.json.
 # Each turn the world client sends a Korean world-state snapshot + recent world events; the reply
 # may carry inline action tags (<motion=..> <goto=..> <mount=..> <drink=..> <snack=..> <hat=..>)
 # which the world parses, strips from the bubble and executes. Personas + the action spec live
 # here so the world stays a thin client; the LLM is whatever main model the app is configured for.
-WORLD_CHAT_DIR = os.path.join(os.environ.get("WORLD_DATA_DIR") or USER_DATA_DIR, "world_chat")   # 샌드박스(WORLD_DATA_DIR)가 채팅 기억도 격리 — E2E가 실기억을 오염시킨 실측(10/30) 재발 방지
-WORLD_CHAT_SEND = 30          # 요약을 접은 뒤 원문으로 남겨두는 최근 메시지 수(프롬프트 원문 하한)
-WORLD_CHAT_KEEP = 48          # 미요약 원문이 이만큼 쌓이면 오래된 쪽을 요약에 '덧쌓는다' — 원문은 삭제 안 함
+WORLD_CHAT_DIR = os.path.join(os.environ.get("WORLD_DATA_DIR") or USER_DATA_DIR, "world_chat")   # The sandbox (WORLD_DATA_DIR) isolates chat memory too — prevents a repeat of E2E contaminating real memory (measured 10/30)
+WORLD_CHAT_SEND = 30          # Number of recent messages kept verbatim after folding into the summary (lower bound of verbatim text in the prompt)
+WORLD_CHAT_KEEP = 48          # Once this much unsummarized text piles up, the older end is 'stacked onto' the summary — the originals are never deleted
 
 WORLD_LORE = """[세계]
 너는 하늘에 떠 있는 작은 군도 '병아리동산'에 사는 펫이다. 본섬(중앙 광장과 분수, 복층 주택(1층 소파·2층 침대), 연못, 밥그릇, 커피·간식 부스, 주방, 텃밭, 피아노와 도서관 뜰)을 중심으로 나무다리로 이어진 위성섬들이 있다 — 북동 놀이터섬(그네·시소·트램펄린·운동 공간), 남서 추억의 섬(베프 기념비·소원 우물·타임캡슐·우정반지 둥지), 남동 모험의 섬(동굴·전망대·보물 모래밭·수박 덩굴), 서쪽 농장 섬, 남쪽 휴양지 모래섬(다리가 없어 보트·수영·페리로 가는 곳, 야자수·모닥불), 그리고 남서쪽 바다에 나무다리로 이어진 병아리 동산(꽃언덕과 둘이 앉는 벤치) — 모두 일곱 섬. 다리가 없는 섬은 휴양지 모래섬뿐이다. 섬 둘레는 바다라 절벽에서 다이빙해 수영하고, 잠수정으로 해저에도 간다. 발사장의 로켓으로 꼬마 달과 우주정거장에 다녀오기도 한다. 지금 월드에 실제로 있는 사물의 정확한 목록은 [월드 사물]로 따로 온다.
@@ -11047,9 +11047,9 @@ WORLD_LORE = """[세계]
 [관계]
 {{user}}는 화면 밖에서 너희를 지켜보고, 가끔 펫을 직접 조종해 함께 놀아준다. 너와 다른 펫 한 마리는 둘도 없는 절친이다."""
 
-# 📔 일기 전용 세계 설명 — 채팅 로어가 11/6 현행화된 뒤 샌드박스 A/B(같은 날 이벤트)로 비교한 결과, 주인이
-# "일기는 예전 결 그대로"를 택했다(A 롤백). 일기 프롬프트는 이 상수를 쓰고 채팅은 WORLD_LORE를 쓴다 —
-# 사물 지식은 채팅 카탈로그 몫이라 일기에 새 로어가 꼭 필요하지도 않다. 고치려면 주인 허가 후 A/B부터.
+# 📔 Diary-only world description — after the chat lore was updated on 11/6, a sandbox A/B (same-day events) comparison led the owner
+# to choose "일기는 예전 결 그대로" (keep the diary's old feel; A rollback). The diary prompt uses this constant and chat uses WORLD_LORE —
+# object knowledge belongs to the chat catalog, so the diary doesn't strictly need the new lore. To change it, get owner approval then A/B first.
 WORLD_DIARY_LORE = """[세계]
 너는 하늘에 떠 있는 작은 군도 '병아리동산'에 사는 펫이다. 본섬에는 중앙 광장, 복층 주택(1층 소파·2층 침대), 연못, 밥그릇, 커피 부스, 간식 부스, 라디오, 가로등, 빨간 스포츠카가 있고, 나무다리 건너 북동섬에 그네와 시소, 남서섬에 빈 풀밭이 있다. 섬 둘레는 바다라 절벽에서 다이빙해 수영할 수 있다.
 [하루]
@@ -11090,7 +11090,7 @@ WORLD_ACTION_SPEC = """[행동 태그]
 예시: "좋아, 그네 타러 가자! 삐약! <goto=swing> <mount=swing>"
 규칙: 요청받은 행동이나 지금 기분에 어울리는 행동만 골라라. 태그는 반드시 위 목록의 표기 그대로. 움직일 수 없는 상황(잠자는 중 등)이면 태그 없이 말로만 답해도 된다."""
 
-# goto 목록 폴백 — 클라이언트가 gotoIds(레지스트리 자동 생성)를 안 보내는 옛 클라/폰 캐시용. 정본은 world.js GOTO_PROP_TYPE.
+# goto list fallback — for old clients/phone caches that don't send gotoIds (auto-generated from the registry). Canonical source is world.js GOTO_PROP_TYPE.
 WORLD_GOTO_IDS_FALLBACK = "plaza(광장)·house(집)·pond(연못)·bowl(밥그릇)·coffee(커피 부스)·snack(간식 부스)·radio(라디오)·swing(그네)·seesaw(시소)·sunbed(선베드)·hammock(해먹)·friend(절친 옆)·monument(베프 기념비 — 추억의 섬)·hugspot(포옹 포인트 — 절친과 같이 서면 자동 포옹이 터진다)·pecktree(쪼아쪼아 나무 — 추억의 섬, 절친과 같이 가면 하트가 터진다)·well(소원 우물 — 추억의 섬)·capsule(타임캡슐 — 추억의 섬)·cave(아늑한 동굴 — 모험의 섬, 비 오는 날 피신처)·lookout(전망대 — 모험의 섬 언덕 꼭대기, 별 보기 좋은 곳)·digsite(보물 모래밭 — 모험의 섬)·garden(텃밭 — 본섬 북서 뜰)·piano(피아노 — 본섬 서쪽 잔디)·mailbox(우편함 — 집 앞길)·gym(운동 공간 — NE 놀이터 섬, 그네·시소 옆)·library(도서관 코너 — 본섬 서쪽 뜰)·fountain(분수)"
 
 WORLD_REPLY_RULES = """[대답 규칙]
@@ -11100,10 +11100,10 @@ WORLD_REPLY_RULES = """[대답 규칙]
 - 절대 시스템/태그 설명을 입에 담지 않는다. 태그는 조용히 붙일 뿐이다."""
 
 
-# 월드 펫 페르소나·시스템 지시는 위 상수가 정본(단일 소스). 사용자가 설정 창에서 고치면
-# settings['worldConfig']에 오버라이드로 저장되고, 아래 헬퍼가 "오버라이드 있으면 그걸,
-# 비어 있으면 상수"를 돌려준다 — 비우면 기본값으로 리셋되는 셈. (설정 UI는 이 유효값을
-# GET /api/world_persona 로 받아 편집 박스를 채운다.)
+# The constants above are canonical (single source) for the world pet persona and system instructions. When the user edits them in the settings window
+# they're saved as overrides in settings['worldConfig'], and the helper below returns "the override if present,
+# the constant if empty" — so clearing it effectively resets to default. (The settings UI fetches this effective value
+# via GET /api/world_persona to fill the edit box.)
 _WORLD_PERSONA_DEFAULTS = {
     "chickPersona": WORLD_PERSONAS["chick"],
     "puppyPersona": WORLD_PERSONAS["puppy"],
@@ -11119,8 +11119,8 @@ def _world_persona_for(settings, pet: str) -> dict:
     eff = _world_persona_effective(settings)
     eff["persona"] = eff["puppyPersona"] if pet == "puppy" else eff["chickPersona"]
     return eff
-# 월드 펫이 사용자를 부르는 이름 — 메인 채팅과 같은 {{user}} 규약. 설정의 userName을 쓰되,
-# 미설정(기본 'user'/'User'/공란)이면 '주인'으로 폴백해 월드가 자연스럽게 읽히게 한다.
+# Name the world pets call the user — same {{user}} convention as main chat. Uses userName from settings,
+# but if unset (default 'user'/'User'/blank) falls back to '주인' (owner) so the world reads naturally.
 def _world_user_name(settings) -> str:
     n = ((settings or {}).get("memorySettings", {}) or {}).get("userName", "").strip()
     return "주인" if (not n or n.lower() == "user") else n
@@ -11128,9 +11128,9 @@ def _world_user_name(settings) -> str:
 
 @app.get("/api/world_persona")
 async def world_persona_get():
-    # 설정 창용 — effective(오버라이드 or 기본값)로 편집 박스를 채우고, defaults(순수 기본값)로
-    # 저장 시 "기본값과 같으면 오버라이드 비움" 정규화를 한다 (다이얼로그 열기만 해도 기본값이
-    # 오버라이드로 굳던 문제 방지).
+    # For the settings window — fills the edit box with effective (override or default), and uses defaults (pure defaults)
+    # to normalize on save as "clear the override if equal to the default" (prevents merely opening the dialog from
+    # freezing defaults into overrides).
     return {"effective": _world_persona_effective(await load_settings()),
             "defaults": dict(_WORLD_PERSONA_DEFAULTS)}
 
@@ -11141,11 +11141,11 @@ def _world_chat_file(pet: str) -> str:
 
 
 def _world_chat_reset_files(pet: str):
-    """기억 초기화 — 본 파일만 지우면 안 된다. 리더의 자동 복구(.bak → .snap 폴백)가
-    다음 로드에서 지운 기억을 **되살려** 초기화가 조용히 무효가 된다(자동 복구를 넣으며 생긴
-    부작용 — 명시적 삭제와 사고 손실을 리더는 구분할 수 없다). 사이드카(.bak·.snap-*·.corrupt·
-    .tmp)까지 함께 지운다. Documents의 일일 zip 아카이브는 남는다 — 그건 "실수로 초기화"의
-    마지막 되돌리기 수단이고, 되살림은 복원 API를 통해서만 명시적으로 일어난다."""
+    """Memory reset — deleting only the main file is not enough. The reader's auto-recovery (.bak → .snap fallback)
+    **revives** the deleted memory on the next load and the reset is silently nullified (a side effect of adding
+    auto-recovery — the reader can't tell an explicit delete from accidental loss). Delete the sidecars (.bak, .snap-*, .corrupt,
+    .tmp) too. The daily zip archive in Documents stays — it's the last rollback for an "accidental reset",
+    and revival happens only explicitly through the restore API."""
     try:
         base = _world_chat_file(pet)
         dirn, name = os.path.split(base)
@@ -11190,13 +11190,13 @@ async def _world_chat_client_and_model():
 
 
 async def _world_chat_summarize(pet: str):
-    # 계층형 메모리(비파괴): 원문(history)은 절대 지우지 않고, 최근 창(WORLD_CHAT_SEND)을 벗어난
-    # 오래된 턴만 요약(summary)에 '덧쌓는다'. summary_upto = 요약이 커버하는 history 지점(그 앞은
-    # 요약으로, 그 뒤는 원문으로 프롬프트에 나간다). 이미 요약한 구간은 다시 요약하지 않는다(비용).
+    # Tiered memory (non-destructive): the originals (history) are never deleted; only old turns outside the
+    # recent window (WORLD_CHAT_SEND) are 'stacked onto' the summary. summary_upto = the history point the summary covers (before it
+    # goes to the prompt as summary, after it as originals). Already-summarized ranges are not summarized again (cost).
     try:
         store = _world_chat_load(pet)
         upto = store.get("summary_upto", 0)
-        fold_end = len(store["history"]) - WORLD_CHAT_SEND   # 최근 SEND개는 원문으로 남긴다
+        fold_end = len(store["history"]) - WORLD_CHAT_SEND   # keep the latest SEND turns verbatim
         chunk = store["history"][upto:fold_end]
         if not chunk:
             return
@@ -11219,10 +11219,10 @@ async def _world_chat_summarize(pet: str):
         )
         summary = (resp.choices[0].message.content or "").strip()
         if summary:
-            store = _world_chat_load(pet)          # reload — 그 사이 새 턴이 append됐을 수 있다(history는 append만 → 인덱스 안정)
-            if store.get("summary_upto", 0) != upto:   # 그 사이 다른 요약이 이미 진행됨 — 내 결과는 버려 중복/역행 방지
+            store = _world_chat_load(pet)          # reload — new turns may have been appended meanwhile (history is append-only → indices are stable)
+            if store.get("summary_upto", 0) != upto:   # another summary already ran meanwhile — discard my result to prevent duplication/regression
                 return
-            store["summary"] = summary[:1000]      # 요약은 덧쌓기(원문은 그대로), 지표만 전진
+            store["summary"] = summary[:1000]      # the summary is stacked on (originals untouched), only the pointer advances
             store["summary_upto"] = fold_end
             _world_chat_save(pet, store)
     except Exception as e:
@@ -11243,14 +11243,14 @@ async def world_chat(request: Request):
         return JSONResponse({"error": "empty text"}, status_code=400)
     snapshot = str(data.get("snapshot", "")).strip()
     events = str(data.get("events", "")).strip()
-    catalog = str(data.get("catalog", "")).strip()[:2000]   # 🗺️ 월드 사물 자동 목록 (클라이언트 데이터 생성)
-    goto_ids = str(data.get("gotoIds", "")).strip()[:1500]   # 🧭 goto 태그 목록 (클라 레지스트리 자동 생성)
+    catalog = str(data.get("catalog", "")).strip()[:2000]   # 🗺️ Auto-generated world object list (generated from client data)
+    goto_ids = str(data.get("gotoIds", "")).strip()[:1500]   # 🧭 goto tag list (auto-generated from the client registry)
 
     try:
         wc_client, current_settings = await _world_chat_client_and_model()
         uname = _world_user_name(current_settings)
-        # 이름이 설정된 경우에만 "이름으로 불러라" 지시를 얹는다 (미설정이면 {{user}}가 '주인'으로
-        # 치환되어 기존 톤 유지). 마지막에 system_prompt 전체에서 {{user}} → 이름 치환.
+        # Only add the "call them by name" instruction when a name is set (if unset, {{user}} is replaced with '주인'
+        # to keep the existing tone). Finally replace {{user}} → name across the whole system_prompt.
         owner_line = (f"너와 함께 노는 사람의 이름은 '{uname}'이다. '주인'이라고 부르지 말고 '{uname}'(이)라고 이름으로 부른다."
                       if uname != "주인" else "")
 
@@ -11261,29 +11261,29 @@ async def world_chat(request: Request):
             eff["lore"],
             owner_line,
             eff["replyRules"],
-            eff["actionSpec"].replace("{{GOTO_IDS}}", goto_ids or WORLD_GOTO_IDS_FALLBACK),   # 🧭 goto 목록은 클라 레지스트리가 정본
+            eff["actionSpec"].replace("{{GOTO_IDS}}", goto_ids or WORLD_GOTO_IDS_FALLBACK),   # 🧭 the client registry is canonical for the goto list
         ] if p]).replace("{{user}}", uname)
         messages = [{"role": "system", "content": system_prompt}]
-        if catalog:   # 🗺️ 클라이언트가 데이터에서 뽑은 "지금 실제로 있는 것들" — 로어(서사)와 분리된 사물 단일 소스
+        if catalog:   # 🗺️ "What actually exists right now" extracted by the client from data — single source of objects, separate from lore (narrative)
             messages.append({"role": "system", "content": "[월드 사물 — 지금 월드에 실제로 있는 것들(자동 목록). 여기 없는 사물은 지어내지 않는다]\n" + catalog})
         if store["summary"]:
             messages.append({"role": "system", "content": f"[지난 대화에서 기억하는 것]\n{store['summary']}"})
         obs = [o for o in store.get("observed", []) if isinstance(o, dict) and o.get("text")][-8:]
-        if obs:   # 곁에서 들은 것의 영구 기억 (엿듣기 영속화 — 스몰빌 관찰 모델)
+        if obs:   # Permanent memory of things overheard nearby (overhearing persistence — Smallville observation model)
             messages.append({"role": "system", "content": "[곁에서 보고 들은 것들 — 네 발화가 아니다. 아는 척은 자연스럽게]\n" + "\n".join(f"- {str(o['text'])[:240]}" for o in obs)})
         other = "puppy" if pet == "chick" else "chick"
         oko = "강아지" if other == "puppy" else "병아리"
         shared = []
-        for m in _world_chat_load(other)["history"][-24:]:   # 상시 공유 — 상대 펫의 최근 원문 10턴 (주인 지정)
+        for m in _world_chat_load(other)["history"][-24:]:   # Always shared — the other pet's latest 10 verbatim turns (owner request)
             c = str(m.get("content", "")).strip()
             if not c or (m.get("role") == "user" and c.startswith("(")):
-                continue   # 연출 지시문 제외 — 주인이 실제로 친 말이 아니다
+                continue   # exclude stage directions — not something the owner actually typed
             shared.append(("주인" if m.get("role") == "user" else oko) + ": " + c[:160])
         shared = shared[-10:]
         if shared:
             messages.append({"role": "system", "content": f"[주인과 {oko}의 최근 대화 — 같은 월드라 너도 들었다. 네 말이 아니니 말투를 흉내 내거나 대신 답하지 말 것]\n" + "\n".join(shared)})
-        vstart = max(store.get("summary_upto", 0), len(store["history"]) - WORLD_CHAT_KEEP)   # 요약이 커버 못 하는 원문부터(요약 지연·실패 시 최근 KEEP개로 상한)
-        messages.extend({"role": m["role"], "content": m.get("content", "")} for m in store["history"][vstart:])   # t(타임스탬프) 등 부가 키는 빼고 role/content만 LLM에 보낸다
+        vstart = max(store.get("summary_upto", 0), len(store["history"]) - WORLD_CHAT_KEEP)   # from the originals the summary doesn't cover (capped at the latest KEEP if the summary is delayed/failed)
+        messages.extend({"role": m["role"], "content": m.get("content", "")} for m in store["history"][vstart:])   # strip extra keys like t (timestamp) and send only role/content to the LLM
         situation = f"[현재 상황]\n{snapshot}" if snapshot else "[현재 상황]\n(정보 없음)"
         if events:
             situation += f"\n\n[최근 월드에서 있었던 일]\n{events}"
@@ -11301,20 +11301,20 @@ async def world_chat(request: Request):
         print(f"[world_chat] LLM call failed: {e}")
         return JSONResponse({"error": str(e)}, status_code=502)
 
-    ts = datetime.now().isoformat(timespec="seconds")   # 날짜/시각 기록 — 사용자가 대화 기록을 날짜로 훑을 수 있게
+    ts = datetime.now().isoformat(timespec="seconds")   # record date/time — so the user can browse chat history by date
     store["history"].append({"role": "user", "content": text, "t": ts})
     store["history"].append({"role": "assistant", "content": reply, "t": ts})
-    # 전체 보존: 원문은 절대 안 자른다. 최근 창을 벗어난 오래된 턴만 요약에 '덧쌓아'(비파괴) 장기
-    # 기억으로 쓰고, 파일엔 모든 턴이 타임스탬프와 함께 그대로 남는다.
+    # Full preservation: originals are never truncated. Only old turns outside the recent window are 'stacked onto' the summary (non-destructive)
+    # as long-term memory, and every turn stays in the file as-is with its timestamp.
     _world_chat_save(pet, store)
     if len(store["history"]) - store.get("summary_upto", 0) > WORLD_CHAT_KEEP:
         asyncio.create_task(_world_chat_summarize(pet))
     return {"reply": reply}
 
 
-# ---- 월드 그림일기 (㉚): 하루의 이벤트 로그를 펫 1인칭 일기로 접는다. 날짜·펫별로
-# config/world_layout.json처럼 서버 파일(config/world_diary.json)에 보관 — 폰/데스크톱 공유,
-# 같은 날 재요청은 저장본을 돌려준다(force=다시 쓰기). 페르소나/장기기억은 world_chat 것을 재사용.
+# ---- World picture diary (㉚): folds the day's event log into a first-person pet diary. Per date and pet,
+# stored in a server file (config/world_diary.json) like config/world_layout.json — shared by phone/desktop,
+# re-requests for the same day return the saved copy (force=rewrite). Persona/long-term memory reuse world_chat's.
 WORLD_DIARY_FILE = _world_file("world_diary.json")
 
 
@@ -11330,8 +11330,8 @@ def _world_diary_save(data: dict):
         print(f"[world_diary] save failed: {e}")
 
 
-# 🎲 일기 형식 룰렛 — 매일 같은 지시문은 같은 골격("아침엔~낮엔~저녁엔~" 시간순 나열)을 낳는다(실측).
-# 날짜+펫 시드 결정론: 소급 작성해도 같은 형식, 실패 재시도에도 형식이 안 흔들린다. quiet(무소재일)엔 미적용.
+# 🎲 Diary format roulette — the same instruction every day yields the same skeleton (a chronological "아침엔~낮엔~저녁엔~" morning/noon/evening listing) (measured).
+# Date+pet seed determinism: same format even when written retroactively, and the format doesn't shift on failed retries. Not applied on quiet (no-material) days.
 WORLD_DIARY_STYLES = [
     ("free", 45,
      "오늘 하루를 돌아보는 그림일기. 모든 일을 나열하지 말고 가장 기억에 남는 순간을 중심으로 —"
@@ -11365,8 +11365,8 @@ def _world_diary_style(pet: str, date: str):
 
 
 def _world_diary_recent_ctx(pet: str, date: str):
-    """어제와 잇기 + 반복 회피 재료 — 어제 본문, 최근 3일의 기분 단어·첫머리. 일기가 수백 개로
-    쌓여도 입력은 이 고정 크기만 쓴다(스케일 무관)."""
+    """Material for continuity with yesterday + repetition avoidance — yesterday's body, mood words and openers of the last 3 days. Even with
+    hundreds of diaries piled up, the input uses only this fixed size (scale-independent)."""
     try:
         base = time.mktime(time.strptime(date, "%Y-%m-%d"))
     except Exception:
@@ -11386,8 +11386,8 @@ def _world_diary_recent_ctx(pet: str, date: str):
 
 
 async def _world_diary_llm_entry(pet: str, date: str, events: str, snapshot: str, quiet: bool = False) -> dict:
-    """펫 일기 생성 공용부 — 엔드포인트(월드 창 트리거)와 일기 데몬이 같은 프롬프트를 쓴다.
-    quiet=부재일(소재 없음) 모드: 짧고 조용한 일기, 없던 사건을 지어내지 않는다. 실패는 예외로."""
+    """Shared part of pet diary generation — the endpoint (world-window trigger) and the diary daemon use the same prompt.
+    quiet=absent-day (no material) mode: a short quiet diary, no inventing events that didn't happen. Failures raise."""
     wc_client, current_settings = await _world_chat_client_and_model()
     store = _world_chat_load(pet)
     eff = _world_persona_for(current_settings, pet)
@@ -11411,7 +11411,7 @@ async def _world_diary_llm_entry(pet: str, date: str, events: str, snapshot: str
             "- '{{user}},' 호명으로 일기를 시작하는 건 '말 걸듯' 형식의 날에만 — 오늘이 그 형식이 아니면 다른 말로 시작한다.\n"
             "- 마지막 줄은 반드시 '기분: <이모지 하나> <한 단어>' 형식으로 끝낸다."
         )
-    sys_parts = [eff["persona"], WORLD_DIARY_LORE, rules]   # 일기는 옛 로어 고정(주인 선택 — A/B 실측)
+    sys_parts = [eff["persona"], WORLD_DIARY_LORE, rules]   # diary pinned to the old lore (owner's choice — A/B measured)
     if store["summary"]:
         sys_parts.append(f"[{{{{user}}}}와의 기억]\n{store['summary']}")
     y_text, moods, openers = _world_diary_recent_ctx(pet, date)
@@ -11432,7 +11432,7 @@ async def _world_diary_llm_entry(pet: str, date: str, events: str, snapshot: str
         model=current_settings["model"],
         messages=[
             {"role": "system", "content": "\n\n".join(sys_parts).replace("{{user}}", uname)},
-            {"role": "user", "content": user_text.replace("{{user}}", uname)},   # 데몬 스냅샷의 {{user}} 토큰용 — 클라 페이로드엔 원래 없다
+            {"role": "user", "content": user_text.replace("{{user}}", uname)},   # for the {{user}} token in daemon snapshots — not in the client payload originally
         ],
         temperature=0.8,
         max_tokens=500,
@@ -11446,15 +11446,15 @@ async def _world_diary_llm_entry(pet: str, date: str, events: str, snapshot: str
         mood = m.group(1).strip()[:24]
     entry = {"text": text, "mood": mood, "ts": int(time.time() * 1000)}
     if style:
-        entry["style"] = style   # 형식 룰렛 관측용(패널은 무시) — E2E가 분포를 검증한다
+        entry["style"] = style   # for observing the format roulette (the panel ignores it) — E2E verifies the distribution
     return entry
 
 
 def _world_diary_store_pet(date: str, pet: str, entry: dict, overwrite: bool = True) -> dict:
-    diary = _world_diary_load()   # reload — 다른 펫의 일기가 그새 저장됐을 수 있다
+    diary = _world_diary_load()   # reload — the other pet's diary may have been saved meanwhile
     cur = (diary.get(date) or {}).get(pet)
     if cur and not overwrite:
-        return cur                # 첫 저자 승리 — 데몬은 이미 있는 일기를 절대 덮지 않는다
+        return cur                # first author wins — the daemon never overwrites an existing diary
     diary.setdefault(date, {})[pet] = entry
     _world_diary_save(diary)
     return entry
@@ -11462,7 +11462,7 @@ def _world_diary_store_pet(date: str, pet: str, entry: dict, overwrite: bool = T
 
 @app.post("/api/world_chat_observe")
 async def world_chat_observe(request: Request):
-    """곁에서 들은 대화를 펫의 영구 관찰 기억(observed)에 남긴다 — 엿듣기 영속화 (클라 recordOverheard가 호출)."""
+    """Record conversations overheard nearby into the pet's permanent observation memory (observed) — overhearing persistence (called by client recordOverheard)."""
     try:
         data = await request.json()
     except Exception:
@@ -11473,17 +11473,17 @@ async def world_chat_observe(request: Request):
         return JSONResponse({"error": "pet/text required"}, status_code=400)
     store = _world_chat_load(pet)
     store["observed"] = (store.get("observed") or []) + [{"t": int(time.time() * 1000), "text": text}]
-    store["observed"] = store["observed"][-40:]   # 상한 — 몇 주치 관찰이면 충분, 파일 비대 방지
+    store["observed"] = store["observed"][-40:]   # cap — a few weeks of observations is enough; prevents file bloat
     _world_chat_save(pet, store)
     return {"ok": True, "count": len(store["observed"])}
 
 
 @app.get("/api/world_chat_log")
 async def world_chat_log():
-    """화면 스크롤백 하이드레이션 — 두 펫의 대화 원본(world_chat/*.json, 무손실)에서 최근 턴을
-    시간순으로 합쳐 준다. 스크롤백은 기기별 localStorage라 주소 변경·새 기기에서 비는데(9/22
-    폰 주소 교체로 실측), 원본은 서버가 정본이라 여기서 되살린다. t 없는 초창기 턴은 순서
-    병합이 불가해 제외 — 스크롤백 60줄 밖의 고대사다."""
+    """Screen scrollback hydration — merges recent turns from both pets' chat originals (world_chat/*.json, lossless)
+    in chronological order. Scrollback is per-device localStorage, so it's empty after an address change or on a new device (measured
+    on 9/22 when the phone address changed), but the server holds the canonical originals, so we revive it here. Early turns without t
+    can't be order-merged and are excluded — ancient history beyond the 60-line scrollback."""
     rows = []
     for pet in WORLD_PERSONAS:
         store = _world_chat_load(pet)
@@ -11527,18 +11527,18 @@ async def world_diary_write(request: Request):
     return {"cached": False, **entry}
 
 
-# ---- ✍️ 주인 일기 + 펫 댓글 — 시간 기준 v2(사용자 확정: "새벽에 써도 아침엔 받는다"):
-#   ① 주인 일기의 하루 = 06:00 ~ 다음 날 06:00. 새벽(0~6시) 글은 "어젯밤 일기" — 일기 앱들의
-#      수면 경계 관례. 편집 가능 날짜 = (지금 − 6h)의 달력 날짜, 이 API가 강제.
-#   ② 잠금 = 그 경계(아침 6시). 댓글 게이트 = 날짜 00:00 + 30h = 잠금과 같은 순간(펫 기상) —
-#      언제 쓰든 "다음에 오는 아침 6시"에 댓글을 받는다.
-#   ③ 펫당 1개·재댓글 없음, 멱등 키 = 그 펫 댓글의 존재. 잠금 후에만 달리므로 항상 최종본 기준. ----
+# ---- ✍️ Owner diary + pet comments — time rules v2 (user-confirmed: "새벽에 써도 아침엔 받는다" — even if written in the early hours, you get it in the morning):
+#   ① An owner-diary day = 06:00 ~ 06:00 next day. Early-hours (0~6h) entries are "last night's diary" — the sleep-boundary
+#      convention of diary apps. Editable date = calendar date of (now − 6h), enforced by this API.
+#   ② Lock = that boundary (6am). Comment gate = date 00:00 + 30h = the same moment as the lock (pets wake up) —
+#      whenever it's written, the comment arrives at "the next 6am".
+#   ③ One per pet, no re-comments; idempotency key = existence of that pet's comment. Posted only after the lock, so always on the final version. ----
 @app.post("/api/world_diary_owner")
 async def world_diary_owner_write(request: Request):
     data = await request.json()
     date = str(data.get("date", "")).strip()
     text = str(data.get("text", "")).strip()[:2000]
-    today = time.strftime("%Y-%m-%d", time.localtime(time.time() - 6 * 3600))   # 06시 경계 — 새벽 글은 어젯밤 일기
+    today = time.strftime("%Y-%m-%d", time.localtime(time.time() - 6 * 3600))   # 06:00 boundary — early-hours entries are last night's diary
     if date != today:
         return JSONResponse({"error": "locked", "message": "이 일기는 아침 6시에 잠겼어요 — 지금 열려 있는 일기에 써주세요"}, status_code=409)
     if not text:
@@ -11552,7 +11552,7 @@ async def world_diary_owner_write(request: Request):
 
 
 async def _world_diary_comment_run(pet: str, date: str):
-    """댓글 생성 공용부 — 엔드포인트(클라 폴링)와 일기 데몬 공용. (status, payload) 반환, 200 = 신규 또는 캐시."""
+    """Shared part of comment generation — used by both the endpoint (client polling) and the diary daemon. Returns (status, payload); 200 = new or cached."""
     if pet not in WORLD_PERSONAS:
         pet = "chick"
     diary = _world_diary_load()
@@ -11560,7 +11560,7 @@ async def _world_diary_comment_run(pet: str, date: str):
     if not owner or not owner.get("text"):
         return 404, {"error": "no owner entry"}
     try:
-        gate = time.mktime(time.strptime(date, "%Y-%m-%d")) + 30 * 3600   # 그 날짜 00:00 + 30h = 다음 날 06:00
+        gate = time.mktime(time.strptime(date, "%Y-%m-%d")) + 30 * 3600   # that date 00:00 + 30h = 06:00 next day
     except Exception:
         return 400, {"error": "bad date"}
     if time.time() < gate:
@@ -11601,7 +11601,7 @@ async def _world_diary_comment_run(pet: str, date: str):
         print(f"[world_diary] comment LLM failed: {e}")
         return 502, {"error": str(e)}
     c = {"pet": pet, "text": ctext[:600], "ts": int(time.time() * 1000)}
-    diary = _world_diary_load()   # reload — 다른 펫 댓글이 그새 저장됐을 수 있다
+    diary = _world_diary_load()   # reload — the other pet's comment may have been saved meanwhile
     owner2 = (diary.get(date) or {}).get("owner")
     if not owner2:
         return 409, {"error": "gone"}
@@ -11619,21 +11619,21 @@ async def world_diary_comment(request: Request):
     return payload if status == 200 else JSONResponse(payload, status_code=status)
 
 
-# ---- 🌙 일기 데몬 — "접속 안 해도 매일 일기": 월드 창(클라 트리거)이 못 챙긴 일기·댓글을 서버가
-# 챙긴다. 업계 문법으론 저해상도 서버 시뮬(심즈 스토리 프로그레션 위상) — 렌더링 없이 결과만 만든다.
-#   ① 오늘 몫: 22:30부터 (월드가 열려 있으면 22:05에 클라가 먼저 쓴다 — 데몬은 안전망)
-#   ② 소급: 지난 7일의 빈 (날짜, 펫) — 이월 1일 한계로 생기던 영구 구멍이 사라진다. 소재 사다리 =
-#      KV에 미러된 실제 이벤트 > 데이 시뮬(balance-sim --day) > "조용한 하루"(quiet) 일기.
-#   ③ 주인 일기 댓글: 게이트(날짜 00:00+30h)가 지난 미댓글 날짜 — 패널을 안 열어도 아침에 달린다.
-#   멱등: 일기 = (날짜,펫) 엔트리 존재(첫 저자 승리, 덮어쓰기 없음) · 댓글 = 그 펫 댓글 존재.
-#   실패 = 그 틱 중단 → 다음 틱(10분)이 자연 재시도(클라이언트와 같은 백오프 결). LLM은 순차 +
-#   틱당 상한(부팅 소급 폭주 방지). 클라 정산과의 단일 저자 규칙은 world.js settleOffline 쪽 가드가 담당.
-WORLD_DIARY_BACKFILL_DAYS = 7      # 소급 지평선 — 오프라인 정산 SETTLE_SPAN(7일)과 같은 상한
-WORLD_DIARY_TODAY_AFTER_H = 22.5   # 오늘 몫을 데몬이 챙기는 시각 — 클라(22:05)보다 뒤
+# ---- 🌙 Diary daemon — "a diary every day even without logging in": the server picks up diaries/comments the world window
+# (client trigger) missed. In industry terms, a low-res server sim (the Sims' story-progression layer) — produces results without rendering.
+#   ① Today's share: from 22:30 (if the world is open the client writes first at 22:05 — the daemon is the safety net)
+#   ② Backfill: empty (date, pet) slots over the last 7 days — removes the permanent holes the 1-day carryover limit caused. Material ladder =
+#      real events mirrored to KV > day sim (balance-sim --day) > "quiet day" (quiet) diary.
+#   ③ Owner-diary comments: uncommented dates past the gate (date 00:00+30h) — posted in the morning even without opening the panel.
+#   Idempotency: diary = (date,pet) entry exists (first author wins, no overwrite) · comment = that pet's comment exists.
+#   Failure = abort that tick → the next tick (10 min) retries naturally (same backoff feel as the client). LLM calls are sequential +
+#   capped per tick (prevents a backfill flood at boot). The single-author rule vs. client settlement is handled by the guard on the world.js settleOffline side.
+WORLD_DIARY_BACKFILL_DAYS = 7      # backfill horizon — same cap as the offline settlement SETTLE_SPAN (7 days)
+WORLD_DIARY_TODAY_AFTER_H = 22.5   # time the daemon picks up today's share — after the client (22:05)
 
 
 def _world_kv_events() -> list:
-    """클라이언트가 KV로 미러한 world-events 링버퍼 — 서버는 읽기만, 절대 되쓰지 않는다(키는 클라 소유)."""
+    """The world-events ring buffer the client mirrored to KV — the server only reads, never writes back (the key is client-owned)."""
     try:
         data = _world_read_json(WORLD_KV_FILE)
         arr = json.loads(((data or {}).get("kv") or {}).get("world-events") or "[]")
@@ -11643,7 +11643,7 @@ def _world_kv_events() -> list:
 
 
 def _world_events_fmt(evs: list) -> str:
-    """world.js dayEventsText와 같은 '- HH:MM 텍스트' 포맷 — 일기 프롬프트가 먹는 모양 그대로."""
+    """Same '- HH:MM text' format as world.js dayEventsText — exactly the shape the diary prompt consumes."""
     rows = sorted(evs, key=lambda e: e["t"])
     return "\n".join(f"- {time.strftime('%H:%M', time.localtime(e['t'] / 1000))} {e['text']}" for e in rows)
 
@@ -11651,7 +11651,7 @@ def _world_events_fmt(evs: list) -> str:
 def _world_events_text_for(date: str) -> str:
     evs = sorted([e for e in _world_kv_events()
                   if time.strftime("%Y-%m-%d", time.localtime(e["t"] / 1000)) == date], key=lambda e: e["t"])
-    out, chat_left = [], 1   # 📔 대화로 시킨 행동(src:'chat')은 일기 소재 하루 1줄 — 클라 dayEventsText와 동기 (A/B 실측 11/6)
+    out, chat_left = [], 1   # 📔 Actions commanded via chat (src:'chat') get 1 diary-material line per day — in sync with client dayEventsText (A/B measured 11/6)
     for e in evs:
         if e.get("src") == "chat":
             if chat_left <= 0:
@@ -11662,8 +11662,8 @@ def _world_events_text_for(date: str) -> str:
 
 
 async def _world_day_sim(date: str) -> list:
-    """부재일 소재(데이 시뮬): balance-sim --day(날짜 시드 결정론 — 소급해도 그날 굴렸을 결과와
-    동일)로 추상 하루를 굴려 {t,text} 리스트로 돌려준다. node가 없거나 실패하면 [] → quiet 폴백."""
+    """Absent-day material (day sim): runs an abstract day via balance-sim --day (date-seed deterministic — backfilling gives the same
+    result it would have rolled that day) and returns a {t,text} list. If node is missing or it fails, [] → quiet fallback."""
     try:
         node = shutil.which("node")
         script = os.path.join(base_path, "scripts", "balance-sim.mjs")
@@ -11685,10 +11685,10 @@ async def _world_day_sim(date: str) -> list:
 
 
 def _world_kv_merge_events(evs: list):
-    """시뮬 하루의 정사(正史) 편입: sim 소재로 일기를 쓴 날의 이벤트를 world-events(KV 미러)에
-    병합 — 다음 접속의 부팅 pull(서버 우선)로 클라 이벤트 로그에 승계된다. world-events는 클라
-    소유 키지만, 병합 조건(그날 KV 이벤트 0건 = 그날 클라 세션 없음)이 충돌 부재를 자체 증명.
-    클라 링버퍼와 같은 규칙(시간순 정렬·120캡·{t,text} 형태), (t,text) 중복 검사로 멱등."""
+    """Merging a simulated day into canonical history: merges the events of a day whose diary was written from sim material into
+    world-events (KV mirror) — inherited into the client event log by the next session's boot pull (server-first). world-events is a
+    client-owned key, but the merge condition (0 KV events that day = no client session that day) itself proves no conflict.
+    Same rules as the client ring buffer (chronological sort, 120 cap, {t,text} shape), idempotent via (t,text) duplicate check."""
     try:
         data = _world_read_json(WORLD_KV_FILE)
         if not isinstance(data, dict):
@@ -11720,7 +11720,7 @@ def _world_season_ko(date: str) -> str:
 
 
 async def _world_diary_tick(budget: int = 6) -> int:
-    """한 틱: 빈 (날짜,펫) 일기를 오래된 날짜부터 소급 + 게이트 지난 주인 일기 댓글. LLM 호출 수 반환."""
+    """One tick: backfill empty (date,pet) diaries from the oldest date + owner-diary comments past the gate. Returns the LLM call count."""
     now = time.time()
     lt = time.localtime(now)
     dates = [time.strftime("%Y-%m-%d", time.localtime(now - k * 86400)) for k in range(WORLD_DIARY_BACKFILL_DAYS, 0, -1)]
@@ -11728,14 +11728,14 @@ async def _world_diary_tick(budget: int = 6) -> int:
         dates.append(time.strftime("%Y-%m-%d", lt))
     wrote = 0
     for d in dates:
-        diary = _world_diary_load()   # 날짜마다 재로드 — 클라가 그새 썼을 수 있다
-        # 선필(先筆) 교대 — 고정 순서(chick 먼저)는 실패 위험을 늘 뒤 순번이 짊어지는 비대칭(7/28 실측).
-        # 날짜 시드 결정론: 같은 날짜는 소급·재시도에도 같은 순서. (클라 경로는 원래 부팅마다 랜덤)
+        diary = _world_diary_load()   # reload per date — the client may have written meanwhile
+        # Alternate who writes first — a fixed order (chick first) is asymmetric, the later slot always bearing the failure risk (measured 7/28).
+        # Date-seed determinism: the same date gives the same order even on backfill/retry. (The client path was always random per boot)
         order = sorted(WORLD_PERSONAS, key=lambda p: hashlib.md5(f"{d}:{p}:diary-order".encode()).hexdigest())
         need = [p for p in order if not (diary.get(d) or {}).get(p)]
         if not need:
             continue
-        # 소재는 날짜당 한 번 — 두 펫이 같은 하루를 산다 (시뮬 이중 호출·펫 간 src 엇갈림 방지)
+        # material once per date — both pets live the same day (prevents double sim calls and src mismatch between pets)
         events, src, sim_evs = _world_events_text_for(d), "kv", []
         if not events:
             sim_evs = await _world_day_sim(d)
@@ -11756,12 +11756,12 @@ async def _world_diary_tick(budget: int = 6) -> int:
                 if _world_diary_store_pet(d, pet, entry, overwrite=False) is entry:
                     print(f"[world_diary_daemon] {d}/{pet} 일기 작성 (src={src})")
                     if src == "sim" and sim_evs:
-                        _world_kv_merge_events(sim_evs)   # 정사 편입 — (t,text) 멱등이라 재호출 안전
+                        _world_kv_merge_events(sim_evs)   # canonical-history merge — (t,text) idempotent, so safe to call again
                 wrote += 1
             except Exception as e:
                 print(f"[world_diary_daemon] {d}/{pet} 실패 — 다음 틱 재시도: {e}")
-                return wrote          # LLM이 죽어 있으면 이번 틱 전체 중단 (10분 백오프)
-    # ③ 주인 일기 아침 댓글 — 오래된 날짜부터, 펫당 1개 멱등 (게이트·캐시 검사는 comment_run 안에)
+                return wrote          # if the LLM is down, abort this whole tick (10-min backoff)
+    # ③ Owner-diary morning comments — oldest date first, 1 per pet idempotent (gate/cache checks are inside comment_run)
     diary = _world_diary_load()
     for d in sorted(diary.keys()):
         o = (diary.get(d) or {}).get("owner")
@@ -11774,26 +11774,26 @@ async def _world_diary_tick(budget: int = 6) -> int:
                 return wrote
             status, payload = await _world_diary_comment_run(pet, d)
             if status == 425:
-                break                 # 아직 아침 6시 전 — 이 날짜의 다른 펫도 마찬가지
+                break                 # still before 6am — same for the other pet on this date
             if status != 200:
                 print(f"[world_diary_daemon] {d}/{pet} 댓글 실패({status}) — 다음 틱 재시도")
                 return wrote
             if not payload.get("cached"):
                 wrote += 1
                 print(f"[world_diary_daemon] {d}/{pet} 아침 댓글 작성")
-    # 🕰️ 월 1회 펫 타임캡슐 — 일기·댓글이 틱 예산을 다 썼으면 다음 틱으로 미룬다(멱등이라 안전)
+    # 🕰️ Monthly pet time capsule — if diary/comments used up the tick budget, defer to the next tick (idempotent, so safe)
     if wrote < budget:
         try:
             wrote += await _world_capsule_pet_tick()
         except Exception as e:
             print(f"[world_diary_daemon] 캡슐 실패 — 다음 틱 재시도: {e}")
-    # 📖 월간 회고록 — 완결된 달의 책이 없으면 오래된 달부터 틱당 1권
+    # 📖 Monthly memoir — if a completed month has no book, 1 book per tick starting from the oldest month
     if wrote < budget:
         try:
             wrote += await _world_book_tick()
         except Exception as e:
             print(f"[world_diary_daemon] 회고록 실패 — 다음 틱 재시도: {e}")
-    # 💌 기념일 카드 — 기념일 아침에 두 펫 공동 명의로 우편함 배달
+    # 💌 Anniversary card — delivered to the mailbox on the anniversary morning, jointly signed by both pets
     if wrote < budget:
         try:
             wrote += await _world_card_tick()
@@ -11803,10 +11803,10 @@ async def _world_diary_tick(budget: int = 6) -> int:
 
 
 async def _world_capsule_pet_tick() -> int:
-    """🕰️ 펫 타임캡슐 — 매월 하루(날짜 시드 2~26일), 그 달의 선필 펫이 미래로 편지를 묻는다.
-    열람일 = 60~365일 뒤 시드(일부는 일부러 모델 은퇴 뒤에 열린다 — 작별 후에도 흔적이 도착하게).
-    멱등 키 = 캡슐 목록의 (month, pet) 존재. 기존 캡슐 UI가 그대로 보여준다(클라 무변경).
-    WORLD_DIARY_FORCE_OCCASIONS=1 은 샌드박스 E2E용 날짜 게이트 스킵."""
+    """🕰️ Pet time capsule — one day each month (date-seeded, 2nd~26th), that month's first-writer pet buries a letter to the future.
+    Open date = seeded 60~365 days later (some deliberately open after the model's retirement — so traces still arrive after goodbye).
+    Idempotency key = (month, pet) exists in the capsule list. The existing capsule UI shows it as-is (no client change).
+    WORLD_DIARY_FORCE_OCCASIONS=1 skips the date gate for sandbox E2E."""
     lt = time.localtime()
     month = time.strftime("%Y-%m", lt)
     day = 2 + int(hashlib.md5(f"{month}:capsule-day".encode()).hexdigest()[:8], 16) % 25
@@ -11855,7 +11855,7 @@ async def _world_capsule_pet_tick() -> int:
     if not text:
         return 0
     sig = "병아리" if pet == "chick" else "강아지"
-    capsules = _world_json_load(WORLD_CAPSULE_FILE, "capsules")   # reload — 그새 주인이 묻었을 수 있다
+    capsules = _world_json_load(WORLD_CAPSULE_FILE, "capsules")   # reload — the owner may have buried one meanwhile
     if any(c.get("pet") and c.get("month") == month for c in capsules):
         return 1
     capsules.append({"id": int(time.time() * 1000), "text": text + f"\n— {sig}가 💌", "openAt": open_at,
@@ -11874,9 +11874,9 @@ async def world_books_all():
 
 
 async def _world_book_tick() -> int:
-    """📖 월간 회고록 — 완결된 달(일기 ≥5일)의 펫 일기 전체를 입력으로, 병아리·강아지가 번갈아
-    말하는 대담 형식의 작은 책을 집필해 서재(world_books.json)에 소장한다. 오래된 달부터 틱당
-    1권 — 첫 가동 때 과거 달들이 자동 소급된다(사용자 승인). 멱등 키 = month."""
+    """📖 Monthly memoir — takes all pet diaries of a completed month (≥5 diary days) as input and writes a small book in
+    dialogue form, chick and puppy speaking in turns, shelved in the library (world_books.json). 1 book per tick from the oldest
+    month — past months are backfilled automatically on first run (user-approved). Idempotency key = month."""
     diary = _world_diary_load()
     cur_month = time.strftime("%Y-%m")
     months = {}
@@ -11906,7 +11906,7 @@ async def _world_book_tick() -> int:
         "- 서로의 말에 반응하며(티키타카), 마지막은 다음 달에 대한 기대 한마디로 닫는다."
     )
     prev_titles = [b.get("title", "") for b in books if b.get("title")]
-    if prev_titles:   # 서가의 기존 제목과 닮지 않게 — 7·8월이 둘 다 "여름 끝자락…"으로 시작한 실측
+    if prev_titles:   # avoid resembling existing titles on the shelf — July and August both started with "여름 끝자락…" (measured)
         rules += "\n- 제목은 기존 책들과 시작·결이 다르게: " + ", ".join(f"《{t}》" for t in prev_titles[-6:])
     uname = _world_user_name(cs)
     resp = await wc_client.chat.completions.create(
@@ -11935,12 +11935,12 @@ async def _world_book_tick() -> int:
     return 1
 
 
-WORLD_DATES_FILE = _world_file("world_dates.json")   # 생일 등 개인 기념일 — 공개 리포 밖(개인 데이터 디렉토리)
+WORLD_DATES_FILE = _world_file("world_dates.json")   # personal anniversaries such as birthdays — outside the public repo (personal data directory)
 
 
 def _world_card_occasion():
-    """오늘이 기념일이면 (멱등 키, 라벨, 의미 노트) — 아니면 None. 함께한 날 기준일 = 첫 일기 날짜.
-    생일·사용자 지정 기념일(의미 노트 포함)은 world_dates.json — 개인 데이터라 공개 리포 밖."""
+    """If today is an anniversary, (idempotency key, label, meaning note) — else None. Days-together base date = first diary date.
+    Birthdays and user-defined anniversaries (with meaning notes) are in world_dates.json — personal data, outside the public repo."""
     lt = time.localtime()
     md = time.strftime("%m-%d", lt)
     y = lt.tm_year
@@ -11973,9 +11973,9 @@ def _world_card_occasion():
 
 
 async def _world_card_tick() -> int:
-    """💌 기념일 카드 — 기념일 아침(8시 이후), 두 펫 공동 명의(mailPersona)로 카드를 써서 우편함에
-    배달(2~5분 뒤). 멱등 키 = letters의 occasion. 기념일 = 생일(world_dates.json)·새해·크리스마스·
-    계절 첫날·함께한 100일 단위. WORLD_DIARY_FORCE_OCCASIONS=샌드박스 E2E용 게이트 스킵."""
+    """💌 Anniversary card — on the anniversary morning (after 8am), writes a card jointly signed by both pets (mailPersona) and delivers it
+    to the mailbox (2~5 min later). Idempotency key = occasion in letters. Anniversaries = birthdays (world_dates.json), New Year, Christmas,
+    first day of each season, every 100 days together. WORLD_DIARY_FORCE_OCCASIONS=gate skip for sandbox E2E."""
     force = os.environ.get("WORLD_DIARY_FORCE_OCCASIONS")
     lt = time.localtime()
     if lt.tm_hour < 8 and not force:
@@ -12023,7 +12023,7 @@ async def _world_card_tick() -> int:
     text = (resp.choices[0].message.content or "").strip()[:320]
     if not text:
         return 0
-    letters = _world_json_load(WORLD_MAIL_FILE, "letters")   # reload — 그새 편지가 왔을 수 있다
+    letters = _world_json_load(WORLD_MAIL_FILE, "letters")   # reload — a letter may have arrived meanwhile
     if any(l.get("occasion") == key for l in letters):
         return 1
     now_ms = int(time.time() * 1000)
@@ -12035,9 +12035,9 @@ async def _world_card_tick() -> int:
 
 
 async def _world_diary_daemon():
-    """lifespan이 create_task로 띄운다. 틱 주기 env WORLD_DIARY_TICK_SEC는 샌드박스 E2E용."""
+    """Launched by lifespan via create_task. The tick-interval env WORLD_DIARY_TICK_SEC is for sandbox E2E."""
     tick = int(os.environ.get("WORLD_DIARY_TICK_SEC") or 600)
-    await asyncio.sleep(min(45, tick))   # 부팅 직후 여유 — 클라 초기 동기(KV push·정산)가 먼저 앉게
+    await asyncio.sleep(min(45, tick))   # grace period right after boot — let the client's initial sync (KV push, settlement) settle first
     while True:
         try:
             await _world_diary_tick()
@@ -12048,8 +12048,8 @@ async def _world_diary_daemon():
         await asyncio.sleep(tick)
 
 
-# ---- 추억의 섬 저장소 (㉓ 소원우물 / ㉔ 타임캡슐): world_layout처럼 서버 파일 — 기기 공유,
-# localStorage 초기화에도 살아남는다. LLM 불필요, 순수 파일 IO.
+# ---- Memory Island storage (㉓ wishing well / ㉔ time capsule): server files like world_layout — shared across devices,
+# survives a localStorage reset. No LLM needed, pure file IO.
 WORLD_WISH_FILE = _world_file("world_wishes.json")
 WORLD_CAPSULE_FILE = _world_file("world_capsules.json")
 
@@ -12121,7 +12121,7 @@ async def world_capsule_act(request: Request):
     return JSONResponse({"error": "unknown action"}, status_code=400)
 
 
-# ---- 텃밭 (⑫): 밭 4칸의 상태 하나를 통째로 저장/반환 — 기기끼리 같은 밭을 본다.
+# ---- Garden plot (⑫): saves/returns the state of all 4 plots as one — devices see the same plot.
 WORLD_GARDEN_FILE = _world_file("world_garden.json")
 
 
@@ -12147,7 +12147,7 @@ async def world_garden_set(request: Request):
     return {"ok": True}
 
 
-# ---- 별자리 (㉞): 이름 + 별 좌표 목록 — 한 번 그리면 매일 밤 하늘에 남는다.
+# ---- Constellations (㉞): name + list of star coordinates — once drawn, stays in the night sky every night.
 WORLD_CONSTEL_FILE = _world_file("world_constellations.json")
 
 
@@ -12170,8 +12170,8 @@ async def world_constellation_add(request: Request):
     return {"ok": True, "constellation": entry}
 
 
-# ---- 우편함 (⑬): 편지를 넣으면 병아리·강아지 공동 명의로 답장을 즉시 지어두되, 실제로는
-# 4~12분 뒤에야 "배달"된 것으로 보여준다(deliverAt) — 클라이언트가 그 전까지는 숨긴다.
+# ---- Mailbox (⑬): when a letter is posted, a reply jointly signed by chick and puppy is composed immediately, but it's
+# only shown as "delivered" 4~12 minutes later (deliverAt) — the client hides it until then.
 WORLD_MAIL_FILE = _world_file("world_mail.json")
 
 
@@ -12217,7 +12217,7 @@ async def world_mail_send(request: Request):
     return {"ok": True, "letter": letter}
 
 
-# ---- 꽃 심기 챌린지 (㉝): 심은 꽃 하나하나를 좌표+색으로 누적 — 100송이가 목표.
+# ---- Flower-planting challenge (㉝): each planted flower accumulates as coordinates+color — goal is 100 blooms.
 WORLD_FLOWER_FILE = _world_file("world_flowers.json")
 
 
@@ -12243,7 +12243,7 @@ async def world_flower_add(request: Request):
     return {"ok": True, "flower": flower, "total": len(flowers)}
 
 
-# ---- 월드 상태 KV (도감·조개·해금·발견·펫 이어하기 등): 폰·데탑 공유 범용 저장소.
+# ---- World state KV (encyclopedia, shells, unlocks, discoveries, pet resume, etc.): general-purpose store shared by phone/desktop.
 WORLD_KV_FILE = _world_file("world_kv.json")
 _WORLD_KV_KEY_RE = re.compile(r"^[\w-]{1,64}$")
 
@@ -12276,7 +12276,7 @@ async def world_kv_set(request: Request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
-# ---- 과일 상태 (바구니·낙과·재성장): 폰·데탑 공유 — localStorage는 기기별이라 갈렸다.
+# ---- Fruit state (basket, fallen fruit, regrowth): shared by phone/desktop — localStorage is per-device and diverged.
 WORLD_FRUIT_FILE = _world_file("world_fruit.json")
 
 
@@ -12300,7 +12300,7 @@ async def world_fruit_set(request: Request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
-# ---- 사진 게시판 (⑭): screenshots/ 목록 (최신순) — 원본은 아래 /screenshots 마운트가 서빙.
+# ---- Photo board (⑭): screenshots/ listing (newest first) — originals are served by the /screenshots mount below.
 @app.get("/api/screenshots_list")
 async def world_screenshots_list():
     try:

@@ -1,7 +1,7 @@
-// 월드 스모크 테스트 — 사물/기능 추가 후 30초 안에 회귀를 잡는 안전망.
+// World smoke test — safety net that catches regressions within 30s after adding objects/features.
 //   npm run test:world
-// 필요: npm i -D playwright && npx playwright install chromium (첫 1회)
-// 정적 서버를 스스로 띄우므로 앱/백엔드 없이 돈다 (/api는 404 — 월드는 폴백으로 동작).
+// Requires: npm i -D playwright && npx playwright install chromium (first time only)
+// Starts its own static server, so it runs without the app/backend (/api is 404 — the world runs on fallbacks).
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
@@ -30,14 +30,14 @@ const check = (name, ok, warnOnly = false, detail = '') => {
     console.log(`${ok ? '  PASS' : warnOnly ? '⚠ WARN' : '✗ FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`);
 };
 const errFilter = (t) => !/VALIDATE_STATUS|favicon|manifest|\/api\/|\/ws|WebSocket|404|sounds\//i.test(t);
-// hour=14 고정: 심야에 돌리면 펫이 자동취침 중이라 우클릭 프로브가 '깨우기'로 소모된다 (시각 비결정성 제거).
-// stats=1: draws 상한 어서션용 오버레이.
+// hour=14 fixed: run late at night, the pets are auto-sleeping and the right-click probe gets consumed as 'wake up' (removes time-of-day nondeterminism).
+// stats=1: overlay for the draws upper-bound assertion.
 const URL0 = `http://127.0.0.1:${PORT}/world.html?weather=clear&hour=14&stats=1`;
 
-// --use-angle=metal: 실제 GPU 경로 — 없으면 SwiftShader(소프트웨어)로 떨어져 느리고 실사용과 다르다.
+// --use-angle=metal: real GPU path — without it, falls back to SwiftShader (software), which is slow and unlike real use.
 const browser = await chromium.launch({ headless: true, args: ['--use-angle=metal'] });
 
-// ---- A. 데스크톱: 로드·무에러·독·공사모드 토글 ----
+// ---- A. Desktop: load · no errors · dock · construction mode toggle ----
 {
     const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
     const errs = [];
@@ -52,14 +52,14 @@ const browser = await chromium.launch({ headless: true, args: ['--use-angle=meta
     }));
     check('desktop 월드 로드(canvas)', env.canvas);
     check('desktop 독 버튼 존재', env.dock >= 5, false, `${env.dock}개`);
-    // 월드 베이크 회귀망: 새 프롭이 MERGE_TYPES/베이크 등록을 빼먹으면 draws가 새기 시작한다.
-    // 베이크 기준 ~190 — 상한 250이면 콘텐츠 추가 여유는 있으면서 누수(수십 콜)는 잡힌다.
+    // World bake regression net: if a new prop misses MERGE_TYPES / bake registration, draws start leaking.
+    // Bake baseline ~190 — a 250 cap leaves room for new content while still catching leaks (dozens of calls).
     const draws = await page.evaluate(() => {
         const t = [...document.querySelectorAll('div')].map((d) => d.textContent).find((s) => / draws · /.test(s)) || '';
         return parseInt((t.match(/(\d+) draws/) || [])[1] || '0', 10);
     });
     check('draws 상한(월드 베이크)', draws > 0 && draws <= 250, false, `${draws} draws`);
-    // 독 정리(A안) 후 🔨는 ⚙️ 서랍 안 — 실제 사용자 플로우대로 서랍을 열고 누른다
+    // After the dock cleanup (plan A), 🔨 lives inside the ⚙️ drawer — open the drawer and press it like a real user would
     const gear = await page.evaluate(() => {
         const g = [...document.querySelectorAll('#world-dock-ui div')].find((b) => b.textContent.trim().startsWith('⚙️'));
         if (g) g.click();
@@ -78,26 +78,26 @@ const browser = await chromium.launch({ headless: true, args: ['--use-angle=meta
         await page.waitForTimeout(300);
         check('desktop 공사모드 토글(서랍 경유)', on);
     } else check('desktop 공사모드 토글(서랍 경유)', false, false, '⚙️/🔨 버튼 없음');
-    // 펫 우클릭 프로브 — __worldDev.petScreenXY로 펫을 정확히 조준한다 (예전 격자 스캔은 펫 위치
-    // 랜덤에 수영·착석까지 겹치면 자주 빗나갔다). 두 마리 다 시도, 하나라도 메뉴가 뜨면 통과.
+    // Pet right-click probe — aims precisely at the pet via __worldDev.petScreenXY (the old grid scan often missed when the random
+    // pet position coincided with swimming or sitting). Try both pets; pass if a menu appears for either.
     let menu = false;
     for (let attempt = 0; attempt < 3 && !menu; attempt++) {
         const spots = await page.evaluate(() => (window.__worldDev ? window.__worldDev.petScreenXY() : []));
         for (const s of spots) {
-            if (s.x < 5 || s.y < 5 || s.x > 1275 || s.y > 795) continue;   // 화면 밖 펫은 다음 라운드에
+            if (s.x < 5 || s.y < 5 || s.x > 1275 || s.y > 795) continue;   // Off-screen pets get the next round
             await page.mouse.click(s.x, s.y, { button: 'right' });
             await page.waitForTimeout(150);
             menu = await page.evaluate(() => { const m = document.getElementById('world-motion-menu'); return !!m && m.style.display === 'block'; });
             if (menu) break;
         }
-        if (!menu) await page.waitForTimeout(800);   // 펫이 걷는 중이면 잠깐 뒤 다시
+        if (!menu) await page.waitForTimeout(800);   // If the pet is walking, try again shortly
     }
     check('desktop 펫 우클릭→메뉴', menu, true);
     check('desktop JS 에러 없음', errs.length === 0, false, errs.slice(0, 2).join(' | '));
     await page.context().close();
 }
 
-// ---- B. 모바일(iPhone): 터치 UI·크기·에코 기본 ----
+// ---- B. Mobile (iPhone): touch UI · size · eco defaults ----
 {
     const ctx = await browser.newContext({ ...devices['iPhone 13'] });
     const page = await ctx.newPage();
@@ -116,7 +116,7 @@ const browser = await chromium.launch({ headless: true, args: ['--use-angle=meta
     await ctx.close();
 }
 
-// ---- C. 저장된 레이아웃 적용 경로 (localStorage 폴백) ----
+// ---- C. Saved layout apply path (localStorage fallback) ----
 {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await ctx.newPage();
@@ -129,9 +129,9 @@ const browser = await chromium.launch({ headless: true, args: ['--use-angle=meta
     await ctx.close();
 }
 
-// ---- D. 오프라인 정산: 24시간 부재 재진입 — 정산 발생·상한 준수·draws 무손상 ----
-// 24h인 이유: awakeOverlapSec은 실제 시계 기준이라, 8h는 스모크를 새벽에 돌리면 깨어있는
-// 시간(06~22시)과 안 겹칠 수 있다. 24h면 어느 시각에 돌려도 꼬박 하루치(16h)가 겹친다.
+// ---- D. Offline settlement: re-entry after 24h away — settlement happens · caps respected · draws intact ----
+// Why 24h: awakeOverlapSec is based on the real clock, so with 8h a smoke run in the early morning may not overlap
+// the awake hours (06~22) at all. With 24h, a full day's worth (16h) overlaps whenever it runs.
 {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await ctx.newPage();

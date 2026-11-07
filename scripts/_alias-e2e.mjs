@@ -1,4 +1,4 @@
-// 🏷️ 별명 라우팅 E2E — '멍뭉이' 오배달 회귀 방지 (정적 서버)
+// 🏷️ Nickname routing E2E — regression guard for '멍뭉이' (puppy nickname) misdelivery (static server)
 import http from 'http'; import fs from 'fs'; import path from 'path';
 import { fileURLToPath } from 'url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -29,8 +29,8 @@ const cases = [
     ['예쁜새 굿모닝', 'chick'],
     ['아기닭 놀아줘', 'chick'],
     ['삐약이 보고싶었어', 'chick'],
-    ['왕왕이 이리와', 'puppy'],   // KV 사용자 추가 별명
-    ['강아지랑 병아리 둘 다 사랑해', 'chick'],   // 둘 다 호명 = 병아리 우선(종전 규칙) + 거들기
+    ['왕왕이 이리와', 'puppy'],   // User-added nickname from KV
+    ['강아지랑 병아리 둘 다 사랑해', 'chick'],   // Both named = chick first (previous rule) + chime-in
 ];
 for (const [t, want] of cases) {
     const got = await page.evaluate((x) => window.__worldDev.routePet(x), t);

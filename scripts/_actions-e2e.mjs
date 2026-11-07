@@ -1,4 +1,4 @@
-// 🧭 행동 태그 E2E (C0+C1) — goto 목록 자동 생성·요청 동봉·실행(근처 장소/먼 섬)·모래섬 가드·일기 1줄 쿼터
+// 🧭 Action tag E2E (C0+C1) — auto-generated goto list · attached to the request · execution (nearby spot / far island) · sand island guard · diary 1-line quota
 import http from 'http'; import fs from 'fs'; import path from 'path';
 import { fileURLToPath } from 'url';
 import { PROPS } from '../static/js/world-layout.js';
@@ -40,12 +40,12 @@ const waitNear = async (name, type, tol, ms) => {
     while (Date.now() - t0 < ms) { r = await near(name, type, tol); if (r.ok) return r; await page.waitForTimeout(700); }
     return r;
 };
-// G1 goto 목록 자동 생성
+// G1 auto-generated goto list
 const ids = await dev('gotoIds');
 const must = ['gardenbench(동산 벤치 — 병아리 동산', 'ringnest(우정반지 둥지 — 추억의 섬', 'kitchen(주방', 'trampoline(트램펄린 — 놀이터섬', 'melonpatch(수박 덩굴 — 농장 섬', 'plaza(광장)', 'friend(절친 옆)'];
 const miss = must.filter((k) => !ids.includes(k));
 check('G1 goto 목록 자동 생성(C1 장소 포함)', miss.length === 0 && !ids.includes('bonfire('), miss.length ? '누락: ' + miss.join(' | ') : (ids.includes('bonfire(') ? '모래섬 bonfire가 목록에 있음' : `${ids.split('·').length}곳`));
-// G2 채팅 요청 동봉 + 실제 답장 경로로 goto 실행
+// G2 attached to the chat request + goto executed through the real reply path
 await page.evaluate(() => {
     const ta = [...document.querySelectorAll('input,textarea')].find((t) => /펫에게/.test(t.placeholder || ''));
     ta.value = '주방 가자'; ta.dispatchEvent(new Event('input', { bubbles: true }));
@@ -55,17 +55,17 @@ for (let i = 0; i < 20 && !sent; i++) await page.waitForTimeout(250);
 check('G2 채팅 요청에 gotoIds 동봉', !!(sent && typeof sent.gotoIds === 'string' && sent.gotoIds.includes('kitchen(')), sent ? Object.keys(sent).join(',') : '요청 없음');
 const g3 = await waitNear('chick', 'kitchen', 1.3, 40000);
 check('G3 실제 답장 <goto=kitchen> → 병아리가 주방 곁 도착', g3 && g3.ok, `거리 ${g3 && g3.d}m`);
-// G4 먼 섬(동산 벤치) — 다리 경로로 도착
+// G4 far island (meadow bench) — arrives via the bridge route
 await dev('say', 'puppy', '그래! <goto=gardenbench>');
 const g4 = await waitNear('puppy', 'gardenbench', 1.3, 150000);
 check('G4 <goto=gardenbench> → 강아지가 동산 벤치 곁 도착(다리 건너)', g4 && g4.ok, `거리 ${g4 && g4.d}m`);
-// G5 모래섬 가드 — 목적지 해석이 null, 펫은 섬 위에 남는다
+// G5 sand island guard — destination resolves to null, the pet stays on the island
 const spot = await dev('gotoSpot', 'chick', 'bonfire');
 await dev('say', 'chick', '<goto=bonfire>');
 await page.waitForTimeout(5000);
 const isl = await dev('islandAt', 'chick');
 check('G5 모래섬(다리 없음) goto 가드 — 해석 null·섬 이탈 없음', spot === null && isl >= 0, `spot=${JSON.stringify(spot)} island=${isl}`);
-// G6 일기 1줄 쿼터 — 태그로 두 번 눕히면 이벤트는 2개(src:chat), 일기 소재엔 1줄
+// G6 diary 1-line quota — lying down twice via tag yields 2 events (src:chat), but only 1 line of diary material
 await dev('say', 'chick', '<mount=hammock>');
 await page.waitForTimeout(1500);
 await dev('say', 'puppy', '<mount=sunbed>');

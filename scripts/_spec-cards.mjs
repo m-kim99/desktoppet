@@ -1,4 +1,4 @@
-// 임시: design/*-spec.html 을 카드별로 잘라 스크린샷 (검토용). argv[2]=html, argv[3]=outdir
+// Temporary: screenshot design/*-spec.html card by card (for review). argv[2]=html, argv[3]=outdir
 import { chromium } from 'playwright';
 const FILE = process.argv[2];
 const OUTDIR = process.argv[3];

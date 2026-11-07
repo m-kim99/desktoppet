@@ -1,9 +1,9 @@
-// 해저 실스케일 검수 — 잠수 후 지정 해산물을 직접 놓고 게임 시점으로 찍는다.
-//   node scripts/sea-live.mjs <outDir> [id,id,id]   (생략하면 wakame,seacuke,starfish)
-// ⚠️ 검수 랩은 백색 앰비언트라 거짓말을 한다. 월드는 hemiLight(groundColor 0x8fca62)라
-// 아래를 향한 면이 초록으로 물들고, 바닥에 얹히는 높이도 랩과 다르다 — 조형을 올렸으면
-// 반드시 여기서 한 번 본다. (굴·미역에서 이걸 건너뛰었다가 세 번 잘못 짚었다.)
-// ⚠️ 배치와 촬영은 **같은 evaluate 안에서** 한다 — 잠수정이 계속 움직여 좌표가 어긋난다.
+// Undersea real-scale review — dive, place the specified seafood directly and shoot from the game viewpoint.
+//   node scripts/sea-live.mjs <outDir> [id,id,id]   (defaults to wakame,seacuke,starfish)
+// ⚠️ The review lab lies because of its white ambient. The world uses hemiLight (groundColor 0x8fca62), so
+// downward-facing surfaces get tinted green and the resting height on the floor differs from the lab — once a model is in,
+// always check it here once. (Skipping this for oyster/wakame led to three wrong guesses.)
+// ⚠️ Place and shoot **inside the same evaluate** — the submarine keeps moving and the coordinates drift.
 import fs from 'fs'; import path from 'path';
 const OUT = process.argv[2];
 const IDS = (process.argv[3] || 'wakame,seacuke,starfish').split(',');
